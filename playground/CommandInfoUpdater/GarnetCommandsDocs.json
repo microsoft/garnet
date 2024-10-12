@@ -1,0 +1,360 @@
+[
+  {
+    "Command": "COMMITAOF",
+    "Name": "COMMITAOF",
+    "Group": "Server",
+    "Summary": "Commit to append-only file."
+  },
+  {
+    "Command": "COSCAN",
+    "Name": "COSCAN",
+    "Group": "Generic",
+    "Summary": "Iterates over members of a collection object.",
+    "Complexity": "O(1) for every call. O(N) for a complete iteration, including enough command calls for the cursor to return back to 0. N is the number of elements inside the collection.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CURSOR",
+        "DisplayText": "cursor",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PATTERN",
+        "DisplayText": "pattern",
+        "Type": "Pattern",
+        "Token": "MATCH",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "FORCEGC",
+    "Name": "FORCEGC",
+    "Summary": "Forces garbage collection.",
+    "Group": "Server"
+  },
+  {
+    "Command": "SECONDARYOF",
+    "Name": "SECONDARYOF",
+    "Summary": "Configures a server as secondary of another, or promotes it to a primary.",
+    "Group": "Server",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ARGS",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "HOST-PORT",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "HOST",
+                "DisplayText": "host",
+                "Type": "String"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "PORT",
+                "DisplayText": "port",
+                "Type": "Integer"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "NO-ONE",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "NO",
+                "DisplayText": "no",
+                "Type": "PureToken",
+                "Token": "NO"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ONE",
+                "DisplayText": "one",
+                "Type": "PureToken",
+                "Token": "ONE"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "REGISTERCS",
+    "Name": "REGISTERCS",
+    "Group": "Server",
+    "Summary": "Registers custom C# commands in Garnet.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CMD",
+        "Type": "Block",
+        "ArgumentFlags": "Multiple",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "CMDTYPE",
+            "Type": "OneOf",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "READ",
+                "DisplayText": "read",
+                "Type": "PureToken",
+                "Token": "READ"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "RMW",
+                "DisplayText": "rmw",
+                "Type": "PureToken",
+                "Token": "RMW"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "TXN",
+                "DisplayText": "txn",
+                "Type": "PureToken",
+                "Token": "TXN"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NAME",
+            "Summary": "Name of the command to register",
+            "DisplayText": "cmdName",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMPARAMS",
+            "Summary": "Numer of parameters of the command to register",
+            "DisplayText": "numParams",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CLASSNAME",
+            "Summary": "Name of class defining the command to register",
+            "DisplayText": "className",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "EXPTICKS",
+            "Summary": "Expiry of the command to register (in ticks)",
+            "DisplayText": "expTicks",
+            "Type": "Integer",
+            "ArgumentFlags": "Optional"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OBJCMDNAME",
+            "Summary": "The object command name, if applicable",
+            "DisplayText": "objCmdName",
+            "Type": "String",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INFO",
+        "Summary": "Path to JSON-serialized command info for registered commands",
+        "DisplayText": "infoPath",
+        "Type": "String",
+        "Token": "INFO",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DOCS",
+        "Summary": "Path to JSON-serialized command docs for registered commands",
+        "DisplayText": "docsPath",
+        "Type": "String",
+        "Token": "DOCS",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SRC",
+        "Summary": "Source paths containing classes defining command to register",
+        "DisplayText": "srcPath",
+        "Type": "String",
+        "Token": "SRC",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "RUNTXP",
+    "Name": "RUNTXP",
+    "Group": "Transactions",
+    "Summary": "Run registered transaction in Garnet.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TXNID",
+        "Summary": "Registered transaction ID",
+        "DisplayText": "txnId",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TXNPARAM",
+        "Summary": "Transaction parameter",
+        "DisplayText": "param",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "WATCH",
+    "Name": "WATCH",
+    "Group": "Transactions",
+    "Summary": "Monitors changes to keys to determine the execution of a transaction.",
+    "Complexity": "O(1) for every key.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      }
+    ],
+    "SubCommands": [
+      {
+        "Command": "WATCH_MS",
+        "Name": "WATCH|MS",
+        "Group": "Transactions",
+        "Summary": "Monitors changes to keys in main store to determine the execution of a transaction.",
+        "Complexity": "O(1) for every key.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "ArgumentFlags": "Multiple",
+            "KeySpecIndex": 0
+          }
+        ]
+      },
+      {
+        "Command": "WATCH_OS",
+        "Name": "WATCH|OS",
+        "Group": "Transactions",
+        "Summary": "Monitors changes to keys in object store to determine the execution of a transaction.",
+        "Complexity": "O(1) for every key.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "ArgumentFlags": "Multiple",
+            "KeySpecIndex": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "ASYNC",
+    "Name": "ASYNC",
+    "Group": "Generic",
+    "Summary": "Start, stop or issue a barrier command for a series of async operations.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ARGS",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ON",
+            "DisplayText": "on",
+            "Type": "PureToken",
+            "Token": "ON"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFF",
+            "DisplayText": "off",
+            "Type": "PureToken",
+            "Token": "OFF"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BARRIER",
+            "DisplayText": "barrier",
+            "Type": "PureToken",
+            "Token": "BARRIER"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "MODULE",
+    "Name": "MODULE",
+    "Group": "Server",
+    "Summary": "A container for module commands.",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "MODULE_LOADCS",
+        "Name": "MODULE|LOADCS",
+        "Group": "Server",
+        "Summary": "Load a C# module in Garnet.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SRCPATH",
+            "Summary": "Source path to module definition",
+            "DisplayText": "srcPath",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MODULEARG",
+            "Summary": "Module argument",
+            "DisplayText": "arg",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -198,6 +198,9 @@ namespace Tsavorite.core
         public int GetRMWModifiedValueLength(ref TValue t, ref TInput input) => _clientSession.functions.GetRMWModifiedValueLength(ref t, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetUpsertValueLength(ref TValue t, ref TInput input) => _clientSession.functions.GetUpsertValueLength(ref t, ref input);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public IHeapContainer<TInput> GetHeapContainer(ref TInput input)
         {
             if (typeof(TInput) == typeof(SpanByte))

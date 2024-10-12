@@ -3,7 +3,6 @@
 
 using System.Collections.ObjectModel;
 using System.Net;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Garnet.server;
@@ -16,22 +15,25 @@ namespace CommandInfoUpdater
     /// </summary>
     public class CommandInfoUpdater
     {
+        private static readonly string CommandInfoFileName = "RespCommandsInfo.json";
         private static readonly string GarnetCommandInfoJsonPath = "GarnetCommandsInfo.json";
 
         /// <summary>
         /// Tries to generate an updated JSON file containing Garnet's supported commands' info
         /// </summary>
-        /// <param name="outputPath">Output path for the updated JSON file</param>
+        /// <param name="outputDir">Output directory for the updated JSON file</param>
         /// <param name="respServerPort">RESP server port to query commands info</param>
         /// <param name="respServerHost">RESP server host to query commands info</param>
         /// <param name="ignoreCommands">Commands to ignore</param>
         /// <param name="force">Force update all commands</param>
         /// <param name="logger">Logger</param>
+        /// <param name="updatedCommandsInfo">Updated command info data</param>
         /// <returns>True if file generated successfully</returns>
-        public static bool TryUpdateCommandInfo(string outputPath, int respServerPort, IPAddress respServerHost,
-            IEnumerable<string> ignoreCommands, bool force, ILogger logger)
+        public static bool TryUpdateCommandInfo(string outputDir, int respServerPort, IPAddress respServerHost,
+            IEnumerable<string> ignoreCommands, bool force, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> updatedCommandsInfo)
         {
             logger.LogInformation("Attempting to update RESP commands info...");
+            updatedCommandsInfo = default;
 
             IReadOnlyDictionary<string, RespCommandsInfo> existingCommandsInfo =
                 new Dictionary<string, RespCommandsInfo>();
@@ -42,15 +44,15 @@ namespace CommandInfoUpdater
             }
 
             var (commandsToAdd, commandsToRemove) =
-                GetCommandsToAddAndRemove(existingCommandsInfo, ignoreCommands);
+                CommonUtils.GetCommandsToAddAndRemove(existingCommandsInfo, ignoreCommands);
 
-            if (!GetUserConfirmation(commandsToAdd, commandsToRemove, logger))
+            if (!CommonUtils.GetUserConfirmation(commandsToAdd, commandsToRemove, logger))
             {
                 logger.LogInformation("User cancelled update operation.");
                 return false;
             }
 
-            if (!TryGetRespCommandsInfo(GarnetCommandInfoJsonPath, logger, out var garnetCommandsInfo) ||
+            if (!CommonUtils.TryGetRespCommandsData<RespCommandsInfo>(GarnetCommandInfoJsonPath, logger, out var garnetCommandsInfo) ||
                 garnetCommandsInfo == null)
             {
                 logger.LogError("Unable to read Garnet RESP commands info from {GarnetCommandInfoJsonPath}.", GarnetCommandInfoJsonPath);
@@ -58,7 +60,9 @@ namespace CommandInfoUpdater
             }
 
             IDictionary<string, RespCommandsInfo> queriedCommandsInfo = new Dictionary<string, RespCommandsInfo>();
-            var commandsToQuery = commandsToAdd.Keys.Select(k => k.Command).ToArray();
+            var commandsToQuery = commandsToAdd.Keys.Select(k => k.Command)
+                .Where(c => !garnetCommandsInfo.ContainsKey(c) || !garnetCommandsInfo[c].IsInternal).ToArray();
+
             if (commandsToQuery.Length > 0 && !TryGetCommandsInfo(commandsToQuery, respServerPort, respServerHost,
                     logger, out queriedCommandsInfo))
             {
@@ -71,13 +75,40 @@ namespace CommandInfoUpdater
             {
                 if (!additionalCommandsInfo.ContainsKey(cmd))
                 {
-                    var baseCommandInfo = queriedCommandsInfo.ContainsKey(cmd)
-                        ? queriedCommandsInfo[cmd]
-                        : garnetCommandsInfo[cmd];
+                    var baseCommandInfo = queriedCommandsInfo.TryGetValue(cmd, out var cmdInfo)
+                        ? cmdInfo : garnetCommandsInfo[cmd];
+
+                    RespCommandsInfo[] subCommandsInfo;
+                    if (garnetCommandsInfo.ContainsKey(cmd) && queriedCommandsInfo.ContainsKey(cmd))
+                    {
+                        var subCommandsInfoMap = new Dictionary<string, RespCommandsInfo>();
+
+                        if (garnetCommandsInfo.TryGetValue(cmd, out var garnetCmdInfo) && garnetCmdInfo.SubCommands != null)
+                        {
+                            foreach (var sc in garnetCmdInfo.SubCommands)
+                                subCommandsInfoMap.Add(sc.Name, sc);
+                        }
+
+                        if (queriedCommandsInfo.TryGetValue(cmd, out var queriedCmdInfo) && queriedCmdInfo.SubCommands != null)
+                        {
+                            foreach (var sc in queriedCmdInfo.SubCommands)
+                            {
+                                subCommandsInfoMap.TryAdd(sc.Name, sc);
+                            }
+                        }
+
+                        subCommandsInfo = [.. subCommandsInfoMap.Values];
+                    }
+                    else
+                    {
+                        subCommandsInfo = baseCommandInfo.SubCommands;
+                    }
+
                     additionalCommandsInfo.Add(cmd, new RespCommandsInfo()
                     {
                         Command = baseCommandInfo.Command,
                         Name = baseCommandInfo.Name,
+                        IsInternal = baseCommandInfo.IsInternal,
                         Arity = baseCommandInfo.Arity,
                         Flags = baseCommandInfo.Flags,
                         FirstKey = baseCommandInfo.FirstKey,
@@ -86,195 +117,24 @@ namespace CommandInfoUpdater
                         AclCategories = baseCommandInfo.AclCategories,
                         Tips = baseCommandInfo.Tips,
                         KeySpecifications = baseCommandInfo.KeySpecifications,
-                        SubCommands = queriedCommandsInfo.ContainsKey(cmd) && garnetCommandsInfo.ContainsKey(cmd) ?
-                            queriedCommandsInfo[cmd].SubCommands.Union(garnetCommandsInfo[cmd].SubCommands).ToArray() :
-                            baseCommandInfo.SubCommands
+                        SubCommands = subCommandsInfo
                     });
                 }
             }
 
-            var updatedCommandsInfo = GetUpdatedCommandsInfo(existingCommandsInfo, commandsToAdd, commandsToRemove,
+            updatedCommandsInfo = GetUpdatedCommandsInfo(existingCommandsInfo, commandsToAdd, commandsToRemove,
                 additionalCommandsInfo);
 
-            if (!TryWriteRespCommandsInfo(outputPath, updatedCommandsInfo, logger))
+            var outputPath = Path.Combine(outputDir ?? string.Empty, CommandInfoFileName);
+            if (!CommonUtils.TryWriteRespCommandsData(outputPath, updatedCommandsInfo, logger))
             {
                 logger.LogError("Unable to write RESP commands info to path {outputPath}.", outputPath);
                 return false;
             }
 
             logger.LogInformation("RESP commands info updated successfully! Output file written to: {fullOutputPath}", Path.GetFullPath(outputPath));
+
             return true;
-        }
-
-        /// <summary>
-        /// Try to parse JSON file containing commands info
-        /// </summary>
-        /// <param name="resourcePath">Path to JSON file</param>
-        /// <param name="logger">Logger</param>
-        /// <param name="commandsInfo">Dictionary mapping command name to RespCommandsInfo</param>
-        /// <returns>True if deserialization was successful</returns>
-        private static bool TryGetRespCommandsInfo(string resourcePath, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo)
-        {
-            commandsInfo = default;
-
-            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null, Assembly.GetExecutingAssembly());
-            var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
-
-            var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(resourcePath,
-                streamProvider, out var tmpCommandsInfo, logger);
-
-            if (!importSucceeded) return false;
-
-            commandsInfo = tmpCommandsInfo;
-            return true;
-        }
-
-        /// <summary>
-        /// Compare existing commands to supported commands map to find added / removed commands / sub-commands
-        /// </summary>
-        /// <param name="existingCommandsInfo">Existing command names mapped to current command info</param>
-        /// <param name="ignoreCommands">Commands to ignore</param>
-        /// <returns>Commands to add and commands to remove mapped to a boolean determining if parent command should be added / removed</returns>
-        private static (IDictionary<SupportedCommand, bool>, IDictionary<SupportedCommand, bool>)
-            GetCommandsToAddAndRemove(IReadOnlyDictionary<string, RespCommandsInfo> existingCommandsInfo,
-                IEnumerable<string> ignoreCommands)
-        {
-            var commandsToAdd = new Dictionary<SupportedCommand, bool>();
-            var commandsToRemove = new Dictionary<SupportedCommand, bool>();
-            var commandsToIgnore = ignoreCommands != null ? new HashSet<string>(ignoreCommands) : null;
-
-            // Supported commands
-            var supportedCommands = SupportedCommand.SupportedCommandsMap;
-
-            // Find commands / sub-commands to add
-            foreach (var supportedCommand in supportedCommands.Values)
-            {
-                // Ignore command if in commands to ignore
-                if (commandsToIgnore != null && commandsToIgnore.Contains(supportedCommand.Command)) continue;
-
-                // If existing commands do not contain parent command, add it and indicate parent command should be added
-                if (!existingCommandsInfo.ContainsKey(supportedCommand.Command))
-                {
-                    commandsToAdd.Add(supportedCommand, true);
-                    continue;
-                }
-
-                // If existing commands contain parent command and no sub-commands are indicated in supported commands, no sub-commands to add
-                if (supportedCommand.SubCommands == null) continue;
-
-                string[] subCommandsToAdd;
-                // If existing commands contain parent command and have no sub-commands, set sub-commands to add as supported command's sub-commands
-                if (existingCommandsInfo[supportedCommand.Command].SubCommands == null)
-                {
-                    subCommandsToAdd = [.. supportedCommand.SubCommands];
-                }
-                // Set sub-commands to add as the difference between existing sub-commands and supported command's sub-commands
-                else
-                {
-                    var existingSubCommands = new HashSet<string>(existingCommandsInfo[supportedCommand.Command]
-                        .SubCommands
-                        .Select(sc => sc.Name));
-                    subCommandsToAdd = supportedCommand.SubCommands
-                        .Where(subCommand => !existingSubCommands.Contains(subCommand)).Select(sc => sc).ToArray();
-                }
-
-                // If there are sub-commands to add, add a new supported command with the sub-commands to add
-                // Indicate that parent command should not be added
-                if (subCommandsToAdd.Length > 0)
-                {
-                    commandsToAdd.Add(
-                        new SupportedCommand(supportedCommand.Command, supportedCommand.RespCommand, subCommandsToAdd), false);
-                }
-            }
-
-            // Find commands / sub-commands to remove
-            foreach (var existingCommand in existingCommandsInfo)
-            {
-                var existingSubCommands = existingCommand.Value.SubCommands;
-
-                // If supported commands do not contain existing parent command, add it to the list and indicate parent command should be removed
-                if (!supportedCommands.ContainsKey(existingCommand.Key))
-                {
-                    commandsToRemove.Add(new SupportedCommand(existingCommand.Key), true);
-                    continue;
-                }
-
-                // If supported commands contain existing parent command and no sub-commands are indicated in existing commands, no sub-commands to remove
-                if (existingSubCommands == null) continue;
-
-                // Set sub-commands to remove as the difference between supported sub-commands and existing command's sub-commands
-                var subCommandsToRemove = (supportedCommands[existingCommand.Key].SubCommands == null
-                        ? existingSubCommands
-                        : existingSubCommands.Where(sc =>
-                            !supportedCommands[existingCommand.Key].SubCommands!.Contains(sc.Name)))
-                    .Select(sc => sc.Name)
-                    .ToArray();
-
-                // If there are sub-commands to remove, add a new supported command with the sub-commands to remove
-                // Indicate that parent command should not be removed
-                if (subCommandsToRemove.Length > 0)
-                {
-                    commandsToRemove.Add(
-                        new SupportedCommand(existingCommand.Key, existingCommand.Value.Command, subCommandsToRemove), false);
-                }
-            }
-
-            return (commandsToAdd, commandsToRemove);
-        }
-
-        /// <summary>
-        /// Indicates to the user which commands and sub-commands are added / removed and get their confirmation to proceed
-        /// </summary>
-        /// <param name="commandsToAdd">Commands to add</param>
-        /// <param name="commandsToRemove">Commands to remove</param>
-        /// <param name="logger">Logger</param>
-        /// <returns>True if user wishes to continue, false otherwise</returns>
-        private static bool GetUserConfirmation(IDictionary<SupportedCommand, bool> commandsToAdd, IDictionary<SupportedCommand, bool> commandsToRemove,
-            ILogger logger)
-        {
-            var logCommandsToAdd = commandsToAdd.Where(kvp => kvp.Value).Select(c => c.Key.Command).ToList();
-            var logSubCommandsToAdd = commandsToAdd.Where(c => c.Key.SubCommands != null)
-                .SelectMany(c => c.Key.SubCommands!).ToList();
-            var logCommandsToRemove = commandsToRemove.Where(kvp => kvp.Value).Select(c => c.Key.Command).ToList();
-            var logSubCommandsToRemove = commandsToRemove.Where(c => c.Key.SubCommands != null)
-                .SelectMany(c => c.Key.SubCommands!).ToList();
-
-            logger.LogInformation("Found {logCommandsToAddCount} commands to add and {logSubCommandsToAddCount} sub-commands to add.", logCommandsToAdd.Count, logSubCommandsToAdd.Count);
-            if (logCommandsToAdd.Count > 0)
-                logger.LogInformation("Commands to add: {commands}", string.Join(", ", logCommandsToAdd));
-            if (logSubCommandsToAdd.Count > 0)
-                logger.LogInformation("Sub-Commands to add: {commands}", string.Join(", ", logSubCommandsToAdd));
-            logger.LogInformation("Found {logCommandsToRemoveCount} commands to remove and {logSubCommandsToRemoveCount} sub-commands to commandsToRemove.", logCommandsToRemove.Count, logSubCommandsToRemove.Count);
-            if (logCommandsToRemove.Count > 0)
-                logger.LogInformation("Commands to remove: {commands}", string.Join(", ", logCommandsToRemove));
-            if (logSubCommandsToRemove.Count > 0)
-                logger.LogInformation("Sub-Commands to remove: {commands}", string.Join(", ", logSubCommandsToRemove));
-
-            if (logCommandsToAdd.Count == 0 && logSubCommandsToAdd.Count == 0 && logCommandsToRemove.Count == 0 &&
-                logSubCommandsToRemove.Count == 0)
-            {
-                logger.LogInformation("No commands to update.");
-                return false;
-            }
-
-            logger.LogCritical("Would you like to continue? (Y/N)");
-            var inputChar = Console.ReadKey();
-            while (true)
-            {
-                switch (inputChar.KeyChar)
-                {
-                    case 'Y':
-                    case 'y':
-                        return true;
-                    case 'N':
-                    case 'n':
-                        return false;
-                    default:
-                        logger.LogCritical("Illegal input. Would you like to continue? (Y/N)");
-                        inputChar = Console.ReadKey();
-                        break;
-                }
-            }
         }
 
         /// <summary>
@@ -311,7 +171,7 @@ namespace CommandInfoUpdater
 
             // Get a map of supported commands to Garnet's RespCommand & ArrayCommand for the parser
             var supportedCommands = new ReadOnlyDictionary<string, RespCommand>(
-                SupportedCommand.SupportedCommandsMap.ToDictionary(kvp => kvp.Key,
+                SupportedCommand.SupportedCommandsFlattenedMap.ToDictionary(kvp => kvp.Key,
                     kvp => kvp.Value.RespCommand, StringComparer.OrdinalIgnoreCase));
 
             // Parse the response
@@ -330,14 +190,14 @@ namespace CommandInfoUpdater
                 // Parse each command's command info
                 for (var cmdIdx = 0; cmdIdx < cmdCount; cmdIdx++)
                 {
-                    if (!RespCommandInfoParser.TryReadFromResp(ref ptr, end, supportedCommands, out var command) ||
-                        command == null)
+                    if (!RespCommandInfoParser.TryReadFromResp(ref ptr, end, supportedCommands, out var command))
                     {
                         logger.LogError("Unable to read RESP command info from server for command {command}", commandsToQuery[cmdIdx]);
                         return false;
                     }
 
-                    tmpCommandsInfo.Add(command.Name, command);
+                    if (command != null)
+                        tmpCommandsInfo.Add(command.Name, command);
                 }
             }
 
@@ -378,7 +238,7 @@ namespace CommandInfoUpdater
                     : existingCommandsInfo[command.Command].SubCommands.Select(sc => sc.Name).ToArray();
                 var remainingSubCommands = existingSubCommands == null ? null :
                     command.SubCommands == null ? existingSubCommands :
-                    existingSubCommands.Except(command.SubCommands).ToArray();
+                    existingSubCommands.Except(command.SubCommands.Keys).ToArray();
 
                 // Create updated command info based on existing command
                 var existingCommand = existingCommandsInfo[command.Command];
@@ -386,6 +246,7 @@ namespace CommandInfoUpdater
                 {
                     Command = existingCommand.Command,
                     Name = existingCommand.Name,
+                    IsInternal = existingCommand.IsInternal,
                     Arity = existingCommand.Arity,
                     Flags = existingCommand.Flags,
                     FirstKey = existingCommand.FirstKey,
@@ -418,7 +279,7 @@ namespace CommandInfoUpdater
                     foreach (var subCommandToAdd in command.SubCommands!)
                     {
                         updatedSubCommands.Add(queriedCommandsInfo[command.Command].SubCommands
-                            .First(sc => sc.Name == subCommandToAdd));
+                            .First(sc => sc.Name == subCommandToAdd.Key));
                     }
 
                     // Set base command as existing sub-command
@@ -433,7 +294,7 @@ namespace CommandInfoUpdater
                     // Update sub-commands to contain supported sub-commands only
                     updatedSubCommands = command.SubCommands == null
                         ? null
-                        : baseCommand.SubCommands.Where(sc => command.SubCommands.Contains(sc.Name)).ToList();
+                        : baseCommand.SubCommands.Where(sc => command.SubCommands.ContainsKey(sc.Name)).ToList();
                 }
 
                 // Create updated command info based on base command & updated sub-commands
@@ -441,6 +302,7 @@ namespace CommandInfoUpdater
                 {
                     Command = baseCommand.Command,
                     Name = baseCommand.Name,
+                    IsInternal = baseCommand.IsInternal,
                     Arity = baseCommand.Arity,
                     Flags = baseCommand.Flags,
                     FirstKey = baseCommand.FirstKey,
@@ -456,27 +318,6 @@ namespace CommandInfoUpdater
             }
 
             return updatedCommandsInfo;
-        }
-
-        /// <summary>
-        /// Try to serialize updated commands info to JSON file
-        /// </summary>
-        /// <param name="outputPath">Output path for JSON file</param>
-        /// <param name="commandsInfo">Commands info to serialize</param>
-        /// <param name="logger">Logger</param>
-        /// <returns>True if file written successfully</returns>
-        private static bool TryWriteRespCommandsInfo(string outputPath,
-            IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo, ILogger logger)
-        {
-            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
-            var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
-
-            var exportSucceeded = commandsInfoProvider.TryExportRespCommandsInfo(outputPath,
-                streamProvider, commandsInfo, logger);
-
-            if (!exportSucceeded) return false;
-
-            return true;
         }
     }
 }

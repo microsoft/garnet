@@ -7,7 +7,7 @@ namespace Garnet.server
 {
     sealed unsafe partial class TransactionManager
     {
-        //Keys involved in the current transaction
+        // Keys involved in the current transaction
         ArgSlice[] keys;
         int keyCount;
 
@@ -20,7 +20,7 @@ namespace Garnet.server
         /// <param name="argSlice"></param>
         public void SaveKeyArgSlice(ArgSlice argSlice)
         {
-            //Execute method only if clusterEnabled
+            // Execute method only if clusterEnabled
             if (!clusterEnabled) return;
             // Grow the buffer if needed
             if (keyCount >= keys.Length)
@@ -39,7 +39,7 @@ namespace Garnet.server
         /// <param name="recvBufferPtr"></param>
         public unsafe void UpdateRecvBufferPtr(byte* recvBufferPtr)
         {
-            //Execute method only if clusterEnabled
+            // Execute method only if clusterEnabled
             if (!clusterEnabled) return;
             if (recvBufferPtr != saveKeyRecvBufferPtr)
             {
