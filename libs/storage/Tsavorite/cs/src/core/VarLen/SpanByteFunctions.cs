@@ -51,17 +51,17 @@ namespace Tsavorite.core
     {
         /// <inheritdoc />
         public override bool SingleWriter(ref SpanByte key, ref TInput input, ref SpanByte src, ref SpanByte dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-            => DoSafeCopy(ref src, ref dst, ref input, ref upsertInfo, ref recordInfo);
+            => DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo);
 
         /// <inheritdoc />
         public override bool ConcurrentWriter(ref SpanByte key, ref TInput input, ref SpanByte src, ref SpanByte dst, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
-            => DoSafeCopy(ref src, ref dst, ref input, ref upsertInfo, ref recordInfo);
+            => DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo);
 
         /// <summary>
         /// Utility function for <see cref="SpanByte"/> copying, Upsert version.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref TInput input, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo, long metadata = 0)
+        public static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo, long metadata = 0)
         {
             // First get the full record length and clear it from the extra value space (if there is any). 
             // This ensures all bytes after the used value space are 0, which retains log-scan correctness.
