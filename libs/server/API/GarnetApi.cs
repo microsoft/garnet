@@ -111,6 +111,10 @@ namespace Garnet.server
             => storageSession.SET(ref key, ref value, ref context);
 
         /// <inheritdoc />
+        public GarnetStatus SET(ref SpanByte key, ref RawStringInput input, ref SpanByte value)
+            => storageSession.SET(ref key, ref input, ref value, ref context);
+
+        /// <inheritdoc />
         public GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input)
             => storageSession.SET_Conditional(ref key, ref input, ref context);
 

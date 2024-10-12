@@ -20,6 +20,11 @@ namespace Garnet.server
         GarnetStatus SET(ref SpanByte key, ref SpanByte value);
 
         /// <summary>
+        /// SET
+        /// </summary>
+        GarnetStatus SET(ref SpanByte key, ref RawStringInput input, ref SpanByte value);
+
+        /// <summary>
         /// SET Conditional
         /// </summary>
         GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input);

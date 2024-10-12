@@ -256,6 +256,19 @@ namespace Garnet.server
         }
 
         public int GetUpsertValueLength(ref SpanByte t, ref RawStringInput input)
-            => t.TotalSize;
+        {
+            if (input.header.cmd != RespCommand.NONE)
+            {
+                var cmd = input.header.cmd;
+                switch (cmd)
+                {
+                    case RespCommand.SET:
+                    case RespCommand.SETEX:
+                        return input.arg1 > 0 && t.MetadataSize == 0 ? t.TotalSize + sizeof(long) : t.TotalSize;
+                }
+            }
+
+            return t.TotalSize;
+        }
     }
 }

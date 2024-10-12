@@ -317,6 +317,14 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
+        public GarnetStatus SET<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            var output = new SpanByteAndMemory();
+            context.Upsert(ref key, ref input, ref value, ref output);
+            return GarnetStatus.OK;
+        }
+
         public unsafe GarnetStatus SET_Conditional<TContext>(ref SpanByte key, ref RawStringInput input, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
