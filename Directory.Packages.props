@@ -21,7 +21,7 @@
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.0" />
     <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.0.1" />
     <PackageVersion Include="Microsoft.IdentityModel.Validators" Version="8.0.1" />
-    <PackageVersion Include="StackExchange.Redis" Version="2.8.0" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.8.16" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.0.1" />
     <PackageVersion Include="System.Interactive.Async" Version="6.0.1" />
     <PackageVersion Include="System.Text.Json" Version="8.0.5" />

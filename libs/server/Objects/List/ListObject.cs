@@ -203,7 +203,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0)
+        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0, bool isNoValue = false)
         {
             throw new NotImplementedException("For scan items in a list use LRANGE command");
         }
