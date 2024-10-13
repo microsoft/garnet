@@ -235,7 +235,7 @@ namespace Garnet.test
             var server = redis.GetServers()[0];
 
             ManualResetEvent evt = new(false);
-            var isMessagesASubed = false; 
+            var isMessagesASubed = false;
             var isMessagesBSubed = false;
 
             var multiChannelResult = server.Execute("PUBSUB", ["NUMSUB"]);
@@ -268,7 +268,7 @@ namespace Garnet.test
             int repeat = 5;
             while (true)
             {
-                if(!isMessagesASubed)
+                if (!isMessagesASubed)
                     db.Publish(RedisChannel.Pattern("messagesA"), "published message");
                 if (!isMessagesBSubed)
                     db.Publish(RedisChannel.Pattern("messagesB"), "published message");
