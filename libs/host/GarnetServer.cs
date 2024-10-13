@@ -28,6 +28,9 @@ namespace Garnet
     /// </summary>
     public class GarnetServer : IDisposable
     {
+        // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
+        readonly string version = "1.0.32";
+
         internal GarnetProvider Provider;
 
         private readonly GarnetServerOptions opts;
@@ -50,9 +53,6 @@ namespace Garnet
         /// Store and associated information used by this Garnet server
         /// </summary>
         protected StoreWrapper storeWrapper;
-
-        // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
-        readonly string version = "1.0.31";
 
         /// <summary>
         /// Resp protocol version
