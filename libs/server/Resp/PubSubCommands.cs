@@ -370,5 +370,82 @@ namespace Garnet.server
             }
             return true;
         }
+
+        private bool NetworkPUBSUB_CHANNELS()
+        {
+            if (parseState.Count > 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PUBSUB_CHANNELS));
+            }
+
+            if (subscribeBroker is null)
+            {
+                while (!RespWriteUtils.WriteError("ERR PUBSUB CHANNELS is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var input = new ObjectInput
+            {
+                parseState = parseState,
+                parseStateStartIdx = 0
+            };
+            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            subscribeBroker.Channels(ref input, ref output);
+
+            if (!output.IsSpanByte)
+                SendAndReset(output.Memory, output.Length);
+            else
+                dcurr += output.Length;
+
+            return true;
+        }
+
+        private bool NetworkPUBSUB_NUMPAT()
+        {
+            if (parseState.Count > 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PUBSUB_NUMPAT));
+            }
+
+            if (subscribeBroker is null)
+            {
+                while (!RespWriteUtils.WriteError("ERR PUBSUB NUMPAT is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var numPatSubs = subscribeBroker.NumPatternSubscriptions();
+
+            while (!RespWriteUtils.WriteInteger(numPatSubs, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        private bool NetworkPUBSUB_NUMSUB()
+        {
+            if (subscribeBroker is null)
+            {
+                while (!RespWriteUtils.WriteError("ERR PUBSUB NUMSUB is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var input = new ObjectInput
+            {
+                parseState = parseState,
+                parseStateStartIdx = 0
+            };
+            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            subscribeBroker.NumSubscriptions(ref input, ref output);
+
+            if (!output.IsSpanByte)
+                SendAndReset(output.Memory, output.Length);
+            else
+                dcurr += output.Length;
+
+            return true;
+        }
     }
 }

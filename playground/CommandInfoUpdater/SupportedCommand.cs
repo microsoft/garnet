@@ -197,6 +197,12 @@ namespace CommandInfoUpdater
             new("PSUBSCRIBE", RespCommand.PSUBSCRIBE),
             new("PTTL", RespCommand.PTTL),
             new("PUBLISH", RespCommand.PUBLISH),
+            new("PUBSUB", RespCommand.PUBSUB,
+            [
+                new("PUBSUB|CHANNELS", RespCommand.PUBSUB_CHANNELS),
+                new("PUBSUB|NUMPAT", RespCommand.PUBSUB_NUMPAT),
+                new("PUBSUB|NUMSUB", RespCommand.PUBSUB_NUMSUB),
+            ]),
             new("PUNSUBSCRIBE", RespCommand.PUNSUBSCRIBE),
             new("REGISTERCS", RespCommand.REGISTERCS),
             new("QUIT", RespCommand.QUIT),

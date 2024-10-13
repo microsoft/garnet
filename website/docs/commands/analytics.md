@@ -218,6 +218,52 @@ Posts a message to the given channel.
 Integer Reply: the number of clients that received the message.
 
 ---
+
+### PUBSUB CHANNELS
+#### Syntax
+
+```bash
+PUBSUB CHANNELS [pattern]
+```
+
+Lists the currently active channels. An active channel is a Pub/Sub channel with one or more subscribers (excluding clients subscribed to patterns).
+
+#### Resp Reply
+
+Array reply: a list of active channels, optionally matching the specified pattern.
+
+---
+
+### PUBSUB NUMPAT
+#### Syntax
+
+```bash
+PUBSUB NUMPAT
+```
+
+Returns the number of unique patterns that are subscribed to by clients (that are performed using the PSUBSCRIBE command).
+
+#### Resp Reply
+
+Integer reply: the number of patterns all the clients are subscribed to.
+
+---
+
+### PUBSUB NUMSUB
+#### Syntax
+
+```bash
+PUBSUB NUMSUB [channel [channel ...]]
+```
+
+Returns the number of subscribers (exclusive of clients subscribed to patterns) for the specified channels.
+
+#### Resp Reply
+
+Array reply: the number of subscribers per channel, each even element (including the 0th) is channel name, each odd element is the number of subscribers
+
+---
+
 ### PUNSUBSCRIBE
 #### Syntax
 
