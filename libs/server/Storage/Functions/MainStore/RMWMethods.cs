@@ -436,8 +436,8 @@ namespace Garnet.server
                     if (input.ExtraMetadata > 0)
                     {
                         byte* pbOutput = stackalloc byte[ObjectOutputHeader.Size];
-                        var _ = new SpanByteAndMemory(SpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
-                        return EvaluateExpireInPlace(ExpireOption.None, expiryExists: value.MetadataSize > 0, ref input, ref value, ref _);
+                        var _output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
+                        return EvaluateExpireInPlace(ExpireOption.None, expiryExists: value.MetadataSize > 0, ref input, ref value, ref _output);
                     }
 
                     var isPersist = *(bool*)(inputPtr + RespInputHeader.Size);
@@ -729,11 +729,18 @@ namespace Garnet.server
                     {
                         Debug.Assert(newValue.Length == oldValue.Length + input.MetadataSize);
                         byte* pbOutput = stackalloc byte[ObjectOutputHeader.Size];
-                        var _ = new SpanByteAndMemory(SpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
-                        EvaluateExpireCopyUpdate(ExpireOption.None, expiryExists: oldValue.MetadataSize > 0, ref input, ref oldValue, ref newValue, ref _);
+                        var _output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
+                        EvaluateExpireCopyUpdate(ExpireOption.None, expiryExists: oldValue.MetadataSize > 0, ref input, ref oldValue, ref newValue, ref _output);
                     }
 
                     oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
+                    var isPersist = *(bool*)(inputPtr + RespInputHeader.Size);
+                    if (isPersist && oldValue.MetadataSize != 0) // Persist the key
+                    {
+                        newValue.AsSpan().CopyTo(newValue.AsSpanWithMetadata());
+                        newValue.ShrinkSerializedLength(newValue.Length - newValue.MetadataSize);
+                        newValue.UnmarkExtraMetadata();
+                    }
                     break;
 
                 case RespCommand.APPEND:
