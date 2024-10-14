@@ -398,9 +398,12 @@ namespace Garnet.server
          => storageSession.ObjectScan(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public bool FreeBuffer(ref ArgSlice arg)
-         => storageSession.scratchBufferManager.RewindScratchBuffer(ref arg);
+        public int GetScratchBufferOffset()
+            => storageSession.scratchBufferManager.scratchBufferOffset;
 
+        /// <inheritdoc />
+        public bool ResetScratchBuffer(int offset)
+            => storageSession.scratchBufferManager.ResetScratchBuffer(offset);
         #endregion
     }
 }

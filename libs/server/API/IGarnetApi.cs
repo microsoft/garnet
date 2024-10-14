@@ -1701,15 +1701,17 @@ namespace Garnet.server
         GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
-        /// Frees the last allocation in the scratch buffer. This is useful to avoid overflowing the scratch buffer
-        /// in case of repeated large allocations.
-        /// Note that only the last allocation could be freed this way as the next call could end up reallocating the
-        /// scratch buffer due to lack of sufficient length which would make the pointers in ArgSlice invalid. The API will
-        /// gracefully handle this case, but the buffer will not be freed for reuse.
+        /// Retrieve the current scratch buffer offset.
         /// </summary>
-        /// <param name="arg"></param>
-        /// <returns></returns>
-        bool FreeBuffer(ref ArgSlice arg);
+        /// <returns>Current offset</returns>
+        int GetScratchBufferOffset();
+
+        /// <summary>
+        /// Resets the scratch buffer to the given offset.
+        /// </summary>
+        /// <param name="offset">Offset to reset to</param>
+        /// <returns>True if successful, else false</returns>
+        bool ResetScratchBuffer(int offset);
 
         #endregion
 

@@ -29,7 +29,7 @@ namespace Garnet.server
         /// <summary>
         /// Current offset in scratch buffer
         /// </summary>
-        int scratchBufferOffset;
+        internal int scratchBufferOffset { get; private set; }
 
         public ScratchBufferManager()
         {
@@ -53,6 +53,20 @@ namespace Garnet.server
                 return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// Resets scratch buffer offset to the specified offset.
+        /// </summary>
+        /// <param name="offset">Offset to reset to</param>
+        /// <returns>True if successful, else false</returns>
+        public bool ResetScratchBuffer(int offset)
+        {
+            if (offset < 0 || offset > scratchBufferOffset)
+                return false;
+
+            scratchBufferOffset = offset;
+            return true;
         }
 
         /// <summary>

@@ -23,23 +23,39 @@ namespace Garnet.test
     {
         public override bool Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
         {
-            int offset = 0;
-            var key = GetNextArg(input, ref offset);
-            for (int i = 0; i < 120_000; i++)
+            static bool ResetBuffer(IGarnetApi garnetApi, ref MemoryResult<byte> output, int buffOffset)
             {
-                garnetApi.GET(key, out var outval);
-                garnetApi.FreeBuffer(ref outval);
+                bool status = garnetApi.ResetScratchBuffer(buffOffset);
+                if (!status)
+                    WriteError(ref output, "ERR ResetScratchBuffer failed");
+
+                return status;
             }
 
+            var offset = 0;
+            var key = GetNextArg(input, ref offset);
+
+            var buffOffset = garnetApi.GetScratchBufferOffset();
+            for (var i = 0; i < 120_000; i++)
+            {
+                garnetApi.GET(key, out var outval);
+                if (i % 100 == 0)
+                {
+                    if (!ResetBuffer(garnetApi, ref output, buffOffset))
+                        return false;
+                }
+            }
+
+            buffOffset = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out var outval1);
             garnetApi.GET(key, out var outval2);
-            garnetApi.FreeBuffer(ref outval2);
-            garnetApi.FreeBuffer(ref outval1); // Ensure graceful handling of earlier allocated buffer
+            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
 
+            buffOffset = garnetApi.GetScratchBufferOffset();
             var hashKey = GetNextArg(input, ref offset);
             var field = GetNextArg(input, ref offset);
             garnetApi.HashGet(hashKey, field, out var value);
-            garnetApi.FreeBuffer(ref value);
+            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
 
             return true;
         }
@@ -58,10 +74,18 @@ namespace Garnet.test
         {
             int offset = 0;
             var key = GetNextArg(input, ref offset);
+            var buffOffset = garnetApi.GetScratchBufferOffset();
             for (int i = 0; i < 120_000; i++)
             {
                 garnetApi.GET(key, out var outval);
-                garnetApi.FreeBuffer(ref outval);
+                if (i % 100 == 0)
+                {
+                    if (!garnetApi.ResetScratchBuffer(buffOffset))
+                    {
+                        WriteError(ref output, "ERR ResetScratchBuffer failed");
+                        return;
+                    }
+                }
             }
         }
     }
@@ -73,19 +97,22 @@ namespace Garnet.test
             var offset = 0;
             var key = GetNextArg(input, ref offset);
 
+            var buffOffset1 = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out var outval1);
+
+            var buffOffset2 = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out var outval2);
 
-            // Out of order FreeBuffer call shouldn't succeed as scratch buffer manager could have reallocated a new one.
-            if (garnetApi.FreeBuffer(ref outval1))
+            if (!garnetApi.ResetScratchBuffer(buffOffset1))
             {
-                WriteError(ref output, "ERR Previously allocated buffer - shouldn't free");
+                WriteError(ref output, "ERR ResetScratchBuffer failed");
                 return false;
             }
 
-            if (!garnetApi.FreeBuffer(ref outval2))
+            // Previous reset call would have shrunk the buffer. This call should fail otherwise it will expand the buffer.
+            if (garnetApi.ResetScratchBuffer(buffOffset2))
             {
-                WriteError(ref output, "ERR Latest allocated buffer - should be possible to free.");
+                WriteError(ref output, "ERR ResetScratchBuffer shouldn't expand the buffer");
                 return false;
             }
 
@@ -624,20 +651,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void CustomProcedureOutOfOrderFreeBufferTest()
-        {
-            server.Register.NewProcedure("OUTOFORDERFREE", new OutOfOrderFreeBuffer());
-            var key = "key";
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-            byte[] value = new byte[10_000];
-            db.StringSet(key, value);
-
-            var result = db.Execute("OUTOFORDERFREE", key);
-            ClassicAssert.AreEqual("OK", result.ToString());
-        }
-
-        [Test]
         public void CustomProcedureFreeBufferTest()
         {
             server.Register.NewProcedure("LARGEGET", new LargeGet());
@@ -650,8 +663,15 @@ namespace Garnet.test
             db.StringSet(key, value);
             db.HashSet(hashKey, [new HashEntry(hashField, value)]);
 
-            db.Execute("LARGEGET", key, hashKey, hashField);
-            ClassicAssert.Pass();
+            try
+            {
+                var result = db.Execute("LARGEGET", key, hashKey, hashField);
+                ClassicAssert.AreEqual("OK", result.ToString());
+            }
+            catch (RedisServerException rse)
+            {
+                ClassicAssert.Fail(rse.Message);
+            }
         }
 
         [Test]
@@ -667,8 +687,29 @@ namespace Garnet.test
             db.StringSet(key, value);
             db.HashSet(hashKey, [new HashEntry(hashField, value)]);
 
-            db.Execute("LARGEGETTXN", key);
-            ClassicAssert.Pass();
+            try
+            {
+                var result = db.Execute("LARGEGETTXN", key);
+                ClassicAssert.AreEqual("OK", result.ToString());
+            }
+            catch (RedisServerException rse)
+            {
+                ClassicAssert.Fail(rse.Message);
+            }
+        }
+
+        [Test]
+        public void CustomProcedureOutOfOrderFreeBufferTest()
+        {
+            server.Register.NewProcedure("OUTOFORDERFREE", new OutOfOrderFreeBuffer());
+            var key = "key";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            byte[] value = new byte[10_000];
+            db.StringSet(key, value);
+
+            var result = db.Execute("OUTOFORDERFREE", key);
+            ClassicAssert.AreEqual("OK", result.ToString());
         }
 
         private string[] CreateTestLibraries()
