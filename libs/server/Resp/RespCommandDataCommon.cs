@@ -24,7 +24,7 @@ namespace Garnet.server.Resp
         {
             // Garnet.resources assembly, where command data is found
             var resourcesAssembly = Assembly.GetAssembly(typeof(ResourceUtils));
-            
+
             var streamProvider =
                 StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null, resourcesAssembly);
             var commandsDocsProvider = RespCommandsDataProviderFactory.GetRespCommandsDataProvider<TData>();
