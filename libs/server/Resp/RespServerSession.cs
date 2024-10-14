@@ -396,8 +396,6 @@ namespace Garnet.server
 
             var _origReadHead = readHead;
 
-            Thread.Sleep(1);
-
             while (bytesRead - readHead >= 4)
             {
                 // First, parse the command, making sure we have the entire command available
