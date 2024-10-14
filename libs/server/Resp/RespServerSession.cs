@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using Garnet.common;
 using Garnet.common.Parsing;
 using Garnet.networking;
@@ -395,6 +396,8 @@ namespace Garnet.server
             // #endif
 
             var _origReadHead = readHead;
+
+            Thread.Sleep(1);
 
             while (bytesRead - readHead >= 4)
             {
