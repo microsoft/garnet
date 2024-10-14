@@ -420,7 +420,7 @@ namespace Garnet.test
 
             RedisResult result = db.Execute("HSCAN", "user:user789", "0", "MATCH", "*", "COUNT", "2", "NOVALUES");
             ClassicAssert.IsTrue(result.Length == 2);
-            var fieldsStr = ((RedisResult[]?)result[1]).Select(x => (string)x).ToArray();
+            var fieldsStr = ((RedisResult[])result[1]).Select(x => (string)x).ToArray();
             ClassicAssert.IsTrue(fieldsStr.Length == 2, "HSCAN with MATCH failed.");
             CollectionAssert.AreEquivalent(new[] { "email", "email1" }, fieldsStr);
         }
