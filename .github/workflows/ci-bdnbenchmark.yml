@@ -8,7 +8,7 @@ env:
 
 permissions:
   actions: write
-  deployments: write  # permission to deploy GitHub pages website
+  deployments: write  #permission to deploy GitHub pages website
   contents: write  # permission to update benchmark contents in gh-pages branch
 
 jobs:
@@ -62,6 +62,7 @@ jobs:
           path: |
              ./test/BDNPerfTests/results
         if: ${{ always() }}
+
       - name: Upload Error Log to artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -81,27 +82,24 @@ jobs:
       - name: Store benchmark result for commit comment
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          # What benchmark tool created output file
           tool: 'benchmarkdotnet'
-
-          # Need for both commit comment and charts
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
+          alert-threshold: '200%' 
           external-data-json-path: ./cache/benchmark-data.json
-          fail-on-alert: true
           comment-on-alert: true
-          summary-always: true
-          auto-push: false
+          fail-on-alert: true
+          alert-comment-cc-users: '@darrenge'
+          summary-always: false
+          auto-push: false  # needs to be false if using external-data-json-path
 
       # Run `github-action-benchmark` action
       - name: Store benchmark result for charts
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          # What benchmark tool created output file
+          name: BDNBenchmark - ${{matrix.test}} (os ${{matrix.os}}, framework ${{matrix.framework}}, configuration ${{matrix.configuration}})
           tool: 'benchmarkdotnet'
-
-          # Need for both commit comment and charts
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          summary-always: true
           auto-push: true
