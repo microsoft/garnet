@@ -79,6 +79,7 @@ param ($ResultsLine, $columnNum)
     $foundValue = $foundValue.Trim(' us')  
     $foundValue = $foundValue.Trim(' ns')  
     $foundValue = $foundValue.Trim(' B')  
+    $foundValue = $foundValue.Trim(' m')  
 
     return $foundValue
 }
