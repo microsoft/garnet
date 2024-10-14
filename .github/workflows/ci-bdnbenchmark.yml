@@ -90,7 +90,7 @@ jobs:
           comment-on-alert: true
           fail-on-alert: true
           alert-comment-cc-users: '@darrenge'
-          summary-always: true
+          summary-always: false
           auto-push: false  # needs to be false if using external-data-json-path
 
       # Run `github-action-benchmark` action
@@ -101,4 +101,5 @@ jobs:
           tool: 'benchmarkdotnet'
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          summary-always: true
           auto-push: true
