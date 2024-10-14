@@ -8,11 +8,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="RespCommandsDocs.json" />
-    <None Remove="RespCommandsInfo.json" />
-  </ItemGroup>
-
-  <ItemGroup>
     <EmbeddedResource Include="RespCommandsDocs.json" />
     <EmbeddedResource Include="RespCommandsInfo.json" />
   </ItemGroup>

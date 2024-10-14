@@ -12,11 +12,6 @@ namespace Garnet.server.Resp
     internal class RespCommandDataCommon
     {
         /// <summary>
-        /// Garnet.resources assembly, where command data is found
-        /// </summary>
-        private static readonly Assembly ResourcesAssembly = Assembly.GetAssembly(typeof(ResourceUtils));
-
-        /// <summary>
         /// Safely imports commands data from embedded resource in dynamically loaded/unloaded assembly
         /// </summary>
         /// <typeparam name="TData">Type of IRespCommandData to import</typeparam>
@@ -27,9 +22,11 @@ namespace Garnet.server.Resp
         internal static bool TryImportRespCommandsData<TData>(string path,
             out IReadOnlyDictionary<string, TData> commandsData, ILogger logger = null) where TData : class, IRespCommandData<TData>
         {
-
+            // Garnet.resources assembly, where command data is found
+            var resourcesAssembly = Assembly.GetAssembly(typeof(ResourceUtils));
+            
             var streamProvider =
-                StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null, ResourcesAssembly);
+                StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null, resourcesAssembly);
             var commandsDocsProvider = RespCommandsDataProviderFactory.GetRespCommandsDataProvider<TData>();
 
             return commandsDocsProvider.TryImportRespCommandsData(path,
