@@ -66,6 +66,33 @@ namespace Garnet.test
         }
     }
 
+    public class OutOfOrderFreeBuffer : CustomProcedure
+    {
+        public override bool Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
+        {
+            var offset = 0;
+            var key = GetNextArg(input, ref offset);
+
+            garnetApi.GET(key, out var outval1);
+            garnetApi.GET(key, out var outval2);
+
+            // Out of order FreeBuffer call shouldn't succeed as scratch buffer manager could have reallocated a new one.
+            if (garnetApi.FreeBuffer(ref outval1))
+            {
+                WriteError(ref output, "ERR Previously allocated buffer - shouldn't free");
+                return false;
+            }
+
+            if (!garnetApi.FreeBuffer(ref outval2))
+            {
+                WriteError(ref output, "ERR Latest allocated buffer - should be possible to free.");
+                return false;
+            }
+
+            return true;
+        }
+    }
+
     [TestFixture]
     public class RespCustomCommandTests
     {
@@ -594,6 +621,20 @@ namespace Garnet.test
             // Include non-existent and string keys as well
             var retValue = db.Execute("SUM", "key1", "key2", "key3", "key4");
             ClassicAssert.AreEqual("30", retValue.ToString());
+        }
+
+        [Test]
+        public void CustomProcedureOutOfOrderFreeBufferTest()
+        {
+            server.Register.NewProcedure("OUTOFORDERFREE", new OutOfOrderFreeBuffer());
+            var key = "key";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            byte[] value = new byte[10_000];
+            db.StringSet(key, value);
+
+            var result = db.Execute("OUTOFORDERFREE", key);
+            ClassicAssert.AreEqual("OK", result.ToString());
         }
 
         [Test]
