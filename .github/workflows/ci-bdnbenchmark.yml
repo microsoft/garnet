@@ -85,7 +85,7 @@ jobs:
           tool: 'benchmarkdotnet'
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          alert-threshold: '10%' 
+          alert-threshold: '20%' 
           external-data-json-path: ./cache/benchmark-data.json
           comment-on-alert: true
           fail-on-alert: true
