@@ -51,6 +51,7 @@ namespace BDN.benchmark.Cluster
             };
             server = new EmbeddedRespServer(opt);
             session = server.GetRespSession();
+            server.Register.NewTransactionProc(CustomProcSetBench.CommandName, () => new CustomProcSetBench(), new RespCommandsInfo { Arity = CustomProcSetBench.Arity });
         }
 
         public void AddSlotRange(List<(int, int)> slotRanges)
