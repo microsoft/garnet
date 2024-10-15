@@ -72,7 +72,7 @@ namespace BDN.benchmark.Resp
         byte* cpbsetBufferPointer;
 
         [GlobalSetup]
-        public void GlobalSetup()
+        public virtual void GlobalSetup()
         {
             var opt = new GarnetServerOptions
             {
