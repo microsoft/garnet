@@ -413,6 +413,16 @@ namespace Garnet.test
 
             members = db.HashScan("user:user789", "*");
             ClassicAssert.IsTrue(members.Count() == 5, "HSCAN with MATCH failed.");
+
+            var fields = db.HashScanNoValues("user:user789", "*");
+            ClassicAssert.IsTrue(fields.Count() == 5, "HSCAN with MATCH failed.");
+            CollectionAssert.AreEquivalent(new[] { "email", "email1", "email2", "email3", "age" }, fields.Select(f => f.ToString()));
+
+            RedisResult result = db.Execute("HSCAN", "user:user789", "0", "MATCH", "*", "COUNT", "2", "NOVALUES");
+            ClassicAssert.IsTrue(result.Length == 2);
+            var fieldsStr = ((RedisResult[])result[1]).Select(x => (string)x).ToArray();
+            ClassicAssert.IsTrue(fieldsStr.Length == 2, "HSCAN with MATCH failed.");
+            CollectionAssert.AreEquivalent(new[] { "email", "email1" }, fieldsStr);
         }
 
 
