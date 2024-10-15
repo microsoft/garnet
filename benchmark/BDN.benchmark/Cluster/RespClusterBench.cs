@@ -12,7 +12,7 @@ namespace BDN.benchmark.Cluster
         ClusterContext cc;
 
         [GlobalSetup]
-        public void GlobalSetup()
+        public virtual void GlobalSetup()
         {
             cc = new ClusterContext();
             cc.SetupSingleInstance(enableCluster);

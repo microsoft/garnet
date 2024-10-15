@@ -8,15 +8,10 @@ namespace BDN.benchmark.Cluster
     [MemoryDiagnoser]
     public unsafe class RespClusterDisableSlotVerificationBench : RespClusterBench
     {
-        public new void GlobalSetup()
+        public override void GlobalSetup()
         {
             enableCluster = false;
             base.GlobalSetup();
-        }
-
-        public new void GlobalCleanup()
-        {
-            base.GlobalCleanup();
         }
     }
 }
