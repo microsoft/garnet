@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
-using HdrHistogram;
 using Tsavorite.core;
 
 namespace Garnet.server
