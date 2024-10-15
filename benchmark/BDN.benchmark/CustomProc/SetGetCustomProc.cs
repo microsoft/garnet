@@ -30,7 +30,7 @@ namespace BDN.benchmark
         ArgSlice valueD;
 
         /// <summary>
-        ///  CUSTOMPROCSETBENCH key1 key2 key3 key4 value1 value2 value3 value4
+        ///  CPBSET key1 key2 key3 key4 value1 value2 value3 value4
         /// </summary>
         /// <typeparam name="TGarnetReadApi"></typeparam>
         /// <param name="api"></param>

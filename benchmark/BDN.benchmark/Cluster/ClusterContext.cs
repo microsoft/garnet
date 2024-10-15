@@ -173,7 +173,6 @@ namespace BDN.benchmark.Cluster
             singleCPBSET = cpbsetReq;
         }
 
-
         public void Consume(byte* ptr, int length)
             => session.TryConsumeMessages(ptr, length);
     }

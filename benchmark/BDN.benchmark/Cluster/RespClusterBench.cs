@@ -21,8 +21,12 @@ namespace BDN.benchmark.Cluster
             cc.CreateMGetMSet();
             cc.CreateCPBSET();
 
+            // Warmup/Prepopulate stage
             cc.Consume(cc.singleGetSet[1].ptr, cc.singleGetSet[1].buffer.Length);
+            // Warmup/Prepopulate stage
             cc.Consume(cc.singleMGetMSet[1].ptr, cc.singleMGetMSet[1].buffer.Length);
+            // Warmup/Prepopulate stage
+            cc.Consume(cc.singleCPBSET.ptr, cc.singleCPBSET.buffer.Length);
         }
 
         [GlobalCleanup]
