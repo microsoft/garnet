@@ -6,7 +6,7 @@ using BenchmarkDotNet.Attributes;
 namespace BDN.benchmark.Cluster
 {
     [MemoryDiagnoser]
-    public unsafe class RespClusterBenchNoSlot : RespClusterBench
+    public unsafe class RespClusterDisableSlotVerificationBench : RespClusterBench
     {
         public new void GlobalSetup()
         {
