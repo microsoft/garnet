@@ -97,7 +97,8 @@ jobs:
       - name: Store benchmark result for charts
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          name: BDNBenchmark - ${{matrix.test}} (os ${{matrix.os}}, framework ${{matrix.framework}}, configuration ${{matrix.configuration}})
+          #name: BDNBenchmark - ${{matrix.test}} (os ${{matrix.os}}, framework ${{matrix.framework}}, configuration ${{matrix.configuration}})
+          name: ${{matrix.test}} (${{matrix.os}}  ${{matrix.framework}} ${{matrix.configuration}})
           tool: 'benchmarkdotnet'
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
