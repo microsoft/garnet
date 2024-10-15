@@ -29,7 +29,10 @@ namespace Garnet.server
         /// <summary>
         /// Current offset in scratch buffer
         /// </summary>
-        internal int scratchBufferOffset { get; private set; }
+        int scratchBufferOffset;
+
+        /// <summary>Current offset in scratch buffer</summary>
+        internal int ScratchBufferOffset => scratchBufferOffset;
 
         public ScratchBufferManager()
         {

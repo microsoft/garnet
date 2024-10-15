@@ -399,7 +399,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public int GetScratchBufferOffset()
-            => storageSession.scratchBufferManager.scratchBufferOffset;
+            => storageSession.scratchBufferManager.ScratchBufferOffset;
 
         /// <inheritdoc />
         public bool ResetScratchBuffer(int offset)
