@@ -1,0 +1,43 @@
+{
+    "configuration": "Release",
+    "framework": "net8.0",
+    "filter": "*RespParseStress*",
+    "expectedInLinePingMeanValue_linux": 2.2,
+    "expectedSETMeanValue_linux": 19,
+    "expectedSETEXMeanValue_linux": 26,
+    "expectedGETMeanValue_linux": 13,
+    "expectedIncrementMeanValue_linux": 27,
+    "expectedZAddRemMeanValue_linux": 186,
+    "expectedLPushPopMeanValue_linux": 166,
+    "expectedSAddRemMeanValue_linux": 164,
+    "expectedHSetDelMeanValue_linux": 196,
+    "expectedMyDictSetGetMeanValue_linux": 248,
+
+    "expectedZAddRemAllocatedValue_linux": 23552,
+    "expectedLPushPopAllocatedValue_linux": 18432,
+    "expectedSAddRemAllocatedValue_linux": 16384,
+    "expectedHSetDelAllocatedValue_linux": 55297,
+    "expectedMyDictSetGetAllocatedValue_linux": 30720,
+
+    "expectedInLinePingMeanValue_win": 2.2,
+    "expectedSETMeanValue_win": 18,
+    "expectedSETEXMeanValue_win": 25,
+    "expectedGETMeanValue_win": 14,
+    "expectedIncrementMeanValue_win": 24,
+    "expectedZAddRemMeanValue_win": 144,
+    "expectedLPushPopMeanValue_win": 128,
+    "expectedSAddRemMeanValue_win": 124,
+    "expectedHSetDelMeanValue_win": 169,
+    "expectedMyDictSetGetMeanValue_win": 250,
+
+    "expectedZAddRemAllocatedValue_win": 23552,
+    "expectedLPushPopAllocatedValue_win": 18432,
+    "expectedSAddRemAllocatedValue_win": 16384,
+    "expectedHSetDelAllocatedValue_win": 55297,
+    "expectedMyDictSetGetAllocatedValue_win": 30720,
+
+    "acceptableMeanRange": 15,
+    "acceptableAllocatedRange": 10,    
+    "acceptableError": ".1",
+    "acceptableStdDev": ".1"
+}
