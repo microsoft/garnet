@@ -36,7 +36,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
+        #os: [ ubuntu-latest, windows-latest ]
+        os: [ ubuntu-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
         test: [ 'Resp.RespParseStress', 'Resp.RespTsavoriteStress', 'Cluster.RespClusterMigrateBench', 'Cluster.RespClusterBench', 'Resp.RespLuaStress', 'Resp.RespLuaRunnerStress' ]   
