@@ -425,7 +425,7 @@ namespace Garnet.server
 
             try
             {
-                if (subscriptions is null || subscriptions.Keys.Count == 0)
+                if (subscriptions is null || subscriptions.Count == 0)
                 {
                     while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -434,7 +434,7 @@ namespace Garnet.server
 
                 if (input.parseState.Count == 0)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(subscriptions.Keys.Count, ref curr, end))
+                    while (!RespWriteUtils.WriteArrayLength(subscriptions.Count, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     foreach (var key in subscriptions.Keys)
@@ -446,7 +446,7 @@ namespace Garnet.server
                 }
 
                 var totalArrayHeaderLen = 0;
-                while (!RespWriteUtils.WriteArrayLength(subscriptions.Keys.Count, ref curr, end, out var _, out totalArrayHeaderLen))
+                while (!RespWriteUtils.WriteArrayLength(subscriptions.Count, ref curr, end, out var _, out totalArrayHeaderLen))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 var noOfFoundChannels = 0;
