@@ -39,7 +39,8 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
-        test: [ 'Resp.RespParseStress', 'Resp.RespTsavoriteStress', 'Cluster.RespClusterMigrateBench', 'Cluster.RespClusterBench', 'Resp.RespLuaStress', 'Resp.RespLuaRunnerStress' ]   
+        #test: [ 'Resp.RespParseStress', 'Resp.RespTsavoriteStress', 'Cluster.RespClusterMigrateBench', 'Cluster.RespClusterBench', 'Resp.RespLuaStress', 'Resp.RespLuaRunnerStress' ]   
+        test: [ 'Resp.RespTsavoriteStress' ]   
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -97,7 +98,8 @@ jobs:
       - name: Store benchmark result for charts
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          name: BDNBenchmark - ${{matrix.test}} (os ${{matrix.os}}, framework ${{matrix.framework}}, configuration ${{matrix.configuration}})
+          #name: BDNBenchmark - ${{matrix.test}} (os ${{matrix.os}}, framework ${{matrix.framework}}, configuration ${{matrix.configuration}})
+          name: ${{matrix.test}} (${{matrix.os}}  ${{matrix.framework}} ${{matrix.configuration}})
           tool: 'benchmarkdotnet'
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
