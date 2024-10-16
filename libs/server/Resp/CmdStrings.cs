@@ -91,7 +91,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> WITHSCORES => "WITHSCORES"u8;
         public static ReadOnlySpan<byte> WITHVALUES => "WITHVALUES"u8;
         public static ReadOnlySpan<byte> EX => "EX"u8;
+        public static ReadOnlySpan<byte> EXAT => "EXAT"u8;
         public static ReadOnlySpan<byte> PX => "PX"u8;
+        public static ReadOnlySpan<byte> PXAT => "PXAT"u8;
+        public static ReadOnlySpan<byte> PERSIST => "PERSIST"u8;
         public static ReadOnlySpan<byte> KEEPTTL => "KEEPTTL"u8;
         public static ReadOnlySpan<byte> NX => "NX"u8;
         public static ReadOnlySpan<byte> XX => "XX"u8;

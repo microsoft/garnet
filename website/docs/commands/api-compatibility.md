@@ -381,7 +381,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [DECRBY](raw-string.md#decrby) | ➕ |  |
 |  | [GET](raw-string.md#get) | ➕ |  |
 |  | [GETDEL](raw-string.md#getdel) | ➕ |  |
-|  | GETEX | ➖ |  |
+|  | [GETEX](raw-string.md#getex) | ➕ |  |
 |  | [GETRANGE](raw-string.md#getrange) | ➕ |  |
 |  | GETSET | ➖ |  |
 |  | [INCR](raw-string.md#incr) | ➕ |  |
