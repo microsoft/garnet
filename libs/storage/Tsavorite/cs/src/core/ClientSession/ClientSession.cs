@@ -32,9 +32,6 @@ namespace Tsavorite.core
         readonly BasicContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> bContext;
         readonly DualContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> dualContext;
 
-        readonly ILoggerFactory loggerFactory;
-        readonly ILogger logger;
-
         ScanCursorState<TKey, TValue> scanCursorState;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -78,8 +75,6 @@ namespace Tsavorite.core
             luContext = new(this);
             dualContext = new(this, dualRole);
 
-            this.loggerFactory = loggerFactory;
-            logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode():X8}");
             Store = store;
             this.ExecutionCtx = ctx;
             this.functions = functions;
@@ -215,13 +210,14 @@ namespace Tsavorite.core
                 completedOutputs.Dispose();
         }
 
-        internal bool CompletePending<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool wait, bool spinWaitForCommit)
+        internal bool CompletePending<TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool wait, bool spinWaitForCommit)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
         {
             UnsafeResumeThread();
             try
             {
-                return UnsafeCompletePending(sessionFunctions, getOutputs, wait, spinWaitForCommit);
+                return UnsafeCompletePending<TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, getOutputs, wait, spinWaitForCommit);
             }
             finally
             {
@@ -229,11 +225,12 @@ namespace Tsavorite.core
             }
         }
 
-        internal bool UnsafeCompletePending<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool wait, bool spinWaitForCommit)
+        internal bool UnsafeCompletePending<TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool wait, bool spinWaitForCommit)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
         {
             var requestedOutputs = getOutputs ? completedOutputs : default;
-            var result = Store.InternalCompletePending(sessionFunctions, wait, requestedOutputs);
+            var result = Store.InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, wait, requestedOutputs);
             if (spinWaitForCommit)
             {
                 if (!wait)

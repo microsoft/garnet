@@ -26,13 +26,14 @@ namespace Tsavorite.core
         ///     is just an optimization to avoid future IOs, so if we need an IO here we just defer them to the next Read().</param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private OperationStatus ConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+        private OperationStatus ConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext,
                 ref TKey key, ref TInput input, ref TValue value, ref TOutput output, TContext userContext,
                 ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, WriteReason writeReason, bool wantIO = true)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
         {
-            bool callerHasTransientLock = stackCtx.hei.HasTransientSLock;
+            var callerHasTransientLock = stackCtx.hei.HasTransientSLock;
 
             // We are called by one of ReadFromImmutable, CompactionConditionalCopyToTail, or ContinuePendingConditionalCopyToTail;
             // these have already searched to see if the record is present above minAddress, and stackCtx is set up for the first try.
@@ -42,9 +43,10 @@ namespace Tsavorite.core
             while (true)
             {
                 // ConditionalCopyToTail is different from the usual procedures, in that if we find a source record we don't lock--we exit with success.
-                // So we only lock for tag-chain stability during search.
-                OperationStatus status = OperationStatus.SUCCESS;   // separate initialization for compiler
-                if (callerHasTransientLock || TryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out status))
+                // So we only lock for tag-chain stability during search. We must have TKeyLocker in case we are called from InternalRead for CopyToTail
+                // in a transactional context.
+                var status = OperationStatus.SUCCESS;   // separate initialization for compiler
+                if (callerHasTransientLock || TryTransientSLock<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, out status))
                 {
                     try
                     {
@@ -55,12 +57,12 @@ namespace Tsavorite.core
                     {
                         stackCtx.HandleNewRecordOnException(this);
                         if (!callerHasTransientLock)
-                            TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, OperationStatusUtils.IsRetry(status));
+                            TransientSUnlock<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx);
                     }
                 }
 
                 // If we're here we failed TryCopyToTail, probably a failed CAS due to another record insertion.
-                if (!HandleImmediateRetryStatus(status, sessionFunctions.ExecutionCtx, ref pendingContext))
+                if (!HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, status, sessionFunctions.ExecutionCtx, ref pendingContext))
                     return status;
 
                 // HandleImmediateRetryStatus may have refreshed the epoch which means HeadAddress etc. may have changed. Re-traverse from the tail to the highest

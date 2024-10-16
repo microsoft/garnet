@@ -134,12 +134,12 @@ namespace Tsavorite.core
 
                     // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend().
                     // These are pointer-sized shallow copies but we need to lock to ensure no value tearing inside the object while copying to temp storage.
-                    OperationStackContext<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> stackCtx = default;
+                    HashEntryInfo hei = default;
                     try
                     {
                         // We cannot use GetKey() because it has not yet been set.
                         if (currentAddress >= headAddress && store is not null)
-                            store.LockForScan(ref stackCtx, ref hlog.values[currentPage][currentOffset].key);
+                            store.LockForScan(out hei, ref hlog.values[currentPage][currentOffset].key);
 
                         recordInfo = hlog.values[currentPage][currentOffset].info;
                         currentKey = hlog.values[currentPage][currentOffset].key;
@@ -147,8 +147,7 @@ namespace Tsavorite.core
                     }
                     finally
                     {
-                        if (stackCtx.hei.HasTransientLock)
-                            store.UnlockForScan(ref stackCtx);
+                        store.UnlockForScan(ref hei);
                     }
 
                     // Success

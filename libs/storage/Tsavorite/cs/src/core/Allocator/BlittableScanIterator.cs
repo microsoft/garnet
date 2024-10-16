@@ -133,18 +133,17 @@ namespace Tsavorite.core
                     continue;
                 }
 
-                OperationStackContext<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> stackCtx = default;
+                HashEntryInfo hei = default;
                 try
                 {
                     // Lock to ensure no value tearing while copying to temp storage. We cannot use GetKey() because it has not yet been set.
                     if (currentAddress >= headAddress && store is not null)
-                        store.LockForScan(ref stackCtx, ref hlog._wrapper.GetKey(physicalAddress));
+                        store.LockForScan(out hei, ref hlog._wrapper.GetKey(physicalAddress));
                     _ = CopyDataMembers(physicalAddress);
                 }
                 finally
                 {
-                    if (stackCtx.hei.HasTransientLock)
-                        store.UnlockForScan(ref stackCtx);
+                    store.UnlockForScan(ref hei);
                 }
 
                 // Success

@@ -11,69 +11,68 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                    ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
-                                    out OperationStatus status)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        private bool TryTransientXLock<TInput, TOutput, TContext, TKeyLocker>(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, out OperationStatus status)
+            where TKeyLocker : struct, ISessionLocker
         {
-            if (sessionFunctions.TryLockTransientExclusive(Kernel, ref stackCtx.hei))
+            if (TKeyLocker.TryLockTransientExclusive(Kernel, ref stackCtx.hei))
             {
+                stackCtx.ResetTransientLockTimeout();   // In case of retry
                 status = OperationStatus.SUCCESS;
                 return true;
             }
+            if (stackCtx.IsTransientLockTimeout(TransientLockTimeout))
+                throw new TsavoriteException($"Transient XLock exceeded timeout of {TransientLockTimeout}");
             status = OperationStatus.RETRY_LATER;
             return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                    ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, bool isRetry)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator> 
-            => sessionFunctions.UnlockTransientExclusive(Kernel, ref stackCtx.hei, isRetry);
+        private void TransientXUnlock<TInput, TOutput, TContext, TKeyLocker>(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+            where TKeyLocker : struct, ISessionLocker
+            => TKeyLocker.UnlockTransientExclusive(Kernel, ref stackCtx.hei);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                    ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
-                                    out OperationStatus status)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal bool TryTransientSLock<TInput, TOutput, TContext, TKeyLocker>(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, out OperationStatus status)
+            where TKeyLocker : struct, ISessionLocker
         {
-            if (sessionFunctions.TryLockTransientShared(Kernel, ref stackCtx.hei))
+            if (TKeyLocker.TryLockTransientShared(Kernel, ref stackCtx.hei))
             {
+                stackCtx.ResetTransientLockTimeout();   // In case of retry
                 status = OperationStatus.SUCCESS;
                 return true;
             }
+            if (stackCtx.IsTransientLockTimeout(TransientLockTimeout))
+                throw new TsavoriteException($"Transient SLock exceeded timeout of {TransientLockTimeout}");
             status = OperationStatus.RETRY_LATER;
             return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                    ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, bool isRetry)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator> 
-            => sessionFunctions.UnlockTransientShared(Kernel, ref stackCtx.hei, isRetry);
+        internal void TransientSUnlock<TInput, TOutput, TContext, TKeyLocker>(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+            where TKeyLocker : struct, ISessionLocker
+            => TKeyLocker.UnlockTransientShared(Kernel, ref stackCtx.hei);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void LockForScan(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref TKey key)
+        internal void LockForScan(out HashEntryInfo hei, ref TKey key)
         {
-            Debug.Assert(!stackCtx.hei.HasTransientLock, $"Should not call LockForScan if HashEntryInfo already has a lock ({stackCtx.hei.TransientLockStateString()})");
+            Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "Epoch should be protected by LockForScan caller");
 
             // This will always be a transient lock as it is not session-based
-            stackCtx = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
-            _ = Kernel.hashTable.FindTag(ref stackCtx.hei);
-            stackCtx.SetRecordSourceToHashEntry(hlogBase);
+            hei = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
+            _ = Kernel.hashTable.FindTag(ref hei);
 
-            while (!LockTable.TryLockShared(ref stackCtx.hei))
+            while (!LockTable.TryLockShared(ref hei))
                 Kernel.Epoch.ProtectAndDrain();
-            stackCtx.hei.SetHasTransientSLock();
+            hei.SetHasTransientSLock();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnlockForScan(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        internal void UnlockForScan(ref HashEntryInfo hei)
         {
-            if (stackCtx.hei.HasTransientSLock)
+            if (hei.HasTransientSLock)
             {
-                LockTable.UnlockShared(ref stackCtx.hei);
-                stackCtx.hei.ClearHasTransientSLock();
+                LockTable.UnlockShared(ref hei);
+                hei.ClearHasTransientSLock();
             }
         }
     }

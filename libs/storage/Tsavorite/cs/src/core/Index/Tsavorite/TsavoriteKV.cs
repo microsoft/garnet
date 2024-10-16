@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
@@ -28,6 +27,8 @@ namespace Tsavorite.core
         internal readonly bool UseReadCache;
         private readonly ReadCopyOptions ReadCopyOptions;
         internal readonly int sectorSize;  // TODO: remove in favor of what's in Kernel
+
+        private TimeSpan TransientLockTimeout = TimeSpan.MaxValue;
 
         /// <summary>
         /// Number of active entries in hash index (does not correspond to total records, due to hash collisions)
@@ -90,6 +91,7 @@ namespace Tsavorite.core
             : this(new TsavoriteKernel(kvSettings.GetIndexSizeCacheLines(), Environment.SystemPageSize, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKernel")),
                   partitionId: 0, kvSettings, storeFunctions, allocatorFactory)
         {
+            TransientLockTimeout = kvSettings.TransientLockTimeout;
         }
 
         /// <summary>
@@ -190,7 +192,7 @@ namespace Tsavorite.core
         /// Grow the hash index by a factor of two. Caller should take a full checkpoint after growth, for persistence.
         /// </summary>
         /// <returns>Whether the grow completed</returns>
-        public bool GrowIndex()
+        public bool GrowIndex() // TODO move to kernel
         {
             if (Kernel.Epoch.ThisInstanceProtected())
                 throw new TsavoriteException("Cannot use GrowIndex when using non-async sessions");
@@ -230,7 +232,6 @@ namespace Tsavorite.core
             Free();
             hlogBase.Dispose();
             readcacheBase?.Dispose();
-            LockTable.Dispose();
             _lastSnapshotCheckpoint.Dispose();
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();
@@ -309,19 +310,13 @@ namespace Tsavorite.core
                 $"Histogram of #entries per bucket:\n";
 
             foreach (var kvp in histogram.OrderBy(e => e.Key))
-            {
                 distribution += $"  {kvp.Key} : {kvp.Value}\n";
-            }
-
             return distribution;
         }
 
         /// <summary>
         /// Dumps the distribution of each non-empty bucket in the hash table.
         /// </summary>
-        public string DumpDistribution()
-        {
-            return DumpDistributionInternal(Kernel.hashTable.spine.resizeInfo.version);
-        }
+        public string DumpDistribution() => DumpDistributionInternal(Kernel.hashTable.spine.resizeInfo.version);
     }
 }

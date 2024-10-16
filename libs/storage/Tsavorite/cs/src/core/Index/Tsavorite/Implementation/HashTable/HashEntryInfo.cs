@@ -8,6 +8,14 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    /// <summary>Transient lock state, if any</summary>
+    public enum TransientLockState
+    {
+        None = 0,
+        TransientSLock,
+        TransientXLock
+    }
+
     /// <summary>Hash table entry information for a key</summary>
     public unsafe struct HashEntryInfo
     {
@@ -31,14 +39,7 @@ namespace Tsavorite.core
 
         internal long bucketIndex;
 
-        enum TransientLockState
-        {
-            None = 0,
-            TransientSLock,
-            TransientXLock
-        }
-
-        private TransientLockState transientLockState;
+        public TransientLockState TransientLockState;
 
         /// <summary>The id of the Tsavorite partition to search for this key in.</summary>
         public readonly ushort partitionId;
@@ -59,9 +60,9 @@ namespace Tsavorite.core
 
         internal void Reset(ushort partitionId)
         {
-            var lockState = transientLockState;
+            var lockState = TransientLockState;
             this = new(hash, partitionId);
-            transientLockState = lockState;
+            TransientLockState = lockState;
         }
 
         /// <summary>
@@ -135,38 +136,38 @@ namespace Tsavorite.core
         /// <summary>
         /// Set (and cleared) by caller to indicate whether we have a LockTable-based Transient Shared lock (does not include Manual locks; this is per-operation only).
         /// </summary>
-        internal readonly bool HasTransientSLock => transientLockState == TransientLockState.TransientSLock;
+        internal readonly bool HasTransientSLock => TransientLockState == TransientLockState.TransientSLock;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetHasTransientSLock()
         {
-            Debug.Assert(transientLockState == TransientLockState.None, $"Cannot set TransientSLock while holding {TransientLockStateString()}");
-            transientLockState = TransientLockState.TransientSLock;
+            Debug.Assert(TransientLockState == TransientLockState.None, $"Cannot set TransientSLock while holding {TransientLockStateString()}");
+            TransientLockState = TransientLockState.TransientSLock;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearHasTransientSLock() => transientLockState = TransientLockState.None;
+        internal void ClearHasTransientSLock() => TransientLockState = TransientLockState.None;
 
         /// <summary>
         /// Set (and cleared) by caller to indicate whether we have a LockTable-based Transient Exclusive lock (does not include Manual locks; this is per-operation only).
         /// </summary>
-        internal readonly bool HasTransientXLock => transientLockState == TransientLockState.TransientXLock;
+        internal readonly bool HasTransientXLock => TransientLockState == TransientLockState.TransientXLock;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetHasTransientXLock()
         {
-            Debug.Assert(transientLockState == TransientLockState.None, $"Cannot set TransientXLock while holding {TransientLockStateString()}");
-            transientLockState = TransientLockState.TransientXLock;
+            Debug.Assert(TransientLockState == TransientLockState.None, $"Cannot set TransientXLock while holding {TransientLockStateString()}");
+            TransientLockState = TransientLockState.TransientXLock;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearHasTransientXLock() => transientLockState = TransientLockState.None;
+        internal void ClearHasTransientXLock() => TransientLockState = TransientLockState.None;
 
         /// <summary>
         /// Indicates whether we have any type of non-Manual lock.
         /// </summary>
-        internal readonly bool HasTransientLock => transientLockState != TransientLockState.None;
+        internal readonly bool HasTransientLock => TransientLockState != TransientLockState.None;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly string TransientLockStateString() => transientLockState.ToString();
+        internal readonly string TransientLockStateString() => TransientLockState.ToString();
 
         public bool HashCodeEquals(long otherHashCode) => this.hash == otherHashCode;
 

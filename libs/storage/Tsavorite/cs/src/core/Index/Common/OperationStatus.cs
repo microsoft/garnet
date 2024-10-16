@@ -38,15 +38,10 @@ namespace Tsavorite.core
         CANCELED = StatusCode.Canceled,
 
         /// <summary>
-        /// Lock could not be acquired.
-        /// </summary>
-        LOCK_FAILED = StatusCode.LockFailed,
-
-        /// <summary>
         /// The maximum range that directly maps to the <see cref="StatusCode"/> enumeration; the operation completed. 
         /// This is an internal code to reserve ranges in the <see cref="OperationStatus"/> enumeration.
         /// </summary>
-        MAX_MAP_TO_COMPLETED_STATUSCODE = LOCK_FAILED,
+        MAX_MAP_TO_COMPLETED_STATUSCODE = CANCELED,
 
         // Not-completed Status codes
 

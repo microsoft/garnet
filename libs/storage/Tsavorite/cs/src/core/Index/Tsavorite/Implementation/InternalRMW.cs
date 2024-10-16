@@ -15,8 +15,8 @@ namespace Tsavorite.core
         /// Pending operations are processed either using InternalRetryPendingRMW or 
         /// InternalContinuePendingRMW.
         /// </summary>
+        /// <param name="stackCtx">calling context of the operation</param>
         /// <param name="key">key of the record.</param>
-        /// <param name="keyHash">the hash of <parameref name="key"/></param>
         /// <param name="input">input used to update the value.</param>
         /// <param name="output">Location to store output computed from input and value.</param>
         /// <param name="userContext">user context corresponding to operation used during completion callback.</param>
@@ -47,160 +47,151 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, long keyHash, ref TInput input, ref TOutput output, ref TContext userContext,
-                                    ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+        internal OperationStatus InternalRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref TKey key, ref TInput input, out TOutput output, TContext userContext,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
         {
+            Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "Epoch should be protected in InternalRMW");
+            Debug.Assert(TKeyLocker.IsTransactional || stackCtx.hei.HasTransientXLock, "Should have an XLock in InternalRMW");
+
             var latchOperation = LatchOperation.None;
+            pendingContext.keyHash = stackCtx.hei.hash;
 
-            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(keyHash, partitionId);
-            pendingContext.keyHash = keyHash;
-
-            if (sessionFunctions.ExecutionCtx.phase == Phase.IN_PROGRESS_GROW && !sessionFunctions.IsDual)
+            if (sessionFunctions.ExecutionCtx.phase == Phase.IN_PROGRESS_GROW && !sessionFunctions.IsDual)      // TODO move to Kernel.EnterFor*
                 SplitBuckets(stackCtx.hei.hash);
 
-            if (!FindOrCreateTagAndTryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
+            var dummyRecordInfo = RecordInfo.InitialValid;
+            ref var srcRecordInfo = ref dummyRecordInfo;
+            output = default;
+
+            // Search the entire in-memory region.
+            if (!TryFindRecordForUpdate(ref key, ref stackCtx, hlogBase.HeadAddress, out var status))
                 return status;
 
-            RecordInfo dummyRecordInfo = RecordInfo.InitialValid;
-            ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
+            // These track the latest main-log address in the tag chain; InternalContinuePendingRMW uses them to check for new inserts.
+            pendingContext.InitialEntryAddress = stackCtx.hei.Address;
+            pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
 
-            // We must use try/finally to ensure unlocking even in the presence of exceptions.
-            try
+            // If there is a readcache record, use it as the CopyUpdater source.
+            if (stackCtx.recSrc.HasReadCacheSrc)
             {
-                // Search the entire in-memory region.
-                if (!TryFindRecordForUpdate(ref key, ref stackCtx, hlogBase.HeadAddress, out status))
-                    return status;
+                srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+                goto CreateNewRecord;
+            }
 
-                // These track the latest main-log address in the tag chain; InternalContinuePendingRMW uses them to check for new inserts.
-                pendingContext.InitialEntryAddress = stackCtx.hei.Address;
-                pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
-
-                // If there is a readcache record, use it as the CopyUpdater source.
-                if (stackCtx.recSrc.HasReadCacheSrc)
+            // Check for CPR consistency after checking if source is readcache.
+            if (sessionFunctions.ExecutionCtx.phase != Phase.REST)
+            {
+                var latchDestination = CheckCPRConsistencyRMW(sessionFunctions.ExecutionCtx.phase, ref stackCtx, ref status, ref latchOperation);
+                switch (latchDestination)
                 {
-                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-                    goto CreateNewRecord;
-                }
-
-                // Check for CPR consistency after checking if source is readcache.
-                if (sessionFunctions.ExecutionCtx.phase != Phase.REST)
-                {
-                    var latchDestination = CheckCPRConsistencyRMW(sessionFunctions.ExecutionCtx.phase, ref stackCtx, ref status, ref latchOperation);
-                    switch (latchDestination)
-                    {
-                        case LatchDestination.Retry:
-                            goto LatchRelease;
-                        case LatchDestination.CreateNewRecord:
-                            goto CreateNewRecord;
-                        default:
-                            Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
-                            break;
-                    }
-                }
-
-                if (stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
-                {
-                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-
-                    // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
-                    RMWInfo rmwInfo = new()
-                    {
-                        Version = sessionFunctions.ExecutionCtx.version,
-                        SessionID = sessionFunctions.ExecutionCtx.sessionID,
-                        Address = stackCtx.recSrc.LogicalAddress,
-                        KeyHash = stackCtx.hei.hash,
-                        IsFromPending = pendingContext.type != OperationType.NONE,
-                    };
-
-                    rmwInfo.SetRecordInfo(ref srcRecordInfo);
-                    ref TValue recordValue = ref stackCtx.recSrc.GetValue();
-
-                    if (srcRecordInfo.Tombstone)
-                    {
-                        // If we're doing revivification and this is in the revivifiable range, try to revivify--otherwise we'll create a new record.
-                        if (RevivificationManager.IsEnabled && stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
-                        {
-                            if (!sessionFunctions.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo))
-                            {
-                                status = OperationStatus.NOTFOUND;
-                                goto LatchRelease;
-                            }
-
-                            if (TryRevivifyInChain(ref key, ref input, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo, ref rmwInfo, out status, ref recordValue)
-                                    || status != OperationStatus.SUCCESS)
-                                goto LatchRelease;
-                        }
-                        goto CreateNewRecord;
-                    }
-
-                    // rmwInfo's lengths are filled in and GetValueLengths and SetLength are called inside InPlaceUpdater.
-                    if (sessionFunctions.InPlaceUpdater(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref recordValue, ref output, ref rmwInfo, out status, ref srcRecordInfo)
-                        || (rmwInfo.Action == RMWAction.ExpireAndStop))
-                    {
-                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.ExecutionCtx);
-
-                        // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
-                        // Our SessionFunctionsWrapper.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
-                        pendingContext.recordInfo = srcRecordInfo;
-                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        // status has been set by InPlaceUpdater
+                    case LatchDestination.Retry:
                         goto LatchRelease;
-                    }
-
-                    if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
-                        goto LatchRelease;
-
-                    // InPlaceUpdater failed (e.g. insufficient space, another thread set Tombstone, etc). Use this record as the CopyUpdater source.
-                    goto CreateNewRecord;
-                }
-                if (stackCtx.recSrc.LogicalAddress >= hlogBase.SafeReadOnlyAddress && !stackCtx.recSrc.GetInfo().Tombstone)
-                {
-                    // Fuzzy Region: Must retry after epoch refresh, due to lost-update anomaly
-                    status = OperationStatus.RETRY_LATER;
-                    goto LatchRelease;
-                }
-                if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
-                {
-                    // Safe Read-Only Region: CopyUpdate to create a record in the mutable region.
-                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-                    goto CreateNewRecord;
-                }
-                if (stackCtx.recSrc.LogicalAddress >= hlogBase.BeginAddress)
-                {
-                    if (hlogBase.IsNullDevice)
+                    case LatchDestination.CreateNewRecord:
                         goto CreateNewRecord;
-
-                    // Disk Region: Need to issue async io requests. Locking will be checked on pending completion.
-                    status = OperationStatus.RECORD_ON_DISK;
-                    CreatePendingRMWContext(ref key, ref input, output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
-                    goto LatchRelease;
-                }
-
-                // No record exists - drop through to create new record.
-                Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLockedExclusive(ref stackCtx.hei), "A Lockable-session RMW() of an on-disk or non-existent key requires a LockTable lock");
-
-            CreateNewRecord:
-                {
-                    TValue tempValue = default;
-                    ref TValue value = ref (stackCtx.recSrc.HasInMemorySrc ? ref stackCtx.recSrc.GetValue() : ref tempValue);
-
-                    // Here, the input* data for 'doingCU' is the same as recSrc.
-                    status = CreateNewRecordRMW(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo,
-                                                doingCU: stackCtx.recSrc.HasInMemorySrc && !srcRecordInfo.Tombstone);
-                    if (!OperationStatusUtils.IsAppend(status))
-                    {
-                        // OperationStatus.SUCCESS is OK here; it means NeedCopyUpdate or NeedInitialUpdate returned false
-                        if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync || status == OperationStatus.RECORD_ON_DISK)
-                            CreatePendingRMWContext(ref key, ref input, output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
-                    }
-                    goto LatchRelease;
+                    default:
+                        Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
+                        break;
                 }
             }
-            finally
+
+            if (stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
             {
-                stackCtx.HandleNewRecordOnException(this);
-                TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, OperationStatusUtils.IsRetry(status));
+                srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+
+                // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
+                RMWInfo rmwInfo = new()
+                {
+                    Version = sessionFunctions.ExecutionCtx.version,
+                    SessionID = sessionFunctions.ExecutionCtx.sessionID,
+                    Address = stackCtx.recSrc.LogicalAddress,
+                    KeyHash = stackCtx.hei.hash,
+                    IsFromPending = pendingContext.type != OperationType.NONE,
+                };
+
+                rmwInfo.SetRecordInfo(ref srcRecordInfo);
+                ref var recordValue = ref stackCtx.recSrc.GetValue();
+
+                if (srcRecordInfo.Tombstone)
+                {
+                    // If we're doing revivification and this is in the revivifiable range, try to revivify--otherwise we'll create a new record.
+                    if (RevivificationManager.IsEnabled && stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
+                    {
+                        if (!sessionFunctions.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo))
+                        {
+                            status = OperationStatus.NOTFOUND;
+                            goto LatchRelease;
+                        }
+
+                        if (TryRevivifyInChain(ref key, ref input, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo, ref rmwInfo, out status, ref recordValue)
+                                || status != OperationStatus.SUCCESS)
+                            goto LatchRelease;
+                    }
+                    goto CreateNewRecord;
+                }
+
+                // rmwInfo's lengths are filled in and GetValueLengths and SetLength are called inside InPlaceUpdater.
+                if (sessionFunctions.InPlaceUpdater(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref recordValue, ref output, ref rmwInfo, out status, ref srcRecordInfo)
+                    || (rmwInfo.Action == RMWAction.ExpireAndStop))
+                {
+                    MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.ExecutionCtx);
+
+                    // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
+                    // Our SessionFunctionsWrapper.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
+                    pendingContext.recordInfo = srcRecordInfo;
+                    pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                    // status has been set by InPlaceUpdater
+                    goto LatchRelease;
+                }
+
+                if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
+                    goto LatchRelease;
+
+                // InPlaceUpdater failed (e.g. insufficient space, another thread set Tombstone, etc). Use this record as the CopyUpdater source.
+                goto CreateNewRecord;
+            }
+            if (stackCtx.recSrc.LogicalAddress >= hlogBase.SafeReadOnlyAddress && !stackCtx.recSrc.GetInfo().Tombstone)
+            {
+                // Fuzzy Region: Must retry after epoch refresh, due to lost-update anomaly
+                status = OperationStatus.RETRY_LATER;
+                goto LatchRelease;
+            }
+            if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
+            {
+                // Safe Read-Only Region: CopyUpdate to create a record in the mutable region.
+                srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+                goto CreateNewRecord;
+            }
+            if (stackCtx.recSrc.LogicalAddress >= hlogBase.BeginAddress)
+            {
+                if (hlogBase.IsNullDevice)
+                    goto CreateNewRecord;
+
+                // Disk Region: Need to issue async io requests. Locking will be checked on pending completion.
+                status = OperationStatus.RECORD_ON_DISK;
+                CreatePendingRMWContext(ref key, ref input, output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
+                goto LatchRelease;
+            }
+
+            // No record exists - drop through to create new record.
+
+        CreateNewRecord:
+            {
+                TValue tempValue = default;
+                ref var value = ref (stackCtx.recSrc.HasInMemorySrc ? ref stackCtx.recSrc.GetValue() : ref tempValue);
+
+                // Here, the input* data for 'doingCU' is the same as recSrc.
+                status = CreateNewRecordRMW(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo,
+                                            doingCU: stackCtx.recSrc.HasInMemorySrc && !srcRecordInfo.Tombstone);
+                if (!OperationStatusUtils.IsAppend(status))
+                {
+                    // OperationStatus.SUCCESS is OK here; it means NeedCopyUpdate or NeedInitialUpdate returned false
+                    if ((status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync) || status == OperationStatus.RECORD_ON_DISK)
+                        CreatePendingRMWContext(ref key, ref input, output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
+                }
+                goto LatchRelease;
             }
 
         LatchRelease:

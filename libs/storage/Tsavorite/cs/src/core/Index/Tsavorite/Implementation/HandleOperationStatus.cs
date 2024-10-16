@@ -13,52 +13,59 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool HandleImmediateRetryStatus<TInput, TOutput, TContext>(
+        private bool HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
                 OperationStatus internalStatus,
                 ExecutionContext<TInput, TOutput, TContext> executionCtx,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext)
+            where TKeyLocker : struct, ISessionLocker
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE
-                && HandleRetryStatus(internalStatus, executionCtx, ref pendingContext);
+                && HandleRetryStatus<TInput, TOutput, TContext, TKeyLocker>(internalStatus, ref stackCtx, executionCtx, ref pendingContext);
 
         /// <summary>
         /// Handle retry for operations that will not go pending (e.g., InternalLock)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext>(OperationStatus internalStatus, ExecutionContext<TInput, TOutput, TContext> executionCtx)
+        internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TKernelSession, TKeyLocker>(
+                OperationStatus internalStatus, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ExecutionContext<TInput, TOutput, TContext> executionCtx)
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, ISessionLocker
         {
             Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "Epoch should be protected in HandleImmediateNonPendingRetryStatus");
             switch (internalStatus)
             {
                 case OperationStatus.RETRY_NOW:
-                    Thread.Yield();
+                    _ = Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
-                    InternalRefresh(executionCtx);
-                    Thread.Yield();
+                    InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, executionCtx);
+                    _ = Thread.Yield();
                     return true;
                 default:
                     return false;
             }
         }
 
-        private bool HandleRetryStatus<TInput, TOutput, TContext>(
-            OperationStatus internalStatus,
-            ExecutionContext<TInput, TOutput, TContext> executionCtx,
-            ref PendingContext<TInput, TOutput, TContext> pendingContext)
+        private bool HandleRetryStatus<TInput, TOutput, TContext, TKeyLocker>(
+                OperationStatus internalStatus,
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
+                ExecutionContext<TInput, TOutput, TContext> executionCtx,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext)
+            where TKeyLocker : struct, ISessionLocker
         {
-            Debug.Assert(Kernel.Epoch.ThisInstanceProtected());
+            Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "Epoch should be protected in HandleRetryStatus");
             switch (internalStatus)
             {
                 case OperationStatus.RETRY_NOW:
-                    Thread.Yield();
+                    _ = Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
-                    InternalRefresh(executionCtx);
-                    Thread.Yield();
+                    InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, executionCtx);
+                    _ = Thread.Yield();
                     return true;
                 case OperationStatus.CPR_SHIFT_DETECTED:
                     // Retry as (v+1) Operation
-                    SynchronizeEpoch(executionCtx, ref pendingContext);
+                    SynchronizeEpoch<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, executionCtx, ref pendingContext);
                     return true;
                 case OperationStatus.ALLOCATE_FAILED:
                     // Async handles this in its own way, as part of the *AsyncResult.Complete*() sequence.
@@ -90,12 +97,14 @@ namespace Tsavorite.core
         /// <returns>Operation status</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status HandleOperationStatus<TInput, TOutput, TContext>(
-            ExecutionContext<TInput, TOutput, TContext> sessionCtx,
-            ref PendingContext<TInput, TOutput, TContext> pendingContext,
-            OperationStatus operationStatus)
+                ExecutionContext<TInput, TOutput, TContext> sessionCtx,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                OperationStatus operationStatus)
         {
             if (OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out Status status))
                 return status;
+
+            // This does not lock so no TKeyLocker is needed
             return HandleOperationStatus(sessionCtx, ref pendingContext, operationStatus, out _);
         }
 

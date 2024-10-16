@@ -28,7 +28,7 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus ContinuePendingRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext<TKey, TValue> request,
+        internal OperationStatus ContinuePendingRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(AsyncIOContext<TKey, TValue> request,
                                                         ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -184,7 +184,7 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus ContinuePendingRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext<TKey, TValue> request,
+        internal OperationStatus ContinuePendingRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(AsyncIOContext<TKey, TValue> request,
                                                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -276,7 +276,7 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus ContinuePendingConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext<TKey, TValue> request,
+        internal OperationStatus ContinuePendingConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(AsyncIOContext<TKey, TValue> request,
                                                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {

@@ -14,135 +14,258 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
+                ref TKey key, ref TInput input, out TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
+                TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
-            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions);
-            OperationStatus internalStatus;
-            var keyHash = storeFunctions.GetKeyHashCode64(ref key);
-
-            do
-                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
-
-            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
-
-            return status;
+            // Called by Single Tsavorite instance configurations, so we must do Kernel entry, lock, etc. here
+            var keyHash = readOptions.KeyHash ?? storeFunctions.GetKeyHashCode64(ref key);
+            var status = Kernel.EnterForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, keyHash, partitionId, out var hei);
+            if (status.NotFound)
+            {
+                output = default;
+                recordMetadata = default;
+                return status;
+            }
+            try
+            {
+                return ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
+                        ref hei, ref key, ref input, out output, ref readOptions, out recordMetadata, context, sessionFunctions);
+            }
+            finally
+            {
+                Kernel.ExitForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, ref hei);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
+        internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
+                ref HashEntryInfo hei, ref TKey key, ref TInput input, out TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
                 TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
         {
+            // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions, ref readOptions);
             OperationStatus internalStatus;
-            var keyHash = readOptions.KeyHash ?? storeFunctions.GetKeyHashCode64(ref key);
 
             do
-                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
+                internalStatus = InternalRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref stackCtx, ref key, ref input, out output, context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
-            return status;
+            recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
+                long address, ref TInput input, out TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
+                TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
+            // Called by Single Tsavorite instance configurations (this API is called only for specific store instances)
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions, ref readOptions, noKey: true);
             TKey key = default;
-            return ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
+            return ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
+                    address, ref key, ref input, out output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions, ref kernelSession);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
+                long address, ref TKey key, ref TInput input, out TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, 
+                TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
+            // Called by Single Tsavorite instance configurations (this API is called only for specific store instances)
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions, ref readOptions, noKey: false);
-            return ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
+            return ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
+                    address, ref key, ref input, out output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions, ref kernelSession);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
-                TContext context, ref PendingContext<TInput, TOutput, TContext> pcontext, TSessionFunctionsWrapper sessionFunctions)
+        private Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
+                long address, ref TKey key, ref TInput input, out TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
+                TContext context, ref PendingContext<TInput, TOutput, TContext> pcontext, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
-            OperationStatus internalStatus;
-            do
-                internalStatus = InternalReadAtAddress(address, ref key, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
+            // Called by Single Tsavorite instance configurations (this API is called only for specific store instances), so we must do Kernel entry, lock, etc. here
+            var keyHash = readOptions.KeyHash ?? storeFunctions.GetKeyHashCode64(ref key);
+            var status = Kernel.EnterForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, keyHash, partitionId, out var hei);
+            if (status.NotFound)
+            {
+                output = default;
+                recordMetadata = default;
+                return status;
+            }
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
 
-            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
-            return status;
+            try
+            {
+                OperationStatus internalStatus;
+                do
+                    internalStatus = InternalReadAtAddress<TKernelSession, TKeyLocker>(ref stackCtx, address, ref key, ref input, out output, ref readOptions, context, ref pcontext, sessionFunctions, ref kernelSession);
+                while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
+
+                recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
+                return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
+            }
+            finally
+            {
+                Kernel.ExitForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, ref hei);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, long keyHash, ref TInput input, ref TValue value, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
+                ref TKey key, long keyHash, ref TInput input, ref TValue value, 
+                out TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
-            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
-            OperationStatus internalStatus;
-
-            do
-                internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
-
-            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
-            return status;
+            // Called by Single Tsavorite instance configurations, so we must do Kernel entry, lock, etc. here
+            var status = Kernel.EnterForUpdate<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, keyHash, partitionId, Log.BeginAddress, out var hei);
+            if (status.NotFound)
+            {
+                output = default;
+                recordMetadata = default;
+                return status;
+            }
+ 
+            try
+            {
+                return ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
+                        ref hei, ref key, ref input, ref value, out output, out recordMetadata, context, sessionFunctions);
+            }
+            finally
+            {
+                Kernel.ExitForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, ref hei);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, long keyHash, ref TInput input, ref TValue value, ref TOutput output, out RecordMetadata recordMetadata,
-                                                                            TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
+                ref HashEntryInfo hei, ref TKey key, ref TInput input, ref TValue value,
+                out TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
         {
-            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
+            // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
+            var pcontext = new PendingContext<TInput, TOutput, TContext>();
+
             OperationStatus internalStatus;
-
             do
-                internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
+                internalStatus = InternalUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref stackCtx, ref key, ref input, ref value, out output, ref context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
-            return status;
+            recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata,
-                                                                          TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal Status ContextRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
+                ref TKey key, long keyHash, ref TInput input, 
+                out TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
-            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
-            OperationStatus internalStatus;
+            // Called by Single Tsavorite instance configurations, so we must do Kernel entry, lock, etc. here
+            var status = Kernel.EnterForUpdate<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, keyHash, partitionId, Log.BeginAddress, out var hei);
+            if (status.NotFound)
+            {
+                output = default;
+                recordMetadata = default;
+                return status;
+            }
 
-            do
-                internalStatus = InternalRMW(ref key, keyHash, ref input, ref output, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
-
-            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
-            return status;
+            try
+            {
+                return ContextRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
+                        ref hei, ref key, ref input, out output, out recordMetadata, context, sessionFunctions);
+            }
+            finally
+            {
+                Kernel.ExitForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, ref hei);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, long keyHash, TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal Status ContextRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
+                ref HashEntryInfo hei, ref TKey key, ref TInput input,
+                out TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
         {
-            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
+            // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
+            var pcontext = new PendingContext<TInput, TOutput, TContext>();
+
             OperationStatus internalStatus;
-
             do
-                internalStatus = InternalDelete(ref key, keyHash, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
+                internalStatus = InternalRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref stackCtx, ref key, ref input, out output, context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
-            return status;
+            recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
+                ref TKey key, long keyHash, TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<TKernelSession>
+        {
+            // Called by Single Tsavorite instance configurations, so we must do Kernel entry, lock, etc. here
+            var status = Kernel.EnterForUpdate<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, keyHash, partitionId, Log.BeginAddress, out var hei);
+            if (status.NotFound)
+                return status;
+
+            try
+            {
+                return ContextDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref hei, ref key, context, sessionFunctions);
+            }
+            finally
+            {
+                Kernel.ExitForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, ref hei);
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
+                ref HashEntryInfo hei, ref TKey key, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
+        {
+            // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
+            var pcontext = new PendingContext<TInput, TOutput, TContext>();
+
+            OperationStatus internalStatus;
+            do
+                internalStatus = InternalDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref stackCtx, ref key, context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
+
+            return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
+        }
     }
 }

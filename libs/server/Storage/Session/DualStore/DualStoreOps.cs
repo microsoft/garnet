@@ -55,7 +55,7 @@ namespace Garnet.server
             (*(RespInputHeader*)pcurr).flags = 0;
 
             var locker = new DualClientLocker();
-            var epochThread = new SafeEpochThread<KernelSession>();
+            var epochThread = new SafeEpochGuard<KernelSession>();
             HashEntryInfo hei = default;
 
             try

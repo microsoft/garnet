@@ -41,11 +41,25 @@ namespace Tsavorite.core
     public class TsavoriteIOException : TsavoriteException
     {
         /// <summary>
-        /// Throw Tsavorite exception
+        /// Throw Tsavorite IO exception
         /// </summary>
         /// <param name="message"></param>
         /// <param name="innerException"></param>
         public TsavoriteIOException(string message, Exception innerException) : base(message, innerException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Tsavorite lock-timeout exception type with message
+    /// </summary>
+    public class TsavoriteLockTimeoutException : TsavoriteException
+    {
+        /// <summary>
+        /// Throw Tsavorite lock-timeout exception
+        /// </summary>
+        /// <param name="message"></param>
+        public TsavoriteLockTimeoutException(string message) : base(message)
         {
         }
     }

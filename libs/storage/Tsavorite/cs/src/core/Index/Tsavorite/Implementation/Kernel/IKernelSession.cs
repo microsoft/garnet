@@ -3,6 +3,10 @@
 
 namespace Tsavorite.core
 {
+    /// <summary>
+    /// Defines a session on the <see cref="TsavoriteKernel"/>, which is used for both transactional lock counts and for 
+    /// managing ancillary epoch operations such as calling ThreadStateMachineStep for a possibly-Dual Tsavorite configuration.
+    /// </summary>
     public interface IKernelSession
     {
         /// <summary>Number of shared key locks for this kernel session.</summary>

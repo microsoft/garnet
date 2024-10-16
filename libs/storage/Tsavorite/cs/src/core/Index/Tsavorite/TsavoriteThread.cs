@@ -12,10 +12,42 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InternalRefresh<TInput, TOutput, TContext>(ExecutionContext<TInput, TOutput, TContext> executionCtx)
+        internal void InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ExecutionContext<TInput, TOutput, TContext> executionCtx)
+            where TKeyLocker : struct, ISessionLocker
         {
-            Kernel.Epoch.ProtectAndDrain();
-            DoThreadStateMachineStep(executionCtx);
+            // Unlock for retry
+            var lockState = stackCtx.hei.TransientLockState;
+            switch (lockState)
+            {
+                case TransientLockState.TransientSLock:
+                    TransientSUnlock<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx);
+                    break;
+                case TransientLockState.TransientXLock:
+                    TransientXUnlock<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx);
+                    break;
+                default:
+                    break;
+            }
+
+            stackCtx.ResetTransientLockTimeout();
+
+            var internalStatus = OperationStatus.SUCCESS;
+            do
+            {
+                Kernel.Epoch.ProtectAndDrain();
+                DoThreadStateMachineStep(executionCtx);
+                switch (lockState)
+                {
+                    case TransientLockState.TransientSLock:
+                        TryTransientSLock<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, out internalStatus);
+                        break;
+                    case TransientLockState.TransientXLock:
+                        TryTransientXLock<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, out internalStatus);
+                        break;
+                    default:
+                        break;
+                }
+            } while (internalStatus == OperationStatus.RETRY_LATER);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -85,47 +117,56 @@ namespace Tsavorite.core
             dst.sessionName = src.sessionName;
         }
 
-        internal bool InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool wait = false,
-                                                                                     CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs = null)
+        internal bool InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
+                TSessionFunctionsWrapper sessionFunctions, bool wait = false,
+                CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs = null)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
         {
             while (true)
             {
-                InternalCompletePendingRequests(sessionFunctions, completedOutputs);
-                if (wait) sessionFunctions.ExecutionCtx.WaitPending(Kernel.Epoch);
+                // TKeyLocker is used within each ContinuePending*(ref TKey key...) call.
+                InternalCompletePendingRequests<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, completedOutputs);
+                if (wait)
+                    sessionFunctions.ExecutionCtx.WaitPending(Kernel.Epoch);
 
-                if (sessionFunctions.ExecutionCtx.HasNoPendingRequests) return true;
+                if (sessionFunctions.ExecutionCtx.HasNoPendingRequests) 
+                    return true;
 
-                InternalRefresh(sessionFunctions.ExecutionCtx);
+                // This refresh is outside the context of any individual key operation, so do no locking.
+                InternalRefresh<TInput, TOutput, TContext, NoKeyLocker>(ref stackCtx, sessionFunctions.ExecutionCtx);
 
-                if (!wait) return false;
-                Thread.Yield();
+                if (!wait) 
+                    return false;
+                _ = Thread.Yield();
             }
         }
 
         internal bool InRestPhase() => systemState.Phase == Phase.REST;
 
         #region Complete Pending Requests
-        internal void InternalCompletePendingRequests<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                                                                             CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
+        internal void InternalCompletePendingRequests<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions,
+                CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             _ = hlogBase.TryComplete();
 
-            if (sessionFunctions.ExecutionCtx.readyResponses.Count == 0) return;
+            if (sessionFunctions.ExecutionCtx.readyResponses.Count == 0)
+                return;
 
             while (sessionFunctions.ExecutionCtx.readyResponses.TryDequeue(out AsyncIOContext<TKey, TValue> request))
-                InternalCompletePendingRequest(sessionFunctions, request, completedOutputs);
+                InternalCompletePendingRequest<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, request, completedOutputs);
         }
 
-        internal void InternalCompletePendingRequest<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext<TKey, TValue> request,
+        internal void InternalCompletePendingRequest<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext<TKey, TValue> request,
                                                                                             CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Get and Remove this request.id pending dictionary if it is there.
             if (sessionFunctions.ExecutionCtx.ioPendingRequests.Remove(request.id, out var pendingContext))
             {
-                var status = InternalCompletePendingRequestFromContext(sessionFunctions, request, ref pendingContext, out _);
+                var status = InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, request, ref pendingContext, out _);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
                     // Transfer things to outputs from pendingContext before we dispose it.
@@ -139,7 +180,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Caller is expected to dispose pendingContext after this method completes
         /// </summary>
-        internal Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext<TKey, TValue> request,
+        internal Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext<TKey, TValue> request,
                                                                     ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext<TKey, TValue> newRequest)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -154,9 +195,10 @@ namespace Tsavorite.core
 
             OperationStatus internalStatus = pendingContext.type switch
             {
-                OperationType.READ => ContinuePendingRead(request, ref pendingContext, sessionFunctions),
-                OperationType.RMW => ContinuePendingRMW(request, ref pendingContext, sessionFunctions),
-                OperationType.CONDITIONAL_INSERT => ContinuePendingConditionalCopyToTail(request, ref pendingContext, sessionFunctions),
+                OperationType.READ => ContinuePendingRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(request, ref pendingContext, sessionFunctions),
+                OperationType.RMW => ContinuePendingRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(request, ref pendingContext, sessionFunctions),
+                OperationType.CONDITIONAL_INSERT => ContinuePendingConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(request, ref pendingContext, sessionFunctions),
+                // No locking is done for IO'd iteration pushes
                 OperationType.CONDITIONAL_SCAN_PUSH => ContinuePendingConditionalScanPush(request, ref pendingContext, sessionFunctions),
                 _ => throw new TsavoriteException("Unexpected OperationType")
             };

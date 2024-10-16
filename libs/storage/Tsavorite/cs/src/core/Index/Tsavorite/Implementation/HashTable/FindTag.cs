@@ -56,7 +56,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void FindOrCreateTag(ref HashEntryInfo hei, long BeginAddress)
+        internal void FindOrCreateTag(ref HashEntryInfo hei, long beginAddress)
         {
             var version = spine.resizeInfo.version;
             var masked_entry_word = hei.hash & spine.state[version].size_mask;
@@ -67,7 +67,7 @@ namespace Tsavorite.core
                 hei.firstBucket = hei.bucket = spine.state[version].tableAligned + masked_entry_word;
                 hei.slot = Constants.kInvalidEntrySlot;
 
-                if (FindTagOrFreeInternal(ref hei, BeginAddress))
+                if (FindTagOrFreeInternal(ref hei, beginAddress))
                     return;
 
                 // Install tentative tag in free slot

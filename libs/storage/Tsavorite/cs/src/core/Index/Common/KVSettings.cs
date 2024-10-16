@@ -125,6 +125,11 @@ namespace Tsavorite.core
         public RevivificationSettings RevivificationSettings;
 
         /// <summary>
+        /// How long to wait for transient locks to timeout (after which a <see cref="TsavoriteLockTimeoutException"/> is thrown).
+        /// </summary>
+        public TimeSpan TransientLockTimeout = TimeSpan.MaxValue;
+
+        /// <summary>
         /// Create default configuration settings for TsavoriteKV. You need to create and specify LogDevice 
         /// explicitly with this API.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").

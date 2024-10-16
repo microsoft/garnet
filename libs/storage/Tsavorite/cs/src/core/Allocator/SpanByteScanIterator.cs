@@ -186,12 +186,12 @@ namespace Tsavorite.core
                 memory = null;
                 if (currentAddress >= headAddress || forceInMemory)
                 {
-                    OperationStackContext<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> stackCtx = default;
+                    HashEntryInfo hei = default;
                     try
                     {
                         // GetKey() should work but for safety and consistency with other allocators use physicalAddress.
                         if (currentAddress >= headAddress && store is not null)
-                            store.LockForScan(ref stackCtx, ref hlog._wrapper.GetKey(physicalAddress));
+                            store.LockForScan(out hei, ref hlog._wrapper.GetKey(physicalAddress));
 
                         memory = hlog.bufferPool.Get(recordSize);
                         unsafe
@@ -202,8 +202,7 @@ namespace Tsavorite.core
                     }
                     finally
                     {
-                        if (stackCtx.hei.HasTransientLock)
-                            store.UnlockForScan(ref stackCtx);
+                        store.UnlockForScan(ref hei);
                     }
                 }
 

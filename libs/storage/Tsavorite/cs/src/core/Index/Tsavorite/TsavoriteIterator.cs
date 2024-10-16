@@ -125,8 +125,7 @@ namespace Tsavorite.core
                     if (mainKvIter.GetNext(out recordInfo))
                     {
                         ref var key = ref mainKvIter.GetKey();
-                        OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = default;
-                        if (IsTailmostMainKvRecord(ref key, recordInfo, ref stackCtx))
+                        if (IsTailmostMainKvRecord(ref key, recordInfo))
                             return true;
 
                         ProcessNonTailmostMainKvRecord(recordInfo, key);
@@ -166,13 +165,12 @@ namespace Tsavorite.core
             {
                 if (iterationPhase == IterationPhase.MainKv)
                 {
-                    OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = default;
                     if (mainKvIter.GetNext(out var recordInfo))
                     {
                         try
                         {
                             ref var key = ref mainKvIter.GetKey();
-                            if (IsTailmostMainKvRecord(ref key, recordInfo, ref stackCtx))
+                            if (IsTailmostMainKvRecord(ref key, recordInfo))
                             {
                                 // Push Iter records are in temp storage so do not need locks, but we'll call ConcurrentReader because, for example, GenericAllocator
                                 // may need to know the object is in that region.
@@ -189,11 +187,6 @@ namespace Tsavorite.core
                         {
                             scanFunctions.OnException(ex, numRecords);
                             throw;
-                        }
-                        finally
-                        {
-                            if (stackCtx.hei.HasTransientLock)
-                                store.UnlockForScan(ref stackCtx);
                         }
                     }
 
@@ -240,9 +233,10 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool IsTailmostMainKvRecord(ref TKey key, RecordInfo mainKvRecordInfo, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        bool IsTailmostMainKvRecord(ref TKey key, RecordInfo mainKvRecordInfo)
         {
-            stackCtx = new(store.storeFunctions.GetKeyHashCode64(ref key), store.partitionId);
+            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref key), store.partitionId);
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
             if (store.Kernel.hashTable.FindTag(ref stackCtx.hei))
             {
                 stackCtx.SetRecordSourceToHashEntry(store.hlogBase);

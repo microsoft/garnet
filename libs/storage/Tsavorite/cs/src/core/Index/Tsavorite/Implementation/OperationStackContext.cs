@@ -1,22 +1,21 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Concurrent;
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public struct OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator>
+    internal ref struct OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        // Note: Cannot use ref fields because they are not supported before net7.0.
-        internal HashEntryInfo hei;
+        internal readonly ref HashEntryInfo hei;
         internal RecordSource<TKey, TValue, TStoreFunctions, TAllocator> recSrc;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStackContext(long keyHash, ushort partitionId) => hei = new(keyHash, partitionId);
+        internal OperationStackContext(ref HashEntryInfo hei) => this.hei = ref hei;
 
         /// <summary>
         /// Sets <see cref="recSrc"/> to the current <see cref="hei"/>.<see cref="HashEntryInfo.Address"/>, which is the address it had
@@ -42,6 +41,23 @@ namespace Tsavorite.core
         /// occurs, this needs to be set invalid and non-tentative by the caller's 'finally' (to avoid another try/finally overhead).
         /// </summary>
         private long newLogicalAddress;
+
+        private DateTime transientLockStartTime = DateTime.MinValue;
+
+        internal void ResetTransientLockTimeout() => transientLockStartTime = DateTime.MinValue;
+
+        internal bool IsTransientLockTimeout(TimeSpan timeout)
+        {
+            // This is called on failure of lock iteration, to avoid the overhead of DateTime.UtcNow on the success path.
+            // So the first time through we set the start time rather than testing the timeout.
+            var utcNow = DateTime.UtcNow;
+            if (transientLockStartTime < utcNow)
+            {
+                transientLockStartTime = utcNow;
+                return false;
+            }
+            return transientLockStartTime + timeout < utcNow;
+        }
 
         /// <summary>
         /// Sets the new record to be handled on error recovery.

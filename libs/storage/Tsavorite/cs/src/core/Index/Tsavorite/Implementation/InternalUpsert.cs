@@ -14,8 +14,8 @@ namespace Tsavorite.core
         /// Upsert operation. Replaces the value corresponding to 'key' with provided 'value', if one exists 
         /// else inserts a new record with 'key' and 'value'.
         /// </summary>
+        /// <param name="stackCtx">calling context of the operation</param>
         /// <param name="key">key of the record.</param>
-        /// <param name="keyHash"></param>
         /// <param name="input">input used to update the value.</param>
         /// <param name="value">value to be updated to (or inserted if key does not exist).</param>
         /// <param name="output">output where the result of the update can be placed</param>
@@ -43,129 +43,118 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, long keyHash, ref TInput input, ref TValue value, ref TOutput output,
+        internal OperationStatus InternalUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
+                            ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref TKey key, ref TInput input, ref TValue value, out TOutput output,
                             ref TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
         {
+            Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "Epoch should be protected in InternalUpsert");
+            Debug.Assert(TKeyLocker.IsTransactional || stackCtx.hei.HasTransientXLock, "Should have an XLock in InternalUpsert");
+
             var latchOperation = LatchOperation.None;
+            pendingContext.keyHash = stackCtx.hei.hash;
 
-            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(keyHash, partitionId);
-            pendingContext.keyHash = keyHash;
-
-            if (sessionFunctions.ExecutionCtx.phase == Phase.IN_PROGRESS_GROW && !sessionFunctions.IsDual)
+            if (sessionFunctions.ExecutionCtx.phase == Phase.IN_PROGRESS_GROW && !sessionFunctions.IsDual)  // TODO move to Kernel.EnterFor*
                 SplitBuckets(stackCtx.hei.hash);
 
-            if (!FindOrCreateTagAndTryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
+            var dummyRecordInfo = RecordInfo.InitialValid;
+            ref var srcRecordInfo = ref dummyRecordInfo;
+            output = default;
+
+            // We blindly insert if the key isn't in the mutable region, so only check down to ReadOnlyAddress (minRevivifiableAddress is always >= ReadOnlyAddress).
+            if (!TryFindRecordForUpdate(ref key, ref stackCtx, hlogBase.ReadOnlyAddress, out var status))
                 return status;
 
-            RecordInfo dummyRecordInfo = RecordInfo.InitialValid;
-            ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
+            // Note: Upsert does not track pendingContext.InitialAddress because we don't have an InternalContinuePendingUpsert
 
-            // We must use try/finally to ensure unlocking even in the presence of exceptions.
-            try
+            // If there is a readcache record, use it as the CopyUpdater source.
+            if (stackCtx.recSrc.HasReadCacheSrc)
             {
-                // We blindly insert if the key isn't in the mutable region, so only check down to ReadOnlyAddress (minRevivifiableAddress is always >= ReadOnlyAddress).
-                if (!TryFindRecordForUpdate(ref key, ref stackCtx, hlogBase.ReadOnlyAddress, out status))
-                    return status;
+                srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+                goto CreateNewRecord;
+            }
 
-                // Note: Upsert does not track pendingContext.InitialAddress because we don't have an InternalContinuePendingUpsert
-
-                // If there is a readcache record, use it as the CopyUpdater source.
-                if (stackCtx.recSrc.HasReadCacheSrc)
+            // Check for CPR consistency after checking if source is readcache.
+            if (sessionFunctions.ExecutionCtx.phase != Phase.REST)
+            {
+                var latchDestination = CheckCPRConsistencyUpsert(sessionFunctions.ExecutionCtx.phase, ref stackCtx, ref status, ref latchOperation);
+                switch (latchDestination)
                 {
-                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-                    goto CreateNewRecord;
-                }
-
-                // Check for CPR consistency after checking if source is readcache.
-                if (sessionFunctions.ExecutionCtx.phase != Phase.REST)
-                {
-                    var latchDestination = CheckCPRConsistencyUpsert(sessionFunctions.ExecutionCtx.phase, ref stackCtx, ref status, ref latchOperation);
-                    switch (latchDestination)
-                    {
-                        case LatchDestination.Retry:
-                            goto LatchRelease;
-                        case LatchDestination.CreateNewRecord:
-                            goto CreateNewRecord;
-                        default:
-                            Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
-                            break;
-                    }
-                }
-
-                if (stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
-                {
-                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-
-                    // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
-                    UpsertInfo upsertInfo = new()
-                    {
-                        Version = sessionFunctions.ExecutionCtx.version,
-                        SessionID = sessionFunctions.ExecutionCtx.sessionID,
-                        Address = stackCtx.recSrc.LogicalAddress,
-                        KeyHash = stackCtx.hei.hash
-                    };
-
-                    upsertInfo.SetRecordInfo(ref srcRecordInfo);
-                    ref TValue recordValue = ref stackCtx.recSrc.GetValue();
-
-                    if (srcRecordInfo.Tombstone)
-                    {
-                        // If we're doing revivification and this is in the revivifiable range, try to revivify--otherwise we'll create a new record.
-                        if (RevivificationManager.IsEnabled && stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
-                        {
-                            if (TryRevivifyInChain(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo, ref upsertInfo, out status, ref recordValue)
-                                    || status != OperationStatus.SUCCESS)
-                                goto LatchRelease;
-                        }
+                    case LatchDestination.Retry:
+                        goto LatchRelease;
+                    case LatchDestination.CreateNewRecord:
                         goto CreateNewRecord;
-                    }
-
-                    // upsertInfo's lengths are filled in and GetValueLengths and SetLength are called inside ConcurrentWriter.
-                    if (sessionFunctions.ConcurrentWriter(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, ref srcRecordInfo))
-                    {
-                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.ExecutionCtx);
-                        pendingContext.recordInfo = srcRecordInfo;
-                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
-                        goto LatchRelease;
-                    }
-                    if (upsertInfo.Action == UpsertAction.CancelOperation)
-                    {
-                        status = OperationStatus.CANCELED;
-                        goto LatchRelease;
-                    }
-
-                    // ConcurrentWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Write a new record, but track that we have to seal and unlock this one.
-                    goto CreateNewRecord;
+                    default:
+                        Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
+                        break;
                 }
-                if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
-                {
-                    // Safe Read-Only Region: Create a record in the mutable region, but set srcRecordInfo in case we are eliding.
-                    if (stackCtx.recSrc.HasMainLogSrc)
-                        srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-                    goto CreateNewRecord;
-                }
-
-                // No record exists, or readonly or below. Drop through to create new record.
-                Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLockedExclusive(ref stackCtx.hei), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
-
-            CreateNewRecord:
-                status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo);
-                if (!OperationStatusUtils.IsAppend(status))
-                {
-                    // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
-                    Debug.Assert(OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
-                    if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)
-                        CreatePendingUpsertContext(ref key, ref input, ref value, output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
-                }
-                goto LatchRelease;
             }
-            finally
+
+            if (stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
             {
-                stackCtx.HandleNewRecordOnException(this);
-                TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, OperationStatusUtils.IsRetry(status));
+                srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+
+                // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
+                UpsertInfo upsertInfo = new()
+                {
+                    Version = sessionFunctions.ExecutionCtx.version,
+                    SessionID = sessionFunctions.ExecutionCtx.sessionID,
+                    Address = stackCtx.recSrc.LogicalAddress,
+                    KeyHash = stackCtx.hei.hash
+                };
+
+                upsertInfo.SetRecordInfo(ref srcRecordInfo);
+                ref var recordValue = ref stackCtx.recSrc.GetValue();
+
+                if (srcRecordInfo.Tombstone)
+                {
+                    // If we're doing revivification and this is in the revivifiable range, try to revivify--otherwise we'll create a new record.
+                    if (RevivificationManager.IsEnabled && stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
+                    {
+                        if (TryRevivifyInChain(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo, ref upsertInfo, out status, ref recordValue)
+                                || status != OperationStatus.SUCCESS)
+                            goto LatchRelease;
+                    }
+                    goto CreateNewRecord;
+                }
+
+                // upsertInfo's lengths are filled in and GetValueLengths and SetLength are called inside ConcurrentWriter.
+                if (sessionFunctions.ConcurrentWriter(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, ref srcRecordInfo))
+                {
+                    MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.ExecutionCtx);
+                    pendingContext.recordInfo = srcRecordInfo;
+                    pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                    goto LatchRelease;
+                }
+                if (upsertInfo.Action == UpsertAction.CancelOperation)
+                {
+                    status = OperationStatus.CANCELED;
+                    goto LatchRelease;
+                }
+
+                // ConcurrentWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Write a new record, but track that we have to seal and unlock this one.
+                goto CreateNewRecord;
             }
+            if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
+            {
+                // Safe Read-Only Region: Create a record in the mutable region, but set srcRecordInfo in case we are eliding.
+                if (stackCtx.recSrc.HasMainLogSrc)
+                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+                goto CreateNewRecord;
+            }
+
+        CreateNewRecord:
+            status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo);
+            if (!OperationStatusUtils.IsAppend(status))
+            {
+                // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
+                Debug.Assert(OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
+                if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)
+                    CreatePendingUpsertContext(ref key, ref input, ref value, output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
+            }
+            goto LatchRelease;
 
         LatchRelease:
             if (latchOperation != LatchOperation.None)

@@ -173,7 +173,7 @@ namespace Tsavorite.core
         #endregion Utilities
 
         #region Transient locking
-        public bool IsManualLocking => _sessionLocker.IsTransactionalLocking;
+        public bool IsManualLocking => _sessionLocker.IsTransactional;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryLockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei) => _sessionLocker.TryLockTransientExclusive(kernel, ref hei);

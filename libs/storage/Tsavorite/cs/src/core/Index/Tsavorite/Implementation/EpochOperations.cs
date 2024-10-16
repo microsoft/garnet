@@ -12,14 +12,16 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SynchronizeEpoch<TInput, TOutput, TContext>(
-            ExecutionContext<TInput, TOutput, TContext> executionCtx,
-            ref PendingContext<TInput, TOutput, TContext> pendingContext)
+        internal void SynchronizeEpoch<TInput, TOutput, TContext, TKeyLocker>(
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
+                ExecutionContext<TInput, TOutput, TContext> executionCtx,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext)
+            where TKeyLocker : struct, ISessionLocker
         {
             var version = executionCtx.version;
             Debug.Assert(executionCtx.version == version, $"sessionCtx.version ({executionCtx.version}) should == version ({version})");
             Debug.Assert(executionCtx.phase == Phase.PREPARE, $"sessionCtx.phase ({executionCtx.phase}) should == Phase.PREPARE");
-            InternalRefresh(executionCtx);
+            InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, executionCtx);
             Debug.Assert(executionCtx.version > version, $"sessionCtx.version ({executionCtx.version}) should be > version ({version})");
         }
 

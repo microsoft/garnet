@@ -11,7 +11,6 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        bool IsManualLocking { get; }
         TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> Store { get; }
 
         bool IsDual { get; }
@@ -58,13 +57,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         void ConvertOutputToHeap(ref TInput input, ref TOutput output);
         #endregion Utilities
-
-        #region Transient locking
-        bool TryLockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei);
-        bool TryLockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei);
-        void UnlockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei, bool isRetry);
-        void UnlockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei, bool isRetry);
-        #endregion 
 
         bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
 

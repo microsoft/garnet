@@ -103,13 +103,13 @@ namespace Tsavorite.core
             bool stop = false, continueOnDisk = false;
             for (; !stop && iter.BeginGetPrevInMemory(ref key, out var recordInfo, out continueOnDisk); ++numRecords)
             {
-                OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = default;
+                HashEntryInfo hei = default;
                 try
                 {
                     // Iter records above headAddress will be in log memory and must be locked.
                     if (iter.CurrentAddress >= headAddress && !recordInfo.IsClosed)
                     {
-                        store.LockForScan(ref stackCtx, ref key);
+                        store.LockForScan(out hei, ref key);
                         stop = !scanFunctions.ConcurrentReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, out _);
                     }
                     else
@@ -122,8 +122,7 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    if (stackCtx.hei.HasTransientLock)
-                        store.UnlockForScan(ref stackCtx);
+                    store.UnlockForScan(ref hei);
                     iter.EndGetPrevInMemory();
                 }
             }
