@@ -64,7 +64,7 @@ namespace Garnet.server
         internal TxnKeyEntries(int initialCount, LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext,
                 LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext)
         {
-            keys = new TxnKeyEntry[initialCount];
+            keys = GC.AllocateArray<TxnKeyEntry>(initialCount, pinned: true);
             // We sort a single array for speed, and the sessions use the same sorting logic,
             this.comparer = new(lockableContext, objectStoreLockableContext);
         }
