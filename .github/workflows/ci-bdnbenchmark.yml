@@ -39,7 +39,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
-        #test: [ 'Resp.RespParseStress', 'Resp.RespTsavoriteStress', 'Cluster.RespClusterMigrateBench', 'Cluster.RespClusterBench', 'Resp.RespLuaStress', 'Resp.RespLuaRunnerStress' ]   
+        ## DEBUG DELETE - test: [ 'Resp.RespParseStress', 'Resp.RespTsavoriteStress', 'Cluster.RespClusterMigrateBench', 'Cluster.RespClusterBench', 'Resp.RespLuaStress', 'Resp.RespLuaRunnerStress' ]   
         test: [ 'Resp.RespTsavoriteStress' ]   
     steps:
       - name: Check out code
@@ -87,18 +87,18 @@ jobs:
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           alert-threshold: '120%' 
-          external-data-json-path: ./cache/benchmark-data.json
+          # DEBUG DELETE: external-data-json-path: ./cache/benchmark-data.json
           comment-on-alert: true
           fail-on-alert: true
           alert-comment-cc-users: '@darrenge'
           summary-always: false
-          auto-push: false  # needs to be false if using external-data-json-path
+          auto-push: true
 
       # Run `github-action-benchmark` action
       - name: Store benchmark result for charts
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          #name: BDNBenchmark - ${{matrix.test}} (os ${{matrix.os}}, framework ${{matrix.framework}}, configuration ${{matrix.configuration}})
+          # DEBUG DELETE - name: BDNBenchmark - ${{matrix.test}} (os ${{matrix.os}}, framework ${{matrix.framework}}, configuration ${{matrix.configuration}})
           name: ${{matrix.test}} (${{matrix.os}}  ${{matrix.framework}} ${{matrix.configuration}})
           tool: 'benchmarkdotnet'
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
