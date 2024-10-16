@@ -1700,6 +1700,19 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
+        /// <summary>
+        /// Retrieve the current scratch buffer offset.
+        /// </summary>
+        /// <returns>Current offset</returns>
+        int GetScratchBufferOffset();
+
+        /// <summary>
+        /// Resets the scratch buffer to the given offset.
+        /// </summary>
+        /// <param name="offset">Offset to reset to</param>
+        /// <returns>True if successful, else false</returns>
+        bool ResetScratchBuffer(int offset);
+
         #endregion
 
     }
