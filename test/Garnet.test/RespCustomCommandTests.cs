@@ -10,13 +10,116 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
+    public class LargeGet : CustomProcedure
+    {
+        public override bool Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
+        {
+            static bool ResetBuffer(IGarnetApi garnetApi, ref MemoryResult<byte> output, int buffOffset)
+            {
+                bool status = garnetApi.ResetScratchBuffer(buffOffset);
+                if (!status)
+                    WriteError(ref output, "ERR ResetScratchBuffer failed");
+
+                return status;
+            }
+
+            var offset = 0;
+            var key = GetNextArg(input, ref offset);
+
+            var buffOffset = garnetApi.GetScratchBufferOffset();
+            for (var i = 0; i < 120_000; i++)
+            {
+                garnetApi.GET(key, out var outval);
+                if (i % 100 == 0)
+                {
+                    if (!ResetBuffer(garnetApi, ref output, buffOffset))
+                        return false;
+                }
+            }
+
+            buffOffset = garnetApi.GetScratchBufferOffset();
+            garnetApi.GET(key, out var outval1);
+            garnetApi.GET(key, out var outval2);
+            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
+
+            buffOffset = garnetApi.GetScratchBufferOffset();
+            var hashKey = GetNextArg(input, ref offset);
+            var field = GetNextArg(input, ref offset);
+            garnetApi.HashGet(hashKey, field, out var value);
+            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
+
+            return true;
+        }
+    }
+
+    public class LargeGetTxn : CustomTransactionProcedure
+    {
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        {
+            int offset = 0;
+            AddKey(GetNextArg(input, ref offset), LockType.Shared, false);
+            return true;
+        }
+
+        public override void Main<TGarnetApi>(TGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
+        {
+            int offset = 0;
+            var key = GetNextArg(input, ref offset);
+            var buffOffset = garnetApi.GetScratchBufferOffset();
+            for (int i = 0; i < 120_000; i++)
+            {
+                garnetApi.GET(key, out var outval);
+                if (i % 100 == 0)
+                {
+                    if (!garnetApi.ResetScratchBuffer(buffOffset))
+                    {
+                        WriteError(ref output, "ERR ResetScratchBuffer failed");
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    public class OutOfOrderFreeBuffer : CustomProcedure
+    {
+        public override bool Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
+        {
+            var offset = 0;
+            var key = GetNextArg(input, ref offset);
+
+            var buffOffset1 = garnetApi.GetScratchBufferOffset();
+            garnetApi.GET(key, out var outval1);
+
+            var buffOffset2 = garnetApi.GetScratchBufferOffset();
+            garnetApi.GET(key, out var outval2);
+
+            if (!garnetApi.ResetScratchBuffer(buffOffset1))
+            {
+                WriteError(ref output, "ERR ResetScratchBuffer failed");
+                return false;
+            }
+
+            // Previous reset call would have shrunk the buffer. This call should fail otherwise it will expand the buffer.
+            if (garnetApi.ResetScratchBuffer(buffOffset2))
+            {
+                WriteError(ref output, "ERR ResetScratchBuffer shouldn't expand the buffer");
+                return false;
+            }
+
+            return true;
+        }
+    }
+
     [TestFixture]
     public class RespCustomCommandTests
     {
@@ -545,6 +648,68 @@ namespace Garnet.test
             // Include non-existent and string keys as well
             var retValue = db.Execute("SUM", "key1", "key2", "key3", "key4");
             ClassicAssert.AreEqual("30", retValue.ToString());
+        }
+
+        [Test]
+        public void CustomProcedureFreeBufferTest()
+        {
+            server.Register.NewProcedure("LARGEGET", new LargeGet());
+            var key = "key";
+            var hashKey = "hashKey";
+            var hashField = "field";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            byte[] value = new byte[10_000];
+            db.StringSet(key, value);
+            db.HashSet(hashKey, [new HashEntry(hashField, value)]);
+
+            try
+            {
+                var result = db.Execute("LARGEGET", key, hashKey, hashField);
+                ClassicAssert.AreEqual("OK", result.ToString());
+            }
+            catch (RedisServerException rse)
+            {
+                ClassicAssert.Fail(rse.Message);
+            }
+        }
+
+        [Test]
+        public void CustomTxnFreeBufferTest()
+        {
+            server.Register.NewTransactionProc("LARGEGETTXN", () => new LargeGetTxn());
+            var key = "key";
+            var hashKey = "hashKey";
+            var hashField = "field";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            byte[] value = new byte[10_000];
+            db.StringSet(key, value);
+            db.HashSet(hashKey, [new HashEntry(hashField, value)]);
+
+            try
+            {
+                var result = db.Execute("LARGEGETTXN", key);
+                ClassicAssert.AreEqual("OK", result.ToString());
+            }
+            catch (RedisServerException rse)
+            {
+                ClassicAssert.Fail(rse.Message);
+            }
+        }
+
+        [Test]
+        public void CustomProcedureOutOfOrderFreeBufferTest()
+        {
+            server.Register.NewProcedure("OUTOFORDERFREE", new OutOfOrderFreeBuffer());
+            var key = "key";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            byte[] value = new byte[10_000];
+            db.StringSet(key, value);
+
+            var result = db.Execute("OUTOFORDERFREE", key);
+            ClassicAssert.AreEqual("OK", result.ToString());
         }
 
         private string[] CreateTestLibraries()

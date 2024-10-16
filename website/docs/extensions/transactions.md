@@ -26,6 +26,11 @@ These are the helper methods for developing custom transactions.
 - `GetNextArg(ArgSlice input, ref int offset)` This method is used to retrieve the next argument from the input at the specified offset. It takes an ArgSlice parameter representing the input and a reference to an int offset. It returns an ArgSlice object representing the argument as a span. The method internally reads a pointer with a length header to extract the argument.
 These member functions provide utility and convenience methods for manipulating and working with the transaction data, scratch buffer, and input arguments within the CustomTransactionProcedure class.
 
+**NOTE** When invoking APIs on `IGarnetApi` multiple times with large outputs, it is possible to exhaust the internal buffer capacity. If such usage scenarios are expected, the buffer could be reset as described below.
+* Retrieve the initial buffer offset using `IGarnetApi.GetScratchBufferOffset`
+* Invoke necessary apis on `IGarnetApi`
+* Reset the buffer back to where it was using `IGarnetApi.ResetScratchBuffer(offset)`
+
 Registering the custom transaction is done on the server-side by calling the `NewTransactionProc(string name, int numParams, Func<CustomTransactionProcedure> proc)` method on the Garnet server object's `RegisterAPI` object with its name, number of parameters and a method that returns an instance of the custom transaction class.\
 It is possible to register the custom transaction from the client-side as well (as an admin command, given that the code already resides on the server) by using the `REGISTER` command (see [Custom Commands](../dev/custom-commands.md)). 
 
