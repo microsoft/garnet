@@ -234,8 +234,7 @@ namespace Garnet.server
                         break;
 
                     case RespCommand.GETEX:
-                        Debug.Assert(input.ExtraMetadata > 0);
-                        return sizeof(int) + t.Length + input.MetadataSize;
+                        return sizeof(int) + t.LengthWithoutMetadata + input.MetadataSize;
 
                     case RespCommand.APPEND:
                         var valueLength = *((int*)(inputPtr + RespInputHeader.Size));
