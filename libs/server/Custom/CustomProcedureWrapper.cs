@@ -15,7 +15,8 @@ namespace Garnet.server
         /// Custom command implementation
         /// </summary>
         /// <param name="garnetApi"></param>
-        public abstract bool Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output);
+        public abstract bool Execute<TGarnetApi>(TGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
+            where TGarnetApi : IGarnetApi;
     }
 
     class CustomProcedureWrapper

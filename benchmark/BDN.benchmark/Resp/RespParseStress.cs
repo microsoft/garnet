@@ -31,6 +31,14 @@ namespace BDN.benchmark.Resp
         byte[] setexRequestBuffer;
         byte* setexRequestBufferPointer;
 
+        static ReadOnlySpan<byte> SETNX => "*4\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\na\r\n$2\r\nNX\r\n"u8;
+        byte[] setnxRequestBuffer;
+        byte* setnxRequestBufferPointer;
+
+        static ReadOnlySpan<byte> SETXX => "*4\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\na\r\n$2\r\nXX\r\n"u8;
+        byte[] setxxRequestBuffer;
+        byte* setxxRequestBufferPointer;
+
         static ReadOnlySpan<byte> GET => "*2\r\n$3\r\nGET\r\n$1\r\nb\r\n"u8;
         byte[] getRequestBuffer;
         byte* getRequestBufferPointer;
@@ -91,6 +99,16 @@ namespace BDN.benchmark.Resp
             for (int i = 0; i < batchSize; i++)
                 SETEX.CopyTo(new Span<byte>(setexRequestBuffer).Slice(i * SETEX.Length));
 
+            setnxRequestBuffer = GC.AllocateArray<byte>(SETNX.Length * batchSize, pinned: true);
+            setnxRequestBufferPointer = (byte*)Unsafe.AsPointer(ref setnxRequestBuffer[0]);
+            for (int i = 0; i < batchSize; i++)
+                SETNX.CopyTo(new Span<byte>(setnxRequestBuffer).Slice(i * SETNX.Length));
+
+            setxxRequestBuffer = GC.AllocateArray<byte>(SETXX.Length * batchSize, pinned: true);
+            setxxRequestBufferPointer = (byte*)Unsafe.AsPointer(ref setxxRequestBuffer[0]);
+            for (int i = 0; i < batchSize; i++)
+                SETXX.CopyTo(new Span<byte>(setxxRequestBuffer).Slice(i * SETXX.Length));
+
             getRequestBuffer = GC.AllocateArray<byte>(GET.Length * batchSize, pinned: true);
             getRequestBufferPointer = (byte*)Unsafe.AsPointer(ref getRequestBuffer[0]);
             for (int i = 0; i < batchSize; i++)
@@ -120,6 +138,9 @@ namespace BDN.benchmark.Resp
             hSetDelRequestBufferPointer = (byte*)Unsafe.AsPointer(ref hSetDelRequestBuffer[0]);
             for (int i = 0; i < batchSize; i++)
                 HSETDEL.CopyTo(new Span<byte>(hSetDelRequestBuffer).Slice(i * HSETDEL.Length));
+
+            // Pre-populate raw string set with a single element
+            SlowConsumeMessage("*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\na\r\n"u8);
 
             // Pre-populate sorted set with a single element to avoid repeatedly emptying it during the benchmark
             SlowConsumeMessage("*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nd\r\n"u8);
@@ -165,6 +186,18 @@ namespace BDN.benchmark.Resp
         public void SetEx()
         {
             _ = session.TryConsumeMessages(setexRequestBufferPointer, setexRequestBuffer.Length);
+        }
+
+        [Benchmark]
+        public void SetNx()
+        {
+            _ = session.TryConsumeMessages(setnxRequestBufferPointer, setnxRequestBuffer.Length);
+        }
+
+        [Benchmark]
+        public void SetXx()
+        {
+            _ = session.TryConsumeMessages(setxxRequestBufferPointer, setxxRequestBuffer.Length);
         }
 
         [Benchmark]
