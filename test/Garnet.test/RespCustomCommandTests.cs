@@ -21,9 +21,9 @@ namespace Garnet.test
 {
     public class LargeGet : CustomProcedure
     {
-        public override bool Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
+        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
         {
-            static bool ResetBuffer(IGarnetApi garnetApi, ref MemoryResult<byte> output, int buffOffset)
+            static bool ResetBuffer(TGarnetApi garnetApi, ref MemoryResult<byte> output, int buffOffset)
             {
                 bool status = garnetApi.ResetScratchBuffer(buffOffset);
                 if (!status)
@@ -92,7 +92,7 @@ namespace Garnet.test
 
     public class OutOfOrderFreeBuffer : CustomProcedure
     {
-        public override bool Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
+        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
         {
             var offset = 0;
             var key = GetNextArg(input, ref offset);
