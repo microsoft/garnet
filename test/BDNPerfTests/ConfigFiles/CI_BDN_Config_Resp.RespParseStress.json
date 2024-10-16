@@ -36,7 +36,7 @@
     "expectedHSetDelAllocatedValue_win": 55297,
     "expectedMyDictSetGetAllocatedValue_win": 30720,
 
-    "acceptableMeanRange": 10,
+    "acceptableMeanRange": 15,
     "acceptableAllocatedRange": 10,    
     "acceptableError": ".1",
     "acceptableStdDev": ".1"

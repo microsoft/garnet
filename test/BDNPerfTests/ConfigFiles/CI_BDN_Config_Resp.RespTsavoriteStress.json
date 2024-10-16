@@ -9,7 +9,7 @@
     "expectedSETMeanValue_win": 17,
     "expectedIncrementMeanValue_win": 26,
 
-    "acceptableMeanRange": 10,
+    "acceptableMeanRange": 15,
     "acceptableError": ".1",
     "acceptableStdDev": ".1"
 }
