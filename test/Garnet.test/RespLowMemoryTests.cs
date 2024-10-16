@@ -45,24 +45,31 @@ namespace Garnet.test
                 foreach (var entry in section)
                 {
                     if (entry.Key.Equals("Log.BeginAddress"))
-                    {
                         result.BeginAddress = long.Parse(entry.Value);
-                    }
-                    if (entry.Key.Equals("Log.HeadAddress"))
-                    {
+                    else if (entry.Key.Equals("Log.HeadAddress"))
                         result.HeadAddress = long.Parse(entry.Value);
-                    }
-                    if (entry.Key.Equals("Log.SafeReadOnlyAddress"))
-                    {
+                    else if (entry.Key.Equals("Log.SafeReadOnlyAddress"))
                         result.ReadOnlyAddress = long.Parse(entry.Value);
-                    }
-                    if (entry.Key.Equals("Log.TailAddress"))
-                    {
+                    else if (entry.Key.Equals("Log.TailAddress"))
                         result.TailAddress = long.Parse(entry.Value);
-                    }
                 }
             }
             return result;
+        }
+
+        void MakeReadOnly(long untilAddress, IServer server, IDatabase db)
+        {
+            var i = 1000;
+            var info = GetStoreAddressInfo(server);
+
+            // Add keys so that the first record enters the read-only region
+            // Each record is 40 bytes here, because they do not have expirations
+            while (info.ReadOnlyAddress < untilAddress)
+            {
+                var key = $"key{i++:00000}";
+                _ = db.StringSet(key, key);
+                info = GetStoreAddressInfo(server);
+            }
         }
 
         [Test]
@@ -87,17 +94,11 @@ namespace Garnet.test
             info = GetStoreAddressInfo(server);
             ClassicAssert.AreEqual(112, info.TailAddress);
 
-            // Add keys so that the first record enters the read-only region
-            // Each record is 40 bytes here, because they do not have expirations
-            for (i = 1; i < 12; i++)
-            {
-                var key = $"key{i:00000}";
-                _ = db.StringSet(key, key);
-            }
+            // Make the record read-only by adding more records
+            MakeReadOnly(info.TailAddress, server, db);
 
-            // Last added entry is the first record on a new page [512 - 552)
             info = GetStoreAddressInfo(server);
-            ClassicAssert.AreEqual(552, info.TailAddress);
+            var previousTail = info.TailAddress;
 
             // The first record inserted (key0) is now read-only
             ClassicAssert.IsTrue(info.ReadOnlyAddress >= 112);
@@ -107,11 +108,12 @@ namespace Garnet.test
             ClassicAssert.IsTrue(response);
 
             // Now key0 is only 40 bytes, as we are removing the expiration
-            // That is, key0 is now moved to [552, 592)
-            var previousTail = info.TailAddress;
+            // That is, key0 is now moved to [previousTail, previousTail + 40)
             info = GetStoreAddressInfo(server);
             ClassicAssert.AreEqual(previousTail + 40, info.TailAddress);
-            ClassicAssert.AreEqual(592, info.TailAddress);
+
+            // Verify that key0 exists with correct value
+            ClassicAssert.AreEqual(key0, (string)db.StringGet(key0));
         }
     }
 }
