@@ -84,8 +84,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(64, info.TailAddress);
 
             var expire = 100;
-            var i = 0;
-            var key0 = $"key{i++:00000}";
+            var key0 = $"key{0:00000}";
             _ = db.StringSet(key0, key0, TimeSpan.FromSeconds(expire));
 
             // Record size for key0 is 8 bytes header + 16 bytes key + 16 bytes value + 8 bytes expiry = 48 bytes
