@@ -173,7 +173,7 @@ namespace BDN.benchmark.Resp
                 CPBSET.CopyTo(new Span<byte>(cpbsetBuffer).Slice(i * CPBSET.Length));
 
             // Pre-populate custom object
-            SlowConsumeMessage("*4\r\n$9\r\nMYDICTSET\r\n$2\r\nck\r\n$1\r\nf\r\n$1\r\nv\r\n"u8);
+            SlowConsumeMessage(cpbsetBuffer);
         }
 
         [GlobalCleanup]
