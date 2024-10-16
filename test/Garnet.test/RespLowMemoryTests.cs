@@ -2,15 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using Garnet.client;
-using Garnet.common;
-using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -29,14 +20,12 @@ namespace Garnet.test
     public class RespLowMemoryTests
     {
         GarnetServer server;
-        Random r;
 
         [SetUp]
         public void Setup()
         {
-            r = new Random(674386);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: false, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
             server.Start();
         }
 
@@ -77,7 +66,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void PersistTest()
+        public void PersistCopyUpdateTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
@@ -87,10 +76,10 @@ namespace Garnet.test
             // Start at tail address of 64
             ClassicAssert.AreEqual(64, info.TailAddress);
 
-            int expire = 100;
-            int i = 0;
+            var expire = 100;
+            var i = 0;
             var key0 = $"key{i++:00000}";
-            db.StringSet(key0, key0, TimeSpan.FromSeconds(expire));
+            _ = db.StringSet(key0, key0, TimeSpan.FromSeconds(expire));
 
             // Record size for key0 is 8 bytes header + 16 bytes key + 16 bytes value + 8 bytes expiry = 48 bytes
             // so the new tail address should be 64 + 48 = 112
@@ -103,7 +92,7 @@ namespace Garnet.test
             for (i = 1; i < 12; i++)
             {
                 var key = $"key{i:00000}";
-                db.StringSet(key, key);
+                _ = db.StringSet(key, key);
             }
 
             // Last added entry is the first record on a new page [512 - 552)
