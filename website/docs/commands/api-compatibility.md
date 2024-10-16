@@ -160,7 +160,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | GEORADIUSBYMEMBER | ➖ |  |
 |  | GEORADIUSBYMEMBER_RO | ➖ |  |
 |  | [GEOSEARCH](data-structures.md#geosearch) | ➕ | Partially Implemented |
-|  | GEOSEARCHSTORE | ➖ |  |
+|  | [GEOSEARCHSTORE](data-structures.md#geosearchstore) | ➕ | Partially Implemented |
 | <span id="hash">**HASH**</span> | [HDEL](data-structures.md#hdel) | ➕ |  |
 |  | [HEXISTS](data-structures.md#hexists) | ➕ |  |
 |  | HEXPIRE | ➖ |  |

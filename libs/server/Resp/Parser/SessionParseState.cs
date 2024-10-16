@@ -88,6 +88,21 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Initialize the parse state with a given set of arguments
+        /// </summary>
+        /// <param name="buffer">Reference to arguments buffer (necessary for keeping buffer object rooted)</param>
+        /// <param name="args">Set of arguments to initialize buffer with</param>
+        public void InitializeWithArguments(ref ArgSlice[] buffer, Span<ArgSlice> args)
+        {
+            Initialize(ref buffer, args.Length);
+
+            for (var i = 0; i < args.Length; i++)
+            {
+                buffer[i] = args[i];
+            }
+        }
+
+        /// <summary>
         /// Read the next argument from the input buffer
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

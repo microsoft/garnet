@@ -124,6 +124,7 @@ namespace CommandInfoUpdater
             new("GEOHASH", RespCommand.GEOHASH),
             new("GEOPOS", RespCommand.GEOPOS),
             new("GEOSEARCH", RespCommand.GEOSEARCH),
+            new("GEOSEARCHSTORE", RespCommand.GEOSEARCHSTORE),
             new("GET", RespCommand.GET),
             new("GETBIT", RespCommand.GETBIT),
             new("GETDEL", RespCommand.GETDEL),
