@@ -71,12 +71,13 @@ jobs:
             ./test/BDNPerfTests/errorlog
         if: ${{ always() }}
 
+# Probably do not need since not using cache        
       # Download previous benchmark result from cache (if exists)
-      - name: Download previous benchmark data
-        uses: actions/cache@v4
-        with:
-          path: ./cache
-          key: ${{ runner.os }}-benchmark
+#      - name: Download previous benchmark data
+#        uses: actions/cache@v4
+#        with:
+#          path: ./cache
+#          key: ${{ runner.os }}-benchmark
 
       # Run `github-action-benchmark` action
       - name: Store benchmark result for commit comment
@@ -86,7 +87,6 @@ jobs:
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           alert-threshold: '120%' 
-          # DEBUG DELETE: external-data-json-path: ./cache/benchmark-data.json
           comment-on-alert: true
           fail-on-alert: true
           alert-comment-cc-users: '@darrenge'
@@ -97,7 +97,6 @@ jobs:
       - name: Store benchmark result for charts
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          # DEBUG DELETE - name: BDNBenchmark - ${{matrix.test}} (os ${{matrix.os}}, framework ${{matrix.framework}}, configuration ${{matrix.configuration}})
           name: ${{matrix.test}} (${{matrix.os}}  ${{matrix.framework}} ${{matrix.configuration}})
           tool: 'benchmarkdotnet'
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
