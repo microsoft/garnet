@@ -277,7 +277,7 @@ namespace Garnet.server
             Debug.Assert(parseStateBuffer.Length >= 3);
             var key = parseState.GetArgSliceByRef(0);
             var value = parseState.GetArgSliceByRef(1);
-            var getOption = ArgSlice.FromPinnedSpan([(byte)'G', (byte)'E', (byte)'T']);
+            var getOption = ArgSlice.FromPinnedSpan(CmdStrings.GET);
             parseState.InitializeWithArguments(ref parseStateBuffer, key, value, getOption);
 
             return NetworkSETEXNX(ref storageApi);
@@ -416,7 +416,7 @@ namespace Garnet.server
             Debug.Assert(parseStateBuffer.Length >= 3);
             var key = parseState.GetArgSliceByRef(0);
             var value = parseState.GetArgSliceByRef(1);
-            var getOption = ArgSlice.FromPinnedSpan([(byte)'N', (byte)'X']);
+            var getOption = ArgSlice.FromPinnedSpan(CmdStrings.NX);
             parseState.InitializeWithArguments(ref parseStateBuffer, key, value, getOption);
 
             return NetworkSETEXNX(ref storageApi);
