@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
+using System;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -12,16 +12,19 @@ namespace Garnet.server
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
     using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
-    internal sealed class TxnKeyEntryComparer : IComparer<TxnKeyEntry>
+    internal sealed class TxnKeyComparison
     {
         public LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
         public LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext;
 
-        internal TxnKeyEntryComparer(LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext,
+        public readonly Comparison<TxnKeyEntry> comparisonDelegate;
+
+        internal TxnKeyComparison(LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext,
                 LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext)
         {
             this.lockableContext = lockableContext;
             this.objectStoreLockableContext = objectStoreLockableContext;
+            comparisonDelegate = Compare;
         }
 
         /// <inheritdoc />
@@ -32,9 +35,9 @@ namespace Garnet.server
             if (cmp != 0)
                 return cmp;
             if (key1.isObject)
-                return objectStoreLockableContext.CompareKeyHashes(key1, key2);
+                return objectStoreLockableContext.CompareKeyHashes(ref key1, ref key2);
             else
-                return lockableContext.CompareKeyHashes(key1, key2);
+                return lockableContext.CompareKeyHashes(ref key1, ref key2);
         }
     }
 }

@@ -237,10 +237,10 @@
     ]
   },
   {
-    "Command": "WATCH",
-    "Name": "WATCH",
+    "Command": "WATCHMS",
+    "Name": "WATCHMS",
     "Group": "Transactions",
-    "Summary": "Monitors changes to keys to determine the execution of a transaction.",
+    "Summary": "Monitors changes to keys in main store to determine the execution of a transaction.",
     "Complexity": "O(1) for every key.",
     "Arguments": [
       {
@@ -251,41 +251,22 @@
         "ArgumentFlags": "Multiple",
         "KeySpecIndex": 0
       }
-    ],
-    "SubCommands": [
+    ]
+  },
+  {
+    "Command": "WATCHOS",
+    "Name": "WATCHOS",
+    "Group": "Transactions",
+    "Summary": "Monitors changes to keys in object store to determine the execution of a transaction.",
+    "Complexity": "O(1) for every key.",
+    "Arguments": [
       {
-        "Command": "WATCH_MS",
-        "Name": "WATCH|MS",
-        "Group": "Transactions",
-        "Summary": "Monitors changes to keys in main store to determine the execution of a transaction.",
-        "Complexity": "O(1) for every key.",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandKeyArgument",
-            "Name": "KEY",
-            "DisplayText": "key",
-            "Type": "Key",
-            "ArgumentFlags": "Multiple",
-            "KeySpecIndex": 0
-          }
-        ]
-      },
-      {
-        "Command": "WATCH_OS",
-        "Name": "WATCH|OS",
-        "Group": "Transactions",
-        "Summary": "Monitors changes to keys in object store to determine the execution of a transaction.",
-        "Complexity": "O(1) for every key.",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandKeyArgument",
-            "Name": "KEY",
-            "DisplayText": "key",
-            "Type": "Key",
-            "ArgumentFlags": "Multiple",
-            "KeySpecIndex": 0
-          }
-        ]
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
       }
     ]
   },

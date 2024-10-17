@@ -183,7 +183,7 @@ namespace Garnet.server
             payload = (bSetVal == 0) ? ~payload : payload;
 
             if (payload == mask)
-                return -1;
+                return pos + 0;
 
             pos += (long)Lzcnt.X64.LeadingZeroCount((ulong)payload);
 
