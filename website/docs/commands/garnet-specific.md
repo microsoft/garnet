@@ -63,9 +63,13 @@ You can use the NOVALUES option to make Garnet return only the keys without thei
 
 ### SECONDARYOF
 
+Configures a server as secondary of another, or promotes it to a primary. Same as [REPLICAOF](server.md#replicaof).
+
 ---
 
 ### REGISTERCS
+
+This allows registering specific custom commands and transactions implemented in C\#, in a server side DLL library.
 
 ---
 
@@ -113,8 +117,8 @@ Async interface to Garnet when accessing larger-than-memory data. See [this link
 
 ### MODULE LOADCS
 
----
-
-## LATENCY HELP
+This the equivalent of `MODULE LOAD` in the original RESP protocol. This loads a self-contained module in which the module 
+initialization code registers all relevant commands and transactions automatically. See [this page](../dev/custom-commands.md) 
+for details.
 
 ---
