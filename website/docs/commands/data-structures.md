@@ -293,7 +293,7 @@ Returns the length of the list stored at key. If key does not exist, it is inter
 
 ---
 
-### LMOVE {#lmove}
+### LMOVE
 
 #### Syntax
 
@@ -304,6 +304,18 @@ Returns the length of the list stored at key. If key does not exist, it is inter
 Atomically returns and removes the first/last element (head/tail depending on the wherefrom argument) of the list stored at **source**, and pushes the element at the first/last element (head/tail depending on the whereto argument) of the list stored at **destination**.
 
 This command comes in place of the now deprecated RPOPLPUSH. Doing LMOVE RIGHT LEFT is equivalent.
+
+---
+
+### LMPOP
+
+#### Syntax
+
+```bash
+    LMPOP numkeys key [key ...] <LEFT | RIGHT> [COUNT count]
+```
+
+Pops one or more elements from the first non-empty list key from the list of provided key names.
 
 ---
 

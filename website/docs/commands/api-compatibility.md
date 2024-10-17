@@ -217,7 +217,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [LINSERT](data-structures.md#linsert) | ➕ |  |
 |  | [LLEN](data-structures.md#llen) | ➕ |  |
 |  | [LMOVE](data-structures.md#lmove) | ➕ |  |
-|  | LMPOP | ➖ |  |
+|  | [LMPOP](data-structures.md#lmpop) | ➕ |  |
 |  | [LPOP](data-structures.md#lpop) | ➕ |  |
 |  | [LPOS](data-structures.md#lpos) | ➕ |  |
 |  | [LPUSH](data-structures.md#lpush) | ➕ |  |
