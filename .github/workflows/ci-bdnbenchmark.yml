@@ -53,7 +53,7 @@ jobs:
       - name: Run BDN.benchmark Perf Test
         run: ./test/BDNPerfTests/run_bdnperftest.ps1 ${{ matrix.test }}
         shell: pwsh
-        continue-on-error: true
+        continue-on-error: false
    
       - name: Upload test results to artifacts
         uses: actions/upload-artifact@v4
