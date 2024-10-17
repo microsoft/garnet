@@ -83,6 +83,7 @@ jobs:
           fail-on-alert: true
           alert-comment-cc-users: '@darrenge'
           summary-always: false
+          gh-pages-branch: 'continousbenchmark'
           auto-push: true
 
       # Run `github-action-benchmark` action for the Continuous Benchmarking Charts
@@ -94,6 +95,7 @@ jobs:
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           summary-always: true
+          gh-pages-branch: 'continousbenchmark'
           auto-push: true
 
     
