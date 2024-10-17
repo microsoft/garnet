@@ -83,7 +83,7 @@ jobs:
           fail-on-alert: true
           alert-comment-cc-users: '@darrenge'
           summary-always: false
-          gh-pages-branch: 'main'
+          gh-pages-branch: 'continuousbenchmark'
           benchmark-data-dir-path: 'website/static/charts'
           auto-push: true
 
@@ -96,7 +96,7 @@ jobs:
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           summary-always: true
-          gh-pages-branch: 'main'
+          gh-pages-branch: 'continuousbenchmark'
           benchmark-data-dir-path: 'website/static/charts'
           auto-push: true
 
