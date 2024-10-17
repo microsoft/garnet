@@ -32,6 +32,9 @@ namespace Garnet.test.cluster
                 new MGET(),
                 new MSET(),
                 new GETEX(),
+                new GETSET(),
+                new SETNX(),
+                new SUBSTR(),
                 new PFADD(),
                 new PFCOUNT(),
                 new PFMERGE(),
@@ -203,6 +206,9 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
         [TestCase("GETEX")]
@@ -335,6 +341,9 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
         [TestCase("GETEX")]
@@ -478,6 +487,9 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
         [TestCase("GETEX")]
@@ -614,6 +626,9 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
         [TestCase("GETEX")]
@@ -756,6 +771,9 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
         [TestCase("GETEX")]
@@ -915,6 +933,9 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
         [TestCase("GETEX")]
