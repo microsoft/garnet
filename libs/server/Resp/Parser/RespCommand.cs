@@ -92,6 +92,7 @@ namespace Garnet.server
         FLUSHDB,
         GEOADD,
         GETDEL,
+        GETEX,
         HDEL,
         HINCRBY,
         HINCRBYFLOAT,
@@ -645,6 +646,7 @@ namespace Garnet.server
                         {
                             // Commands with dynamic number of arguments
                             >= ((3 << 4) | 3) and <= ((3 << 4) | 6) when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SETEXNX,
+                            >= ((5 << 4) | 1) and <= ((5 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("\nGETEX\r\n"u8) => RespCommand.GETEX,
                             >= ((6 << 4) | 0) and <= ((6 << 4) | 9) when lastWord == MemoryMarshal.Read<ulong>("RUNTXP\r\n"u8) => RespCommand.RUNTXP,
                             >= ((6 << 4) | 2) and <= ((6 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) => RespCommand.EXPIRE,
                             >= ((6 << 4) | 2) and <= ((6 << 4) | 5) when lastWord == MemoryMarshal.Read<ulong>("BITPOS\r\n"u8) => RespCommand.BITPOS,

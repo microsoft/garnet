@@ -278,6 +278,23 @@ namespace Garnet.test.cluster
         }
     }
 
+    internal class GETEX : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(GETEX);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0]];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
     internal class SETRANGE : BaseCommand
     {
         public override bool IsArrayCommand => false;
