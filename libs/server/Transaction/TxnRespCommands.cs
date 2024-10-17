@@ -113,7 +113,7 @@ namespace Garnet.server
             bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
 
             // Watch not allowed during TXN
-            bool isWatch = commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCH_MS || commandInfo.Command == RespCommand.WATCH_OS;
+            bool isWatch = commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCHMS || commandInfo.Command == RespCommand.WATCHOS;
 
             if (invalidNumArgs || isWatch)
             {

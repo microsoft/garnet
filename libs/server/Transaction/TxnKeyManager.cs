@@ -22,6 +22,24 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Reset cached slot verification result
+        /// </summary>
+        public void ResetCacheSlotVerificationResult()
+        {
+            if (!clusterEnabled) return;
+            respSession.clusterSession.ResetCachedSlotVerificationResult();
+        }
+
+        /// <summary>
+        /// Reset cached slot verification result
+        /// </summary>
+        public void WriteCachedSlotVerificationMessage(ref MemoryResult<byte> output)
+        {
+            if (!clusterEnabled) return;
+            respSession.clusterSession.WriteCachedSlotVerificationMessage(ref output);
+        }
+
+        /// <summary>
         /// Verify key ownership
         /// </summary>
         /// <param name="key"></param>
@@ -30,8 +48,8 @@ namespace Garnet.server
         {
             if (!clusterEnabled) return;
 
-            bool readOnly = type == LockType.Shared;
-            if (!respSession.clusterSession.CheckSingleKeySlotVerify(key, readOnly, respSession.SessionAsking))
+            var readOnly = type == LockType.Shared;
+            if (!respSession.clusterSession.NetworkIterativeSlotVerify(key, readOnly, respSession.SessionAsking))
             {
                 this.state = TxnState.Aborted;
                 return;

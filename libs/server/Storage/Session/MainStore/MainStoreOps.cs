@@ -154,6 +154,47 @@ namespace Garnet.server
             }
         }
 
+        public unsafe GarnetStatus GETEX<TContext>(ref SpanByte key, TimeSpan? expiry, ref SpanByteAndMemory output, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            long ctx = default;
+            var hasExpiry = expiry.HasValue == true && expiry.Value.Ticks != 0;
+            var pbCmdInput = stackalloc byte[sizeof(int) + sizeof(long) + RespInputHeader.Size];
+            *(int*)pbCmdInput = sizeof(long) + RespInputHeader.Size;
+            byte* pbCmdInputHeader = hasExpiry ? pbCmdInput + sizeof(int) + sizeof(long) : pbCmdInput + sizeof(int);
+            ((RespInputHeader*)pbCmdInputHeader)->cmd = RespCommand.GETEX;
+            ((RespInputHeader*)pbCmdInputHeader)->flags = 0;
+
+            if (!hasExpiry)
+            {
+                // Reusing `ExtraMetadata` space when there is no expiry
+                *(bool*)(pbCmdInputHeader + RespInputHeader.Size) = expiry.HasValue; // true to indicate persist option and false to indicate no expiry option
+            }
+
+            ref var input = ref SpanByte.Reinterpret(pbCmdInput);
+            input.ExtraMetadata = hasExpiry ? DateTimeOffset.UtcNow.Ticks + expiry.Value.Ticks : 0;
+
+            var status = context.RMW(ref key, ref input, ref output, ctx);
+
+            if (status.IsPending)
+            {
+                StartPendingMetrics();
+                CompletePendingForSession(ref status, ref output, ref context);
+                StopPendingMetrics();
+            }
+
+            if (status.Found)
+            {
+                incr_session_found();
+                return GarnetStatus.OK;
+            }
+            else
+            {
+                incr_session_notfound();
+                return GarnetStatus.NOTFOUND;
+            }
+        }
+
         /// <summary>
         /// GETDEL command - Gets the value corresponding to the given key and deletes the key.
         /// </summary>
@@ -1130,7 +1171,6 @@ namespace Garnet.server
         public void WATCH(ArgSlice key, StoreType type)
         {
             txnManager.Watch(key, type);
-            txnManager.VerifyKeyOwnership(key, LockType.Shared);
         }
 
         public unsafe void WATCH(byte[] key, StoreType type)
