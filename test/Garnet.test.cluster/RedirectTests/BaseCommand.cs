@@ -1704,7 +1704,7 @@ namespace Garnet.test.cluster
 
     internal class ZDIFFSTORE : BaseCommand
     {
-        public override bool IsArrayCommand => false;
+        public override bool IsArrayCommand => true;
         public override bool ArrayResponse => false;
         public override string Command => nameof(ZDIFFSTORE);
 
@@ -1712,12 +1712,24 @@ namespace Garnet.test.cluster
         {
             var ssk = GetSingleSlotKeys;
             // ZDIFFSTORE c 2 a b
-            return [ssk[3], "2", ssk[0], ssk[1]];
+            return [ssk[0], "2", ssk[1], ssk[2]];
         }
 
-        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], "2", csk[1], csk[2]];
+        }
 
-        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[3];
+            setup[0] = new ArraySegment<string>(["ZADD", ssk[1], "1", "a"]);
+            setup[1] = new ArraySegment<string>(["ZADD", ssk[2], "2", "b"]);
+            setup[2] = new ArraySegment<string>(["ZADD", ssk[3], "3", "c"]);
+            return setup;
+        }
     }
 
     #endregion

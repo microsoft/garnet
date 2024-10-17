@@ -98,6 +98,7 @@ namespace Garnet.test.cluster
                 new ZREMRANGEBYRANK(),
                 new ZRANDMEMBER(),
                 new ZDIFF(),
+                new ZDIFFSTORE(),
                 new HSET(),
                 new HGET(),
                 new HGETALL(),
