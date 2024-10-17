@@ -32,7 +32,7 @@ These member functions provide utility and convenience methods for manipulating 
 * Reset the buffer back to where it was using `IGarnetApi.ResetScratchBuffer(offset)`
 
 Registering the custom transaction is done on the server-side by calling the `NewTransactionProc(string name, int numParams, Func<CustomTransactionProcedure> proc)` method on the Garnet server object's `RegisterAPI` object with its name, number of parameters and a method that returns an instance of the custom transaction class.\
-It is possible to register the custom transaction from the client-side as well (as an admin command, given that the code already resides on the server) by using the `REGISTER` command (see [Custom Commands](../dev/custom-commands.md)). 
+It is possible to register the custom transaction from the client-side as well (as an admin command, given that the code already resides on the server) by using the `REGISTERCS` command (see [Custom Commands](../dev/custom-commands.md)). 
 
 ### Execution
 
