@@ -2,6 +2,8 @@
     "configuration": "Release",
     "framework": "net8.0",
     "filter": "*RespClusterMigrateBench*",
+
+    "acceptableAllocatedRange": 10, 
     "acceptableError": ".1",
     "acceptableStdDev": ".1"
 }

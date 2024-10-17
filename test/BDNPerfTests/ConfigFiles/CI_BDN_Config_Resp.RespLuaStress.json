@@ -13,7 +13,6 @@
     "expectedBasicLuaStress3AllocatedValue_win": 328,
     "expectedBasicLuaStress4AllocatedValue_win": 832,
     
-    "acceptableMeanRange": 15,
     "acceptableAllocatedRange": 10,    
     "acceptableError": ".1",
     "acceptableStdDev": ".1"
