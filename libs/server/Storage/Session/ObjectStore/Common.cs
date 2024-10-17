@@ -325,7 +325,7 @@ namespace Garnet.server
                         for (int i = 0; i < elements.Length; i++)
                         {
                             element = null;
-                            if (RespReadUtils.TryReadInt( ref refPtr, outputPtr + outputSpan.Length, out var number, out var _))
+                            if (RespReadUtils.TryReadInt(ref refPtr, outputPtr + outputSpan.Length, out var number, out var _))
                             {
                                 elements[i] = number;
                             }
