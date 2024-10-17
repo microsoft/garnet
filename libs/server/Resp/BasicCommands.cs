@@ -53,6 +53,83 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// GET
+        /// </summary>
+        bool NetworkGETEX<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 1 || parseState.Count > 3)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETEX));
+            }
+
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
+
+            TimeSpan? expiry = null;
+            if (parseState.Count > 1)
+            {
+                var option = parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST))
+                {
+                    expiry = TimeSpan.Zero;
+                }
+                else
+                {
+                    if (parseState.Count < 3 || !parseState.TryGetLong(2, out var expireTime) || expireTime <= 0)
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
+
+                    switch (option)
+                    {
+                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EX):
+                            expiry = TimeSpan.FromSeconds(expireTime);
+                            break;
+
+                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PX):
+                            expiry = TimeSpan.FromMilliseconds(expireTime);
+                            break;
+
+                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EXAT):
+                            expiry = DateTimeOffset.FromUnixTimeSeconds(expireTime) - DateTimeOffset.UtcNow;
+                            break;
+
+                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PXAT):
+                            expiry = DateTimeOffset.FromUnixTimeMilliseconds(expireTime) - DateTimeOffset.UtcNow;
+                            break;
+
+                        default:
+                            while (!RespWriteUtils.WriteError($"ERR Unsupported option {parseState.GetString(1)}", ref dcurr, dend))
+                                SendAndReset();
+                            return true;
+                    }
+                }
+            }
+
+            var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var status = storageApi.GETEX(ref key, expiry, ref o);
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    if (!o.IsSpanByte)
+                        SendAndReset(o.Memory, o.Length);
+                    else
+                        dcurr += o.Length;
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    Debug.Assert(o.IsSpanByte);
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// GET - async version
         /// </summary>
         bool NetworkGETAsync<TGarnetApi>(ref TGarnetApi storageApi)

@@ -66,6 +66,9 @@ namespace Garnet.server
         SUNION,
         TTL,
         TYPE,
+        WATCH,
+        WATCHMS,
+        WATCHOS,
         ZCARD,
         ZCOUNT,
         ZDIFF,
@@ -93,6 +96,7 @@ namespace Garnet.server
         FLUSHDB,
         GEOADD,
         GETDEL,
+        GETEX,
         GETSET,
         HDEL,
         HINCRBY,
@@ -239,10 +243,6 @@ namespace Garnet.server
 
         MEMORY,
         // MEMORY_USAGE is a read-only command, so moved up
-
-        WATCH,
-        WATCH_MS,
-        WATCH_OS,
 
         CONFIG,
         CONFIG_GET,
@@ -651,6 +651,7 @@ namespace Garnet.server
                         {
                             // Commands with dynamic number of arguments
                             >= ((3 << 4) | 3) and <= ((3 << 4) | 6) when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SETEXNX,
+                            >= ((5 << 4) | 1) and <= ((5 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("\nGETEX\r\n"u8) => RespCommand.GETEX,
                             >= ((6 << 4) | 0) and <= ((6 << 4) | 9) when lastWord == MemoryMarshal.Read<ulong>("RUNTXP\r\n"u8) => RespCommand.RUNTXP,
                             >= ((6 << 4) | 2) and <= ((6 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) => RespCommand.EXPIRE,
                             >= ((6 << 4) | 2) and <= ((6 << 4) | 5) when lastWord == MemoryMarshal.Read<ulong>("BITPOS\r\n"u8) => RespCommand.BITPOS,
@@ -989,28 +990,6 @@ namespace Garnet.server
                                     case 'W':
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nWATCH\r\n"u8))
                                         {
-                                            // WATCH OS|MS key
-                                            // 8 = "$2\r\nOS\r\n".Length
-                                            if (count > 1 && remainingBytes >= length + 8)
-                                            {
-                                                // Optimistically consume the subcommand
-                                                count--;
-                                                readHead += 8;
-
-                                                if (*(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nOS\r\n"u8))
-                                                {
-                                                    return RespCommand.WATCH_OS;
-                                                }
-                                                else if (*(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nMS\r\n"u8))
-                                                {
-                                                    return RespCommand.WATCH_MS;
-                                                }
-
-                                                // Undo the optimistic advance
-                                                count++;
-                                                readHead -= 8;
-                                            }
-
                                             return RespCommand.WATCH;
                                         }
                                         break;
@@ -1230,6 +1209,18 @@ namespace Garnet.server
                                         {
                                             return RespCommand.PFMERGE;
                                         }
+                                        break;
+                                    case 'W':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("WATCHMS\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return RespCommand.WATCHMS;
+                                        }
+
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("WATCHOS\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return RespCommand.WATCHOS;
+                                        }
+
                                         break;
 
                                     case 'Z':

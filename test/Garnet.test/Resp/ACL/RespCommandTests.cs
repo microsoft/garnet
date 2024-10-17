@@ -2984,6 +2984,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task GetEXACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GETEX",
+                [DoGetEXAsync]
+            );
+
+            static async Task DoGetEXAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("GETEX", ["foo"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
         public async Task GetBitACLsAsync()
         {
             await CheckCommandsAsync(
@@ -6036,13 +6051,13 @@ namespace Garnet.test.Resp.ACL
             // TODO: should watch fail outside of a transaction?
 
             await CheckCommandsAsync(
-                "WATCH MS",
+                "WATCHMS",
                 [DoWatchMSAsync]
             );
 
             static async Task DoWatchMSAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("WATCH", ["MS", "foo"]);
+                string val = await client.ExecuteForStringResultAsync("WATCHMS", ["foo"]);
                 ClassicAssert.AreEqual("OK", val);
             }
         }
@@ -6053,13 +6068,13 @@ namespace Garnet.test.Resp.ACL
             // TODO: should watch fail outside of a transaction?
 
             await CheckCommandsAsync(
-                "WATCH OS",
+                "WATCHOS",
                 [DoWatchOSAsync]
             );
 
             static async Task DoWatchOSAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("WATCH", ["OS", "foo"]);
+                string val = await client.ExecuteForStringResultAsync("WATCHOS", ["foo"]);
                 ClassicAssert.AreEqual("OK", val);
             }
         }

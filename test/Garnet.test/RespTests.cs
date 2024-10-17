@@ -3778,6 +3778,193 @@ namespace Garnet.test
             => ClassicAssert.AreEqual(1, fields.Count(f => f.StartsWith($"{name}=")), $"In {line}, expected single field {name}");
         }
 
+        #region GETEX
+
+        [Test]
+        public void GetExpiryBasicTestWithSERedisApi()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "KeyA";
+            var value = "ValueA";
+            var expectedValue = "ValueA";
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+
+            db.StringSet(key, value);
+
+            string actualValue = db.StringGetSetExpiry(key, expireTimeSpan);
+
+            ClassicAssert.AreEqual(expectedValue, actualValue);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, expireTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase(null, null)]
+        [TestCase(1, 1)]
+        public void GetExpiryWithoutOptions(int? initialTimespanMins, int? expectedTimespanMins)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "KeyA";
+            var value = "ValueA";
+            var expectedValue = "ValueA";
+            TimeSpan? initialTimeSpan = initialTimespanMins.HasValue ? TimeSpan.FromMinutes(initialTimespanMins.Value) : null;
+            TimeSpan? expectedTimeSpan = expectedTimespanMins.HasValue ? TimeSpan.FromMinutes(expectedTimespanMins.Value) : null;
+
+            if (initialTimeSpan.HasValue)
+            {
+                db.StringSet(key, value, initialTimeSpan);
+            }
+            else
+            {
+                db.StringSet(key, value);
+            }
+
+            var actualValue = (string)db.Execute("GETEX", key);
+
+            ClassicAssert.AreEqual(expectedValue, actualValue);
+
+            var actualTtl = db.KeyTimeToLive(key);
+
+            if (expectedTimeSpan.HasValue)
+            {
+                ClassicAssert.IsTrue(actualTtl.HasValue);
+                ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, 0);
+                ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, expectedTimeSpan.Value.TotalMilliseconds);
+            }
+            else
+            {
+                ClassicAssert.IsFalse(actualTtl.HasValue);
+            }
+        }
+
+        [Test]
+        [TestCase(null, 1, false, false)]
+        [TestCase(null, 1, true, false)]
+        [TestCase(1, 2, false, false)]
+        [TestCase(1, 2, true, false)]
+        [TestCase(2, 1, false, false)]
+        [TestCase(2, 1, true, false)]
+        [TestCase(null, 1, false, true)]
+        [TestCase(null, 1, true, true)]
+        [TestCase(1, 2, false, true)]
+        [TestCase(1, 2, true, true)]
+        [TestCase(2, 1, false, true)]
+        [TestCase(2, 1, true, true)]
+        public void GetExpiryWithExpireOptions(int? initialTimespanMins, int newTimespanMins, bool isMilliseconds, bool isUnixTimestamp)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "KeyA";
+            var value = "ValueA";
+            var expectedValue = "ValueA";
+            TimeSpan? initialTimeSpan = initialTimespanMins.HasValue ? TimeSpan.FromMinutes(initialTimespanMins.Value) : null;
+            TimeSpan newTimeSpan = TimeSpan.FromMinutes(newTimespanMins);
+            TimeSpan expectedTimeSpan = newTimeSpan;
+
+            if (initialTimeSpan.HasValue)
+            {
+                db.StringSet(key, value, initialTimeSpan);
+            }
+            else
+            {
+                db.StringSet(key, value);
+            }
+
+            string actualValue = null;
+            if (isMilliseconds && !isUnixTimestamp)
+            {
+                actualValue = (string)db.Execute("GETEX", key, "PX", newTimeSpan.TotalMilliseconds);
+            }
+            else if (isMilliseconds && isUnixTimestamp)
+            {
+                actualValue = (string)db.Execute("GETEX", key, "PXAT", DateTimeOffset.UtcNow.Add(newTimeSpan).ToUnixTimeMilliseconds());
+            }
+            else if (!isMilliseconds && !isUnixTimestamp)
+            {
+                actualValue = (string)db.Execute("GETEX", key, "EX", newTimeSpan.TotalSeconds);
+            }
+            else if (!isMilliseconds && isUnixTimestamp)
+            {
+                actualValue = (string)db.Execute("GETEX", key, "EXAT", DateTimeOffset.UtcNow.Add(newTimeSpan).ToUnixTimeSeconds());
+            }
+
+
+            ClassicAssert.AreEqual(expectedValue, actualValue);
+
+            var actualTtl = db.KeyTimeToLive(key);
+
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, expectedTimeSpan.TotalMilliseconds - 10000); // 10 seconds buffer
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, expectedTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase(null)]
+        [TestCase(1)]
+        public void GetExpiryWithPersistOptions(int? initialTimespanMins)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "KeyA";
+            var value = "ValueA";
+            var expectedValue = "ValueA";
+            TimeSpan? initialTimeSpan = initialTimespanMins.HasValue ? TimeSpan.FromMinutes(initialTimespanMins.Value) : null;
+
+            if (initialTimeSpan.HasValue)
+            {
+                db.StringSet(key, value, initialTimeSpan);
+            }
+            else
+            {
+                db.StringSet(key, value);
+            }
+
+            string actualValue = (string)db.Execute("GETEX", key, "PERSIST");
+            ClassicAssert.AreEqual(expectedValue, actualValue);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsFalse(actualTtl.HasValue);
+        }
+
+        [Test]
+        public void GetExpiryWithUnknownKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "KeyA";
+
+            var actualValue = (string)db.Execute("GETEX", key, "PERSIST");
+
+            ClassicAssert.IsNull(actualValue);
+        }
+
+        [Test]
+        [TestCase("EX,0")]
+        [TestCase("EX,10,PERSIST")]
+        [TestCase("EX,test")]
+        [TestCase("EX,-1")]
+        [TestCase("PXAT,0")]
+        [TestCase("UNKNOWN")]
+        public void GetExpiryWitInvalidOptions(string optionsInput)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "KeyA";
+            var value = "ValueA";
+            var options = optionsInput.Split(",");
+
+            db.StringSet(key, value);
+
+            Assert.Throws<RedisServerException>(() => db.Execute("GETEX", [key, .. options]));
+        }
+
+        #endregion
+
         #region GETSET
 
         [Test]

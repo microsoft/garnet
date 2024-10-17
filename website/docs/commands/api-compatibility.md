@@ -188,9 +188,9 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [HVALS](data-structures.md#hvals) | ➕ |  |
 | <span id="hyperloglog">**HYPERLOGLOG**</span> | [PFADD](analytics.md#pfadd) | ➕ |  |
 |  | [PFCOUNT](analytics.md#pfcount) | ➕ |  |
-|  | PFDEBUG | ➖ |  |
+|  | PFDEBUG | ➖ | Internal command |
 |  | [PFMERGE](analytics.md#pfmerge) | ➕ |  |
-|  | PFSELFTEST | ➖ |  |
+|  | PFSELFTEST | ➖ | Internal command |
 | <span id="keys">**KEYS**</span> | COPY | ➖ |  |
 |  | [DEL](generic-commands.md#del) | ➕ |  |
 |  | DUMP | ➖ |  |
@@ -318,8 +318,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | HELP | ➖ |  |
 |  | LEN | ➖ |  |
 |  | RESET | ➖ |  |
-| <span id="sorted-set">**SORTED SET**</span> | BZPOP | ➖ |  |
-|  | BZMPOP | ➖ |  |
+| <span id="sorted-set">**SORTED SET**</span> | BZMPOP | ➖ |  |
 |  | BZPOPMAX | ➖ |  |
 |  | BZPOPMIN | ➖ |  |
 |  | [ZADD](data-structures.md#zadd) | ➕ |  |
@@ -382,7 +381,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [DECRBY](raw-string.md#decrby) | ➕ |  |
 |  | [GET](raw-string.md#get) | ➕ |  |
 |  | [GETDEL](raw-string.md#getdel) | ➕ |  |
-|  | GETEX | ➖ |  |
+|  | [GETEX](raw-string.md#getex) | ➕ |  |
 |  | [GETRANGE](raw-string.md#getrange) | ➕ |  |
 |  | [GETSET](raw-string.md#getset) | ➖ |  |
 |  | [INCR](raw-string.md#incr) | ➕ |  |
