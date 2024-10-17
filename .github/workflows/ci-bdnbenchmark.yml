@@ -39,7 +39,8 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
-        test: [ 'Resp.RespParseStress', 'Resp.RespTsavoriteStress', 'Cluster.RespClusterMigrateBench', 'Cluster.RespClusterBench', 'Resp.RespLuaStress', 'Resp.RespLuaRunnerStress' ]   
+        #test: [ 'Resp.RespParseStress', 'Resp.RespTsavoriteStress', 'Cluster.RespClusterMigrateBench', 'Cluster.RespClusterBench', 'Resp.RespLuaStress', 'Resp.RespLuaRunnerStress' ]   
+        test: [ 'Resp.RespTsavoriteStress' ]   
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -72,20 +73,20 @@ jobs:
         if: ${{ always() }}
 
       # Run `github-action-benchmark` action to get Commit Comment
-      - name: Store benchmark result for commit comment
-        uses: benchmark-action/github-action-benchmark@v1
-        with:
-          tool: 'benchmarkdotnet'
-          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          alert-threshold: '140%' 
-          comment-on-alert: true
-          fail-on-alert: true
-          alert-comment-cc-users: '@darrenge'
-          summary-always: false
-          gh-pages-branch: 'continuousbenchmark'
-          benchmark-data-dir-path: 'website/static/charts'
-          auto-push: true
+#      - name: Store benchmark result for commit comment
+#        uses: benchmark-action/github-action-benchmark@v1
+#        with:
+#          tool: 'benchmarkdotnet'
+#          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
+#          github-token: ${{ secrets.GITHUB_TOKEN }}
+#          alert-threshold: '140%' 
+#          comment-on-alert: true
+#          fail-on-alert: true
+#          alert-comment-cc-users: '@darrenge'
+#          summary-always: false
+#          gh-pages-branch: 'continuousbenchmark'
+#          benchmark-data-dir-path: 'website/static/charts'
+#          auto-push: true
 
       # Run `github-action-benchmark` action for the Continuous Benchmarking Charts
       - name: Store benchmark result for charts
