@@ -145,6 +145,7 @@ namespace Garnet.server
         SUNIONSTORE,
         UNLINK,
         ZADD,
+        ZDIFFSTORE,
         ZINCRBY,
         ZPOPMAX,
         ZPOPMIN,
@@ -1337,6 +1338,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nEXPI"u8) && *(uint*)(ptr + 9) == MemoryMarshal.Read<uint>("RETIME\r\n"u8))
                                 {
                                     return RespCommand.EXPIRETIME;
+                                }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nZDIF"u8) && *(uint*)(ptr + 9) == MemoryMarshal.Read<uint>("FSTORE\r\n"u8))
+                                {
+                                    return RespCommand.ZDIFFSTORE;
                                 }
                                 break;
 

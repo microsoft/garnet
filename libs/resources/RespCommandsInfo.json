@@ -3888,6 +3888,44 @@
     ]
   },
   {
+    "Command": "ZDIFFSTORE",
+    "Name": "ZDIFFSTORE",
+    "Arity": -4,
+    "Flags": "DenyOom, MovableKeys, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Slow, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "OW, Update"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysKeyNum",
+          "KeyNumIdx": 0,
+          "FirstKey": 1,
+          "KeyStep": 1
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
     "Command": "ZINCRBY",
     "Name": "ZINCRBY",
     "Arity": 4,

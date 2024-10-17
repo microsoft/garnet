@@ -720,6 +720,24 @@ Keys that do not exist are considered to be empty sets.
 
 ---
 
+### ZDIFFSTORE
+
+#### Syntax
+
+```bash
+    ZDIFFSTORE destination numkeys key [key ...]
+```
+
+Computes the difference between the first and all successive input sorted sets and stores the result in destination. The total number of input keys is specified by numkeys.
+
+Keys that do not exist are considered to be empty sets.
+
+#### Resp Reply
+
+Integer reply: the number of members in the resulting sorted set at destination.
+
+---
+
 ### ZINCRBY
 
 #### Syntax

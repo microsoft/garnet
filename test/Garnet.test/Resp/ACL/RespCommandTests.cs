@@ -5784,6 +5784,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ZDiffStoreACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZDIFFSTORE",
+                [DoZDiffStoreAsync]
+            );
+
+            static async Task DoZDiffStoreAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("ZDIFFSTORE", ["keyZ", "2", "foo", "bar"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
         public async Task ZScanACLsAsync()
         {
             await CheckCommandsAsync(

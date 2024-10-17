@@ -599,6 +599,7 @@ namespace Garnet.server
                 RespCommand.ZPOPMIN => SortedSetPop(cmd, ref storageApi),
                 RespCommand.ZRANDMEMBER => SortedSetRandomMember(ref storageApi),
                 RespCommand.ZDIFF => SortedSetDifference(ref storageApi),
+                RespCommand.ZDIFFSTORE => SortedSetDifferenceStore(ref storageApi),
                 RespCommand.ZREVRANGE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZSCAN => ObjectScan(GarnetObjectType.SortedSet, ref storageApi),

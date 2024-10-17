@@ -462,6 +462,15 @@ namespace Garnet.server
         GarnetStatus SortedSetRemoveRangeByRank(ArgSlice key, int start, int stop, out int countRemoved);
 
         /// <summary>
+        /// Computes the difference between the first and all successive sorted sets and store resulting pairs in the output key.
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="destinationKey"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        GarnetStatus SortedSetDifferenceStore(ArgSlice[] keys, ArgSlice destinationKey, out int count);
+
+        /// <summary>
         /// Adds geospatial items (longitude, latitude, name) to the specified key.
         /// </summary>
         /// <param name="key"></param>
