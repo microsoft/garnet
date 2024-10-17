@@ -51,7 +51,7 @@ jobs:
         run: dotnet restore
 
       - name: Run BDN.benchmark Perf Test
-        run: .\test\BDNPerfTests\run_bdnperftest.ps1 ${{ matrix.test }}
+        run: ./test/BDNPerfTests/run_bdnperftest.ps1 ${{ matrix.test }}
         shell: pwsh
         continue-on-error: true
    
@@ -83,7 +83,8 @@ jobs:
           fail-on-alert: true
           alert-comment-cc-users: '@darrenge'
           summary-always: false
-          gh-pages-branch: 'continousbenchmark'
+          gh-pages-branch: 'main'
+          benchmark-data-dir-path: 'website/static/charts'
           auto-push: true
 
       # Run `github-action-benchmark` action for the Continuous Benchmarking Charts
@@ -95,7 +96,8 @@ jobs:
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           summary-always: true
-          gh-pages-branch: 'continousbenchmark'
+          gh-pages-branch: 'main'
+          benchmark-data-dir-path: 'website/static/charts'
           auto-push: true
 
     
