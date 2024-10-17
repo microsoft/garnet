@@ -397,6 +397,13 @@ namespace Garnet.server
         public GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
          => storageSession.ObjectScan(key, ref input, ref outputFooter, ref objectContext);
 
+        /// <inheritdoc />
+        public int GetScratchBufferOffset()
+            => storageSession.scratchBufferManager.ScratchBufferOffset;
+
+        /// <inheritdoc />
+        public bool ResetScratchBuffer(int offset)
+            => storageSession.scratchBufferManager.ResetScratchBuffer(offset);
         #endregion
     }
 }

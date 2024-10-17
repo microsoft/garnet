@@ -19,5 +19,13 @@ namespace Tsavorite.core
         /// <param name="input"></param>
         /// <returns></returns>
         int GetRMWInitialValueLength(ref TInput input);
+
+        /// <summary>
+        /// Length of value object, when populated by Upsert using given value and input
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        int GetUpsertValueLength(ref TValue value, ref TInput input);
     }
 }

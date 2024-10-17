@@ -553,6 +553,14 @@ namespace Garnet.server
             return garnetApi.ObjectScan(key, ref input, ref outputFooter);
         }
 
+        /// <inheritdoc />
+        public int GetScratchBufferOffset()
+            => garnetApi.GetScratchBufferOffset();
+
+        /// <inheritdoc />
+        public bool ResetScratchBuffer(int offset)
+            => garnetApi.ResetScratchBuffer(offset);
+
         #endregion
     }
 }

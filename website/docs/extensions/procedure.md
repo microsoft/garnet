@@ -24,6 +24,10 @@ Registering the custom procedure is done on the server-side by calling the
 
 method on the Garnet server object's `RegisterAPI` object with its name, an instance of the custom procedure class and optional commandInfo.
 
+**NOTE** When invoking APIs on `IGarnetApi` multiple times with large outputs, it is possible to exhaust the internal buffer capacity. If such usage scenarios are expected, the buffer could be reset as described below.
+* Retrieve the initial buffer offset using `IGarnetApi.GetScratchBufferOffset`
+* Invoke necessary apis on `IGarnetApi`
+* Reset the buffer back to where it was using `IGarnetApi.ResetScratchBuffer(offset)`
 
 :::tip 
 As a reference of an implementation of a custom procedure, see the example in GarnetServer\Extensions\Sum.cs.
