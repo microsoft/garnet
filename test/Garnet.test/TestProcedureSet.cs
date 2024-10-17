@@ -80,6 +80,10 @@ namespace Garnet
             if (status != GarnetStatus.OK || members.Length != 5)
                 return false;
 
+            status = api.SetIsMember(setA, elements[0..5], out var result);
+            if (status != GarnetStatus.OK || result.Length != 5)
+                return false;
+
             status = api.SetPop(setA, out var member);
             if (status != GarnetStatus.OK)
                 return false;
