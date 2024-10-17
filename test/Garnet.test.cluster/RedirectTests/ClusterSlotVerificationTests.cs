@@ -30,6 +30,7 @@ namespace Garnet.test.cluster
                 new SET(),
                 new MGET(),
                 new MSET(),
+                new GETEX(),
                 new PFADD(),
                 new PFCOUNT(),
                 new PFMERGE(),
@@ -187,6 +188,7 @@ namespace Garnet.test.cluster
         [TestCase("SET")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -313,6 +315,7 @@ namespace Garnet.test.cluster
         [TestCase("SET")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -451,6 +454,7 @@ namespace Garnet.test.cluster
         [TestCase("SET")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -582,6 +586,7 @@ namespace Garnet.test.cluster
         [TestCase("SET")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -719,6 +724,7 @@ namespace Garnet.test.cluster
         [TestCase("SET")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -873,6 +879,7 @@ namespace Garnet.test.cluster
         [TestCase("SET")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
