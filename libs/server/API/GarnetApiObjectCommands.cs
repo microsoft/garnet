@@ -302,6 +302,10 @@ namespace Garnet.server
             => storageSession.SetIsMember(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
+        public GarnetStatus SetIsMember(ArgSlice key, ArgSlice[] members, out int[] result)
+            => storageSession.SetIsMember(key, members, out result, ref objectContext);
+
+        /// <inheritdoc />
         public GarnetStatus SetPop(ArgSlice key, out ArgSlice member)
             => storageSession.SetPop(key, out member, ref objectContext);
 
