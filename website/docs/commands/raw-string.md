@@ -119,12 +119,51 @@ One of the following:
 
 ---
 
+### GETSET
+
+Note: GETSET is a deprecated command, use [SET](#set) with the `GET` argument when migrating or writing new code.
+
+#### Syntax
+
+```bash
+    GETSET key value
+```
+
+Atomically sets key to value and returns the old value stored at key.
+
+#### Resp Reply
+
+One of the following:
+
+* Bulk string reply: the old value stored at the key.
+* Null reply: if the key does not exist.
+
+---
+
 ### GETRANGE
 
 #### Syntax
 
 ```bash
     GETRANGE key start end
+```
+
+Returns the substring of the string value stored at key, determined by the offsets start and end (both are inclusive). 
+
+#### Resp Reply
+
+Bulk string reply: The substring of the string value stored at key, determined by the offsets start and end (both are inclusive).
+
+---
+
+### SUBSTR
+
+Note: SUBSTR is a deprecated command, use [GETRANGE](#getrange) when migrating or writing new code.
+
+#### Syntax
+
+```bash
+    SUBSTR key start end
 ```
 
 Returns the substring of the string value stored at key, determined by the offsets start and end (both are inclusive). 
@@ -287,6 +326,27 @@ Set **key** to hold the string value and set **key** to timeout after a given nu
 #### Resp Reply
 
 Simple string reply: OK.
+
+---
+
+### SETNX
+
+Note: SETNX is a deprecated command, use [SET](#set) with the `NX` argument when migrating or writing new code.
+
+#### Syntax
+
+```bash
+    SETNX key value
+```
+
+Set key to hold string value if key does not exist. When key already holds a value, no operation is performed. 
+
+#### Resp Reply
+
+One of the following:
+
+* Integer reply: 0 if the key was not set.
+* Integer reply: 1 if the key was set.
 
 ---
 
