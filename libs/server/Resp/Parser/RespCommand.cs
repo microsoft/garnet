@@ -14,9 +14,9 @@ namespace Garnet.server
     /// <summary>
     /// Basic RESP command enum
     /// </summary>
-    public enum RespCommand : byte
+    public enum RespCommand : ushort
     {
-        NONE = 0x00,
+        NONE = 0x0000,
 
         // Read-only commands. NOTE: Should immediately follow NONE.
         BITCOUNT,
@@ -302,7 +302,7 @@ namespace Garnet.server
         HELLO,
         QUIT, // Note: Update IsNoAuth if adding new no-auth commands after this
 
-        INVALID = 0xFF,
+        INVALID = 0xFFFF,
     }
 
     /// <summary>

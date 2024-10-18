@@ -13,7 +13,7 @@ namespace Garnet.server
     public class CustomCommandManager
     {
         internal const byte StartOffset = 200;
-        internal const int MaxRegistrations = byte.MaxValue - StartOffset;
+        internal const int MaxRegistrations = ushort.MaxValue - StartOffset;
 
         internal readonly CustomRawStringCommand[] rawStringCommandMap;
         internal readonly CustomObjectCommandWrapper[] objectCommandMap;
@@ -45,7 +45,7 @@ namespace Garnet.server
             if (id >= MaxRegistrations)
                 throw new Exception("Out of registration space");
 
-            rawStringCommandMap[id] = new CustomRawStringCommand(name, (byte)id, type, customFunctions, expirationTicks);
+            rawStringCommandMap[id] = new CustomRawStringCommand(name, (ushort)id, type, customFunctions, expirationTicks);
             if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
             return id;
