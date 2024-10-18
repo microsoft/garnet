@@ -559,6 +559,22 @@ Returns if **member** is a member of the set stored at **key**.
 
 ---
 
+### SMISMEMBER
+
+#### Syntax
+
+```bash
+    SMISMEMBER key member [member ...]
+```
+
+Returns whether each **member** is a member of the set stored at **key**.
+
+#### Resp Reply
+
+Array reply: a list representing the membership of the given elements, in the same order as they are requested.
+
+---
+
 ### SRANDMEMBER
 
 #### Syntax

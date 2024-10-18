@@ -297,6 +297,62 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Converts an array of elements in RESP format to ArgSlice[] type
+        /// </summary>
+        /// <param name="outputFooter">The RESP format output object</param>
+        /// <param name="error">A description of the error, if there is any</param>
+        /// <returns></returns>
+        unsafe int[] ProcessRespIntegerArrayOutput(GarnetObjectStoreOutput outputFooter, out string error)
+        {
+            int[] elements = default;
+            error = default;
+
+            // For reading the elements in the outputFooter
+            byte* element = null;
+
+            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
+                             outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+
+            try
+            {
+                fixed (byte* outputPtr = outputSpan)
+                {
+                    var refPtr = outputPtr;
+
+                    if (*refPtr == '-')
+                    {
+                        if (!RespReadUtils.ReadErrorAsString(out error, ref refPtr, outputPtr + outputSpan.Length))
+                            return default;
+                    }
+                    else if (*refPtr == '*')
+                    {
+                        // Get the number of elements
+                        if (!RespReadUtils.ReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
+                            return default;
+
+                        // Create the argslice[]
+                        elements = new int[arraySize];
+                        for (int i = 0; i < elements.Length; i++)
+                        {
+                            element = null;
+                            if (RespReadUtils.TryReadInt(ref refPtr, outputPtr + outputSpan.Length, out var number, out var _))
+                            {
+                                elements[i] = number;
+                            }
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (!outputFooter.spanByteAndMemory.IsSpanByte)
+                    outputFooter.spanByteAndMemory.Memory.Dispose();
+            }
+
+            return elements;
+        }
+
+        /// <summary>
         /// Processes RESP output as pairs of score and member. 
         /// </summary>
         unsafe (ArgSlice member, ArgSlice score)[] ProcessRespArrayOutputAsPairs(GarnetObjectStoreOutput outputFooter, out string error)

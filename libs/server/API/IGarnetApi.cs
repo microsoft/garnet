@@ -1368,6 +1368,14 @@ namespace Garnet.server
         GarnetStatus SetIsMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
+        /// Returns whether each member is a member of the set stored at key.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="members"></param>
+        /// <returns></returns>
+        GarnetStatus SetIsMember(ArgSlice key, ArgSlice[] members, out int[] result);
+
+        /// <summary>
         /// Iterates over the members of the Set with the given key using a cursor,
         /// a match pattern and count parameters.
         /// </summary>
