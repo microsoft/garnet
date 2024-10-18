@@ -13,6 +13,15 @@ namespace Garnet.server
     /// </summary>
     public interface IGarnetApi : IGarnetReadApi, IGarnetAdvancedApi
     {
+        #region GETEX
+
+        /// <summary>
+        /// GETEX
+        /// </summary>
+        GarnetStatus GETEX(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
+
+        #endregion
+
         #region SET
         /// <summary>
         /// SET
@@ -1701,6 +1710,19 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Retrieve the current scratch buffer offset.
+        /// </summary>
+        /// <returns>Current offset</returns>
+        int GetScratchBufferOffset();
+
+        /// <summary>
+        /// Resets the scratch buffer to the given offset.
+        /// </summary>
+        /// <param name="offset">Offset to reset to</param>
+        /// <returns>True if successful, else false</returns>
+        bool ResetScratchBuffer(int offset);
 
         #endregion
 

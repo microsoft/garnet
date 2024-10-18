@@ -8,7 +8,7 @@ namespace Garnet
 {
     class SetStringAndList : CustomProcedure
     {
-        public override bool Execute(IGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);

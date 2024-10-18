@@ -172,6 +172,17 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Create output as error message, from given string
+        /// </summary>
+        protected static unsafe void WriteError(ref MemoryResult<byte> output, ReadOnlySpan<char> errorMessage)
+        {
+            var _output = (output.MemoryOwner, output.Length);
+            WriteError(ref _output, errorMessage);
+            output.MemoryOwner = _output.MemoryOwner;
+            output.Length = _output.Length;
+        }
+
+        /// <summary>
         /// Get argument from input, at specified offset (starting from 0)
         /// </summary>
         /// <param name="parseState">Current parse state</param>

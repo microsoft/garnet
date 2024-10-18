@@ -27,6 +27,7 @@ namespace Garnet.server
                 case RespCommand.EXPIREAT:
                 case RespCommand.PEXPIREAT:
                 case RespCommand.GETDEL:
+                case RespCommand.GETEX:
                     return false;
                 default:
                     if ((byte)input.header.cmd >= CustomCommandManager.StartOffset)
@@ -96,6 +97,7 @@ namespace Garnet.server
                 case RespCommand.PEXPIREAT:
                 case RespCommand.PERSIST:
                 case RespCommand.GETDEL:
+                case RespCommand.GETEX:
                     throw new Exception();
 
                 case RespCommand.SETBIT:
@@ -462,6 +464,35 @@ namespace Garnet.server
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
 
+                case RespCommand.GETEX:
+                    CopyRespTo(ref value, ref output);
+
+                    if (input.arg1 > 0)
+                    {
+                        byte* pbOutput = stackalloc byte[ObjectOutputHeader.Size];
+                        var _output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
+
+                        var newExpiry = input.arg1;
+                        return EvaluateExpireInPlace(ExpireOption.None, expiryExists: value.MetadataSize > 0, newExpiry, ref value, ref _output);
+                    }
+
+                    if (input.parseState.Count - input.parseStateFirstArgIdx > 0)
+                    {
+                        var persist = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).ReadOnlySpan
+                            .EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST);
+
+                        if (persist) // Persist the key
+                        {
+                            rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
+                            value.AsSpan().CopyTo(value.AsSpanWithMetadata());
+                            value.ShrinkSerializedLength(value.Length - value.MetadataSize);
+                            value.UnmarkExtraMetadata();
+                            rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
+                            return true;
+                        }
+                    }
+
+                    return true;
 
                 case RespCommand.APPEND:
                     // If nothing to append, can avoid copy update.
@@ -739,6 +770,34 @@ namespace Garnet.server
                     CopyRespTo(ref oldValue, ref output);
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
+
+                case RespCommand.GETEX:
+                    CopyRespTo(ref oldValue, ref output);
+
+                    if (input.arg1 > 0)
+                    {
+                        Debug.Assert(newValue.Length == oldValue.Length + sizeof(long));
+                        byte* pbOutput = stackalloc byte[ObjectOutputHeader.Size];
+                        var _output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
+                        var newExpiry = input.arg1;
+                        EvaluateExpireCopyUpdate(ExpireOption.None, expiryExists: oldValue.MetadataSize > 0, newExpiry, ref oldValue, ref newValue, ref _output);
+                    }
+
+                    oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
+
+                    if (input.parseState.Count - input.parseStateFirstArgIdx > 0)
+                    {
+                        var persist = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).ReadOnlySpan
+                            .EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST);
+
+                        if (persist) // Persist the key
+                        {
+                            newValue.AsSpan().CopyTo(newValue.AsSpanWithMetadata());
+                            newValue.ShrinkSerializedLength(newValue.Length - newValue.MetadataSize);
+                            newValue.UnmarkExtraMetadata();
+                        }
+                    }
+                    break;
 
                 case RespCommand.APPEND:
                     // Copy any existing value with metadata to thew new value

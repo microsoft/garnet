@@ -75,6 +75,14 @@ namespace Garnet.server
             => storageSession.GET(key, out value, ref objectContext);
         #endregion
 
+        #region GETEX
+
+        /// <inheritdoc />
+        public GarnetStatus GETEX(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
+            => storageSession.GETEX(ref key, ref input, ref output, ref context);
+
+        #endregion
+
         #region GETRANGE
         /// <inheritdoc />
         public GarnetStatus GETRANGE(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
@@ -400,6 +408,13 @@ namespace Garnet.server
         public GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
          => storageSession.ObjectScan(key, ref input, ref outputFooter, ref objectContext);
 
+        /// <inheritdoc />
+        public int GetScratchBufferOffset()
+            => storageSession.scratchBufferManager.ScratchBufferOffset;
+
+        /// <inheritdoc />
+        public bool ResetScratchBuffer(int offset)
+            => storageSession.scratchBufferManager.ResetScratchBuffer(offset);
         #endregion
     }
 }

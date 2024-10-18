@@ -159,12 +159,14 @@ The optional WITHVALUES modifier changes the reply so it includes the respective
 #### Syntax
 
 ```bash
-    HSCAN key cursor [MATCH pattern] [COUNT count]
+    HSCAN key cursor [MATCH pattern] [COUNT count] [NOVALUES]
 ```
 
 Iterates over the fields and values of a hash stored at a given **key**. Same as [SSCAN](#sscan) and [ZSCAN](#zscan) commands, **HSCAN** is used in order to incrementally iterate over the elements of the hash set*.
 
 The **match** parameter allows to apply a filter to elements after they have been retrieved from the collection. The **count** option sets a limit to the maximum number of items returned from the server to this command. This limit is also set in conjunction with the object-scan-count-limit of the global server settings.
+
+You can use the **NOVALUES** option to make Redis return only the keys in the hash table without their corresponding values
 
 ---
 
@@ -291,7 +293,7 @@ Returns the length of the list stored at key. If key does not exist, it is inter
 
 ---
 
-### LMOVE {#lmove}
+### LMOVE
 
 #### Syntax
 
@@ -302,6 +304,18 @@ Returns the length of the list stored at key. If key does not exist, it is inter
 Atomically returns and removes the first/last element (head/tail depending on the wherefrom argument) of the list stored at **source**, and pushes the element at the first/last element (head/tail depending on the whereto argument) of the list stored at **destination**.
 
 This command comes in place of the now deprecated RPOPLPUSH. Doing LMOVE RIGHT LEFT is equivalent.
+
+---
+
+### LMPOP
+
+#### Syntax
+
+```bash
+    LMPOP numkeys key [key ...] <LEFT | RIGHT> [COUNT count]
+```
+
+Pops one or more elements from the first non-empty list key from the list of provided key names.
 
 ---
 
@@ -506,6 +520,18 @@ Returns the set cardinality (number of elements) of the set stored at **key**.
 ```
 
 Returns all the members of the set value stored at **key**.
+
+---
+
+### SMOVE
+
+#### Syntax
+
+```bash
+    SMOVE source destination member
+```
+
+Move member from the set at source to the set at destination. This operation is atomic. In every given moment the element will appear to be a member of source or destination for other clients.
 
 ---
 

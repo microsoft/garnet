@@ -82,7 +82,7 @@ namespace Garnet.server
         {
             if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST));
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETDEL));
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;

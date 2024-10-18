@@ -17,7 +17,8 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <param name="procInput"></param>
         /// <param name="output"></param>
-        public abstract bool Execute(IGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output);
+        public abstract bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+            where TGarnetApi : IGarnetApi;
     }
 
     class CustomProcedureWrapper

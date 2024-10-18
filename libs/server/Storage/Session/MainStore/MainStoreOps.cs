@@ -141,6 +141,30 @@ namespace Garnet.server
             }
         }
 
+        public unsafe GarnetStatus GETEX<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            var status = context.RMW(ref key, ref input, ref output);
+
+            if (status.IsPending)
+            {
+                StartPendingMetrics();
+                CompletePendingForSession(ref status, ref output, ref context);
+                StopPendingMetrics();
+            }
+
+            if (status.Found)
+            {
+                incr_session_found();
+                return GarnetStatus.OK;
+            }
+            else
+            {
+                incr_session_notfound();
+                return GarnetStatus.NOTFOUND;
+            }
+        }
+
         /// <summary>
         /// GETDEL command - Gets the value corresponding to the given key and deletes the key.
         /// </summary>
@@ -1085,7 +1109,6 @@ namespace Garnet.server
         public void WATCH(ArgSlice key, StoreType type)
         {
             txnManager.Watch(key, type);
-            txnManager.VerifyKeyOwnership(key, LockType.Shared);
         }
 
         public unsafe void WATCH(byte[] key, StoreType type)

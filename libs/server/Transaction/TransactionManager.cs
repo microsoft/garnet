@@ -160,14 +160,24 @@ namespace Garnet.server
 
         internal bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc, ref MemoryResult<byte> output)
         {
-            bool running = false;
+            var running = false;
             scratchBufferManager.Reset();
             try
             {
+                // If cluster is enabled reset slot verification state cache
+                ResetCacheSlotVerificationResult();
+
                 functionsState.StoredProcMode = true;
                 // Prepare phase
                 if (!proc.Prepare(garnetTxPrepareApi, ref procInput))
                 {
+                    Reset(running);
+                    return false;
+                }
+
+                if (state == TxnState.Aborted)
+                {
+                    WriteCachedSlotVerificationMessage(ref output);
                     Reset(running);
                     return false;
                 }

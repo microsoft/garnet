@@ -32,7 +32,14 @@ namespace Garnet.cluster
                 SendAndReset();
         }
 
-        private void WriteClusterSlotVerificationMessage(ClusterConfig config, ClusterSlotVerificationResult vres, ref byte* dcurr, ref byte* dend)
+        /// <summary>
+        /// Get slot verification message
+        /// </summary>
+        /// <param name="config"></param>
+        /// <param name="vres"></param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
+        private ReadOnlySpan<byte> GetSlotVerificationMessage(ClusterConfig config, ClusterSlotVerificationResult vres)
         {
             ReadOnlySpan<byte> errorMessage;
             var state = vres.state;
@@ -61,6 +68,19 @@ namespace Garnet.cluster
                 default:
                     throw new Exception($"Unknown SlotVerifiedState {state}");
             }
+            return errorMessage;
+        }
+
+        /// <summary>
+        /// Write slot verification message to output wire
+        /// </summary>
+        /// <param name="config"></param>
+        /// <param name="vres"></param>
+        /// <param name="dcurr"></param>
+        /// <param name="dend"></param>
+        private void WriteClusterSlotVerificationMessage(ClusterConfig config, ClusterSlotVerificationResult vres, ref byte* dcurr, ref byte* dend)
+        {
+            var errorMessage = GetSlotVerificationMessage(config, vres);
             while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                 SendAndReset(ref dcurr, ref dend);
         }

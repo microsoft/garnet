@@ -57,16 +57,16 @@ namespace Garnet.server
         bool mainStoreKeyLocked;
         bool objectStoreKeyLocked;
 
-        readonly TxnKeyEntryComparer comparer;
+        readonly TxnKeyComparison comparison;
 
         public int phase;
 
         internal TxnKeyEntries(int initialCount, LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext,
                 LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext)
         {
-            keys = new TxnKeyEntry[initialCount];
+            keys = GC.AllocateArray<TxnKeyEntry>(initialCount, pinned: true);
             // We sort a single array for speed, and the sessions use the same sorting logic,
-            this.comparer = new(lockableContext, objectStoreLockableContext);
+            comparison = new(lockableContext, objectStoreLockableContext);
         }
 
         public bool IsReadOnly
@@ -85,11 +85,12 @@ namespace Garnet.server
                 return readOnly;
             }
         }
+
         public void AddKey(ArgSlice keyArgSlice, bool isObject, LockType type)
         {
             var keyHash = !isObject
-                ? comparer.lockableContext.GetKeyHash(keyArgSlice.SpanByte)
-                : comparer.objectStoreLockableContext.GetKeyHash(keyArgSlice.ToArray());
+                ? comparison.lockableContext.GetKeyHash(keyArgSlice.SpanByte)
+                : comparison.objectStoreLockableContext.GetKeyHash(keyArgSlice.ToArray());
 
             // Grow the buffer if needed
             if (keyCount >= keys.Length)
@@ -116,19 +117,19 @@ namespace Garnet.server
             // during sorting as well as during locking itself. This should not be a significant impact on performance.
 
             // This does not call Tsavorite's SortKeyHashes because we need to consider isObject as well.
-            Array.Sort(keys, 0, keyCount, comparer);
+            MemoryExtensions.Sort(keys.AsSpan().Slice(0, keyCount), comparison.comparisonDelegate);
 
             // Issue main store locks
             if (mainKeyCount > 0)
             {
-                comparer.lockableContext.Lock(keys, 0, mainKeyCount);
+                comparison.lockableContext.Lock(keys, 0, mainKeyCount);
                 mainStoreKeyLocked = true;
             }
 
             // Issue object store locks
             if (mainKeyCount < keyCount)
             {
-                comparer.objectStoreLockableContext.Lock(keys, mainKeyCount, keyCount - mainKeyCount);
+                comparison.objectStoreLockableContext.Lock(keys, mainKeyCount, keyCount - mainKeyCount);
                 objectStoreKeyLocked = true;
             }
 
@@ -143,13 +144,13 @@ namespace Garnet.server
             // during sorting as well as during locking itself. This should not be a significant impact on performance.
 
             // This does not call Tsavorite's SortKeyHashes because we need to consider isObject as well.
-            Array.Sort(keys, 0, keyCount, comparer);
+            MemoryExtensions.Sort(keys.AsSpan().Slice(0, keyCount), comparison.comparisonDelegate);
 
             // Issue main store locks
             // TryLock will unlock automatically in case of partial failure
             if (mainKeyCount > 0)
             {
-                mainStoreKeyLocked = comparer.lockableContext.TryLock(keys, 0, mainKeyCount, lock_timeout);
+                mainStoreKeyLocked = comparison.lockableContext.TryLock(keys, 0, mainKeyCount, lock_timeout);
                 if (!mainStoreKeyLocked)
                 {
                     phase = 0;
@@ -161,7 +162,7 @@ namespace Garnet.server
             // TryLock will unlock automatically in case of partial failure
             if (mainKeyCount < keyCount)
             {
-                objectStoreKeyLocked = comparer.objectStoreLockableContext.TryLock(keys, mainKeyCount, keyCount - mainKeyCount, lock_timeout);
+                objectStoreKeyLocked = comparison.objectStoreLockableContext.TryLock(keys, mainKeyCount, keyCount - mainKeyCount, lock_timeout);
                 if (!objectStoreKeyLocked)
                 {
                     phase = 0;
@@ -177,9 +178,9 @@ namespace Garnet.server
         {
             phase = 2;
             if (mainStoreKeyLocked && mainKeyCount > 0)
-                comparer.lockableContext.Unlock(keys, 0, mainKeyCount);
+                comparison.lockableContext.Unlock(keys, 0, mainKeyCount);
             if (objectStoreKeyLocked && mainKeyCount < keyCount)
-                comparer.objectStoreLockableContext.Unlock(keys, mainKeyCount, keyCount - mainKeyCount);
+                comparison.objectStoreLockableContext.Unlock(keys, mainKeyCount, keyCount - mainKeyCount);
             mainKeyCount = 0;
             keyCount = 0;
             mainStoreKeyLocked = false;

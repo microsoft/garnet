@@ -2262,10 +2262,10 @@ namespace Garnet.test
             ClassicAssert.AreEqual(16, pos);
 
             pos = db.StringBitPosition(key, true, 0, 0, StringIndexType.Byte);
-            ClassicAssert.AreEqual(-1, pos);
+            ClassicAssert.AreEqual(0, pos);
 
             pos = db.StringBitPosition(key, false, 0, 0, StringIndexType.Byte);
-            ClassicAssert.AreEqual(-1, pos);
+            ClassicAssert.AreEqual(0, pos);
 
             value = [0xf8, 0x6f, 0xf0];
             db.StringSet(key, value);
@@ -2274,9 +2274,17 @@ namespace Garnet.test
 
             pos = db.StringBitPosition(key, true, 10, 12, StringIndexType.Bit);
             ClassicAssert.AreEqual(10, pos);
+
+            key = "mykey2";
+            db.StringSetBit(key, 63, false);
+            pos = db.StringBitPosition(key, false, 1);
+            ClassicAssert.AreEqual(8, pos);
+
+            pos = db.StringBitPosition(key, false, 0);
+            ClassicAssert.AreEqual(0, pos);
         }
 
-        [Test, Order(34)]
+        [Test, Order(35)]
         [Category("BITOP")]
         public void BitmapOperationNonExistentSourceKeys()
         {
@@ -2289,7 +2297,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, size);
         }
 
-        [Test, Order(35)]
+        [Test, Order(36)]
         [Category("BITOP")]
         public void BitmapOperationInvalidOption()
         {
@@ -2308,7 +2316,7 @@ namespace Garnet.test
             }
         }
 
-        [Test, Order(36)]
+        [Test, Order(37)]
         [Category("BITOP")]
         public void BitmapOperationTooManyKeys()
         {
