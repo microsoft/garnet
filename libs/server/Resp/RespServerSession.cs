@@ -17,13 +17,13 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
             /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
             SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
         BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
             GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
-    using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+    using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
             /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
             SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
         LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
@@ -65,7 +65,6 @@ namespace Garnet.server
         internal readonly ScratchBufferManager scratchBufferManager;
 
         internal SessionParseState parseState;
-        internal ArgSlice[] parseStateBuffer;
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
 
@@ -220,7 +219,7 @@ namespace Garnet.server
             clusterSession?.SetUser(this._user);
             sessionScriptCache?.SetUser(this._user);
 
-            parseState.Initialize(ref parseStateBuffer);
+            parseState.Initialize();
             readHead = 0;
             toDispose = false;
             SessionAsking = 0;
@@ -750,7 +749,10 @@ namespace Garnet.server
                 }
 
                 // Perform the operation
-                TryTransactionProc(currentCustomTransaction.id, recvBufferPtr + readHead, recvBufferPtr + endReadHead, customCommandManagerSession.GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager).Item1);
+                TryTransactionProc(currentCustomTransaction.id,
+                    customCommandManagerSession
+                        .GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager)
+                        .Item1);
                 currentCustomTransaction = null;
                 return true;
             }
@@ -763,8 +765,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                TryCustomProcedure(currentCustomProcedure.Id, recvBufferPtr + readHead, recvBufferPtr + endReadHead,
-                    currentCustomProcedure.CustomProcedureImpl);
+                TryCustomProcedure(currentCustomProcedure.CustomProcedureImpl);
 
                 currentCustomProcedure = null;
                 return true;
@@ -790,7 +791,8 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomRawStringCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomRawStringCommand.GetRespCommand(), currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
+            TryCustomRawStringCommand(currentCustomRawStringCommand.GetRespCommand(),
+                currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
             currentCustomRawStringCommand = null;
             return true;
         }
@@ -805,7 +807,8 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomObjectCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
+            TryCustomObjectCommand(currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid,
+                currentCustomObjectCommand.type, ref storageApi);
             currentCustomObjectCommand = null;
             return true;
         }

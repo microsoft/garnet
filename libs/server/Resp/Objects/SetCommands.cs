@@ -34,16 +34,8 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SADD,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             var status = storageApi.SetAdd(keyBytes, ref input, out var output);
 
@@ -268,16 +260,8 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SREM,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             var status = storageApi.SetRemove(keyBytes, ref input, out var output);
 
@@ -320,14 +304,8 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SCARD,
-                },
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SCARD };
+            var input = new ObjectInput(header);
 
             var status = storageApi.SetLength(keyBytes, ref input, out var output);
 
@@ -370,14 +348,8 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SMEMBERS,
-                },
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
+            var input = new ObjectInput(header);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -429,16 +401,8 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = isSingle ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = isSingle ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -520,15 +484,8 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SPOP,
-                },
-                arg1 = countParameter,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SPOP };
+            var input = new ObjectInput(header, countParameter);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -646,16 +603,8 @@ namespace Garnet.server
             var seed = Random.Shared.Next();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SRANDMEMBER,
-                },
-                arg1 = countParameter,
-                arg2 = seed,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SRANDMEMBER };
+            var input = new ObjectInput(header, countParameter, seed);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
