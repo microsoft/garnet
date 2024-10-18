@@ -161,15 +161,10 @@ namespace Garnet.server
             var destinationKey = parseState.GetArgSliceByRef(0);
             var sourceKey = parseState.GetArgSliceByRef(1);
 
-            var input = new ObjectInput
+            var input = new ObjectInput(new RespInputHeader
             {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.SortedSet,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 2,
-            };
+                type = GarnetObjectType.SortedSet,
+            }, ref parseState, 2);
 
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.GeoSearchStore(sourceKey, destinationKey, ref input, ref output);

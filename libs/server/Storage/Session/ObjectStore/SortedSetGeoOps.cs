@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Reflection.PortableExecutable;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -77,9 +78,9 @@ namespace Garnet.server
             try
             {
                 var isStoreDist = false;
-                Span<ArgSlice> geoSearchParseState = stackalloc ArgSlice[input.parseState.Count - input.parseStateStartIdx + 1];
+                Span<ArgSlice> geoSearchParseState = stackalloc ArgSlice[input.parseState.Count - input.parseStateFirstArgIdx + 1];
                 var currArgIdx = 0;
-                var i = input.parseStateStartIdx;
+                var i = input.parseStateFirstArgIdx;
                 while (i < input.parseState.Count)
                 {
                     if (!isStoreDist && input.parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
@@ -98,19 +99,13 @@ namespace Garnet.server
 
                 var sourceKey = key.ToArray();
                 var parseState = new SessionParseState();
-                ArgSlice[] parseStateBuffer = default;
-                parseState.InitializeWithArguments(ref parseStateBuffer, geoSearchParseState.Slice(0, currArgIdx));
+                parseState.InitializeWithArguments(geoSearchParseState.Slice(0, currArgIdx));
 
-                var searchInput = new ObjectInput
+                var searchInput = new ObjectInput(new RespInputHeader
                 {
-                    header = new RespInputHeader
-                    {
-                        type = GarnetObjectType.SortedSet,
-                        SortedSetOp = SortedSetOperation.GEOSEARCH,
-                    },
-                    parseState = parseState,
-                    parseStateStartIdx = 0,
-                };
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.GEOSEARCH,
+                }, ref parseState, 0);
 
                 SpanByteAndMemory searchOutMem = default;
                 var searchOut = new GarnetObjectStoreOutput { spanByteAndMemory = searchOutMem };
@@ -154,8 +149,7 @@ namespace Garnet.server
 
                     // Prepare the parse state for sorted set add
                     var zParseState = new SessionParseState();
-                    ArgSlice[] zParseStateBuffer = default;
-                    zParseState.Initialize(ref zParseStateBuffer, foundItems * 2);
+                    zParseState.Initialize(foundItems * 2);
 
                     for (int j = 0; j < foundItems; j++)
                     {
@@ -166,28 +160,23 @@ namespace Garnet.server
                         if (isStoreDist)
                         {
                             RespReadUtils.ReadSpanWithLengthHeader(out var score, ref currOutPtr, endOutPtr);
-                            zParseStateBuffer[2 * j] = ArgSlice.FromPinnedSpan(score);
-                            zParseStateBuffer[(2 * j) + 1] = ArgSlice.FromPinnedSpan(location);
+                            zParseState.SetArgument(2 * j, ArgSlice.FromPinnedSpan(score));
+                            zParseState.SetArgument((2 * j) + 1, ArgSlice.FromPinnedSpan(location));
                         }
                         else
                         {
                             RespReadUtils.ReadIntegerAsSpan(out var score, ref currOutPtr, endOutPtr);
-                            zParseStateBuffer[2 * j] = ArgSlice.FromPinnedSpan(score);
-                            zParseStateBuffer[(2 * j) + 1] = ArgSlice.FromPinnedSpan(location);
+                            zParseState.SetArgument(2 * j, ArgSlice.FromPinnedSpan(score));
+                            zParseState.SetArgument((2 * j) + 1, ArgSlice.FromPinnedSpan(location));
                         }
                     }
 
                     // Prepare the input
-                    var zAddInput = new ObjectInput
+                    var zAddInput = new ObjectInput(new RespInputHeader
                     {
-                        header = new RespInputHeader
-                        {
-                            type = GarnetObjectType.SortedSet,
-                            SortedSetOp = SortedSetOperation.ZADD,
-                        },
-                        parseState = zParseState,
-                        parseStateStartIdx = 0,
-                    };
+                        type = GarnetObjectType.SortedSet,
+                        SortedSetOp = SortedSetOperation.ZADD,
+                    }, ref zParseState, 0);
 
                     var zAddOutput = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
                     RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
