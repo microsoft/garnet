@@ -1165,7 +1165,7 @@ namespace Garnet.test
 
         [Test, Order(21)]
         [Category("BITFIELD")]
-        public void BitmapBitfieldGetTest()
+        public void BitmapBitfieldGetTest([Values(RespCommand.BITFIELD, RespCommand.BITFIELD_RO)] RespCommand testCmd)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1187,7 +1187,7 @@ namespace Garnet.test
                     //signed
                     expectedValue = GetValueFromBitmap(ref bitmapData, i, j, true);
                     redisValue = GetFromBitmapRedis(ref bitmapData, (ulong)i, (ulong)j, true);
-                    returnedValue = (long)(db.Execute("BITFIELD", (RedisKey)key, "get", "i" + j.ToString(), $"{i}"));
+                    returnedValue = (long)(db.Execute($"{testCmd}", (RedisKey)key, "get", $"i{j}", $"{i}"));
                     ClassicAssert.AreEqual(expectedValue, redisValue);
                     ClassicAssert.AreEqual(expectedValue, returnedValue);
 
@@ -1196,7 +1196,7 @@ namespace Garnet.test
                     {
                         expectedValue = GetValueFromBitmap(ref bitmapData, i, j, false);
                         redisValue = GetFromBitmapRedis(ref bitmapData, (ulong)i, (ulong)j, false);
-                        returnedValue = ((long)db.Execute("BITFIELD", (RedisKey)key, "GET", "u" + j.ToString(), $"{i}"));
+                        returnedValue = ((long)db.Execute($"{testCmd}", (RedisKey)key, "GET", $"u{j}", $"{i}"));
                         ClassicAssert.AreEqual(expectedValue, redisValue);
                         ClassicAssert.AreEqual(expectedValue, returnedValue);
                     }
@@ -1217,8 +1217,7 @@ namespace Garnet.test
 
         [Test, Order(22)]
         [Category("BITFIELD")]
-        [TestCase(100)]
-        public unsafe void BitmapBitfieldGetTest_PCT(int bytesPerSend)
+        public unsafe void BitmapBitfieldGetTest_PCT([Values(RespCommand.BITFIELD, RespCommand.BITFIELD_RO)] RespCommand testCmd, [Values(100)] int bytesPerSend)
         {
             var lighClientOnResponseDelegate = new LightClient.OnResponseDelegateUnsafe(SingleBitfieldReceive);
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1242,7 +1241,7 @@ namespace Garnet.test
                     //signed
                     expectedValue = GetValueFromBitmap(ref bitmapData, i, j, true);
                     redisValue = GetFromBitmapRedis(ref bitmapData, (ulong)i, (ulong)j, true);
-                    byte[] response = lightClientRequest.SendCommandChunks("BITFIELD " + key + " GET i" + j.ToString() + " " + $"{i}", bytesPerSend);
+                    byte[] response = lightClientRequest.SendCommandChunks($"{testCmd} {key} GET i{j} {i}", bytesPerSend);
                     returnedValue = ResponseToLong(response, 5);
 
                     ClassicAssert.AreEqual(expectedValue, redisValue);
@@ -1253,7 +1252,7 @@ namespace Garnet.test
                     {
                         expectedValue = GetValueFromBitmap(ref bitmapData, i, j, false);
                         redisValue = GetFromBitmapRedis(ref bitmapData, (ulong)i, (ulong)j, false);
-                        response = lightClientRequest.SendCommandChunks("BITFIELD " + key + " GET u" + j.ToString() + " " + $"{i}", bytesPerSend);
+                        response = lightClientRequest.SendCommandChunks($"{testCmd} {key} GET u{j} {i}", bytesPerSend);
                         returnedValue = ResponseToLong(response, 5);
 
                         ClassicAssert.AreEqual(expectedValue, redisValue);
@@ -1265,7 +1264,7 @@ namespace Garnet.test
 
         [Test, Order(23)]
         [Category("BITFIELD")]
-        public void BitmapBitfieldGetTest_LTM()
+        public void BitmapBitfieldGetTest_LTM([Values(RespCommand.BITFIELD, RespCommand.BITFIELD_RO)] RespCommand testCmd)
         {
             int bitmapBytes = 512;
             server.Dispose();
@@ -1306,14 +1305,14 @@ namespace Garnet.test
 
                 //signed
                 expectedValue = GetValueFromBitmap(ref currBitmap, offset, bitCount, true);
-                returnedValue = (long)(db.Execute("BITFIELD", (RedisKey)sKey, "get", "i" + bitCount.ToString(), $"{offset}"));
+                returnedValue = (long)(db.Execute(testCmd.ToString(), (RedisKey)sKey, "get", $"i{bitCount}", $"{offset}"));
                 ClassicAssert.AreEqual(expectedValue, returnedValue);
 
                 //unsigned
                 if (bitCount < 64)
                 {
                     expectedValue = GetValueFromBitmap(ref currBitmap, offset, bitCount, false);
-                    returnedValue = ((long)db.Execute("BITFIELD", (RedisKey)sKey, "GET", "u" + bitCount.ToString(), $"{offset}"));
+                    returnedValue = ((long)db.Execute(testCmd.ToString(), (RedisKey)sKey, "GET", $"u{bitCount}", $"{offset}"));
                     ClassicAssert.AreEqual(expectedValue, returnedValue);
                 }
             }
@@ -2263,10 +2262,10 @@ namespace Garnet.test
             ClassicAssert.AreEqual(16, pos);
 
             pos = db.StringBitPosition(key, true, 0, 0, StringIndexType.Byte);
-            ClassicAssert.AreEqual(-1, pos);
+            ClassicAssert.AreEqual(0, pos);
 
             pos = db.StringBitPosition(key, false, 0, 0, StringIndexType.Byte);
-            ClassicAssert.AreEqual(-1, pos);
+            ClassicAssert.AreEqual(0, pos);
 
             value = [0xf8, 0x6f, 0xf0];
             db.StringSet(key, value);
@@ -2275,9 +2274,17 @@ namespace Garnet.test
 
             pos = db.StringBitPosition(key, true, 10, 12, StringIndexType.Bit);
             ClassicAssert.AreEqual(10, pos);
+
+            key = "mykey2";
+            db.StringSetBit(key, 63, false);
+            pos = db.StringBitPosition(key, false, 1);
+            ClassicAssert.AreEqual(8, pos);
+
+            pos = db.StringBitPosition(key, false, 0);
+            ClassicAssert.AreEqual(0, pos);
         }
 
-        [Test, Order(34)]
+        [Test, Order(35)]
         [Category("BITOP")]
         public void BitmapOperationNonExistentSourceKeys()
         {
@@ -2290,7 +2297,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, size);
         }
 
-        [Test, Order(35)]
+        [Test, Order(36)]
         [Category("BITOP")]
         public void BitmapOperationInvalidOption()
         {
@@ -2309,7 +2316,7 @@ namespace Garnet.test
             }
         }
 
-        [Test, Order(36)]
+        [Test, Order(37)]
         [Category("BITOP")]
         public void BitmapOperationTooManyKeys()
         {
