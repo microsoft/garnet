@@ -36,11 +36,11 @@ namespace Garnet.server
                         CopyRespNumber(ttlValue, ref dst.spanByteAndMemory);
                         return true;
 
-                    case GarnetObjectType.Expiretime:
+                    case GarnetObjectType.ExpireTime:
                         var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(value.Expiration > 0 ? value.Expiration : -1);
                         CopyRespNumber(expireTime, ref dst.spanByteAndMemory);
                         return true;
-                    case GarnetObjectType.PExpiretime:
+                    case GarnetObjectType.PExpireTime:
                         expireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(value.Expiration > 0 ? value.Expiration : -1);
                         CopyRespNumber(expireTime, ref dst.spanByteAndMemory);
                         return true;

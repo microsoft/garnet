@@ -61,7 +61,7 @@ namespace Garnet.server
 
         public int phase;
 
-        internal TxnKeyEntries(int initialCount, LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext,
+        internal TxnKeyEntries(int initialCount, LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext,
                 LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext)
         {
             keys = GC.AllocateArray<TxnKeyEntry>(initialCount, pinned: true);

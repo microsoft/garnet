@@ -131,7 +131,7 @@ namespace Garnet.server
             try
             {
                 var options = SortedSetAddOption.None;
-                var currTokenIdx = input.parseStateStartIdx;
+                var currTokenIdx = input.parseStateFirstArgIdx;
                 var parsedOptions = false;
 
                 while (currTokenIdx < input.parseState.Count)
@@ -233,7 +233,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            for (var currIdx = input.parseStateStartIdx; currIdx < input.parseState.Count; currIdx++)
+            for (var currIdx = input.parseStateFirstArgIdx; currIdx < input.parseState.Count; currIdx++)
             {
                 var value = input.parseState.GetArgSliceByRef(currIdx).ReadOnlySpan;
                 var valueArray = value.ToArray();
@@ -266,7 +266,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
             var member = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
 
             ObjectOutputHeader outputHeader = default;
@@ -313,7 +313,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteArrayLength(count - 1, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                for (var currIdx = input.parseStateStartIdx; currIdx < count; currIdx++)
+                for (var currIdx = input.parseStateFirstArgIdx; currIdx < count; currIdx++)
                 {
                     var member = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
 
@@ -349,7 +349,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
 
             // Read min & max
             var minParamSpan = input.parseState.GetArgSliceByRef(currIdx++).ReadOnlySpan;
@@ -403,7 +403,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader outputHeader = default;
 
@@ -463,7 +463,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader _output = default;
             try
@@ -680,7 +680,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader outputHeader = default;
 
@@ -741,7 +741,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader outputHeader = default;
 
@@ -843,7 +843,7 @@ namespace Garnet.server
             // Using minValue for partial execution detection
             _output->result1 = int.MinValue;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
 
             var minParamBytes = input.parseState.GetArgSliceByRef(currIdx++).ReadOnlySpan;
             var maxParamBytes = input.parseState.GetArgSliceByRef(currIdx).ReadOnlySpan;
@@ -872,7 +872,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
             var withScore = input.arg1 == 1;
 
             ObjectOutputHeader outputHeader = default;

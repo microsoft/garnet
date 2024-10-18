@@ -65,19 +65,19 @@ namespace Garnet.server
         /// <summary>
         /// Prepare phase: define read/write set
         /// </summary>
-        public abstract bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public abstract bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
             where TGarnetReadApi : IGarnetReadApi;
 
         /// <summary>
         /// Main transaction: allowed to read and write (locks are already taken) and produce output
         /// </summary>
-        public abstract void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public abstract void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
             where TGarnetApi : IGarnetApi;
 
         /// <summary>
         /// Finalize transaction: runs after the transactions commits/aborts, allowed to read and write (non-transactionally) with per-key locks and produce output
         /// </summary>
-        public virtual void Finalize<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public virtual void Finalize<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
             where TGarnetApi : IGarnetApi
         { }
     }

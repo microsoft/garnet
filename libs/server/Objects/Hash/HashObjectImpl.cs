@@ -28,7 +28,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currTokenIdx = input.parseStateStartIdx;
+            var currTokenIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader _output = default;
             try
@@ -68,12 +68,12 @@ namespace Garnet.server
             var end = curr + output.Length;
 
             var count = input.parseState.Count;
-            var currTokenIdx = input.parseStateStartIdx;
+            var currTokenIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader _output = default;
             try
             {
-                var expectedTokenCount = count - input.parseStateStartIdx;
+                var expectedTokenCount = count - input.parseStateFirstArgIdx;
                 while (!RespWriteUtils.WriteArrayLength(expectedTokenCount, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
@@ -153,7 +153,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            for (var currTokenIdx = input.parseStateStartIdx; currTokenIdx < input.parseState.Count; currTokenIdx++)
+            for (var currTokenIdx = input.parseStateFirstArgIdx; currTokenIdx < input.parseState.Count; currTokenIdx++)
             {
                 var key = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
 
@@ -175,7 +175,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var key = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.ToByteArray();
+            var key = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).SpanByte.ToByteArray();
             _output->result1 = hash.TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
         }
 
@@ -184,7 +184,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var field = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.ToByteArray();
+            var field = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).SpanByte.ToByteArray();
             _output->result1 = hash.ContainsKey(field) ? 1 : 0;
         }
 
@@ -263,7 +263,7 @@ namespace Garnet.server
             *_output = default;
 
             var hop = input.header.HashOp;
-            for (var currIdx = input.parseStateStartIdx; currIdx < input.parseState.Count; currIdx += 2)
+            for (var currIdx = input.parseStateFirstArgIdx; currIdx < input.parseState.Count; currIdx += 2)
             {
                 var key = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
                 var value = input.parseState.GetArgSliceByRef(currIdx + 1).SpanByte.ToByteArray();
@@ -341,7 +341,7 @@ namespace Garnet.server
 
             ObjectOutputHeader _output = default;
 
-            var currTokenIdx = input.parseStateStartIdx;
+            var currTokenIdx = input.parseStateFirstArgIdx;
 
             // This value is used to indicate partial command execution
             _output.result1 = int.MinValue;

@@ -21,7 +21,7 @@ namespace Garnet.test
 {
     public class LargeGet : CustomProcedure
     {
-        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
+        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             static bool ResetBuffer(TGarnetApi garnetApi, ref MemoryResult<byte> output, int buffOffset)
             {
@@ -33,7 +33,7 @@ namespace Garnet.test
             }
 
             var offset = 0;
-            var key = GetNextArg(input, ref offset);
+            var key = GetNextArg(ref procInput, ref offset);
 
             var buffOffset = garnetApi.GetScratchBufferOffset();
             for (var i = 0; i < 120_000; i++)
@@ -52,8 +52,8 @@ namespace Garnet.test
             if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
 
             buffOffset = garnetApi.GetScratchBufferOffset();
-            var hashKey = GetNextArg(input, ref offset);
-            var field = GetNextArg(input, ref offset);
+            var hashKey = GetNextArg(ref procInput, ref offset);
+            var field = GetNextArg(ref procInput, ref offset);
             garnetApi.HashGet(hashKey, field, out var value);
             if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
 
@@ -63,17 +63,17 @@ namespace Garnet.test
 
     public class LargeGetTxn : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             int offset = 0;
-            AddKey(GetNextArg(input, ref offset), LockType.Shared, false);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Shared, false);
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             int offset = 0;
-            var key = GetNextArg(input, ref offset);
+            var key = GetNextArg(ref procInput, ref offset);
             var buffOffset = garnetApi.GetScratchBufferOffset();
             for (int i = 0; i < 120_000; i++)
             {
@@ -92,10 +92,10 @@ namespace Garnet.test
 
     public class OutOfOrderFreeBuffer : CustomProcedure
     {
-        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
+        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             var offset = 0;
-            var key = GetNextArg(input, ref offset);
+            var key = GetNextArg(ref procInput, ref offset);
 
             var buffOffset1 = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out var outval1);

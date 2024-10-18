@@ -277,19 +277,16 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="value"></param>
         /// <param name="vlen"></param>
-        public void Init(byte* input, byte* value, int vlen)
+        public void Init(ref RawStringInput input, byte* value, int vlen)
         {
-            int count = *(int*)(input);
-            if (vlen != this.DenseBytes)//Sparse representation
-            {
-                InitSparse(value);
-                IterateUpdateSparse(input, count, value);
-            }
-            else
-            {
+            var dense = vlen == this.DenseBytes;
+
+            if (dense)
                 InitDense(value);
-                IterateUpdateDense(input, count, value);
-            }
+            else //Sparse representation
+                InitSparse(value);
+
+            IterateUpdate(ref input, value, dense);
         }
 
         /// <summary>
@@ -326,17 +323,17 @@ namespace Garnet.server
         /// </summary>
         /// <param name="input"></param>
         /// <returns></returns>
-        public int SparseInitialLength(byte* input)
+        public int SparseInitialLength(ref RawStringInput input)
         {
-            int count = *(int*)(input);//get count of elements in sequence
+            var count = (int)input.arg1;
             return SparseInitialLength(count);
         }
 
         private int SparseInitialLength(int count)
         {
-            int requiredBytes = SparseRequiredBytes(count);// get bytes for elements
-            //if total bytes required greater than max cap switch to dense
-            //else calculate additional spase neede apart from default.
+            var requiredBytes = SparseRequiredBytes(count); // Get bytes for elements
+            // If total bytes required greater than max cap switch to dense
+            // else calculate additional spase needed apart from default.
             return (SparseHeaderSize + requiredBytes) > SparseSizeMaxCap ? this.DenseBytes :
                 ((requiredBytes < SparseZeroRanges + SparseMemorySectorSize) ?
                     SparseBytes :
@@ -372,13 +369,14 @@ namespace Garnet.server
         /// <summary>
         /// Return length of new value
         /// </summary>        
-        public int UpdateGrow(byte* input, byte* value)
+        public int UpdateGrow(ref RawStringInput input, byte* value)
         {
-            int count = *(int*)(input);
+            var count = (int)input.arg1;
+
             if (IsSparse(value))
             {
                 //calculate additional sparse needed and check if we are allowed to grow to that size based of the max-cap-size
-                int sparseBlobBytes = SparseCurrentSizeInBytes(value) + SparseRequiredBytes(count);
+                var sparseBlobBytes = SparseCurrentSizeInBytes(value) + SparseRequiredBytes(count);
                 return sparseBlobBytes < SparseSizeMaxCap ? sparseBlobBytes : this.DenseBytes;
             }
 
@@ -441,29 +439,29 @@ namespace Garnet.server
         /// <param name="newValue"></param>
         /// <param name="newValueLen"></param>
         /// <returns></returns>
-        public bool CopyUpdate(byte* input, byte* oldValue, byte* newValue, int newValueLen)
+        public bool CopyUpdate(ref RawStringInput input, byte* oldValue, byte* newValue, int newValueLen)
         {
-            bool fUpdated = false;
-            int count = *(int*)(input);
-            //Only reach this point if old-blob is of sparse type
+            var fUpdated = false;
+
+            // Only reach this point if old-blob is of sparse type
             if (IsSparse(oldValue))
             {
-                if (newValueLen == this.DenseBytes)//We are upgrading to dense representation here
+                if (newValueLen == this.DenseBytes) // We are upgrading to dense representation here
                 {
                     InitDense(newValue);
                     fUpdated |= SparseToDense(oldValue, newValue);
-                    fUpdated |= IterateUpdateDense(input, count, newValue);
+                    fUpdated |= IterateUpdate(ref input, newValue, true);
                     return fUpdated;
                 }
-                else//We are upgrading to a bigger size sparse representation
-                {
-                    InitSparse(newValue);
-                    int sparseBlobBytes = SparseCurrentSizeInBytes(oldValue);
-                    Buffer.MemoryCopy(oldValue, newValue, sparseBlobBytes, sparseBlobBytes);
-                    fUpdated = IterateUpdateSparse(input, count, newValue);
-                }
+
+                // We are upgrading to a bigger size sparse representation
+                InitSparse(newValue);
+                var sparseBlobBytes = SparseCurrentSizeInBytes(oldValue);
+                Buffer.MemoryCopy(oldValue, newValue, sparseBlobBytes, sparseBlobBytes);
+                fUpdated = IterateUpdate(ref input, newValue, false);
                 return fUpdated;
             }
+
             throw new GarnetException("HyperLogLog Update invalid data structure type");
         }
 
@@ -529,39 +527,27 @@ namespace Garnet.server
         /// <param name="valueLen"></param>
         /// <param name="updated"></param>
         /// <returns></returns>           
-        public bool Update(byte* input, byte* value, int valueLen, ref bool updated)
+        public bool Update(ref RawStringInput input, byte* value, int valueLen, ref bool updated)
         {
-            int count = *(int*)(input);
+            var count = (int)input.arg1;
 
-            if (IsDense(value))// if blob layout is dense
+            if (IsDense(value)) // If blob layout is dense
             {
-                updated = IterateUpdateDense(input, count, value);
+                updated = IterateUpdate(ref input, value, true);
                 return true;
             }
 
-            if (IsSparse(value))// if blob layout is sparse
+            if (IsSparse(value)) // If blob layout is sparse
             {
                 if (CanGrowInPlace(value, valueLen, count))//check if we can grow in place
                 {
-                    updated = IterateUpdateSparse(input, count, value);
+                    updated = IterateUpdate(ref input, value, false);
                     return true;
                 }
-                else return false;// need to request for more space
+
+                return false;// need to request for more space
             }
             throw new GarnetException("Update HyperLogLog Error!");
-        }
-
-        private bool IterateUpdateDense(byte* input, int count, byte* value)
-        {
-            bool updated = false;
-            byte* hash_value_vector = input + sizeof(int); //4 byte count + hash values
-            for (int i = 0; i < count; i++)
-            {
-                long hv = *(long*)hash_value_vector;
-                updated |= UpdateDense(value, hv);
-                hash_value_vector += 8;
-            }
-            return updated;
         }
 
         /// <summary>
@@ -613,15 +599,17 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SetNonZero(byte* p, byte cnt) => *p = (byte)(cnt - 1); // 0vvv vvvv        
 
-        private bool IterateUpdateSparse(byte* input, int count, byte* value)
+        private bool IterateUpdate(ref RawStringInput input, byte* value, bool dense)
         {
-            bool updated = false;
-            byte* hash_value_vector = input + sizeof(int); // 4 byte count + hash values
-            for (int i = 0; i < count; i++)
+            var updated = false;
+            var currTokenIdx = input.parseStateFirstArgIdx;
+            var elementCount = (int)input.arg1;
+            while (currTokenIdx < input.parseState.Count && elementCount > 0)
             {
-                long hv = *(long*)hash_value_vector;
-                updated |= UpdateSparse(value, hv);
-                hash_value_vector += 8;
+                var currElement = input.parseState.GetArgSliceByRef(currTokenIdx++);
+                var hashValue = (long)HashUtils.MurmurHash2x64A(currElement.ptr, currElement.Length);
+                updated |= (dense ? UpdateDense(value, hashValue) : UpdateSparse(value, hashValue));
+                elementCount--;
             }
             return updated;
         }
@@ -905,33 +893,32 @@ namespace Garnet.server
         /// <returns></returns>
         public bool TryMerge(byte* srcBlob, byte* dstBlob, int dstLen)
         {
-            byte dTypeDst = GetType(dstBlob);
+            var dTypeDst = GetType(dstBlob);
             if (dTypeDst == (byte)HLL_DTYPE.HLL_DENSE)//destination dense
             {
                 Merge(srcBlob, dstBlob);
                 DefaultHLL.SetCard(dstBlob, long.MinValue);
                 return true;
             }
-            else// destination sparse
-            {
-                byte dTypeSrc = GetType(srcBlob);
-                if (dTypeSrc == (byte)HLL_DTYPE.HLL_SPARSE)// discover if you need to grow before merging
-                {
-                    //TODO: check if we can update in place or need to grow by counting srcBlob non-zero
-                    int srcNonZeroBytes = SparseCountNonZero(srcBlob) * 2;
 
-                    if (SparseCurrentSizeInBytes(dstBlob) + srcNonZeroBytes < dstLen)//can grow in-place
-                    {
-                        Merge(srcBlob, dstBlob);
-                        DefaultHLL.SetCard(dstBlob, long.MinValue);
-                        return true;
-                    }
-                    else
-                        return false;
+            // Destination sparse
+            var dTypeSrc = GetType(srcBlob);
+            if (dTypeSrc == (byte)HLL_DTYPE.HLL_SPARSE)// discover if you need to grow before merging
+            {
+                //TODO: check if we can update in place or need to grow by counting srcBlob non-zero
+                var srcNonZeroBytes = SparseCountNonZero(srcBlob) * 2;
+
+                if (SparseCurrentSizeInBytes(dstBlob) + srcNonZeroBytes < dstLen)//can grow in-place
+                {
+                    Merge(srcBlob, dstBlob);
+                    DefaultHLL.SetCard(dstBlob, long.MinValue);
+                    return true;
                 }
-                else return false; // always fail if merging from dense to sparse              
+
+                return false;
             }
-            throw new GarnetException("TryMerge exception");
+
+            return false; // always fail if merging from dense to sparse              
         }
 
         /// <summary>

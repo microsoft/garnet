@@ -34,20 +34,20 @@ namespace BDN.benchmark
         /// </summary>
         /// <typeparam name="TGarnetReadApi"></typeparam>
         /// <param name="api"></param>
-        /// <param name="input"></param>
+        /// <param name="procInput"></param>
         /// <returns></returns>
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             var offset = 0;
-            setA = GetNextArg(input, ref offset);
-            setB = GetNextArg(input, ref offset);
-            setC = GetNextArg(input, ref offset);
-            setD = GetNextArg(input, ref offset);
+            setA = GetNextArg(ref procInput, ref offset);
+            setB = GetNextArg(ref procInput, ref offset);
+            setC = GetNextArg(ref procInput, ref offset);
+            setD = GetNextArg(ref procInput, ref offset);
 
-            valueA = GetNextArg(input, ref offset);
-            valueB = GetNextArg(input, ref offset);
-            valueC = GetNextArg(input, ref offset);
-            valueD = GetNextArg(input, ref offset);
+            valueA = GetNextArg(ref procInput, ref offset);
+            valueB = GetNextArg(ref procInput, ref offset);
+            valueC = GetNextArg(ref procInput, ref offset);
+            valueD = GetNextArg(ref procInput, ref offset);
 
             AddKey(setA, LockType.Exclusive, isObject: false);
             AddKey(setB, LockType.Exclusive, isObject: false);
@@ -57,7 +57,7 @@ namespace BDN.benchmark
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             _ = api.SET(setA, valueA);
             _ = api.SET(setB, valueB);

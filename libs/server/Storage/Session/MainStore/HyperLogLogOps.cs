@@ -3,9 +3,7 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Text;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -19,35 +17,27 @@ namespace Garnet.server
         /// Adds all the element arguments to the HyperLogLog data structure stored at the variable name specified as key.
         /// </summary>
         public unsafe GarnetStatus HyperLogLogAdd<TContext>(ArgSlice key, string[] elements, out bool updated, ref TContext context)
-             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             updated = false;
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(int) + sizeof(long);
-            byte* pbCmdInput = stackalloc byte[inputSize];
 
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            //header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.PFADD;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-            pcurr += RespInputHeader.Size;
+            parseState.Initialize(1);
 
-            //cmd args
-            *(int*)pcurr = 1; pcurr += sizeof(int);
-            byte* output = stackalloc byte[1];
+            var input = new RawStringInput(RespCommand.PFADD, ref parseState, 0, -1, 1);
+
+            var output = stackalloc byte[1];
             byte pfaddUpdated = 0;
 
-            for (int i = 0; i < elements.Length; i++)
+            foreach (var element in elements)
             {
-                var bString = Encoding.ASCII.GetBytes(elements[i]);
-                fixed (byte* ptr = bString)
-                {
-                    *(long*)pcurr = (long)HashUtils.MurmurHash2x64A(ptr, bString.Length);
-                    var o = new SpanByteAndMemory(output, 1);
-                    var keySB = key.SpanByte;
-                    RMW_MainStore(ref keySB, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o, ref context);
-                }
+                var elementSlice = scratchBufferManager.CreateArgSlice(element);
+                parseState.SetArgument(0, elementSlice);
+
+                var o = new SpanByteAndMemory(output, 1);
+                var sbKey = key.SpanByte;
+                RMW_MainStore(ref sbKey, ref input, ref o, ref context);
+
+                scratchBufferManager.RewindScratchBuffer(ref elementSlice);
 
                 //Invalid HLL Type
                 if (*output == (byte)0xFF)
@@ -71,143 +61,195 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="context"></param>
         /// <returns></returns>
-        public GarnetStatus HyperLogLogAdd<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
-          where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public GarnetStatus HyperLogLogAdd<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
+          where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             => RMW_MainStore(ref key, ref input, ref output, ref context);
+
+        public unsafe GarnetStatus HyperLogLogLength<TContext>(Span<ArgSlice> keys, out long count, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            parseState.Initialize(keys.Length);
+            for (var i = 0; i < keys.Length; i++)
+            {
+                parseState.SetArgument(i, keys[i]);
+            }
+
+            var input = new RawStringInput(RespCommand.PFCOUNT, ref parseState);
+
+            return HyperLogLogLength(ref input, out count, out _, ref context);
+        }
 
         /// <summary>
         /// Returns the approximated cardinality computed by the HyperLogLog data structure stored at the specified key,
         /// or 0 if the key does not exist.
         /// </summary>
-        /// <param name="keys"></param>
         /// <param name="input"></param>
         /// <param name="count"></param>
         /// <param name="error"></param>
         /// <param name="context"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus HyperLogLogLength<TContext>(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus HyperLogLogLength<TContext>(ref RawStringInput input, out long count, out bool error, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            count = 0;
             error = false;
+            count = default;
 
-            if (keys.Length == 0)
+            if (input.parseState.Count - input.parseStateFirstArgIdx == 0)
                 return GarnetStatus.OK;
 
-            byte* output = stackalloc byte[sizeof(long)];
-            var o = new SpanByteAndMemory(output, sizeof(long));
+            var createTransaction = false;
 
-            for (int i = 0; i < keys.Length; i++)
+            if (txnManager.state != TxnState.Running)
             {
-                var srcKey = keys[i].SpanByte;
-                var status = GET(ref srcKey, ref input, ref o, ref context);
-                //Invalid HLL Type
-                if (*(long*)(o.SpanByte.ToPointer()) == -1)
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                var currTokenIdx = input.parseStateFirstArgIdx;
+                var dstKey = input.parseState.GetArgSliceByRef(currTokenIdx++);
+                txnManager.SaveKeyEntryToLock(dstKey, false, LockType.Exclusive);
+                while (currTokenIdx < input.parseState.Count)
                 {
-                    error = true;
-                    return status;
+                    var currSrcKey = input.parseState.GetArgSliceByRef(currTokenIdx++);
+                    txnManager.SaveKeyEntryToLock(currSrcKey, false, LockType.Shared);
                 }
-
-                if (status == GarnetStatus.OK)
-                    count += *(long*)(o.SpanByte.ToPointer());
+                txnManager.Run(true);
             }
 
+            var currLockableContext = txnManager.LockableContext;
+
+            try
+            {
+                sectorAlignedMemoryHll1 ??= new SectorAlignedMemory(hllBufferSize + sectorAlignedMemoryPoolAlignment,
+                    sectorAlignedMemoryPoolAlignment);
+                sectorAlignedMemoryHll2 ??= new SectorAlignedMemory(hllBufferSize + sectorAlignedMemoryPoolAlignment,
+                    sectorAlignedMemoryPoolAlignment);
+                var srcReadBuffer = sectorAlignedMemoryHll1.GetValidPointer();
+                var dstReadBuffer = sectorAlignedMemoryHll2.GetValidPointer();
+                var dstMergeBuffer = new SpanByteAndMemory(srcReadBuffer, hllBufferSize);
+                var srcMergeBuffer = new SpanByteAndMemory(dstReadBuffer, hllBufferSize);
+                var isFirst = false;
+
+                var currTokenIdx = input.parseStateFirstArgIdx;
+
+                while (currTokenIdx < input.parseState.Count)
+                {
+                    var currInput = new RawStringInput(RespCommand.PFCOUNT);
+
+                    var srcKey = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
+
+                    var status = GET(ref srcKey, ref currInput, ref srcMergeBuffer, ref currLockableContext);
+                    // Handle case merging source key does not exist
+                    if (status == GarnetStatus.NOTFOUND)
+                        continue;
+                    // Invalid Type
+                    if (*(long*)srcReadBuffer == -1)
+                    {
+                        error = true;
+                        break;
+                    }
+
+                    var sbSrcHLL = srcMergeBuffer.SpanByte;
+                    var sbDstHLL = dstMergeBuffer.SpanByte;
+
+                    var srcHLL = sbSrcHLL.ToPointer();
+                    var dstHLL = sbDstHLL.ToPointer();
+
+                    if (!isFirst)
+                    {
+                        isFirst = true;
+                        if (currTokenIdx == input.parseState.Count)
+                            count = HyperLogLog.DefaultHLL.Count(srcMergeBuffer.SpanByte.ToPointer());
+                        else
+                            Buffer.MemoryCopy(srcHLL, dstHLL, sbSrcHLL.Length, sbSrcHLL.Length);
+                        continue;
+                    }
+
+                    HyperLogLog.DefaultHLL.TryMerge(srcHLL, dstHLL, sbDstHLL.Length);
+
+                    if (currTokenIdx == input.parseState.Count)
+                    {
+                        count = HyperLogLog.DefaultHLL.Count(dstHLL);
+                    }
+                }
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
             return GarnetStatus.OK;
-        }
-
-        public unsafe GarnetStatus HyperLogLogLength<TContext>(Span<ArgSlice> keys, out long count, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-        {
-            //4 byte length of input
-            //1 byte RespCommand
-            //1 byte RespInputFlags
-            int inputSize = sizeof(int) + RespInputHeader.Size;
-            byte* pbCmdInput = stackalloc byte[inputSize];
-
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.PFCOUNT;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-
-            return HyperLogLogLength(keys, ref Unsafe.AsRef<SpanByte>(pbCmdInput), out count, out bool error, ref context);
         }
 
         /// <summary>
         /// Merge multiple HyperLogLog values into a unique value that will approximate the cardinality 
         /// of the union of the observed Sets of the source HyperLogLog structures.
         /// </summary>
-        /// <param name="keys"></param>
+        /// <param name="input"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus HyperLogLogMerge(Span<ArgSlice> keys, out bool error)
+        public unsafe GarnetStatus HyperLogLogMerge(ref RawStringInput input, out bool error)
         {
             error = false;
 
-            if (keys.Length == 0)
+            if (input.parseState.Count - input.parseStateFirstArgIdx == 0)
                 return GarnetStatus.OK;
 
-            bool createTransaction = false;
+            var createTransaction = false;
 
             if (txnManager.state != TxnState.Running)
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(keys[0], false, LockType.Exclusive);
-                for (int i = 1; i < keys.Length; i++)
-                    txnManager.SaveKeyEntryToLock(keys[i], false, LockType.Shared);
+                var currTokenIdx = input.parseStateFirstArgIdx;
+                var dstKey = input.parseState.GetArgSliceByRef(currTokenIdx++);
+                txnManager.SaveKeyEntryToLock(dstKey, false, LockType.Exclusive);
+                while (currTokenIdx < input.parseState.Count)
+                {
+                    var currSrcKey = input.parseState.GetArgSliceByRef(currTokenIdx++);
+                    txnManager.SaveKeyEntryToLock(currSrcKey, false, LockType.Shared);
+                }
                 txnManager.Run(true);
             }
 
-            var lockableContext = txnManager.LockableContext;
+            var currLockableContext = txnManager.LockableContext;
 
             try
             {
-                //4 byte length of input
-                //1 byte RespCommand
-                //1 byte RespInputFlags
-                //4 byte length of HLL read for merging
-                int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(int);
+                sectorAlignedMemoryHll1 ??= new SectorAlignedMemory(hllBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
+                var readBuffer = sectorAlignedMemoryHll1.GetValidPointer();
 
-                sectorAlignedMemoryHll ??= new SectorAlignedMemory(hllBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
-                byte* readBuffer = sectorAlignedMemoryHll.GetValidPointer() + inputSize;
-                byte* pbCmdInput = null;
-                SpanByte dstKey = keys[0].SpanByte;
-                for (int i = 1; i < keys.Length; i++)
+                var currTokenIdx = input.parseStateFirstArgIdx;
+                var dstKey = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
+
+                while (currTokenIdx < input.parseState.Count)
                 {
                     #region readSrcHLL
-                    //build input
-                    pbCmdInput = readBuffer - (inputSize - sizeof(int));
-                    byte* pcurr = pbCmdInput;
-                    *(int*)pcurr = RespInputHeader.Size;
-                    pcurr += sizeof(int);
-                    //1. header
-                    (*(RespInputHeader*)(pcurr)).cmd = RespCommand.PFMERGE;
-                    (*(RespInputHeader*)(pcurr)).flags = 0;
 
-                    SpanByteAndMemory mergeBuffer = new SpanByteAndMemory(readBuffer, hllBufferSize);
-                    var srcKey = keys[i].SpanByte;
-                    var status = GET(ref srcKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref mergeBuffer, ref lockableContext);
-                    //Handle case merging source key does not exist
+                    var currInput = new RawStringInput(RespCommand.PFMERGE);
+
+                    var mergeBuffer = new SpanByteAndMemory(readBuffer, hllBufferSize);
+                    var srcKey = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
+
+                    var status = GET(ref srcKey, ref currInput, ref mergeBuffer, ref currLockableContext);
+                    // Handle case merging source key does not exist
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
-                    //Invalid Type
+                    // Invalid Type
                     if (*(long*)readBuffer == -1)
                     {
                         error = true;
                         break;
                     }
                     #endregion
+
                     #region mergeToDst
-                    pbCmdInput = readBuffer - inputSize;
-                    pcurr = pbCmdInput;
-                    *(int*)pcurr = inputSize - sizeof(int) + mergeBuffer.Length;
-                    pcurr += sizeof(int);
-                    (*(RespInputHeader*)(pcurr)).cmd = RespCommand.PFMERGE;
-                    (*(RespInputHeader*)(pcurr)).flags = 0;
-                    pcurr += RespInputHeader.Size;
-                    *(int*)pcurr = mergeBuffer.Length;
-                    SET_Conditional(ref dstKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref mergeBuffer, ref lockableContext);
+
+                    var mergeSlice = new ArgSlice(ref mergeBuffer.SpanByte);
+
+                    parseState.InitializeWithArgument(mergeSlice);
+
+                    currInput.parseState = parseState;
+                    SET_Conditional(ref dstKey, ref currInput, ref mergeBuffer, ref currLockableContext);
+
                     #endregion
                 }
             }

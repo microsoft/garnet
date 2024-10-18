@@ -138,44 +138,52 @@ namespace Garnet.server
                 match = "*";
 
             // Prepare the parse state 
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
+            var matchPattern = match.Trim();
 
-            var matchPatternValue = Encoding.ASCII.GetBytes(match.Trim());
+            var countLength = NumUtils.NumDigits(count);
 
-            var lengthCountNumber = NumUtils.NumDigits(count);
-            var countBytes = new byte[lengthCountNumber];
+            // Calculate # of bytes to store parameters
+            var sliceBytes = CmdStrings.MATCH.Length +
+                             matchPattern.Length +
+                             CmdStrings.COUNT.Length +
+                             countLength;
 
-            fixed (byte* matchKeywordPtr = CmdStrings.MATCH, matchPatterPtr = matchPatternValue)
-            {
-                fixed (byte* countPtr = CmdStrings.COUNT, countValuePtr = countBytes)
-                {
-                    var matchKeywordSlice = new ArgSlice(matchKeywordPtr, CmdStrings.MATCH.Length);
-                    var matchPatternSlice = new ArgSlice(matchPatterPtr, matchPatternValue.Length);
+            // Get buffer from scratch buffer manager
+            var paramsSlice = scratchBufferManager.CreateArgSlice(sliceBytes);
+            var paramsSpan = paramsSlice.Span;
+            var paramsSpanOffset = 0;
 
-                    var countValuePtr2 = countValuePtr;
-                    NumUtils.IntToBytes(count, lengthCountNumber, ref countValuePtr2);
+            // Store parameters in buffer
 
-                    var countKeywordSlice = new ArgSlice(countPtr, CmdStrings.COUNT.Length);
-                    var countValueSlice = new ArgSlice(countValuePtr, countBytes.Length);
+            // MATCH
+            var matchSpan = paramsSpan.Slice(paramsSpanOffset, CmdStrings.MATCH.Length);
+            CmdStrings.MATCH.CopyTo(matchSpan);
+            paramsSpanOffset += CmdStrings.MATCH.Length;
+            var matchSlice = ArgSlice.FromPinnedSpan(matchSpan);
 
-                    parseState.InitializeWithArguments(ref parseStateBuffer, matchKeywordSlice, matchPatternSlice,
-                        countKeywordSlice, countValueSlice);
-                }
-            }
+            // Pattern
+            var patternSpan = paramsSpan.Slice(paramsSpanOffset, matchPattern.Length);
+            Encoding.ASCII.GetBytes(matchPattern, patternSpan);
+            paramsSpanOffset += matchPattern.Length;
+            var matchPatternSlice = ArgSlice.FromPinnedSpan(patternSpan);
+
+            // COUNT
+            var countSpan = paramsSpan.Slice(paramsSpanOffset, CmdStrings.COUNT.Length);
+            CmdStrings.COUNT.CopyTo(countSpan);
+            paramsSpanOffset += CmdStrings.COUNT.Length;
+            var countSlice = ArgSlice.FromPinnedSpan(countSpan);
+
+            // Value
+            var countValueSpan = paramsSpan.Slice(paramsSpanOffset, countLength);
+            NumUtils.LongToSpanByte(count, countValueSpan);
+            var countValueSlice = ArgSlice.FromPinnedSpan(countValueSpan);
+
+            parseState.InitializeWithArguments(matchSlice, matchPatternSlice,
+                countSlice, countValueSlice);
 
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = objectType,
-                },
-                arg1 = (int)cursor,
-                arg2 = ObjectScanCountLimit,
-                parseState = parseState,
-                parseStateStartIdx = 0,
-            };
+            var header = new RespInputHeader(objectType);
+            var input = new ObjectInput(header, ref parseState, 0, -1, (int)cursor, ObjectScanCountLimit);
 
             switch (objectType)
             {
@@ -192,6 +200,8 @@ namespace Garnet.server
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+
+            scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
 
             items = default;
             if (status == GarnetStatus.OK)

@@ -27,25 +27,25 @@ namespace Garnet
     {
         public override bool FailFastOnKeyLockFailure => true;
 
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
-            int offset = 0;
+            var offset = 0;
 
-            ArgSlice mainStoreKey = GetNextArg(input, ref offset);
-            GetNextArg(input, ref offset); // mainStoreValue
+            var mainStoreKey = GetNextArg(ref procInput, ref offset);
+            GetNextArg(ref procInput, ref offset); // mainStoreValue
 
             AddKey(mainStoreKey, LockType.Exclusive, false);
 
-            ArgSlice sortedSet1Key = GetNextArg(input, ref offset);
+            var sortedSet1Key = GetNextArg(ref procInput, ref offset);
             if (sortedSet1Key.Length > 0)
             {
                 AddKey(sortedSet1Key, LockType.Exclusive, true);
             }
 
-            GetNextArg(input, ref offset); // sortedSet1Entry
-            GetNextArg(input, ref offset); // sortedSetScore
+            GetNextArg(ref procInput, ref offset); // sortedSet1Entry
+            GetNextArg(ref procInput, ref offset); // sortedSetScore
 
-            ArgSlice sortedSet2Key = GetNextArg(input, ref offset);
+            var sortedSet2Key = GetNextArg(ref procInput, ref offset);
             if (sortedSet2Key.Length > 0)
             {
                 AddKey(sortedSet2Key, LockType.Exclusive, true);
@@ -54,18 +54,18 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
-            int offset = 0;
+            var offset = 0;
 
-            ArgSlice mainStoreKey = GetNextArg(input, ref offset);
-            ArgSlice mainStoreValue = GetNextArg(input, ref offset);
+            var mainStoreKey = GetNextArg(ref procInput, ref offset);
+            var mainStoreValue = GetNextArg(ref procInput, ref offset);
 
             api.SET(mainStoreKey, mainStoreValue);
 
-            ArgSlice sortedSet1Key = GetNextArg(input, ref offset);
-            ArgSlice sortedSet1Entry = GetNextArg(input, ref offset);
-            ArgSlice sortedSet1EntryScore = GetNextArg(input, ref offset);
+            var sortedSet1Key = GetNextArg(ref procInput, ref offset);
+            var sortedSet1Entry = GetNextArg(ref procInput, ref offset);
+            var sortedSet1EntryScore = GetNextArg(ref procInput, ref offset);
 
 
             if (sortedSet1Key.Length > 0)
@@ -73,9 +73,9 @@ namespace Garnet
                 api.SortedSetAdd(sortedSet1Key, sortedSet1EntryScore, sortedSet1Entry, out _);
             }
 
-            ArgSlice sortedSet2Key = GetNextArg(input, ref offset);
-            ArgSlice sortedSet2Entry = GetNextArg(input, ref offset);
-            ArgSlice sortedSet2EntryScore = GetNextArg(input, ref offset);
+            var sortedSet2Key = GetNextArg(ref procInput, ref offset);
+            var sortedSet2Entry = GetNextArg(ref procInput, ref offset);
+            var sortedSet2EntryScore = GetNextArg(ref procInput, ref offset);
 
             if (sortedSet2Key.Length > 0)
             {

@@ -451,9 +451,9 @@ ClusterRedirectTests.TestFlags testFlags)
 
             #region hllCommands
             //1. PFCOUNT: because PFCOUNT is caching the estimate HLL it is technically updating the data structure so it is treated as R/W command
-            new ("PFCOUNT", ["PFADD <key#0> h e l l o", "PFADD <key#1> w o r l d", "PFADD <key#2> t e s t"], "PFCOUNT <key#0> <key#1> <key#2>", ["DEL <key#0>", "DEL <key#1>", "DEL <key#2>"], "12", null, (TestFlags.MULTIKEY | TestFlags.READONLY)),
-            new ("PFCOUNT", ["PFADD <key#0> h e l l o", "PFADD <key#1> w o r l d", "PFADD <key#2> t e s t"], "PFCOUNT <key#0> <key#1> <key#2>", ["DEL <key#0>", "DEL <key#1>", "DEL <key#2>"], "12", null, (TestFlags.MULTIKEY | TestFlags.READONLY | TestFlags.ASKING)),
-            new ("PFCOUNT", ["PFADD <key#0> h e l l o", "PFADD <key#1> w o r l d", "PFADD <key#2> t e s t"], "PFCOUNT <key#0> <key#1> <key#2>", ["DEL <key#0>", "DEL <key#1>", "DEL <key#2>"], "12", null, (TestFlags.MULTIKEY | TestFlags.READONLY | TestFlags.KEY_EXISTS)),
+            new ("PFCOUNT", ["PFADD <key#0> h e l l o", "PFADD <key#1> w o r l d", "PFADD <key#2> t e s t"], "PFCOUNT <key#0> <key#1> <key#2>", ["DEL <key#0>", "DEL <key#1>", "DEL <key#2>"], "9", null, (TestFlags.MULTIKEY | TestFlags.READONLY)),
+            new ("PFCOUNT", ["PFADD <key#0> h e l l o", "PFADD <key#1> w o r l d", "PFADD <key#2> t e s t"], "PFCOUNT <key#0> <key#1> <key#2>", ["DEL <key#0>", "DEL <key#1>", "DEL <key#2>"], "9", null, (TestFlags.MULTIKEY | TestFlags.READONLY | TestFlags.ASKING)),
+            new ("PFCOUNT", ["PFADD <key#0> h e l l o", "PFADD <key#1> w o r l d", "PFADD <key#2> t e s t"], "PFCOUNT <key#0> <key#1> <key#2>", ["DEL <key#0>", "DEL <key#1>", "DEL <key#2>"], "9", null, (TestFlags.MULTIKEY | TestFlags.READONLY | TestFlags.KEY_EXISTS)),
 
             //2. PFMERGE
             new ("PFMERGE", ["PFADD <key#0> h e l l o", "PFADD <key#1> w o r l d"], "PFMERGE <key#0> <key#1>", ["DEL <key#0>", "DEL <key#1>"], "OK", null, (TestFlags.MULTIKEY | TestFlags.READ_WRITE)),

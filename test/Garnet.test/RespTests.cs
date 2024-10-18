@@ -1213,7 +1213,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(3, exists);
         }
 
-        #region Expiretime
+        #region ExpireTime
 
         [Test]
         public void ExpiretimeWithStingValue()
@@ -2079,8 +2079,10 @@ namespace Garnet.test
             args[2] = testCaseSensitivity ? "xx" : "XX";// XX -- Set expiry only when the key has an existing expiry
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp);// XX return true existing expiry
+
             var time = db.KeyTimeToLive(key);
-            ClassicAssert.IsTrue(time.Value.TotalSeconds <= (double)((int)args[1]) && time.Value.TotalSeconds > 0);
+            ClassicAssert.Greater(time.Value.TotalSeconds, 0);
+            ClassicAssert.LessOrEqual(time.Value.TotalSeconds, (int)args[1]);
 
             args[1] = 1;
             args[2] = testCaseSensitivity ? "Gt" : "GT";// GT -- Set expiry only when the new expiry is greater than current one
@@ -2093,10 +2095,8 @@ namespace Garnet.test
             ClassicAssert.IsTrue(resp); // GT return true new expiry > current expiry
             time = db.KeyTimeToLive(key);
 
-            if (command.Equals("EXPIRE"))
-                ClassicAssert.IsTrue(time.Value.TotalSeconds > 500);
-            else
-                ClassicAssert.IsTrue(time.Value.TotalMilliseconds > 500);
+            ClassicAssert.Greater(command.Equals("EXPIRE") ?
+                    time.Value.TotalSeconds : time.Value.TotalMilliseconds, 500);
 
             args[1] = 2000;
             args[2] = testCaseSensitivity ? "lt" : "LT";// LT -- Set expiry only when the new expiry is less than current one
@@ -2109,10 +2109,10 @@ namespace Garnet.test
             ClassicAssert.IsTrue(resp); // LT return true new expiry < current expiry
             time = db.KeyTimeToLive(key);
 
-            if (command.Equals("EXPIRE"))
-                ClassicAssert.IsTrue(time.Value.TotalSeconds <= (double)((int)args[1]) && time.Value.TotalSeconds > 0);
-            else
-                ClassicAssert.IsTrue(time.Value.TotalMilliseconds <= (double)((int)args[1]) && time.Value.TotalMilliseconds > 0);
+            ClassicAssert.Greater(time.Value.TotalSeconds, 0);
+
+            ClassicAssert.LessOrEqual(command.Equals("EXPIRE") ?
+                    time.Value.TotalSeconds : time.Value.TotalMilliseconds, (int)args[1]);
         }
 
         [Test]
@@ -3003,6 +3003,17 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
             }
 
+            // new key, length 10, offset invalid_offset -> RedisServerException ("ERR value is not an integer or out of range.")
+            try
+            {
+                db.Execute(nameof(RespCommand.SETRANGE), key, "invalid_offset", value);
+                Assert.Fail();
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER), ex.Message);
+            }
+
             // existing key, length 10, offset 0, value length 5 -> 10 ("ABCDE56789")
             ClassicAssert.IsTrue(db.StringSet(key, value));
             resp = db.StringSetRange(key, 0, newValue);
@@ -3106,8 +3117,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             ClassicAssert.IsTrue(db.StringSet("mykey", "foo bar"));
-            ClassicAssert.IsTrue(db.StringLength("mykey") == 7);
-            ClassicAssert.IsTrue(db.StringLength("nokey") == 0);
+            ClassicAssert.AreEqual(7, db.StringLength("mykey"));
+            ClassicAssert.AreEqual(0, db.StringLength("nokey"));
         }
 
         [Test]

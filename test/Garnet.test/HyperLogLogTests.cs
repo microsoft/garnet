@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -221,42 +222,50 @@ namespace Garnet.test
             //1. PFADD mykey
             response = lightClientRequest.SendCommandChunks("PFADD mykey h e l l o", bytesPerSend);
             expectedResponse = ":1\r\n";
-            ClassicAssert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            var actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             //2. PFCOUNT mykey
             response = lightClientRequest.SendCommandChunks("PFCOUNT mykey", bytesPerSend);
             expectedResponse = ":4\r\n";
-            ClassicAssert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             //3. PFADD mykey2
             response = lightClientRequest.SendCommandChunks("PFADD mykey2 w o r l d", bytesPerSend);
             expectedResponse = ":1\r\n";
-            ClassicAssert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             //4. PFCOUNT mykey mykey2
             response = lightClientRequest.SendCommandChunks("PFCOUNT mykey mykey2", bytesPerSend);
-            expectedResponse = ":9\r\n";
-            ClassicAssert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            expectedResponse = ":7\r\n";
+            actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             //5. PFMERGE mykey3
             response = lightClientRequest.SendCommandChunks("PFMERGE mykey3 mykey", bytesPerSend);
             expectedResponse = "+OK\r\n";
-            ClassicAssert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             //6. PFCOUNT mykey3
             response = lightClientRequest.SendCommandChunks("PFCOUNT mykey3", bytesPerSend);
             expectedResponse = ":4\r\n";
-            ClassicAssert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             //7. PFMERGE mykey4 mykey mykey2
             response = lightClientRequest.SendCommandChunks("PFMERGE mykey4 mykey mykey2", bytesPerSend);
             expectedResponse = "+OK\r\n";
-            ClassicAssert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             //8. PFCOUNT mykey4
             response = lightClientRequest.SendCommandChunks("PFCOUNT mykey4", bytesPerSend);
             expectedResponse = ":7\r\n";
-            ClassicAssert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
         }
 
         private static unsafe ulong MurmurHash2x64A(byte* bString, int len, uint seed = 0)
@@ -485,7 +494,7 @@ namespace Garnet.test
             db.HyperLogLogAdd(keyC, dataC);
 
             long totalCount = db.HyperLogLogLength(keys);
-            ClassicAssert.AreEqual(countA + countB + countC, totalCount);
+            ClassicAssert.AreEqual(11, totalCount);
         }
 
         public long LongRandom() => ((long)this.r.Next() << 32) | (long)this.r.Next();
