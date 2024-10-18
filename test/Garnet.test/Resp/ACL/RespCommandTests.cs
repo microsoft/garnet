@@ -5481,6 +5481,22 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task GeoSearchStoreACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GEOSEARCHSTORE",
+                [DoGeoSearchStoreAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoGeoSearchStoreAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("GEOSEARCHSTORE", ["bar", "foo", "FROMMEMBER", "bar", "BYBOX", "2", "2", "M", "STOREDIST"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
         public async Task ZAddACLsAsync()
         {
             // TODO: ZADD doesn't implement NX XX GT LT CH INCR; expand to cover all lengths when implemented

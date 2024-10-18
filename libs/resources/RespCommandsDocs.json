@@ -2217,6 +2217,227 @@
     ]
   },
   {
+    "Command": "GEOSEARCHSTORE",
+    "Name": "GEOSEARCHSTORE",
+    "Summary": "Queries a geospatial index for members inside an area of a box or a circle, optionally stores the result.",
+    "Group": "Geo",
+    "Complexity": "O(N\u002Blog(M)) where N is the number of elements in the grid-aligned bounding box area around the shape provided as the filter and M is the number of items inside the shape",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "SOURCE",
+        "DisplayText": "source",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FROM",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMBER",
+            "DisplayText": "member",
+            "Type": "String",
+            "Token": "FROMMEMBER"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "FROMLONLAT",
+            "Type": "Block",
+            "Token": "FROMLONLAT",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "LONGITUDE",
+                "DisplayText": "longitude",
+                "Type": "Double"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "LATITUDE",
+                "DisplayText": "latitude",
+                "Type": "Double"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "BY",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "CIRCLE",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "RADIUS",
+                "DisplayText": "radius",
+                "Type": "Double",
+                "Token": "BYRADIUS"
+              },
+              {
+                "TypeDiscriminator": "RespCommandContainerArgument",
+                "Name": "UNIT",
+                "Type": "OneOf",
+                "Arguments": [
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "M",
+                    "DisplayText": "m",
+                    "Type": "PureToken",
+                    "Token": "M"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "KM",
+                    "DisplayText": "km",
+                    "Type": "PureToken",
+                    "Token": "KM"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "FT",
+                    "DisplayText": "ft",
+                    "Type": "PureToken",
+                    "Token": "FT"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "MI",
+                    "DisplayText": "mi",
+                    "Type": "PureToken",
+                    "Token": "MI"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "BOX",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "WIDTH",
+                "DisplayText": "width",
+                "Type": "Double",
+                "Token": "BYBOX"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "HEIGHT",
+                "DisplayText": "height",
+                "Type": "Double"
+              },
+              {
+                "TypeDiscriminator": "RespCommandContainerArgument",
+                "Name": "UNIT",
+                "Type": "OneOf",
+                "Arguments": [
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "M",
+                    "DisplayText": "m",
+                    "Type": "PureToken",
+                    "Token": "M"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "KM",
+                    "DisplayText": "km",
+                    "Type": "PureToken",
+                    "Token": "KM"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "FT",
+                    "DisplayText": "ft",
+                    "Type": "PureToken",
+                    "Token": "FT"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "MI",
+                    "DisplayText": "mi",
+                    "Type": "PureToken",
+                    "Token": "MI"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ORDER",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ASC",
+            "DisplayText": "asc",
+            "Type": "PureToken",
+            "Token": "ASC"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "DESC",
+            "DisplayText": "desc",
+            "Type": "PureToken",
+            "Token": "DESC"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "COUNT-BLOCK",
+        "Type": "Block",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer",
+            "Token": "COUNT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ANY",
+            "DisplayText": "any",
+            "Type": "PureToken",
+            "Token": "ANY",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "STOREDIST",
+        "DisplayText": "storedist",
+        "Type": "PureToken",
+        "Token": "STOREDIST",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
     "Command": "GET",
     "Name": "GET",
     "Summary": "Returns the string value of a key.",

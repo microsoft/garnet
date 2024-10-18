@@ -347,6 +347,32 @@ namespace Garnet.test.cluster
         public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
     }
 
+    internal class GEOSEARCHSTORE : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(GEOSEARCHSTORE);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1], "FROMMEMBER", "bar", "BYBOX", "800", "800", "km", "STOREDIST"];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1], "FROMMEMBER", "bar", "BYBOX", "800", "800", "km", "STOREDIST"];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[] { new ArraySegment<string>([ssk[0], ssk[1], "FROMMEMBER", "bar", "BYBOX", "800", "800", "km", "STOREDIST"]) };
+            return setup;
+        }
+    }
+
     internal class SETRANGE : BaseCommand
     {
         public override bool IsArrayCommand => false;
