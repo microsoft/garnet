@@ -40,7 +40,6 @@ jobs:
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
         #DEBUG DEBUG test: [ 'Resp.RespParseStress', 'Resp.RespTsavoriteStress', 'Cluster.RespClusterMigrateBench', 'Cluster.RespClusterBench', 'Resp.RespLuaStress', 'Resp.RespLuaRunnerStress' ]   
-        test: [ '*Resp*' ]   
     steps:
       - name: Check out code
         uses: actions/checkout@v4
