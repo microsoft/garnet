@@ -59,13 +59,13 @@ namespace Garnet.server
             var ch = false;
 
             var count = input.parseState.Count;
-            var currTokenIdx = input.parseStateStartIdx;
+            var currTokenIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader _output = default;
             try
             {
                 // Read the options
-                var optsCount = (count - input.parseStateStartIdx) % 3;
+                var optsCount = (count - input.parseStateFirstArgIdx) % 3;
                 if (optsCount > 0 && optsCount <= 2)
                 {
                     // Is NX or XX, if not nx then use XX
@@ -146,12 +146,12 @@ namespace Garnet.server
             var end = curr + output.Length;
 
             var count = input.parseState.Count;
-            var currTokenIdx = input.parseStateStartIdx;
+            var currTokenIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader _output = default;
             try
             {
-                var tokenCount = input.parseState.Count - input.parseStateStartIdx;
+                var tokenCount = input.parseState.Count - input.parseStateFirstArgIdx;
 
                 while (!RespWriteUtils.WriteArrayLength(tokenCount, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -193,7 +193,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currTokenIdx = input.parseStateStartIdx;
+            var currTokenIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader _output = default;
             try
@@ -247,12 +247,12 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currTokenIdx = input.parseStateStartIdx;
+            var currTokenIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader _output = default;
             try
             {
-                var tokenCount = input.parseState.Count - input.parseStateStartIdx;
+                var tokenCount = input.parseState.Count - input.parseStateFirstArgIdx;
 
                 while (!RespWriteUtils.WriteArrayLength(tokenCount, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -302,7 +302,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currTokenIdx = input.parseStateStartIdx;
+            var currTokenIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader _output = default;
             try

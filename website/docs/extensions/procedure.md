@@ -12,7 +12,7 @@ Custom procedures allow adding a new non-transactional procedure and registering
 
 `CustomProcedure` is the base class for all custom procedures. To develop a new one, this class has to be extended and then include the custom logic. There is one method to be implemented in a new custom procedure:
 
-- `Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)`
+- `Execute<TGarnetApi>(TGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)`
 
 The `Execute` method has the core logic of the custom procedure. Its implementation could process input passed in through the (`input`) parameter and perform operations on Garnet by invoking any of the APIs available on `IGarnetApi`. This method then generates the output of the procedure as well.
 

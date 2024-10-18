@@ -6,12 +6,13 @@ title: Garnet Custom Commands
 
 ## Overview
 
-Garnet supports registering custom commands and transactions implemented in C#, both programmatically on the server-side and through running dedicated REGISTER command in the client-side.
+Garnet supports registering custom commands and transactions implemented in C#, both programmatically on the server-side and through running dedicated REGISTERCS command in the client-side.
 
 ## Supported Custom Command Types
-1. **Custom Raw String Commands**: To implement a custom raw string command, implement a class that inherits from the `CustomRawStringFunctions` base class (See example: `GarnetServer\DeleteIfMatch.cs`)
-2. **Custom Object Commands**: To implement a custom object command, implement your custom object class that inherits from `GarnetObjectBase` base class, as well as a factory that creates your object type that inherits from the `CustomObjectFactory` base class (See example: `GarnetServer\MyDictObject.cs`)
-3. **Custom Transaction**: To implement a custom transaction, implement a class that inherits from the `CustomTransactionProcedure` base class (See example: `GarnetServer\Procedures\ReadWriteTxn.cs`)
+1. **Custom Raw String Commands**: To implement a custom raw string command, implement a class that inherits from the `CustomRawStringFunctions` base class (See example: `main\GarnetServer\Extensions\DeleteIfMatch.cs`)
+2. **Custom Object Commands**: To implement a custom object command, implement your custom object class that inherits from `GarnetObjectBase` base class, as well as a factory that creates your object type that inherits from the `CustomObjectFactory` base class (See example: `main\GarnetServer\Extensions\MyDictObject.cs`)
+3. **Custom Transaction**: To implement a custom transaction, implement a class that inherits from the `CustomTransactionProcedure` base class (See example: `main\GarnetServer\Extensions\ReadWriteTxn.cs`)
+4. **Custom Procedure**: To implement a non-transactional procedure, implement a class that inherits from the `CustomProcedure ` base class (See example: `main\GarnetServer\Extensions\Sum.cs`)
 
 ## Server-Side Command Registration
 
@@ -19,13 +20,14 @@ To register a new custom command from the server-side, use the GarnetServer inst
 1. **Custom Raw String Commands**: To register a new command using a concrete class implementing `CustomRawStringFunctions`, call `RegisterApi.NewCommand(string name, int numParams, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo = null, long expirationTicks = 0)`, where `customFunctions` is an instance of the new concrete class.
 2. **Custom Object Commands**: To register a new command using a concrete class implementing `CustomObjectFactory`, call `RegisterApi.NewCommand(string name, int numParams, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo = null)`, where `factory` is an instance of the new concrete class.
 3. **Custom Transaction**: To register a new transaction using a concrete class implementing `CustomTransactionProcedure`, call `NewTransactionProc(string name, int numParams, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)`, where `proc` is a `Func` that returns an instance of the new concrete class.
+4. **Custom Procedure**: To register a new procedure using a concrete class implementing `CustomProcedure`, call `RegisterApi.NewProcedure(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)`, where `customProcedure` is an instance of the procedure concrete class.
 
 Note that each call to the RegisterApi has an optional `RespCommandsInfo commandInfo` parameter. This parameter allows you to supply Garnet with metadata regarding the custom command that will be visible to the client when running the [`COMMAND`](../commands/server.md#command) or [`COMMAND INFO`](../commands/server.md#command-info) commands.
 
 ## Client-Side Command Registration
-To register a new custom command from the client-side, use the dedicated REGISTER command in the client app (**note:** this is an **admin command**). <br/>
-The REGISTER command takes assemblies that exist on the server and contain implementations for either of the supported custom command classes, and registers the custom commands on the server according to parameters given by the client <br/>
-The REGISTER command supports registering multiple commands and / or transactions from multiple files and / or directories containing C# binary files (*.dll / *.exe).<br/>
+To register a new custom command from the client-side, use the dedicated REGISTERCS command in the client app (**note:** this is an **admin command**). <br/>
+The REGISTERCS command takes assemblies that exist on the server and contain implementations for either of the supported custom command classes, and registers the custom commands on the server according to parameters given by the client <br/>
+The REGISTERCS command supports registering multiple commands and / or transactions from multiple files and / or directories containing C# binary files (*.dll / *.exe).<br/>
 
 ### Enabling Client-Side Command Registration
 To enable registering client-side custom commands, you must specify a list of allowed paths from which assemblies can potentially be loaded. This is done by setting the configuration parameter `ExtensionBinPaths`.
@@ -36,11 +38,11 @@ Example (in garnet.config):
 **Note #1**: Assemblies can be loaded from any directory level under these specified paths<br/>
 **Note #2**: By default, Garnet only allows loading of digitally signed assemblies. To remove that requirement (not recommended), set the configuration parameter `ExtensionAllowOnlySignedAssemblies` to `false`.
 
-### REGISTER Command
-To run the REGISTER command, run the REGISTER keyword followed by one or more new command subcommands, followed by the optional INFO keyword which is followed by a path pointing to a JSON file containing a serialized array of `RespCommandsInfo` objects, containing command metadata (\*.json), followed by the SRC keyword, which is followed by one or more paths to C# binary files or directories containing C# binary files (\*.dll / \*.exe).<br/>
+### REGISTERCS Command
+To run the REGISTERCS command, run the REGISTERCS keyword followed by one or more new command subcommands, followed by the optional INFO keyword which is followed by a path pointing to a JSON file containing a serialized array of `RespCommandsInfo` objects, containing command metadata (\*.json), followed by the SRC keyword, which is followed by one or more paths to C# binary files or directories containing C# binary files (\*.dll / \*.exe).<br/>
 #### Full command syntax:
 ```
-REGISTER cmdType name numParams className [expTicks] [cmdType name numParams className [expTicks] ...] [INFO path] SRC path [path ...]
+REGISTERCS cmdType name numParams className [expTicks] [cmdType name numParams className [expTicks] ...] [INFO path] SRC path [path ...]
 ```
 Each new command that you intend to register, is specified by either of the command type keywords, followed by its parameters.
 #### New command sub-command syntax:
@@ -62,13 +64,13 @@ The following keywords are legal values for `cmdType`:
     * **0**: retain whatever it is currently (or no expiration if this is a new entry) - this is the default;
     * **\>0**: => set expiration to given value.
 
-**Note:** If the server could not register one or more of the commands / transactions specified, or if it could not load or enumerate one or more of the files or directories specified in the REGISTER command, no action will be taken (i.e. no command will be registered), and the command execution will fail with an appropriate error message.
+**Note:** If the server could not register one or more of the commands / transactions specified, or if it could not load or enumerate one or more of the files or directories specified in the REGISTERCS command, no action will be taken (i.e. no command will be registered), and the command execution will fail with an appropriate error message.
 
 ### RESP Reply
 Returns +OK on success, otherwise --ERR message if any
 
-### REGISTER Errors
-* **ERR malformed REGISTER command** - Error in the parsing of the REGISTER command
+### REGISTERCS Errors
+* **ERR malformed REGISTERCS command** - Error in the parsing of the REGISTERCS command
 * **ERR unable to access command info file.** - Error accessing command info file specified after the INFO keyword
 * **ERR command info file is not contained in allowed paths.** - Command info file specific is not contained in the allowed path list according to the server configuration (`ExtensionBinPaths` in garnet.config)
 * **ERR malformed command info JSON.** - Error deserializing command info JSON file
