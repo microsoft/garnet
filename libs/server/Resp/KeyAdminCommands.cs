@@ -82,7 +82,7 @@ namespace Garnet.server
         {
             if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST));
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETDEL));
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -180,19 +180,14 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            if (!parseState.TryGetInt(1, out var expiryValue))
+            if (!parseState.TryGetInt(1, out _))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            var expiryMs = command == RespCommand.EXPIRE
-                ? TimeSpan.FromSeconds(expiryValue)
-                : TimeSpan.FromMilliseconds(expiryValue);
-
             var expireOption = ExpireOption.None;
-
             if (parseState.Count > 2)
             {
                 if (!TryGetExpireOption(parseState.GetArgSliceByRef(2).ReadOnlySpan, out expireOption))
@@ -203,41 +198,43 @@ namespace Garnet.server
                         SendAndReset();
                     return true;
                 }
+
+                if (parseState.Count > 3)
+                {
+                    if (!TryGetExpireOption(parseState.GetArgSliceByRef(3).ReadOnlySpan, out var additionExpireOption))
+                    {
+                        var optionStr = parseState.GetString(3);
+
+                        while (!RespWriteUtils.WriteError($"ERR Unsupported option {optionStr}", ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
+
+                    if (expireOption == ExpireOption.XX && (additionExpireOption == ExpireOption.GT ||
+                                                            additionExpireOption == ExpireOption.LT))
+                    {
+                        expireOption = ExpireOption.XX | additionExpireOption;
+                    }
+                    else if (expireOption == ExpireOption.GT && additionExpireOption == ExpireOption.XX)
+                    {
+                        expireOption = ExpireOption.XXGT;
+                    }
+                    else if (expireOption == ExpireOption.LT && additionExpireOption == ExpireOption.XX)
+                    {
+                        expireOption = ExpireOption.XXLT;
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteError(
+                                   "ERR NX and XX, GT or LT options at the same time are not compatible", ref dcurr,
+                                   dend))
+                            SendAndReset();
+                    }
+                }
             }
 
-            if (parseState.Count > 3)
-            {
-                if (!TryGetExpireOption(parseState.GetArgSliceByRef(3).ReadOnlySpan, out var additionExpireOption))
-                {
-                    var optionStr = parseState.GetString(3);
-
-                    while (!RespWriteUtils.WriteError($"ERR Unsupported option {optionStr}", ref dcurr, dend))
-                        SendAndReset();
-                    return true;
-                }
-
-                if (expireOption == ExpireOption.XX && (additionExpireOption == ExpireOption.GT || additionExpireOption == ExpireOption.LT))
-                {
-                    expireOption = ExpireOption.XX | additionExpireOption;
-                }
-                else if (expireOption == ExpireOption.GT && additionExpireOption == ExpireOption.XX)
-                {
-                    expireOption = ExpireOption.XXGT;
-                }
-                else if (expireOption == ExpireOption.LT && additionExpireOption == ExpireOption.XX)
-                {
-                    expireOption = ExpireOption.XXLT;
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteError("ERR NX and XX, GT or LT options at the same time are not compatible", ref dcurr, dend))
-                        SendAndReset();
-                }
-            }
-
-            var status = command == RespCommand.EXPIRE ?
-                        storageApi.EXPIRE(key, expiryMs, out var timeoutSet, StoreType.All, expireOption) :
-                        storageApi.PEXPIRE(key, expiryMs, out timeoutSet, StoreType.All, expireOption);
+            var input = new RawStringInput(command, ref parseState, 1, -1, (byte)expireOption);
+            var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 
             if (status == GarnetStatus.OK && timeoutSet)
             {
@@ -270,7 +267,7 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            if (!parseState.TryGetLong(1, out var expiryTimestamp))
+            if (!parseState.TryGetLong(1, out _))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
@@ -321,9 +318,8 @@ namespace Garnet.server
                 }
             }
 
-            var status = command == RespCommand.EXPIREAT ?
-                        storageApi.EXPIREAT(key, expiryTimestamp, out var timeoutSet, StoreType.All, expireOption) :
-                        storageApi.PEXPIREAT(key, expiryTimestamp, out timeoutSet, StoreType.All, expireOption);
+            var input = new RawStringInput(command, ref parseState, 1, -1, (byte)expireOption);
+            var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 
             if (status == GarnetStatus.OK && timeoutSet)
             {

@@ -25,12 +25,12 @@ namespace Garnet.server
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
                 return NetworkMGET_SG(ref storageApi);
 
-            SpanByte input = default;
-
             while (!RespWriteUtils.WriteArrayLength(parseState.Count, ref dcurr, dend))
                 SendAndReset();
 
-            for (int c = 0; c < parseState.Count; c++)
+            RawStringInput input = default;
+
+            for (var c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
@@ -60,25 +60,24 @@ namespace Garnet.server
         private bool NetworkMGET_SG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            SpanByte input = default;
-            long ctx = default;
-
-            int firstPending = -1;
+            var firstPending = -1;
             (GarnetStatus, SpanByteAndMemory)[] outputArr = null;
 
             // Write array length header
             while (!RespWriteUtils.WriteArrayLength(parseState.Count, ref dcurr, dend))
                 SendAndReset();
 
+            RawStringInput input = default;
             SpanByteAndMemory o = new(dcurr, (int)(dend - dcurr));
-            for (int c = 0; c < parseState.Count; c++)
+
+            for (var c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
 
                 // Store index in context, since completions are not in order
-                ctx = c;
+                long ctx = c;
 
-                var status = storageApi.GET_WithPending(ref key, ref input, ref o, ctx, out bool isPending);
+                var status = storageApi.GET_WithPending(ref key, ref input, ref o, ctx, out var isPending);
 
                 if (isPending)
                 {
@@ -133,7 +132,7 @@ namespace Garnet.server
                 storageApi.GET_CompletePending(outputArr, true);
 
                 // Write the outputs to network buffer
-                for (int i = firstPending; i < parseState.Count; i++)
+                for (var i = firstPending; i < parseState.Count; i++)
                 {
                     var status = outputArr[i].Item1;
                     var output = outputArr[i].Item2;
@@ -179,44 +178,21 @@ namespace Garnet.server
         private bool NetworkMSETNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            byte* hPtr = stackalloc byte[RespInputHeader.Size];
+            var anyValuesSet = false;
+            var input = new RawStringInput(RespCommand.SETEXNX, ref parseState);
 
-            bool anyValuesSet = false;
-            for (int c = 0; c < parseState.Count; c += 2)
+            for (var c = 0; c < parseState.Count; c += 2)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var val = parseState.GetArgSliceByRef(c + 1).SpanByte;
+                input.parseStateFirstArgIdx = c + 1;
+                input.parseStateLastArgIdx = input.parseStateFirstArgIdx;
 
-                // We have to access the raw pointer in order to inject the input header
-                byte* valPtr = val.ToPointer();
-                int vsize = val.Length;
-
-                valPtr -= sizeof(int);
-
-                int saveV = *(int*)valPtr;
-                *(int*)valPtr = vsize;
-
-                // Make space for RespCommand in input
-                valPtr -= RespInputHeader.Size;
-
-                // Save state of memory to override with header
-                Buffer.MemoryCopy(valPtr, hPtr, RespInputHeader.Size, RespInputHeader.Size);
-
-                *(int*)valPtr = RespInputHeader.Size + vsize;
-                ((RespInputHeader*)(valPtr + sizeof(int)))->cmd = RespCommand.SETEXNX;
-                ((RespInputHeader*)(valPtr + sizeof(int)))->flags = 0;
-
-                var status = storageApi.SET_Conditional(ref key, ref Unsafe.AsRef<SpanByte>(valPtr));
+                var status = storageApi.SET_Conditional(ref key, ref input);
 
                 // Status tells us whether an old image was found during RMW or not
                 // For a "set if not exists", NOTFOUND means that the operation succeeded
                 if (status == GarnetStatus.NOTFOUND)
                     anyValuesSet = true;
-
-                // Put things back in place so that network buffer is not clobbered
-                Buffer.MemoryCopy(hPtr, valPtr, RespInputHeader.Size, RespInputHeader.Size);
-                valPtr += RespInputHeader.Size;
-                *(int*)valPtr = saveV;
             }
 
             while (!RespWriteUtils.WriteInteger(anyValuesSet ? 1 : 0, ref dcurr, dend))
@@ -254,7 +230,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SELECT));
             }
 
-            // Read index
+            // Validate index
             if (!parseState.TryGetInt(0, out var index))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -339,7 +315,7 @@ namespace Garnet.server
             if (parseState.Count < 1)
                 return AbortWithWrongNumberOfArguments("SCAN");
 
-            // Scan cursor [MATCH pattern] [COUNT count] [TYPE type]
+            // Validate scan cursor
             if (!parseState.TryGetLong(0, out var cursorFromInput))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR, ref dcurr, dend))
@@ -368,6 +344,7 @@ namespace Garnet.server
                 }
                 else if (parameterWord.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
                 {
+                    // Validate count
                     if (!parseState.TryGetLong(tokenIdx++, out countValue))
                     {
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))

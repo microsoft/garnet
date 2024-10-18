@@ -138,44 +138,52 @@ namespace Garnet.server
                 match = "*";
 
             // Prepare the parse state 
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
+            var matchPattern = match.Trim();
 
-            var matchPatternValue = Encoding.ASCII.GetBytes(match.Trim());
+            var countLength = NumUtils.NumDigits(count);
 
-            var lengthCountNumber = NumUtils.NumDigits(count);
-            var countBytes = new byte[lengthCountNumber];
+            // Calculate # of bytes to store parameters
+            var sliceBytes = CmdStrings.MATCH.Length +
+                             matchPattern.Length +
+                             CmdStrings.COUNT.Length +
+                             countLength;
 
-            fixed (byte* matchKeywordPtr = CmdStrings.MATCH, matchPatterPtr = matchPatternValue)
-            {
-                fixed (byte* countPtr = CmdStrings.COUNT, countValuePtr = countBytes)
-                {
-                    var matchKeywordSlice = new ArgSlice(matchKeywordPtr, CmdStrings.MATCH.Length);
-                    var matchPatternSlice = new ArgSlice(matchPatterPtr, matchPatternValue.Length);
+            // Get buffer from scratch buffer manager
+            var paramsSlice = scratchBufferManager.CreateArgSlice(sliceBytes);
+            var paramsSpan = paramsSlice.Span;
+            var paramsSpanOffset = 0;
 
-                    var countValuePtr2 = countValuePtr;
-                    NumUtils.IntToBytes(count, lengthCountNumber, ref countValuePtr2);
+            // Store parameters in buffer
 
-                    var countKeywordSlice = new ArgSlice(countPtr, CmdStrings.COUNT.Length);
-                    var countValueSlice = new ArgSlice(countValuePtr, countBytes.Length);
+            // MATCH
+            var matchSpan = paramsSpan.Slice(paramsSpanOffset, CmdStrings.MATCH.Length);
+            CmdStrings.MATCH.CopyTo(matchSpan);
+            paramsSpanOffset += CmdStrings.MATCH.Length;
+            var matchSlice = ArgSlice.FromPinnedSpan(matchSpan);
 
-                    parseState.InitializeWithArguments(ref parseStateBuffer, matchKeywordSlice, matchPatternSlice,
-                        countKeywordSlice, countValueSlice);
-                }
-            }
+            // Pattern
+            var patternSpan = paramsSpan.Slice(paramsSpanOffset, matchPattern.Length);
+            Encoding.ASCII.GetBytes(matchPattern, patternSpan);
+            paramsSpanOffset += matchPattern.Length;
+            var matchPatternSlice = ArgSlice.FromPinnedSpan(patternSpan);
+
+            // COUNT
+            var countSpan = paramsSpan.Slice(paramsSpanOffset, CmdStrings.COUNT.Length);
+            CmdStrings.COUNT.CopyTo(countSpan);
+            paramsSpanOffset += CmdStrings.COUNT.Length;
+            var countSlice = ArgSlice.FromPinnedSpan(countSpan);
+
+            // Value
+            var countValueSpan = paramsSpan.Slice(paramsSpanOffset, countLength);
+            NumUtils.LongToSpanByte(count, countValueSpan);
+            var countValueSlice = ArgSlice.FromPinnedSpan(countValueSpan);
+
+            parseState.InitializeWithArguments(matchSlice, matchPatternSlice,
+                countSlice, countValueSlice);
 
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = objectType,
-                },
-                arg1 = (int)cursor,
-                arg2 = ObjectScanCountLimit,
-                parseState = parseState,
-                parseStateStartIdx = 0,
-            };
+            var header = new RespInputHeader(objectType);
+            var input = new ObjectInput(header, ref parseState, 0, -1, (int)cursor, ObjectScanCountLimit);
 
             switch (objectType)
             {
@@ -192,6 +200,8 @@ namespace Garnet.server
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+
+            scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
 
             items = default;
             if (status == GarnetStatus.OK)
@@ -274,6 +284,62 @@ namespace Garnet.server
                         if (!RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref refPtr, outputPtr + outputSpan.Length))
                             return default;
                         elements = [new ArgSlice(result, len)];
+                    }
+                }
+            }
+            finally
+            {
+                if (!outputFooter.spanByteAndMemory.IsSpanByte)
+                    outputFooter.spanByteAndMemory.Memory.Dispose();
+            }
+
+            return elements;
+        }
+
+        /// <summary>
+        /// Converts an array of elements in RESP format to ArgSlice[] type
+        /// </summary>
+        /// <param name="outputFooter">The RESP format output object</param>
+        /// <param name="error">A description of the error, if there is any</param>
+        /// <returns></returns>
+        unsafe int[] ProcessRespIntegerArrayOutput(GarnetObjectStoreOutput outputFooter, out string error)
+        {
+            int[] elements = default;
+            error = default;
+
+            // For reading the elements in the outputFooter
+            byte* element = null;
+
+            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
+                             outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+
+            try
+            {
+                fixed (byte* outputPtr = outputSpan)
+                {
+                    var refPtr = outputPtr;
+
+                    if (*refPtr == '-')
+                    {
+                        if (!RespReadUtils.ReadErrorAsString(out error, ref refPtr, outputPtr + outputSpan.Length))
+                            return default;
+                    }
+                    else if (*refPtr == '*')
+                    {
+                        // Get the number of elements
+                        if (!RespReadUtils.ReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
+                            return default;
+
+                        // Create the argslice[]
+                        elements = new int[arraySize];
+                        for (int i = 0; i < elements.Length; i++)
+                        {
+                            element = null;
+                            if (RespReadUtils.TryReadInt(ref refPtr, outputPtr + outputSpan.Length, out var number, out var _))
+                            {
+                                elements[i] = number;
+                            }
+                        }
                     }
                 }
             }

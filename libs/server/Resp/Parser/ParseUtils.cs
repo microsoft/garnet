@@ -23,10 +23,16 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int ReadInt(ref ArgSlice slice)
         {
-            if (!TryReadInt(ref slice, out var number))
+            int number = default;
+            var ptr = slice.ptr;
+
+            if (slice.length == 0 ||
+                !RespReadUtils.TryReadInt(ref ptr, slice.ptr + slice.length, out number, out var bytesRead) ||
+                (int)bytesRead != slice.length)
             {
                 RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
             }
+
             return number;
         }
 
@@ -39,9 +45,12 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool TryReadInt(ref ArgSlice slice, out int number)
         {
+            number = default;
             var ptr = slice.ptr;
-            return RespReadUtils.TryReadInt(ref ptr, slice.ptr + slice.length, out number, out var bytesRead)
-                   && (int)bytesRead == slice.length;
+            return slice.length != 0 &&
+                   RespReadUtils.TryReadIntSafe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead, out _,
+                       out _, allowLeadingZeros: false) &&
+                   (int)bytesRead == slice.length;
         }
 
         /// <summary>
@@ -53,10 +62,16 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long ReadLong(ref ArgSlice slice)
         {
-            if (!TryReadLong(ref slice, out var number))
+            long number = default;
+            var ptr = slice.ptr;
+
+            if (slice.length == 0 ||
+                !RespReadUtils.TryReadLong(ref ptr, slice.ptr + slice.length, out number, out var bytesRead) ||
+                (int)bytesRead != slice.length)
             {
                 RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
             }
+
             return number;
         }
 
@@ -69,9 +84,12 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool TryReadLong(ref ArgSlice slice, out long number)
         {
+            number = default;
             var ptr = slice.ptr;
-            return RespReadUtils.TryReadLong(ref ptr, slice.ptr + slice.length, out number, out var bytesRead)
-                   && (int)bytesRead == slice.length;
+            return slice.length != 0 &&
+                   RespReadUtils.TryReadLongSafe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead,
+                       out _, out _, allowLeadingZeros: false) &&
+                   (int)bytesRead == slice.length;
         }
 
         /// <summary>
