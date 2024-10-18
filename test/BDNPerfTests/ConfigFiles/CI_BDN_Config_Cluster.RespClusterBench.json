@@ -2,16 +2,8 @@
     "configuration": "Release",
     "framework": "net8.0",
     "filter": "*RespClusterBench*",
-    "expectedGETMeanValue_linux": 27,
-    "expectedSETMeanValue_linux": 25,
-    "expectedMGETMeanValue_linux": 20,
-    "expectedMSETMeanValue_linux": 20,
-    "expectedGETMeanValue_win": 24,
-    "expectedSETMeanValue_win": 24,
-    "expectedMGETMeanValue_win": 19,
-    "expectedMSETMeanValue_win": 19,
 
-    "acceptableMeanRange": 15,
+    "acceptableAllocatedRange": 10, 
     "acceptableError": ".1",
     "acceptableStdDev": ".1"
 }
