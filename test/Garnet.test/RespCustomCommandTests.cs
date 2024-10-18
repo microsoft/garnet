@@ -10,12 +10,116 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
+    public class LargeGet : CustomProcedure
+    {
+        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        {
+            static bool ResetBuffer(TGarnetApi garnetApi, ref MemoryResult<byte> output, int buffOffset)
+            {
+                bool status = garnetApi.ResetScratchBuffer(buffOffset);
+                if (!status)
+                    WriteError(ref output, "ERR ResetScratchBuffer failed");
+
+                return status;
+            }
+
+            var offset = 0;
+            var key = GetNextArg(ref procInput, ref offset);
+
+            var buffOffset = garnetApi.GetScratchBufferOffset();
+            for (var i = 0; i < 120_000; i++)
+            {
+                garnetApi.GET(key, out var outval);
+                if (i % 100 == 0)
+                {
+                    if (!ResetBuffer(garnetApi, ref output, buffOffset))
+                        return false;
+                }
+            }
+
+            buffOffset = garnetApi.GetScratchBufferOffset();
+            garnetApi.GET(key, out var outval1);
+            garnetApi.GET(key, out var outval2);
+            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
+
+            buffOffset = garnetApi.GetScratchBufferOffset();
+            var hashKey = GetNextArg(ref procInput, ref offset);
+            var field = GetNextArg(ref procInput, ref offset);
+            garnetApi.HashGet(hashKey, field, out var value);
+            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
+
+            return true;
+        }
+    }
+
+    public class LargeGetTxn : CustomTransactionProcedure
+    {
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
+        {
+            int offset = 0;
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Shared, false);
+            return true;
+        }
+
+        public override void Main<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        {
+            int offset = 0;
+            var key = GetNextArg(ref procInput, ref offset);
+            var buffOffset = garnetApi.GetScratchBufferOffset();
+            for (int i = 0; i < 120_000; i++)
+            {
+                garnetApi.GET(key, out var outval);
+                if (i % 100 == 0)
+                {
+                    if (!garnetApi.ResetScratchBuffer(buffOffset))
+                    {
+                        WriteError(ref output, "ERR ResetScratchBuffer failed");
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    public class OutOfOrderFreeBuffer : CustomProcedure
+    {
+        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        {
+            var offset = 0;
+            var key = GetNextArg(ref procInput, ref offset);
+
+            var buffOffset1 = garnetApi.GetScratchBufferOffset();
+            garnetApi.GET(key, out var outval1);
+
+            var buffOffset2 = garnetApi.GetScratchBufferOffset();
+            garnetApi.GET(key, out var outval2);
+
+            if (!garnetApi.ResetScratchBuffer(buffOffset1))
+            {
+                WriteError(ref output, "ERR ResetScratchBuffer failed");
+                return false;
+            }
+
+            // Previous reset call would have shrunk the buffer. This call should fail otherwise it will expand the buffer.
+            if (garnetApi.ResetScratchBuffer(buffOffset2))
+            {
+                WriteError(ref output, "ERR ResetScratchBuffer shouldn't expand the buffer");
+                return false;
+            }
+
+            return true;
+        }
+    }
+
     [TestFixture]
     public class RespCustomCommandTests
     {
@@ -63,14 +167,14 @@ namespace Garnet.test
 
             // This conditional set should pass (prefix matches)
             string retValue = db.StringGet(key);
-            Assert.AreEqual(newValue1, retValue);
+            ClassicAssert.AreEqual(newValue1, retValue);
 
             // This conditional set should fail (prefix does not match)
             string newValue2 = "foovalue2";
             db.Execute("SETIFPM", key, newValue2, "bar");
 
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue1, retValue);
+            ClassicAssert.AreEqual(newValue1, retValue);
 
             // This conditional set should pass (prefix matches)
             // New value is smaller than existing
@@ -78,7 +182,7 @@ namespace Garnet.test
             db.Execute("SETIFPM", key, newValue3, "foo");
 
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue3, retValue);
+            ClassicAssert.AreEqual(newValue3, retValue);
 
 
             // This conditional set should pass (prefix matches)
@@ -87,7 +191,7 @@ namespace Garnet.test
             db.Execute("SETIFPM", key, newValue4, "foo");
 
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue4, retValue);
+            ClassicAssert.AreEqual(newValue4, retValue);
         }
 
         [Test]
@@ -111,16 +215,16 @@ namespace Garnet.test
             catch (Exception ex)
             {
                 exception = true;
-                Assert.AreEqual(SetWPIFPGTCustomCommand.PrefixError, ex.Message);
+                ClassicAssert.AreEqual(SetWPIFPGTCustomCommand.PrefixError, ex.Message);
             }
-            Assert.IsTrue(exception);
+            ClassicAssert.IsTrue(exception);
             string retValue = db.StringGet(key);
-            Assert.AreEqual(null, retValue);
+            ClassicAssert.AreEqual(null, retValue);
 
             // This conditional set should pass (nothing there to begin with)
             db.Execute("SETWPIFPGT", key, origValue, BitConverter.GetBytes((long)0));
             retValue = db.StringGet(key);
-            Assert.AreEqual(retValue.Substring(8), origValue);
+            ClassicAssert.AreEqual(retValue.Substring(8), origValue);
 
             // This conditional set should fail (wrong prefix size)
             var newValue1 = "foovalue1";
@@ -132,42 +236,42 @@ namespace Garnet.test
             catch (Exception ex)
             {
                 exception = true;
-                Assert.AreEqual(SetWPIFPGTCustomCommand.PrefixError, ex.Message);
+                ClassicAssert.AreEqual(SetWPIFPGTCustomCommand.PrefixError, ex.Message);
             }
-            Assert.IsTrue(exception);
+            ClassicAssert.IsTrue(exception);
             retValue = db.StringGet(key);
-            Assert.AreEqual(retValue.Substring(8), origValue);
+            ClassicAssert.AreEqual(retValue.Substring(8), origValue);
 
             // This conditional set should pass (prefix is greater)
             db.Execute("SETWPIFPGT", key, newValue1, BitConverter.GetBytes((long)1));
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue1, retValue.Substring(8));
+            ClassicAssert.AreEqual(newValue1, retValue.Substring(8));
 
             // This conditional set should fail (prefix is not greater)
             var newValue2 = "foovalue2";
             db.Execute("SETWPIFPGT", key, newValue2, BitConverter.GetBytes((long)1));
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue1, retValue.Substring(8));
+            ClassicAssert.AreEqual(newValue1, retValue.Substring(8));
 
             // This conditional set should pass (prefix is greater)
             // New value is smaller than existing
             var newValue3 = "fooval3";
             db.Execute("SETWPIFPGT", key, newValue3, BitConverter.GetBytes((long)3));
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue3, retValue.Substring(8));
+            ClassicAssert.AreEqual(newValue3, retValue.Substring(8));
 
             // This conditional set should pass (prefix is greater)
             // New value is larger than existing
             var newValue4 = "foolargervalue4";
             db.Execute("SETWPIFPGT", key, newValue4, BitConverter.GetBytes((long)4));
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue4, retValue.Substring(8));
+            ClassicAssert.AreEqual(newValue4, retValue.Substring(8));
 
             // This conditional set should pass (prefix is greater)
             var newValue5 = "foolargervalue4";
             db.Execute("SETWPIFPGT", key, newValue4, BitConverter.GetBytes(long.MaxValue));
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue5, retValue.Substring(8));
+            ClassicAssert.AreEqual(newValue5, retValue.Substring(8));
         }
 
         [Test]
@@ -185,19 +289,19 @@ namespace Garnet.test
             // This conditional set should pass (nothing there to begin with)
             db.Execute("SETWPIFPGT", key, origValue, BitConverter.GetBytes((long)0));
             string retValue = db.StringGet(key);
-            Assert.AreEqual(retValue.Substring(8), origValue);
+            ClassicAssert.AreEqual(retValue.Substring(8), origValue);
 
             db.KeyExpire(key, TimeSpan.FromSeconds(1));
             Thread.Sleep(1100);
 
             // Key expired, return fails
             retValue = db.StringGet(key);
-            Assert.AreEqual(null, retValue);
+            ClassicAssert.AreEqual(null, retValue);
 
             // This conditional set should pass (nothing there to begin with)
             db.Execute("SETWPIFPGT", key, origValue, BitConverter.GetBytes((long)1));
             retValue = db.StringGet(key);
-            Assert.AreEqual(origValue, retValue.Substring(8));
+            ClassicAssert.AreEqual(origValue, retValue.Substring(8));
         }
 
         [Test]
@@ -215,19 +319,19 @@ namespace Garnet.test
             // This conditional set should pass (nothing there to begin with)
             db.Execute("SETWPIFPGT", key, origValue, BitConverter.GetBytes((long)0));
             string retValue = db.StringGet(key);
-            Assert.AreEqual(retValue.Substring(8), origValue);
+            ClassicAssert.AreEqual(retValue.Substring(8), origValue);
 
             db.KeyExpire(key, TimeSpan.FromSeconds(100));
 
             // Key not expired
             retValue = db.StringGet(key);
-            Assert.AreEqual(retValue.Substring(8), origValue);
+            ClassicAssert.AreEqual(retValue.Substring(8), origValue);
 
             // This conditional set should pass
             var newValue2 = "foovalue2";
             db.Execute("SETWPIFPGT", key, newValue2, BitConverter.GetBytes((long)1));
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue2, retValue.Substring(8));
+            ClassicAssert.AreEqual(newValue2, retValue.Substring(8));
         }
 
         [Test]
@@ -245,28 +349,28 @@ namespace Garnet.test
             // This conditional set should pass (nothing there to begin with)
             db.Execute("SETWPIFPGT", key, origValue, BitConverter.GetBytes((long)0));
             string retValue = db.StringGet(key);
-            Assert.AreEqual(retValue.Substring(8), origValue);
+            ClassicAssert.AreEqual(retValue.Substring(8), origValue);
 
             db.KeyExpire(key, TimeSpan.FromSeconds(100));
 
             // This conditional set should pass
             db.Execute("SETWPIFPGT", key, origValue, BitConverter.GetBytes((long)1));
             retValue = db.StringGet(key);
-            Assert.AreEqual(origValue, retValue.Substring(8));
+            ClassicAssert.AreEqual(origValue, retValue.Substring(8));
 
             // Expiration should survive operation
             var ttl = db.KeyTimeToLive(key);
-            Assert.IsTrue(ttl > TimeSpan.FromSeconds(10));
+            ClassicAssert.IsTrue(ttl > TimeSpan.FromSeconds(10));
 
             retValue = db.StringGet(key);
-            Assert.AreEqual(retValue.Substring(8), origValue);
+            ClassicAssert.AreEqual(retValue.Substring(8), origValue);
 
             // This conditional set should pass
             var newValue2 = "foovalue2";
             db.Execute("SETWPIFPGT", key, newValue2, BitConverter.GetBytes((long)2));
 
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue2, retValue.Substring(8));
+            ClassicAssert.AreEqual(newValue2, retValue.Substring(8));
         }
 
         [Test]
@@ -288,14 +392,14 @@ namespace Garnet.test
 
             // Delete should not have happened, as value does not match
             string retValue = db.StringGet(key);
-            Assert.AreEqual(origValue, retValue);
+            ClassicAssert.AreEqual(origValue, retValue);
 
             // DELIFM with same value
             db.Execute("DELIFM", key, origValue);
 
             // Delete should have happened, as value matches
             retValue = db.StringGet(key);
-            Assert.AreEqual(null, retValue);
+            ClassicAssert.AreEqual(null, retValue);
         }
 
         [Test]
@@ -316,24 +420,24 @@ namespace Garnet.test
             db.Execute("MYDICTSET", mainkey, key1, value1);
 
             var retValue = db.Execute("MYDICTGET", mainkey, key1);
-            Assert.AreEqual(value1, (string)retValue);
+            ClassicAssert.AreEqual(value1, (string)retValue);
 
             var result = db.Execute("MEMORY", "USAGE", mainkey);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             var expectedResponse = 272;
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             string key2 = "mykey2";
             string value2 = "foovalue2";
             db.Execute("MYDICTSET", mainkey, key2, value2);
 
             retValue = db.Execute("MYDICTGET", mainkey, key2);
-            Assert.AreEqual(value2, (string)retValue);
+            ClassicAssert.AreEqual(value2, (string)retValue);
 
             result = db.Execute("MEMORY", "USAGE", mainkey);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             expectedResponse = 408;
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
@@ -351,22 +455,22 @@ namespace Garnet.test
             long prefix = 0;
             db.Execute("SETWPIFPGT", key, origValue, BitConverter.GetBytes(prefix));
             string retValue = db.StringGet(key);
-            Assert.AreEqual(origValue, retValue.Substring(8));
+            ClassicAssert.AreEqual(origValue, retValue.Substring(8));
 
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
             var time = db.KeyTimeToLive(key);
-            Assert.IsTrue(time.Value.TotalSeconds > 0);
+            ClassicAssert.IsTrue(time.Value.TotalSeconds > 0);
 
             // This conditional set should pass (new prefix is greater)
             string newValue1 = "foovalue1";
             prefix = 1;
             db.Execute("SETWPIFPGT", key, newValue1, BitConverter.GetBytes(prefix));
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue1, retValue.Substring(8));
+            ClassicAssert.AreEqual(newValue1, retValue.Substring(8));
 
             Thread.Sleep((expire + 1) * 1000);
             string value = db.StringGet(key);
-            Assert.AreEqual(null, value);
+            ClassicAssert.AreEqual(null, value);
         }
 
         [Test]
@@ -389,14 +493,14 @@ namespace Garnet.test
             // Key should expire
             Thread.Sleep((expire + 1) * 1000);
             string value = db.StringGet(key);
-            Assert.AreEqual(null, value);
+            ClassicAssert.AreEqual(null, value);
 
             // Setting on they key that was deleted with a custom command should succeed
             string newValue1 = "foovalue10";
             prefix = 1;
             db.Execute("SETWPIFPGT", key, newValue1, BitConverter.GetBytes(prefix));
             string retValue = db.StringGet(key);
-            Assert.AreEqual(newValue1, retValue.Substring(8));
+            ClassicAssert.AreEqual(newValue1, retValue.Substring(8));
         }
 
         [Test]
@@ -417,23 +521,23 @@ namespace Garnet.test
             db.Execute("MYDICTSET", mainkey, key1, value1);
 
             var retValue = db.Execute("MYDICTGET", mainkey, key1);
-            Assert.AreEqual(value1, (string)retValue);
+            ClassicAssert.AreEqual(value1, (string)retValue);
 
             db.KeyExpire(mainkey, TimeSpan.FromSeconds(1));
             Thread.Sleep(1100);
 
             retValue = db.Execute("MYDICTGET", mainkey, key1);
-            Assert.AreEqual(null, (string)retValue);
+            ClassicAssert.AreEqual(null, (string)retValue);
 
             string key2 = "mykey2";
             string value2 = "foovalue2";
             db.Execute("MYDICTSET", mainkey, key2, value2);
 
             retValue = db.Execute("MYDICTGET", mainkey, key1);
-            Assert.AreEqual(null, (string)retValue);
+            ClassicAssert.AreEqual(null, (string)retValue);
 
             retValue = db.Execute("MYDICTGET", mainkey, key2);
-            Assert.AreEqual(value2, (string)retValue);
+            ClassicAssert.AreEqual(value2, (string)retValue);
         }
 
         [Test]
@@ -455,16 +559,16 @@ namespace Garnet.test
 
             var ex = Assert.Throws<RedisServerException>(() => db.Execute("MYDICTGET", mainkey, key1));
             var expectedError = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
-            Assert.IsNotNull(ex);
-            Assert.AreEqual(expectedError, ex.Message);
+            ClassicAssert.IsNotNull(ex);
+            ClassicAssert.AreEqual(expectedError, ex.Message);
 
             var deleted = db.KeyDelete(mainkey);
-            Assert.IsTrue(deleted);
+            ClassicAssert.IsTrue(deleted);
             db.Execute("MYDICTSET", mainkey, key1, value1);
 
             ex = Assert.Throws<RedisServerException>(() => db.ListLeftPush(mainkey, value1));
-            Assert.IsNotNull(ex);
-            Assert.AreEqual(expectedError, ex.Message);
+            ClassicAssert.IsNotNull(ex);
+            ClassicAssert.AreEqual(expectedError, ex.Message);
         }
 
         [Test]
@@ -485,7 +589,7 @@ namespace Garnet.test
             await db.KeyExpireAsync(key, TimeSpan.FromMinutes(expire));
 
             string retValue = db.StringGet(key);
-            Assert.AreEqual(origValue, retValue.Substring(8));
+            ClassicAssert.AreEqual(origValue, retValue.Substring(8));
 
             string newValue1 = "foovalue10";
             prefix = 1;
@@ -493,7 +597,7 @@ namespace Garnet.test
             await db.KeyExpireAsync(key, TimeSpan.FromMinutes(expire));
 
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue1, retValue.Substring(8));
+            ClassicAssert.AreEqual(newValue1, retValue.Substring(8));
         }
 
         [Test]
@@ -513,20 +617,20 @@ namespace Garnet.test
             await db.ExecuteAsync("SETWPIFPGT", key, origValue, BitConverter.GetBytes(prefix));
 
             string retValue = db.StringGet(key);
-            Assert.AreEqual(origValue, retValue.Substring(8));
+            ClassicAssert.AreEqual(origValue, retValue.Substring(8));
 
             string newValue1 = "foovalue10";
             prefix = 1;
             await db.ExecuteAsync("SETWPIFPGT", key, newValue1, BitConverter.GetBytes(prefix));
 
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue1, retValue.Substring(8));
+            ClassicAssert.AreEqual(newValue1, retValue.Substring(8));
 
             Thread.Sleep(5000);
 
             // should be expired now
             retValue = db.StringGet(key);
-            Assert.AreEqual(null, retValue);
+            ClassicAssert.AreEqual(null, retValue);
         }
 
         [Test]
@@ -543,14 +647,76 @@ namespace Garnet.test
 
             // Include non-existent and string keys as well
             var retValue = db.Execute("SUM", "key1", "key2", "key3", "key4");
-            Assert.AreEqual("30", retValue.ToString());
+            ClassicAssert.AreEqual("30", retValue.ToString());
+        }
+
+        [Test]
+        public void CustomProcedureFreeBufferTest()
+        {
+            server.Register.NewProcedure("LARGEGET", new LargeGet());
+            var key = "key";
+            var hashKey = "hashKey";
+            var hashField = "field";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            byte[] value = new byte[10_000];
+            db.StringSet(key, value);
+            db.HashSet(hashKey, [new HashEntry(hashField, value)]);
+
+            try
+            {
+                var result = db.Execute("LARGEGET", key, hashKey, hashField);
+                ClassicAssert.AreEqual("OK", result.ToString());
+            }
+            catch (RedisServerException rse)
+            {
+                ClassicAssert.Fail(rse.Message);
+            }
+        }
+
+        [Test]
+        public void CustomTxnFreeBufferTest()
+        {
+            server.Register.NewTransactionProc("LARGEGETTXN", () => new LargeGetTxn());
+            var key = "key";
+            var hashKey = "hashKey";
+            var hashField = "field";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            byte[] value = new byte[10_000];
+            db.StringSet(key, value);
+            db.HashSet(hashKey, [new HashEntry(hashField, value)]);
+
+            try
+            {
+                var result = db.Execute("LARGEGETTXN", key);
+                ClassicAssert.AreEqual("OK", result.ToString());
+            }
+            catch (RedisServerException rse)
+            {
+                ClassicAssert.Fail(rse.Message);
+            }
+        }
+
+        [Test]
+        public void CustomProcedureOutOfOrderFreeBufferTest()
+        {
+            server.Register.NewProcedure("OUTOFORDERFREE", new OutOfOrderFreeBuffer());
+            var key = "key";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            byte[] value = new byte[10_000];
+            db.StringSet(key, value);
+
+            var result = db.Execute("OUTOFORDERFREE", key);
+            ClassicAssert.AreEqual("OK", result.ToString());
         }
 
         private string[] CreateTestLibraries()
         {
             var runtimePath = RuntimeEnvironment.GetRuntimeDirectory();
             var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            Assert.IsNotNull(binPath);
+            ClassicAssert.IsNotNull(binPath);
 
             var namespaces = new[]
             {
@@ -654,15 +820,15 @@ namespace Garnet.test
             string writekey2 = "writekey2";
 
             var result = db.Execute("READWRITETX", key, writekey1, writekey2);
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             // Read keys to verify transaction succeeded
             string retValue = db.StringGet(writekey1);
-            Assert.IsNotNull(retValue);
-            Assert.AreEqual(value, retValue);
+            ClassicAssert.IsNotNull(retValue);
+            ClassicAssert.AreEqual(value, retValue);
 
             retValue = db.StringGet(writekey2);
-            Assert.AreEqual(value, retValue);
+            ClassicAssert.AreEqual(value, retValue);
 
             // Test SETIFPM
             string newValue1 = "foovalue1";
@@ -670,17 +836,17 @@ namespace Garnet.test
 
             // This conditional set should pass (prefix matches)
             result = db.Execute("SETIFPM", key, newValue1, "foo");
-            Assert.AreEqual("OK", (string)result);
+            ClassicAssert.AreEqual("OK", (string)result);
 
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue1, retValue);
+            ClassicAssert.AreEqual(newValue1, retValue);
 
             // This conditional set should fail (prefix does not match)
             result = db.Execute("SETIFPM", key, newValue2, "bar");
-            Assert.AreEqual("OK", (string)result);
+            ClassicAssert.AreEqual("OK", (string)result);
 
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue1, retValue);
+            ClassicAssert.AreEqual(newValue1, retValue);
 
             // Test MYDICTSET
             string newKey1 = "newkey1";
@@ -689,13 +855,13 @@ namespace Garnet.test
             db.Execute("MYDICTSET", key, newKey1, newValue1);
 
             var dictVal = db.Execute("MYDICTGET", key, newKey1);
-            Assert.AreEqual(newValue1, (string)dictVal);
+            ClassicAssert.AreEqual(newValue1, (string)dictVal);
 
             db.Execute("MYDICTSET", key, newKey2, newValue2);
 
             // Test MYDICTGET
             dictVal = db.Execute("MYDICTGET", key, newKey2);
-            Assert.AreEqual(newValue2, (string)dictVal);
+            ClassicAssert.AreEqual(newValue2, (string)dictVal);
         }
 
         [Test]
@@ -714,9 +880,9 @@ namespace Garnet.test
             }
             catch (RedisServerException rse)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND), rse.Message);
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND), rse.Message);
             }
-            Assert.IsNull(resp);
+            ClassicAssert.IsNull(resp);
 
             // Malformed request #2 - binary paths before sub-command
             var args = new List<object>() { "SRC" };
@@ -729,9 +895,9 @@ namespace Garnet.test
             }
             catch (RedisServerException rse)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND), rse.Message);
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND), rse.Message);
             }
-            Assert.IsNull(resp);
+            ClassicAssert.IsNull(resp);
 
             // Binary file not contained in allowed paths
             args =
@@ -750,9 +916,9 @@ namespace Garnet.test
             }
             catch (RedisServerException rse)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS), rse.Message);
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS), rse.Message);
             }
-            Assert.IsNull(resp);
+            ClassicAssert.IsNull(resp);
 
             // Class not in supplied dlls
             args =
@@ -771,9 +937,9 @@ namespace Garnet.test
             }
             catch (RedisServerException rse)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS), rse.Message);
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS), rse.Message);
             }
-            Assert.IsNull(resp);
+            ClassicAssert.IsNull(resp);
 
             // Class not in supported
             args =
@@ -792,9 +958,9 @@ namespace Garnet.test
             }
             catch (RedisServerException rse)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS), rse.Message);
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS), rse.Message);
             }
-            Assert.IsNull(resp);
+            ClassicAssert.IsNull(resp);
         }
     }
 }

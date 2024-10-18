@@ -25,12 +25,15 @@ namespace Garnet.server
         /// <summary>
         /// Session Contexts for main store
         /// </summary>
-        public BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
-        public LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
+        public BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
+        public LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
 
-        SectorAlignedMemory sectorAlignedMemoryHll;
+        SectorAlignedMemory sectorAlignedMemoryHll1;
+        SectorAlignedMemory sectorAlignedMemoryHll2;
         readonly int hllBufferSize = HyperLogLog.DefaultHLL.DenseBytes;
         readonly int sectorAlignedMemoryPoolAlignment = 32;
+
+        internal SessionParseState parseState;
 
         /// <summary>
         /// Session Contexts for object store
@@ -50,25 +53,24 @@ namespace Garnet.server
 
         public readonly int ObjectScanCountLimit;
 
-        private static Random RandomGen = new();
-
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferManager scratchBufferManager,
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
-            CollectionItemBroker itemBroker,
             ILogger logger = null)
         {
             this.sessionMetrics = sessionMetrics;
             this.LatencyMetrics = LatencyMetrics;
             this.scratchBufferManager = scratchBufferManager;
             this.logger = logger;
-            this.itemBroker = itemBroker;
+            this.itemBroker = storeWrapper.itemBroker;
+
+            parseState.Initialize();
 
             functionsState = storeWrapper.CreateFunctionsState();
 
             var functions = new MainSessionFunctions(functionsState);
-            var session = storeWrapper.store.NewSession<SpanByte, SpanByteAndMemory, long, MainSessionFunctions>(functions);
+            var session = storeWrapper.store.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
 
             var objstorefunctions = new ObjectSessionFunctions(functionsState);
             var objectStoreSession = storeWrapper.objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
@@ -90,7 +92,8 @@ namespace Garnet.server
             sectorAlignedMemoryBitmap?.Dispose();
             basicContext.Session.Dispose();
             objectStoreBasicContext.Session?.Dispose();
-            sectorAlignedMemoryHll?.Dispose();
+            sectorAlignedMemoryHll1?.Dispose();
+            sectorAlignedMemoryHll2?.Dispose();
         }
     }
 }

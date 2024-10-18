@@ -22,7 +22,17 @@ namespace Garnet.server
         readonly Socket servSocket;
         readonly IGarnetTlsOptions tlsOptions;
         readonly int networkSendThrottleMax;
+        readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
+
+        public IPEndPoint GetEndPoint
+        {
+            get
+            {
+                var ip = string.IsNullOrEmpty(Address) ? IPAddress.Any : IPAddress.Parse(Address);
+                return new IPEndPoint(ip, Port);
+            }
+        }
 
         /// <summary>
         /// Get active consumers
@@ -64,9 +74,10 @@ namespace Garnet.server
         {
             this.tlsOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
-            this.networkPool = new LimitedFixedBufferPool(BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()), logger: logger);
-            var ip = string.IsNullOrEmpty(Address) ? IPAddress.Any : IPAddress.Parse(Address);
-            servSocket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
+            this.networkBufferSettings = new NetworkBufferSettings(serverBufferSize, serverBufferSize);
+            this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
+            servSocket = new Socket(GetEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             acceptEventArg = new SocketAsyncEventArgs();
             acceptEventArg.Completed += AcceptEventArg_Completed;
         }
@@ -80,7 +91,7 @@ namespace Garnet.server
             servSocket.Dispose();
             acceptEventArg.UserToken = null;
             acceptEventArg.Dispose();
-            networkPool.Dispose();
+            networkPool?.Dispose();
         }
 
         /// <summary>
@@ -88,8 +99,7 @@ namespace Garnet.server
         /// </summary>
         public override void Start()
         {
-            var ip = Address == null ? IPAddress.Any : IPAddress.Parse(Address);
-            var endPoint = new IPEndPoint(ip, Port);
+            var endPoint = GetEndPoint;
             servSocket.Bind(endPoint);
             servSocket.Listen(512);
             if (!servSocket.AcceptAsync(acceptEventArg))
@@ -132,7 +142,7 @@ namespace Garnet.server
                 {
                     try
                     {
-                        handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkPool, tlsOptions != null, networkSendThrottleMax, logger);
+                        handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkBufferSettings, networkPool, tlsOptions != null, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
                         if (!activeHandlers.TryAdd(handler, default))
                             throw new Exception("Unable to add handler to dictionary");
 
@@ -198,5 +208,9 @@ namespace Garnet.server
                 }
             }
         }
+
+        public void Purge() => networkPool.Purge();
+
+        public string GetBufferPoolStats() => networkPool.GetStats();
     }
 }

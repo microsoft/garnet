@@ -91,6 +91,14 @@ namespace Tsavorite.core
             return (idx1 != idx2) ? idx1.CompareTo(idx2) : ((byte)key1.LockType).CompareTo((byte)key2.LockType);
         }
 
+        private static int KeyHashComparer<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2, long size_mask)
+            where TLockableKey : ILockableKey
+        {
+            var idx1 = GetBucketIndex(key1.KeyHash, size_mask);
+            var idx2 = GetBucketIndex(key2.KeyHash, size_mask);
+            return (idx1 != idx2) ? idx1.CompareTo(idx2) : ((byte)key1.LockType).CompareTo((byte)key2.LockType);
+        }
+
         /// <inheritdoc/>
         internal int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2)
             where TLockableKey : ILockableKey
@@ -99,7 +107,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2)
             where TLockableKey : ILockableKey
-            => KeyHashComparer(key1, key2, store.state[store.resizeInfo.version].size_mask);
+            => KeyHashComparer(ref key1, ref key2, store.state[store.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
         internal void SortKeyHashes<TLockableKey>(TLockableKey[] keys)

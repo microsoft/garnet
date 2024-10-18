@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -111,6 +112,103 @@ namespace Garnet.server
             ref var objInput = ref Unsafe.AsRef<ObjectInput>(input.ptr);
 
             return ReadObjectStoreOperationWithOutput(key, ref objInput, ref objectStoreContext, ref outputFooter);
+        }
+
+        /// <summary>
+        /// Common functionality for executing SSCAN, HSCAN and ZSCAN
+        /// </summary>
+        /// <param name="objectType"></param>
+        /// <param name="key">The key of the object</param>
+        /// <param name="cursor">The value of the cursor</param>
+        /// <param name="match">The pattern to match</param>
+        /// <param name="count">Limit number for the response</param>
+        /// <param name="items">The list of items for the response</param>
+        /// <param name="objectStoreContext"></param>
+        public unsafe GarnetStatus ObjectScan<TObjectContext>(GarnetObjectType objectType, ArgSlice key, long cursor, string match, int count, out ArgSlice[] items, ref TObjectContext objectStoreContext)
+             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            Debug.Assert(objectType is GarnetObjectType.Hash or GarnetObjectType.Set or GarnetObjectType.SortedSet);
+
+            items = default;
+
+            if (key.Length == 0)
+                return GarnetStatus.OK;
+
+            if (string.IsNullOrEmpty(match))
+                match = "*";
+
+            // Prepare the parse state 
+            var matchPattern = match.Trim();
+
+            var countLength = NumUtils.NumDigits(count);
+
+            // Calculate # of bytes to store parameters
+            var sliceBytes = CmdStrings.MATCH.Length +
+                             matchPattern.Length +
+                             CmdStrings.COUNT.Length +
+                             countLength;
+
+            // Get buffer from scratch buffer manager
+            var paramsSlice = scratchBufferManager.CreateArgSlice(sliceBytes);
+            var paramsSpan = paramsSlice.Span;
+            var paramsSpanOffset = 0;
+
+            // Store parameters in buffer
+
+            // MATCH
+            var matchSpan = paramsSpan.Slice(paramsSpanOffset, CmdStrings.MATCH.Length);
+            CmdStrings.MATCH.CopyTo(matchSpan);
+            paramsSpanOffset += CmdStrings.MATCH.Length;
+            var matchSlice = ArgSlice.FromPinnedSpan(matchSpan);
+
+            // Pattern
+            var patternSpan = paramsSpan.Slice(paramsSpanOffset, matchPattern.Length);
+            Encoding.ASCII.GetBytes(matchPattern, patternSpan);
+            paramsSpanOffset += matchPattern.Length;
+            var matchPatternSlice = ArgSlice.FromPinnedSpan(patternSpan);
+
+            // COUNT
+            var countSpan = paramsSpan.Slice(paramsSpanOffset, CmdStrings.COUNT.Length);
+            CmdStrings.COUNT.CopyTo(countSpan);
+            paramsSpanOffset += CmdStrings.COUNT.Length;
+            var countSlice = ArgSlice.FromPinnedSpan(countSpan);
+
+            // Value
+            var countValueSpan = paramsSpan.Slice(paramsSpanOffset, countLength);
+            NumUtils.LongToSpanByte(count, countValueSpan);
+            var countValueSlice = ArgSlice.FromPinnedSpan(countValueSpan);
+
+            parseState.InitializeWithArguments(matchSlice, matchPatternSlice,
+                countSlice, countValueSlice);
+
+            // Prepare the input
+            var header = new RespInputHeader(objectType);
+            var input = new ObjectInput(header, ref parseState, 0, -1, (int)cursor, ObjectScanCountLimit);
+
+            switch (objectType)
+            {
+                case GarnetObjectType.Set:
+                    input.header.SetOp = SetOperation.SSCAN;
+                    break;
+                case GarnetObjectType.Hash:
+                    input.header.HashOp = HashOperation.HSCAN;
+                    break;
+                case GarnetObjectType.SortedSet:
+                    input.header.SortedSetOp = SortedSetOperation.ZSCAN;
+                    break;
+            }
+
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+
+            scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
+
+            items = default;
+            if (status == GarnetStatus.OK)
+                items = ProcessRespArrayOutput(outputFooter, out _, isScanOutput: true);
+
+            return status;
+
         }
 
         /// <summary>
@@ -287,6 +385,35 @@ namespace Garnet.server
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Converts a simple integer in RESP format to integer type
+        /// </summary>
+        /// <param name="outputFooter">The RESP format output object</param>
+        /// <param name="value"></param>
+        /// <returns>integer</returns>
+        unsafe bool TryProcessRespSimple64IntOutput(GarnetObjectStoreOutput outputFooter, out long value)
+        {
+            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
+                outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+            try
+            {
+                fixed (byte* outputPtr = outputSpan)
+                {
+                    var refPtr = outputPtr;
+
+                    if (!RespReadUtils.TryRead64Int(out value, ref refPtr, outputPtr + outputSpan.Length, out _))
+                        return false;
+                }
+            }
+            finally
+            {
+                if (!outputFooter.spanByteAndMemory.IsSpanByte)
+                    outputFooter.spanByteAndMemory.Memory.Dispose();
+            }
+
+            return true;
         }
 
         /// <summary>

@@ -19,30 +19,20 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashSet<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
+        private unsafe bool HashSet<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (((command == RespCommand.HSET || command == RespCommand.HMSET)
-                  && (count == 1 || count % 2 != 1)) ||
-                (command == RespCommand.HSETNX && count != 3))
+                  && (parseState.Count == 1 || parseState.Count % 2 != 1)) ||
+                (command == RespCommand.HSETNX && parseState.Count != 3))
             {
-                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
-            var inputCount = (count - 1) / 2;
 
             var hop =
                 command switch
@@ -54,16 +44,8 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = hop,
-                },
-                arg1 = inputCount,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = hop };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             var status = storageApi.HashSet(keyBytes, ref input, out var output);
 
@@ -95,35 +77,20 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool HashGet<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
+        private bool HashGet<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count != 2)
-                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+            if (parseState.Count != 2)
+                return AbortWithWrongNumberOfArguments(command.ToString());
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HGET,
-                },
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGET };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -153,37 +120,21 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool HashGetAll<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
+        private bool HashGetAll<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count != 1)
-                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+            if (parseState.Count != 1)
+                return AbortWithWrongNumberOfArguments(command.ToString());
 
             // Get the hash key
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HGETALL,
-                },
-                arg1 = respProtocolVersion,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGETALL };
+            var input = new ObjectInput(header, respProtocolVersion);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -213,36 +164,20 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool HashGetMultiple<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
+        private bool HashGetMultiple<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 2)
-                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+            if (parseState.Count < 2)
+                return AbortWithWrongNumberOfArguments(command.ToString());
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HMGET,
-                },
-                arg1 = count - 1,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HMGET };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -256,7 +191,7 @@ namespace Garnet.server
                     break;
                 case GarnetStatus.NOTFOUND:
                     // Write an empty array of count - 1 elements with null values.
-                    while (!RespWriteUtils.WriteArrayWithNullElements(count - 1, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteArrayWithNullElements(parseState.Count - 1, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:
@@ -273,46 +208,34 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool HashRandomField<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
+        private bool HashRandomField<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 1 || count > 3)
-                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+            if (parseState.Count < 1 || parseState.Count > 3)
+                return AbortWithWrongNumberOfArguments(command.ToString());
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
 
             var paramCount = 1;
             var withValues = false;
             var includedCount = false;
 
-            if (count >= 2)
+            if (parseState.Count >= 2)
             {
-                var countSlice = parseState.GetArgSliceByRef(1);
-
-                if (!NumUtils.TryParse(countSlice.ReadOnlySpan, out paramCount))
+                if (!parseState.TryGetInt(1, out paramCount))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
 
-                var sbCount = countSlice.SpanByte;
-                ptr = sbCount.ToPointer() + sbCount.Length + 2;
                 includedCount = true;
 
                 // Read WITHVALUES
-                if (count == 3)
+                if (parseState.Count == 3)
                 {
                     var withValuesSlice = parseState.GetArgSliceByRef(2);
 
@@ -323,8 +246,6 @@ namespace Garnet.server
                         return true;
                     }
 
-                    var sbWithValues = withValuesSlice.SpanByte;
-                    ptr = sbWithValues.ToPointer() + sbWithValues.Length + 2;
                     withValues = true;
                 }
             }
@@ -332,20 +253,11 @@ namespace Garnet.server
             var countWithMetadata = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (withValues ? 1 : 0);
 
             // Create a random seed
-            var seed = RandomGen.Next();
+            var seed = Random.Shared.Next();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HRANDFIELD,
-                },
-                arg1 = countWithMetadata,
-                arg2 = seed,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };
+            var input = new ObjectInput(header, countWithMetadata, seed);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -383,38 +295,23 @@ namespace Garnet.server
         /// Returns the number of fields contained in the hash key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashLength<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool HashLength<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments("HLEN", count);
+                return AbortWithWrongNumberOfArguments("HLEN");
             }
 
             // Get the key 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HLEN,
-                },
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HLEN };
+            var input = new ObjectInput(header);
 
             var status = storageApi.HashLength(keyBytes, ref input, out var output);
 
@@ -441,38 +338,23 @@ namespace Garnet.server
         /// <summary>
         /// Returns the string length of the value associated with field in the hash stored at key. If the key or the field do not exist, 0 is returned.
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <returns></returns>
-        private unsafe bool HashStrLength<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool HashStrLength<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count != 2)
+            if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments("HSTRLEN", count);
+                return AbortWithWrongNumberOfArguments("HSTRLEN");
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HSTRLEN,
-                },
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HSTRLEN };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             var status = storageApi.HashStrLength(keyBytes, ref input, out var output);
 
@@ -499,41 +381,23 @@ namespace Garnet.server
         /// Removes the specified fields from the hash stored at key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashDelete<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool HashDelete<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 1)
+            if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments("HDEL", count);
+                return AbortWithWrongNumberOfArguments("HDEL");
             }
 
             // Get the key for Hash
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
-            var inputCount = count - 1;
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HDEL,
-                },
-                arg1 = inputCount,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HDEL };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             var status = storageApi.HashDelete(keyBytes, ref input, out var output);
 
@@ -559,37 +423,22 @@ namespace Garnet.server
         /// Returns if field exists in the hash stored at key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashExists<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool HashExists<TGarnetApi>(ref TGarnetApi storageApi)
            where TGarnetApi : IGarnetApi
         {
-            if (count != 2)
+            if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments("HEXISTS", count);
+                return AbortWithWrongNumberOfArguments("HEXISTS");
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HEXISTS,
-                },
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXISTS };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             var status = storageApi.HashExists(keyBytes, ref input, out var output);
 
@@ -617,27 +466,19 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashKeys<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
+        private unsafe bool HashKeys<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
           where TGarnetApi : IGarnetApi
         {
-            if (count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
             // Get the key for Hash
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
 
             var op =
                 command switch
@@ -648,16 +489,8 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = op,
-                },
-                arg1 = count - 1,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = op };
+            var input = new ObjectInput(header);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -689,29 +522,21 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashIncrement<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
+        private unsafe bool HashIncrement<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             // Check if parameters number is right
-            if (count != 3)
+            if (parseState.Count != 3)
             {
                 // Send error to output
-                return AbortWithWrongNumberOfArguments(command == RespCommand.HINCRBY ? "HINCRBY" : "HINCRBYFLOAT", count);
+                return AbortWithWrongNumberOfArguments(command == RespCommand.HINCRBY ? "HINCRBY" : "HINCRBYFLOAT");
             }
 
             // Get the key for Hash
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
 
             var op =
                 command switch
@@ -722,15 +547,8 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = op,
-                },
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = op };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };

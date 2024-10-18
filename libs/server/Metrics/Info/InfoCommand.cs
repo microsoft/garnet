@@ -3,15 +3,15 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Garnet.common;
 
 namespace Garnet.server
 {
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool NetworkINFO(int count)
+        private bool NetworkINFO()
         {
+            var count = parseState.Count;
             HashSet<InfoMetricsType> sections = null;
             bool invalid = false;
             bool reset = false;
@@ -69,11 +69,19 @@ namespace Garnet.server
             }
             else
             {
-                InfoMetricsType[] sectionsArr = sections == null ? GarnetInfoMetrics.defaultInfo : [.. sections];
-                GarnetInfoMetrics garnetInfo = new();
-                string info = garnetInfo.GetRespInfo(sectionsArr, storeWrapper);
-                while (!RespWriteUtils.WriteAsciiBulkString(info, ref dcurr, dend))
-                    SendAndReset();
+                var sectionsArr = sections == null ? GarnetInfoMetrics.defaultInfo : [.. sections];
+                var garnetInfo = new GarnetInfoMetrics();
+                var info = garnetInfo.GetRespInfo(sectionsArr, storeWrapper);
+                if (!string.IsNullOrEmpty(info))
+                {
+                    while (!RespWriteUtils.WriteAsciiBulkString(info, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                }
             }
             return true;
 

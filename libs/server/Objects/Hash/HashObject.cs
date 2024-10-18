@@ -153,28 +153,34 @@ namespace Garnet.server
                         HashExists(ref input, _output);
                         break;
                     case HashOperation.HKEYS:
-                        HashKeys(ref input, ref output);
+                        HashGetKeysOrValues(ref input, ref output);
                         break;
                     case HashOperation.HVALS:
-                        HashVals(ref input, ref output);
+                        HashGetKeysOrValues(ref input, ref output);
                         break;
                     case HashOperation.HINCRBY:
                         HashIncrement(ref input, ref output);
                         break;
                     case HashOperation.HINCRBYFLOAT:
-                        HashIncrementByFloat(ref input, ref output);
+                        HashIncrement(ref input, ref output);
                         break;
                     case HashOperation.HSETNX:
-                        HashSetWhenNotExists(ref input, _output);
+                        HashSet(ref input, _output);
                         break;
                     case HashOperation.HRANDFIELD:
                         HashRandomField(ref input, ref output);
                         break;
                     case HashOperation.HSCAN:
-                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern, out var patternLength, out int limitCount, out int bytesDone))
+                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
+                                out var patternLength, out var limitCount, out bool isNoValue, out var error))
                         {
-                            Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern, patternLength: patternLength);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, bytesDone);
+                            Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
+                                patternLength: patternLength, isNoValue);
+                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output);
+                        }
+                        else
+                        {
+                            ObjectUtils.WriteScanError(error, ref output);
                         }
                         break;
                     default:
@@ -197,7 +203,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0)
+        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0, bool isNoValue = false)
         {
             cursor = start;
             items = new List<byte[]>();
@@ -209,7 +215,7 @@ namespace Garnet.server
             }
 
             // Hashset has key and value, so count is multiplied by 2
-            count *= 2;
+            count = isNoValue ? count : count * 2;
             int index = 0;
             foreach (var item in hash)
             {
@@ -222,7 +228,10 @@ namespace Garnet.server
                 if (patternLength == 0)
                 {
                     items.Add(item.Key);
-                    items.Add(item.Value);
+                    if (!isNoValue)
+                    {
+                        items.Add(item.Value);
+                    }
                 }
                 else
                 {
@@ -231,7 +240,10 @@ namespace Garnet.server
                         if (GlobUtils.Match(pattern, patternLength, keyPtr, item.Key.Length))
                         {
                             items.Add(item.Key);
-                            items.Add(item.Value);
+                            if (!isNoValue)
+                            {
+                                items.Add(item.Value);
+                            }
                         }
                     }
                 }

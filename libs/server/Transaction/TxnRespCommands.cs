@@ -79,7 +79,7 @@ namespace Garnet.server
                 else
                 {
                     endReadHead = _origReadHead;
-                    while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                    while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
                         SendAndReset();
                 }
 
@@ -108,12 +108,12 @@ namespace Garnet.server
 
             // Check if input is valid and abort if necessary
             // NOTE: Negative arity means it's an expected minimum of args. Positive means exact.
-            int count = parseState.count;
+            int count = parseState.Count;
             var arity = commandInfo.Arity > 0 ? commandInfo.Arity - 1 : commandInfo.Arity + 1;
             bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
 
             // Watch not allowed during TXN
-            bool isWatch = commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCH_MS || commandInfo.Command == RespCommand.WATCH_OS;
+            bool isWatch = commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCHMS || commandInfo.Command == RespCommand.WATCHOS;
 
             if (invalidNumArgs || isWatch)
             {
@@ -177,11 +177,11 @@ namespace Garnet.server
         /// <summary>
         /// Common implementation of various WATCH commands and subcommands.
         /// </summary>
-        /// <param name="count">Remaining keys in the command buffer.</param>
         /// <param name="type">Store type that's bein gwatch</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool CommonWATCH(int count, StoreType type)
+        private bool CommonWATCH(StoreType type)
         {
+            var count = parseState.Count;
             // Have to provide at least one key
             if (count == 0)
             {
@@ -213,20 +213,20 @@ namespace Garnet.server
         /// <summary>
         /// WATCH MS key [key ..]
         /// </summary>
-        private bool NetworkWATCH_MS(int count)
-        => CommonWATCH(count, StoreType.Main);
+        private bool NetworkWATCH_MS()
+        => CommonWATCH(StoreType.Main);
 
         /// <summary>
         /// WATCH OS key [key ..]
         /// </summary>
-        private bool NetworkWATCH_OS(int count)
-        => CommonWATCH(count, StoreType.Object);
+        private bool NetworkWATCH_OS()
+        => CommonWATCH(StoreType.Object);
 
         /// <summary>
         /// Watch key [key ...]
         /// </summary>
-        private bool NetworkWATCH(int count)
-        => CommonWATCH(count, StoreType.All);
+        private bool NetworkWATCH()
+        => CommonWATCH(StoreType.All);
 
         /// <summary>
         /// UNWATCH
@@ -245,29 +245,20 @@ namespace Garnet.server
         private bool NetworkRUNTXPFast(byte* ptr)
         {
             int count = *(ptr - 16 + 1) - '0';
-            return NetworkRUNTXP(count);
+            return NetworkRUNTXP();
         }
 
-        private bool NetworkRUNTXP(int count)
+        private bool NetworkRUNTXP()
         {
+            var count = parseState.Count;
             if (count < 1)
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RUNTXP), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RUNTXP));
 
             if (!parseState.TryGetInt(0, out var txId))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
-            }
-
-            var sbFirstParam = parseState.GetArgSliceByRef(0).SpanByte;
-            var start = sbFirstParam.ToPointer() + sbFirstParam.Length + 2;
-
-            var end = start;
-            if (count > 1)
-            {
-                var sbLastParam = parseState.GetArgSliceByRef(count - 1).SpanByte;
-                end = sbLastParam.ToPointer() + sbLastParam.Length + 2;
             }
 
             CustomTransactionProcedure proc;
@@ -296,7 +287,7 @@ namespace Garnet.server
                     SendAndReset();
             }
             else
-                TryTransactionProc((byte)txId, start, end, proc);
+                TryTransactionProc((byte)txId, proc, 1);
 
             return true;
         }

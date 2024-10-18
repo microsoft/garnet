@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Threading;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -94,6 +95,11 @@ namespace Tsavorite.test
                 // Add to TsavoriteLog
                 logUncommitted.Enqueue(entry);
             }
+
+            // Wait for safe tail to catch up
+            while (logUncommitted.SafeTailAddress < logUncommitted.TailAddress)
+                Thread.Yield();
+
         }
 
         [Test]
@@ -119,14 +125,14 @@ namespace Tsavorite.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
+                        ClassicAssert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
             }
 
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
-            Assert.AreEqual(entryLength, currentEntry);
+            ClassicAssert.AreEqual(entryLength, currentEntry);
         }
 
         [Test]
@@ -147,15 +153,15 @@ namespace Tsavorite.test
             using (var iter = log.Scan(0, 100_000_000))
             {
                 var next = iter.GetNext(out byte[] result, out _, out _);
-                Assert.IsTrue(next);
+                ClassicAssert.IsTrue(next);
 
                 // Verify result
-                Assert.AreEqual((byte)entryFlag, result[0]);
+                ClassicAssert.AreEqual((byte)entryFlag, result[0]);
 
                 // truncate log to tail
                 log.TruncateUntil(log.TailAddress);
                 log.Commit(true);
-                Assert.AreEqual(log.TailAddress, log.BeginAddress);
+                ClassicAssert.AreEqual(log.TailAddress, log.BeginAddress);
 
                 // Wait for allocator to realize the new BeginAddress
                 // Needed as this is done post-commit
@@ -164,12 +170,12 @@ namespace Tsavorite.test
 
                 // Iterator will skip ahead to tail
                 next = iter.GetNext(out result, out _, out _);
-                Assert.IsFalse(next);
+                ClassicAssert.IsFalse(next);
 
                 // WaitAsync should not complete, as we are at end of iteration
                 var tcs = new CancellationTokenSource();
                 var task = iter.WaitAsync(tcs.Token);
-                Assert.IsFalse(task.IsCompleted);
+                ClassicAssert.IsFalse(task.IsCompleted);
                 tcs.Cancel();
                 try
                 {
@@ -189,7 +195,7 @@ namespace Tsavorite.test
                 if (currentEntry < entryLength)
                 {
                     // Span Batch only added first entry several times so have separate verification
-                    Assert.AreEqual((byte)entryFlag, entry[currentEntry]);
+                    ClassicAssert.AreEqual((byte)entryFlag, entry[currentEntry]);
                     currentEntry++;
                 }
             }
@@ -216,7 +222,7 @@ namespace Tsavorite.test
             }
 
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
-            Assert.AreEqual(entryLength, consumer.currentEntry);
+            ClassicAssert.AreEqual(entryLength, consumer.currentEntry);
         }
 
         [Test]
@@ -233,21 +239,21 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, name: null, recover: true, scanBufferingMode: ScanBufferingMode.DoublePageBuffering, scanUncommitted: false))
+            using (var iter = log.Scan(0, 100_000_000, recover: true, scanBufferingMode: ScanBufferingMode.DoublePageBuffering, scanUncommitted: false))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
+                        ClassicAssert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
             }
 
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
-            Assert.AreEqual(entryLength, currentEntry);
+            ClassicAssert.AreEqual(entryLength, currentEntry);
         }
 
         [Test]
@@ -265,21 +271,21 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, name: "TestScan", recover: true))
+            using (var iter = log.Scan(0, 100_000_000, recover: true))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
+                        ClassicAssert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
             }
 
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
-            Assert.AreEqual(entryLength, currentEntry);
+            ClassicAssert.AreEqual(entryLength, currentEntry);
         }
 
         [Test]
@@ -304,14 +310,14 @@ namespace Tsavorite.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
+                        ClassicAssert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
             }
 
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
-            Assert.AreEqual(entryLength, currentEntry);
+            ClassicAssert.AreEqual(entryLength, currentEntry);
         }
 
         [Test]
@@ -336,14 +342,14 @@ namespace Tsavorite.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
+                        ClassicAssert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
             }
 
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
-            Assert.AreEqual(entryLength, currentEntry);
+            ClassicAssert.AreEqual(entryLength, currentEntry);
         }
 
         [Test]
@@ -366,14 +372,14 @@ namespace Tsavorite.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
+                        ClassicAssert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
             }
 
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
-            Assert.AreEqual(entryLength, currentEntry);
+            ClassicAssert.AreEqual(entryLength, currentEntry);
         }
 
         [Test]
@@ -384,7 +390,7 @@ namespace Tsavorite.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = Path.Join(TestUtils.MethodTestDir, "LogScan" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir, AutoRefreshSafeTailAddress = true });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir, SafeTailRefreshFrequencyMs = 0 });
             PopulateUncommittedLog(log);
 
             // Setting scanUnCommitted to true is actual test here.
@@ -397,14 +403,14 @@ namespace Tsavorite.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
+                        ClassicAssert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
             }
 
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
-            Assert.AreEqual(entryLength, currentEntry);
+            ClassicAssert.AreEqual(entryLength, currentEntry);
         }
     }
 }

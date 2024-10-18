@@ -33,33 +33,18 @@ namespace Garnet.server
             if (key.Length == 0 || elements.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the payload
-            var inputLength = 0;
-            foreach (var item in elements)
-            {
-                var tmp = scratchBufferManager.FormatScratchAsResp(0, item);
-                inputLength += tmp.Length;
-            }
-
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
+            // Prepare the parse state
+            parseState.InitializeWithArguments(elements);
 
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = lop,
-                },
-                arg1 = elements.Length,
-                payload = inputPayload,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            var input = new ObjectInput(header, ref parseState);
 
             var arrKey = key.ToArray();
             var status = RMWObjectStoreOperation(arrKey, ref input, out var output, ref objectStoreContext);
 
             itemsDoneCount = output.result1;
-            itemBroker?.HandleCollectionUpdate(arrKey);
+            itemBroker.HandleCollectionUpdate(arrKey);
             return status;
         }
 
@@ -81,24 +66,17 @@ namespace Garnet.server
         {
             itemsDoneCount = 0;
 
-            // Prepare the payload
-            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, element);
+            // Prepare the parse state
+            parseState.InitializeWithArgument(element);
 
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = lop,
-                },
-                payload = inputPayload,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
             itemsDoneCount = output.result1;
 
-            itemBroker?.HandleCollectionUpdate(key.Span.ToArray());
+            itemBroker.HandleCollectionUpdate(key.Span.ToArray());
             return status;
         }
 
@@ -134,20 +112,9 @@ namespace Garnet.server
         public unsafe GarnetStatus ListPop<TObjectContext>(ArgSlice key, int count, ListOperation lop, ref TObjectContext objectStoreContext, out ArgSlice[] elements)
                  where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            // Prepare the payload
-            var inputPayload = scratchBufferManager.CreateArgSlice(0);
-
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = lop,
-                },
-                arg1 = count,
-                payload = inputPayload,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            var input = new ObjectInput(header, count);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
@@ -216,20 +183,9 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the payload
-            var inputLength = 0;
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
-
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = ListOperation.LLEN,
-                },
-                payload = inputPayload,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LLEN };
+            var input = new ObjectInput(header);
 
             var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
 
@@ -251,6 +207,9 @@ namespace Garnet.server
         {
             element = default;
             var objectLockableContext = txnManager.ObjectStoreLockableContext;
+
+            if (itemBroker == null)
+                ThrowObjectStoreUninitializedException();
 
             // If source and destination are the same, the operation is equivalent to removing the last element from the list
             // and pushing it as first element of the list, so it can be considered as a list rotation command.
@@ -355,7 +314,7 @@ namespace Garnet.server
                     txnManager.Commit(true);
             }
 
-            itemBroker?.HandleCollectionUpdate(destinationKey.Span.ToArray());
+            itemBroker.HandleCollectionUpdate(destinationKey.Span.ToArray());
             return GarnetStatus.OK;
         }
 
@@ -371,22 +330,9 @@ namespace Garnet.server
         public unsafe bool ListTrim<TObjectContext>(ArgSlice key, int start, int stop, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            // Prepare the payload
-            var inputLength = 0;
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
-
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = ListOperation.LTRIM,
-                },
-                arg1 = start,
-                arg2 = stop,
-                payload = inputPayload,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LTRIM };
+            var input = new ObjectInput(header, start, stop);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out _, ref objectStoreContext);
 
@@ -406,8 +352,24 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             var status = RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
-            itemBroker?.HandleCollectionUpdate(key);
+            itemBroker.HandleCollectionUpdate(key);
             return status;
+        }
+
+        /// <summary>
+        /// The command returns the index of matching elements inside a Redis list.
+        /// By default, when no options are given, it will scan the list from head to tail, looking for the first match of "element".
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <param name="objectStoreContext"></param>
+        /// <returns></returns>
+        public GarnetStatus ListPosition<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            return ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
         }
 
         /// <summary>
@@ -448,7 +410,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             var status = RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
-            itemBroker?.HandleCollectionUpdate(key);
+            itemBroker.HandleCollectionUpdate(key);
             return status;
         }
 

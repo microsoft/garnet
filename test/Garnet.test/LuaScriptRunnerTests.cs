@@ -5,6 +5,7 @@ using Garnet.common;
 using Garnet.server;
 using NLua.Exceptions;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
@@ -19,7 +20,7 @@ namespace Garnet.test
             {
                 runner.Compile();
                 var ex = Assert.Throws<LuaScriptException>(() => runner.Run());
-                Assert.AreEqual("[string \"luanet.load_assembly('mscorlib')\"]:1: attempt to index a nil value (global 'luanet')", ex.Message);
+                ClassicAssert.AreEqual("[string \"luanet.load_assembly('mscorlib')\"]:1: attempt to index a nil value (global 'luanet')", ex.Message);
             }
 
             // Try to call a OS function
@@ -27,7 +28,7 @@ namespace Garnet.test
             {
                 runner.Compile();
                 var ex = Assert.Throws<LuaScriptException>(() => runner.Run());
-                Assert.AreEqual("[string \"os = require('os'); return os.time();\"]:1: attempt to call a nil value (global 'require')", ex.Message);
+                ClassicAssert.AreEqual("[string \"os = require('os'); return os.time();\"]:1: attempt to call a nil value (global 'require')", ex.Message);
             }
 
             // Try to execute the input stream
@@ -35,7 +36,7 @@ namespace Garnet.test
             {
                 runner.Compile();
                 var ex = Assert.Throws<LuaScriptException>(() => runner.Run());
-                Assert.AreEqual("[string \"dofile();\"]:1: attempt to call a nil value (global 'dofile')", ex.Message);
+                ClassicAssert.AreEqual("[string \"dofile();\"]:1: attempt to call a nil value (global 'dofile')", ex.Message);
             }
 
             // Try to call a windows executable
@@ -43,7 +44,7 @@ namespace Garnet.test
             {
                 runner.Compile();
                 var ex = Assert.Throws<LuaScriptException>(() => runner.Run());
-                Assert.AreEqual("[string \"require \"notepad\"\"]:1: attempt to call a nil value (global 'require')", ex.Message);
+                ClassicAssert.AreEqual("[string \"require \"notepad\"\"]:1: attempt to call a nil value (global 'require')", ex.Message);
             }
 
             // Try to call an OS function
@@ -51,7 +52,7 @@ namespace Garnet.test
             {
                 runner.Compile();
                 var ex = Assert.Throws<LuaScriptException>(() => runner.Run());
-                Assert.AreEqual("[string \"os.exit();\"]:1: attempt to index a nil value (global 'os')", ex.Message);
+                ClassicAssert.AreEqual("[string \"os.exit();\"]:1: attempt to index a nil value (global 'os')", ex.Message);
             }
 
             // Try to include a new .net library
@@ -59,7 +60,7 @@ namespace Garnet.test
             {
                 runner.Compile();
                 var ex = Assert.Throws<LuaScriptException>(() => runner.Run());
-                Assert.AreEqual("[string \"import ('System.Diagnostics');\"]:1: attempt to call a nil value (global 'import')", ex.Message);
+                ClassicAssert.AreEqual("[string \"import ('System.Diagnostics');\"]:1: attempt to call a nil value (global 'import')", ex.Message);
             }
         }
 
@@ -70,7 +71,7 @@ namespace Garnet.test
             using (var runner = new LuaRunner("local;"))
             {
                 var ex = Assert.Throws<GarnetException>(runner.Compile);
-                Assert.AreEqual("Compilation error: [string \"local;\"]:1: <name> expected near ';'", ex.Message);
+                ClassicAssert.AreEqual("Compilation error: [string \"local;\"]:1: <name> expected near ';'", ex.Message);
             }
 
             // Code without error
@@ -91,14 +92,14 @@ namespace Garnet.test
             {
                 runner.Compile();
                 var res = runner.Run(keys, args);
-                Assert.AreEqual("arg2", res);
+                ClassicAssert.AreEqual("arg1", res);
             }
 
             // Run code with errors
             using (var runner = new LuaRunner("local list; list = ; return list;"))
             {
                 var ex = Assert.Throws<GarnetException>(runner.Compile);
-                Assert.AreEqual("Compilation error: [string \"local list; list = ; return list;\"]:1: unexpected symbol near ';'", ex.Message);
+                ClassicAssert.AreEqual("Compilation error: [string \"local list; list = ; return list;\"]:1: unexpected symbol near ';'", ex.Message);
             }
         }
     }

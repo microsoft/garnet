@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -101,7 +102,7 @@ namespace Tsavorite.test
 
             compactUntil = session.Compact(compactUntil, compactionType);
             store.Log.Truncate();
-            Assert.AreEqual(compactUntil, store.Log.BeginAddress);
+            ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read all keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -115,14 +116,14 @@ namespace Tsavorite.test
                 if (status.IsPending)
                 {
                     _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                    Assert.IsTrue(completedOutputs.Next());
-                    Assert.IsTrue(completedOutputs.Current.Status.Found);
+                    ClassicAssert.IsTrue(completedOutputs.Next());
+                    ClassicAssert.IsTrue(completedOutputs.Current.Status.Found);
                     output = completedOutputs.Current.Output;
-                    Assert.IsFalse(completedOutputs.Next());
+                    ClassicAssert.IsFalse(completedOutputs.Next());
                     completedOutputs.Dispose();
                 }
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.value, output.value.value);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.value, output.value.value);
             }
         }
 
@@ -159,8 +160,8 @@ namespace Tsavorite.test
             var tail = store.Log.TailAddress;
             compactUntil = session.Compact(compactUntil, compactionType);
             store.Log.Truncate();
-            Assert.AreEqual(compactUntil, store.Log.BeginAddress);
-            Assert.AreEqual(tail, store.Log.TailAddress);
+            ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
+            ClassicAssert.AreEqual(tail, store.Log.TailAddress);
 
             // Read 2000 keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -174,8 +175,8 @@ namespace Tsavorite.test
                     _ = bContext.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(status.Found);
-                    Assert.AreEqual(value.value, output.value.value);
+                    ClassicAssert.IsTrue(status.Found);
+                    ClassicAssert.AreEqual(value.value, output.value.value);
                 }
             }
         }
@@ -210,7 +211,7 @@ namespace Tsavorite.test
 
             compactUntil = session.Compact(compactUntil, compactionType);
             store.Log.Truncate();
-            Assert.AreEqual(compactUntil, store.Log.BeginAddress);
+            ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -228,12 +229,12 @@ namespace Tsavorite.test
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status.Found);
-                        Assert.AreEqual(value.value, output.value.value);
+                        ClassicAssert.IsTrue(status.Found);
+                        ClassicAssert.AreEqual(value.value, output.value.value);
                     }
                     else
                     {
-                        Assert.IsFalse(status.Found);
+                        ClassicAssert.IsFalse(status.Found);
                     }
                 }
             }
@@ -262,7 +263,7 @@ namespace Tsavorite.test
 
             compactUntil = session.Compact(compactUntil, compactionType, default(EvenCompactionFunctions));
             store.Log.Truncate();
-            Assert.AreEqual(compactUntil, store.Log.BeginAddress);
+            ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
             for (var i = 0; i < totalRecords; i++)
@@ -282,12 +283,12 @@ namespace Tsavorite.test
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status.Found);
-                        Assert.AreEqual(value.value, output.value.value);
+                        ClassicAssert.IsTrue(status.Found);
+                        ClassicAssert.AreEqual(value.value, output.value.value);
                     }
                     else
                     {
-                        Assert.IsFalse(status.Found);
+                        ClassicAssert.IsFalse(status.Found);
                     }
                 }
             }
@@ -325,11 +326,11 @@ namespace Tsavorite.test
             var status = bContext.Read(ref key, ref input, ref output);
             if (status.IsPending)
             {
-                Assert.IsTrue(bContext.CompletePendingWithOutputs(out var outputs, wait: true));
+                ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var outputs, wait: true));
                 (status, output) = GetSinglePendingResult(outputs);
             }
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(value.value, output.value.value);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(value.value, output.value.value);
         }
 
         private class Test2CompactionFunctions : ICompactionFunctions<MyKey, MyValue>

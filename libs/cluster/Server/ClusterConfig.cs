@@ -319,7 +319,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeId"></param>
         /// <returns>Integer representing offset of worker in worker list.</returns>
-        public int GetWorkerIdFromNodeId(string nodeId)
+        public ushort GetWorkerIdFromNodeId(string nodeId)
         {
             for (ushort i = 1; i <= NumWorkers; i++)
             {
@@ -733,7 +733,11 @@ namespace Garnet.cluster
             return result;
         }
 
-        private List<int> GetSlotList(ushort workerId)
+        /// <summary>
+        /// Retrieve a list of slots served by this node.
+        /// </summary>
+        /// <returns>List of slots.</returns>
+        public List<int> GetSlotList(ushort workerId)
         {
             List<int> result = [];
             for (var i = 0; i < MAX_HASH_SLOT_VALUE; i++)
@@ -1156,6 +1160,21 @@ namespace Garnet.cluster
             {
                 newSlotMap[slot]._workerId = (ushort)workerId;
                 newSlotMap[slot]._state = state;
+            }
+            return new ClusterConfig(newSlotMap, workers);
+        }
+
+        public ClusterConfig ResetMultiSlotState(HashSet<int> slots)
+        {
+            var newSlotMap = new HashSlot[MAX_HASH_SLOT_VALUE];
+            Array.Copy(slotMap, newSlotMap, slotMap.Length);
+
+            foreach (ushort slot in slots)
+            {
+                var slotState = GetState(slot);
+                var workerId = slotState == SlotState.MIGRATING ? 1 : GetWorkerIdFromSlot(slot);
+                newSlotMap[slot]._workerId = (ushort)workerId;
+                newSlotMap[slot]._state = SlotState.STABLE;
             }
             return new ClusterConfig(newSlotMap, workers);
         }

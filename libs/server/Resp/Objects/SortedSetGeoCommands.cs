@@ -14,44 +14,28 @@ namespace Garnet.server
         /// Data is stored into the key as a sorted set.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool GeoAdd<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool GeoAdd<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             // validate the number of parameters
-            if (count < 4)
+            if (parseState.Count < 4)
             {
-                return AbortWithWrongNumberOfArguments("GEOADD", count);
+                return AbortWithWrongNumberOfArguments("GEOADD");
             }
 
             // Get the key for SortedSet
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
-            var inputCount = count - 1;
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.SortedSet,
-                    SortedSetOp = SortedSetOperation.GEOADD,
-                },
-                arg1 = inputCount,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
-            };
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
+            var input = new ObjectInput(header, ref parseState, 1);
 
-            var status = storageApi.GeoAdd(keyBytes, ref input, out var output);
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.GeoAdd(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -60,9 +44,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    //update pointers
-                    while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
             }
 
@@ -77,10 +59,9 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool GeoCommands<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
+        private unsafe bool GeoCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var paramsRequiredInCommand = 0;
@@ -102,23 +83,14 @@ namespace Garnet.server
                     break;
             }
 
-            if (count < paramsRequiredInCommand)
+            if (parseState.Count < paramsRequiredInCommand)
             {
-                return AbortWithWrongNumberOfArguments(cmd, count);
+                return AbortWithWrongNumberOfArguments(cmd);
             }
 
             // Get the key for the Sorted Set
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
-            var inputCount = count - 1;
 
             var op =
                 command switch
@@ -131,16 +103,8 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.SortedSet,
-                    SortedSetOp = op,
-                },
-                arg1 = inputCount,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
-            };
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
@@ -159,6 +123,7 @@ namespace Garnet.server
                                 SendAndReset();
                             break;
                         default:
+                            var inputCount = parseState.Count - 1;
                             while (!RespWriteUtils.WriteArrayLength(inputCount, ref dcurr, dend))
                                 SendAndReset();
                             for (var i = 0; i < inputCount; i++)

@@ -10,43 +10,48 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
-        private bool TryFAILOVER(int count, byte* ptr)
+        private bool TryFAILOVER()
         {
-            var args = count - 1;
             var replicaAddress = string.Empty;
             var replicaPort = 0;
             var timeout = -1;
             var abort = false;
             var force = false;
 
-            while (args > 0)
+            var currTokenIdx = 0;
+            while (currTokenIdx < parseState.Count)
             {
-                if (!RespReadUtils.ReadStringWithLengthHeader(out var option, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                if (!parseState.TryGetEnum(currTokenIdx, true, out FailoverOption failoverOption) || !failoverOption.IsValid(parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                        SendAndReset();
 
-                if (!Enum.TryParse(option, ignoreCase: true, out FailoverOption failoverOption))
-                    failoverOption = FailoverOption.INVALID;
+                    return true;
+                }
 
-                args--;
-                if (failoverOption == FailoverOption.INVALID)
-                    continue;
+                currTokenIdx++;
 
                 switch (failoverOption)
                 {
                     case FailoverOption.TO:
                         // 1. Address
-                        if (!RespReadUtils.ReadStringWithLengthHeader(out replicaAddress, ref ptr, recvBufferPtr + bytesRead))
-                            return false;
+                        replicaAddress = parseState.GetString(currTokenIdx++);
 
                         // 2. Port
-                        if (!RespReadUtils.ReadIntWithLengthHeader(out replicaPort, ref ptr, recvBufferPtr + bytesRead))
-                            return false;
-
-                        args -= 2;
+                        if (!parseState.TryGetInt(currTokenIdx++, out replicaPort))
+                        {
+                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                                SendAndReset();
+                            return true;
+                        }
                         break;
                     case FailoverOption.TIMEOUT:
-                        if (!RespReadUtils.ReadIntWithLengthHeader(out timeout, ref ptr, recvBufferPtr + bytesRead))
-                            return false;
+                        if (!parseState.TryGetInt(currTokenIdx++, out timeout))
+                        {
+                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                                SendAndReset();
+                            return true;
+                        }
                         break;
                     case FailoverOption.ABORT:
                         abort = true;
@@ -58,7 +63,6 @@ namespace Garnet.cluster
                         throw new Exception($"Failover option {failoverOption} not supported");
                 }
             }
-            readHead = (int)(ptr - recvBufferPtr);
 
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole != NodeRole.PRIMARY)
             {

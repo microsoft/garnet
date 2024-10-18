@@ -8,16 +8,20 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="GarnetCommandsDocs.json" />
     <None Remove="GarnetCommandsInfo.json" />
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="GarnetCommandsDocs.json" />
     <EmbeddedResource Include="GarnetCommandsInfo.json" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="CommandLineParser" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+    <PackageReference Include="StackExchange.Redis" />
+    <PackageReference Include="System.Text.Json" />
   </ItemGroup>
 
   <ItemGroup>

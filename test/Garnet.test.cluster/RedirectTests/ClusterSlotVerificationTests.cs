@@ -5,8 +5,10 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test.cluster
@@ -29,6 +31,10 @@ namespace Garnet.test.cluster
                 new SET(),
                 new MGET(),
                 new MSET(),
+                new GETEX(),
+                new GETSET(),
+                new SETNX(),
+                new SUBSTR(),
                 new PFADD(),
                 new PFCOUNT(),
                 new PFMERGE(),
@@ -42,6 +48,7 @@ namespace Garnet.test.cluster
                 new SETRANGE(),
                 new GETRANGE(),
                 new INCR(),
+                new INCRBYFLOAT(),
                 new APPEND(),
                 new STRLEN(),
                 new RENAME(),
@@ -59,8 +66,60 @@ namespace Garnet.test.cluster
                 new SINTERSTORE(),
                 new SINTER(),
                 new LMOVE(),
+                new EVAL(),
+                new LPUSH(),
+                new LPOP(),
+                new LMPOP(),
+                new BLPOP(),
+                new BLMOVE(),
+                new LLEN(),
+                new LTRIM(),
+                new LRANGE(),
+                new LINDEX(),
+                new LINSERT(),
+                new LREM(),
+                new RPOPLPUSH(),
+                new LSET(),
+                new SADD(),
+                new SREM(),
+                new SCARD(),
+                new SMEMBERS(),
+                new SISMEMBER(),
+                new SPOP(),
+                new SRANDMEMBER(),
+                new GEOADD(),
+                new GEOHASH(),
+                new ZADD(),
+                new ZREM(),
+                new ZCARD(),
+                new ZRANGE(),
+                new ZSCORE(),
+                new ZMSCORE(),
+                new ZPOPMAX(),
+                new ZCOUNT(),
+                new ZLEXCOUNT(),
+                new ZINCRBY(),
+                new ZRANK(),
+                new ZREMRANGEBYRANK(),
+                new ZRANDMEMBER(),
+                new ZDIFF(),
+                new HSET(),
+                new HGET(),
+                new HGETALL(),
+                new HMGET(),
+                new HRANDFIELD(),
+                new HLEN(),
+                new HSTRLEN(),
+                new HDEL(),
+                new HEXISTS(),
+                new HKEYS(),
+                new HINCRBY(),
+                new CLUSTERGETPROC(),
+                new CLUSTERSETPROC(),
+                new WATCH(),
+                new WATCHMS(),
+                new WATCHOS(),
             };
-
 
         ClusterTestContext context;
         readonly int sourceIndex = 0;
@@ -68,6 +127,9 @@ namespace Garnet.test.cluster
         readonly int otherIndex = 2;
         readonly int iterations = 3;
 
+        /// <summary>
+        /// Issue SetSlot commands to configure slot for migration
+        /// </summary>
         private void ConfigureSlotForMigration()
         {
             var srcEndpoint = context.clusterTestUtils.GetEndPoint(sourceIndex).ToIPEndPoint();
@@ -78,13 +140,16 @@ namespace Garnet.test.cluster
             var slot = HashSlotUtils.HashSlot(BaseCommand.HashTag.ToArray());
             // Set slot to MIGRATING state
             var resp = context.clusterTestUtils.SetSlot(srcEndpoint, slot, "MIGRATING", trgtNodeId);
-            Assert.AreEqual("OK", resp);
+            ClassicAssert.AreEqual("OK", resp);
 
             // Set slot to IMPORTING state
             resp = context.clusterTestUtils.SetSlot(trgtEndpoint, slot, "IMPORTING", srcNodeId);
-            Assert.AreEqual("OK", resp);
+            ClassicAssert.AreEqual("OK", resp);
         }
 
+        /// <summary>
+        /// Reset slot to stable state
+        /// </summary>
         private void ResetSlot()
         {
             var srcEndpoint = context.clusterTestUtils.GetEndPoint(sourceIndex).ToIPEndPoint();
@@ -95,11 +160,11 @@ namespace Garnet.test.cluster
             var slot = HashSlotUtils.HashSlot(BaseCommand.HashTag.ToArray());
             // Set slot to STABLE state
             var resp = context.clusterTestUtils.SetSlot(srcEndpoint, slot, "STABLE", "");
-            Assert.AreEqual("OK", resp);
+            ClassicAssert.AreEqual("OK", resp);
 
             // Set slot to STABLE state
             resp = context.clusterTestUtils.SetSlot(trgtEndpoint, slot, "STABLE", "");
-            Assert.AreEqual("OK", resp);
+            ClassicAssert.AreEqual("OK", resp);
         }
 
         [OneTimeSetUp]
@@ -108,7 +173,18 @@ namespace Garnet.test.cluster
             context = new ClusterTestContext();
             context.Setup([]);
 
-            context.CreateInstances(3);
+            context.CreateInstances(3, enableLua: true);
+
+            context.RegisterCustomTxn(
+                "CLUSTERGETPROC",
+                () => new TestClusterReadOnlyCustomTxn(),
+                new RespCommandsInfo { Arity = TestClusterReadOnlyCustomTxn.Arity });
+
+            context.RegisterCustomTxn(
+                "CLUSTERSETPROC",
+                () => new TestClusterReadWriteCustomTxn(),
+                new RespCommandsInfo { Arity = TestClusterReadWriteCustomTxn.Arity });
+
             context.CreateConnection();
 
             // Assign all slots to node 0
@@ -130,8 +206,12 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -145,6 +225,7 @@ namespace Garnet.test.cluster
         [TestCase("SETRANGE")]
         [TestCase("GETRANGE")]
         [TestCase("INCR")]
+        [TestCase("INCRBYFLOAT")]
         [TestCase("APPEND")]
         [TestCase("STRLEN")]
         [TestCase("RENAME")]
@@ -162,11 +243,63 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCH")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterCLUSTERDOWNTest(string commandName)
         {
             var requestNodeIndex = otherIndex;
             var dummyCommand = new DummyCommand(commandName);
-            Assert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
+            ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
 
             for (var i = 0; i < iterations; i++)
                 SERedisClusterDown(command);
@@ -182,10 +315,10 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.Command);
+                    ClassicAssert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.Command);
                     return;
                 }
-                Assert.Fail("Should not reach here", command.Command);
+                Assert.Fail($"Should not reach here. Command: {command.Command}");
             }
 
             void GarnetClientSessionClusterDown(BaseCommand command)
@@ -197,10 +330,10 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.Command);
+                    ClassicAssert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.Command);
                     return;
                 }
-                Assert.Fail("Should not reach here", command.Command);
+                Assert.Fail($"Should not reach here. Command: {command.Command}");
             }
         }
 
@@ -208,8 +341,12 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -223,6 +360,7 @@ namespace Garnet.test.cluster
         [TestCase("SETRANGE")]
         [TestCase("GETRANGE")]
         [TestCase("INCR")]
+        [TestCase("INCRBYFLOAT")]
         [TestCase("APPEND")]
         [TestCase("STRLEN")]
         [TestCase("RENAME")]
@@ -240,11 +378,63 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("EVAL")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterOKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
             var dummyCommand = new DummyCommand(commandName);
-            Assert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
+            ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
 
             for (var i = 0; i < iterations; i++)
                 SERedisOKTest(command);
@@ -259,7 +449,7 @@ namespace Garnet.test.cluster
             catch (Exception ex)
             {
                 context.logger?.LogError(ex, "Failed executing cleanup {command}", command.Command);
-                Assert.Fail("Failed executing cleanup {command}", command.Command);
+                Assert.Fail($"Failed executing cleanup. Command: {command.Command}");
             }
 
             void SERedisOKTest(BaseCommand command)
@@ -271,7 +461,7 @@ namespace Garnet.test.cluster
                 catch (Exception ex)
                 {
                     if (!command.RequiresExistingKey)
-                        Assert.Fail(ex.Message, command.Command);
+                        Assert.Fail($"{ex.Message}. Command: {command.Command}");
                 }
             }
 
@@ -288,7 +478,7 @@ namespace Garnet.test.cluster
                 catch (Exception ex)
                 {
                     if (!command.RequiresExistingKey)
-                        Assert.Fail(command.Command, ex, command.Command);
+                        Assert.Fail($"{ex.Message}. Command: {command.Command}");
                 }
             }
         }
@@ -297,8 +487,12 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -312,6 +506,7 @@ namespace Garnet.test.cluster
         [TestCase("SETRANGE")]
         [TestCase("GETRANGE")]
         [TestCase("INCR")]
+        [TestCase("INCRBYFLOAT")]
         [TestCase("APPEND")]
         [TestCase("STRLEN")]
         [TestCase("RENAME")]
@@ -329,11 +524,63 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("EVAL")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterCROSSSLOTTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
             var dummyCommand = new DummyCommand(commandName);
-            Assert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
+            ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
 
             for (var i = 0; i < iterations; i++)
                 SERedisCrossslotTest(command);
@@ -351,10 +598,10 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.Command);
+                    ClassicAssert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.Command);
                     return;
                 }
-                Assert.Fail("Should not reach here", command.Command);
+                Assert.Fail($"Should not reach here. Command: {command.Command}");
             }
 
             void GarnetClientSessionCrossslotTest(BaseCommand command)
@@ -368,10 +615,10 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.Command);
+                    ClassicAssert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.Command);
                     return;
                 }
-                Assert.Fail("Should not reach here", command.Command);
+                Assert.Fail($"Should not reach here. Command: {command.Command}");
             }
         }
 
@@ -379,8 +626,12 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -394,6 +645,7 @@ namespace Garnet.test.cluster
         [TestCase("SETRANGE")]
         [TestCase("GETRANGE")]
         [TestCase("INCR")]
+        [TestCase("INCRBYFLOAT")]
         [TestCase("APPEND")]
         [TestCase("STRLEN")]
         [TestCase("RENAME")]
@@ -411,13 +663,64 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterMOVEDTest(string commandName)
         {
             var requestNodeIndex = targetIndex;
             var address = "127.0.0.1";
             var port = context.clusterTestUtils.GetPortFromNodeIndex(sourceIndex);
             var dummyCommand = new DummyCommand(commandName);
-            Assert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
+            ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
 
             for (var i = 0; i < iterations; i++)
                 SERedisMOVEDTest(command);
@@ -433,19 +736,19 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.IsTrue(ex.Message.StartsWith("Key has MOVED"), command.Command);
+                    ClassicAssert.IsTrue(ex.Message.StartsWith("Key has MOVED"), command.Command);
                     var tokens = ex.Message.Split(' ');
-                    Assert.IsTrue(tokens.Length > 10 && tokens[2].Equals("MOVED"), command.Command);
+                    ClassicAssert.IsTrue(tokens.Length > 10 && tokens[2].Equals("MOVED"), command.Command);
 
                     var _address = tokens[5].Split(':')[0];
                     var _port = int.Parse(tokens[5].Split(':')[1]);
                     var _slot = int.Parse(tokens[8]);
-                    Assert.AreEqual(address, _address, command.Command);
-                    Assert.AreEqual(port, _port, command.Command);
-                    Assert.AreEqual(command.GetSlot, _slot, command.Command);
+                    ClassicAssert.AreEqual(address, _address, command.Command);
+                    ClassicAssert.AreEqual(port, _port, command.Command);
+                    ClassicAssert.AreEqual(command.GetSlot, _slot, command.Command);
                     return;
                 }
-                Assert.Fail("Should not reach here", command.Command);
+                Assert.Fail($"Should not reach here. Command: {command.Command}");
             }
 
             void GarnetClientSessionMOVEDTest(BaseCommand command)
@@ -457,10 +760,10 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual($"MOVED {command.GetSlot} {address}:{port}", ex.Message, command.Command);
+                    ClassicAssert.AreEqual($"MOVED {command.GetSlot} {address}:{port}", ex.Message, command.Command);
                     return;
                 }
-                Assert.Fail("Should not reach here", command.Command);
+                Assert.Fail($"Should not reach here. Command: {command.Command}");
             }
         }
 
@@ -468,8 +771,12 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -483,6 +790,7 @@ namespace Garnet.test.cluster
         [TestCase("SETRANGE")]
         [TestCase("GETRANGE")]
         [TestCase("INCR")]
+        [TestCase("INCRBYFLOAT")]
         [TestCase("APPEND")]
         [TestCase("STRLEN")]
         [TestCase("RENAME")]
@@ -500,13 +808,64 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterASKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
             var address = "127.0.0.1";
             var port = context.clusterTestUtils.GetPortFromNodeIndex(targetIndex);
             var dummyCommand = new DummyCommand(commandName);
-            Assert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
+            ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
             ConfigureSlotForMigration();
 
             try
@@ -527,7 +886,7 @@ namespace Garnet.test.cluster
                 catch (Exception ex)
                 {
                     context.logger?.LogError(ex, "Failed executing cleanup {command}", command.Command);
-                    Assert.Fail("Failed executing cleanup {command}", command.Command);
+                    Assert.Fail($"Failed executing cleanup. Command: {command.Command}");
                 }
             }
 
@@ -541,17 +900,17 @@ namespace Garnet.test.cluster
                 catch (Exception ex)
                 {
                     var tokens = ex.Message.Split(' ');
-                    Assert.IsTrue(tokens.Length > 10 && tokens[0].Equals("Endpoint"), command.Command);
+                    ClassicAssert.IsTrue(tokens.Length > 10 && tokens[0].Equals("Endpoint"), command.Command + " => " + ex.Message);
 
                     var _address = tokens[1].Split(':')[0];
                     var _port = int.Parse(tokens[1].Split(':')[1]);
                     var _slot = int.Parse(tokens[4]);
-                    Assert.AreEqual(address, _address, command.Command);
-                    Assert.AreEqual(port, _port, command.Command);
-                    Assert.AreEqual(command.GetSlot, _slot, command.Command);
+                    ClassicAssert.AreEqual(address, _address, command.Command);
+                    ClassicAssert.AreEqual(port, _port, command.Command);
+                    ClassicAssert.AreEqual(command.GetSlot, _slot, command.Command);
                     return;
                 }
-                Assert.Fail("Should not reach here", command.Command);
+                Assert.Fail($"Should not reach here. Command: {command.Command}");
             }
 
             void GarnetClientSessionASKTest(BaseCommand command)
@@ -563,10 +922,10 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual($"ASK {command.GetSlot} {address}:{port}", ex.Message, command.Command);
+                    ClassicAssert.AreEqual($"ASK {command.GetSlot} {address}:{port}", ex.Message, command.Command);
                     return;
                 }
-                Assert.Fail("Should not reach here", command.Command);
+                Assert.Fail($"Should not reach here. Command: {command.Command}");
             }
         }
 
@@ -574,8 +933,12 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -589,6 +952,7 @@ namespace Garnet.test.cluster
         [TestCase("SETRANGE")]
         [TestCase("GETRANGE")]
         [TestCase("INCR")]
+        [TestCase("INCRBYFLOAT")]
         [TestCase("APPEND")]
         [TestCase("STRLEN")]
         [TestCase("RENAME")]
@@ -606,11 +970,62 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterTRYAGAINTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
             var dummyCommand = new DummyCommand(commandName);
-            Assert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
+            ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
             for (var i = 0; i < iterations; i++)
                 SERedisTRYAGAINTest(command);
 
@@ -629,7 +1044,7 @@ namespace Garnet.test.cluster
                     catch (Exception ex)
                     {
                         context.logger?.LogError(ex, "Failed executing setup {command}", command.Command);
-                        Assert.Fail("Failed executing setup {command}", command.Command);
+                        Assert.Fail($"Failed executing setup. Command: {command.Command}");
                     }
                 }
 
@@ -640,7 +1055,7 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("TRYAGAIN Multiple keys request during rehashing of slot", ex.Message, command.Command);
+                    ClassicAssert.AreEqual("TRYAGAIN Multiple keys request during rehashing of slot", ex.Message, command.Command);
                     return;
                 }
                 finally
@@ -653,11 +1068,11 @@ namespace Garnet.test.cluster
                     catch (Exception ex)
                     {
                         context.logger?.LogError(ex, "Failed executing cleanup {command}", command.Command);
-                        Assert.Fail("Failed executing cleanup {command}", command.Command);
+                        Assert.Fail($"Failed executing cleanup. Command: {command.Command}");
                     }
                 }
 
-                Assert.Fail("Should not reach here", command.Command);
+                Assert.Fail($"Should not reach here. Command: {command.Command}");
             }
         }
     }

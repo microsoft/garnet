@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -122,7 +123,7 @@ namespace Tsavorite.test
                 }
 
                 // Verify each Enqueue worked
-                Assert.IsTrue(appendResult, "Fail - TryEnqueue failed with a 'false' result for entry: " + i.ToString());
+                ClassicAssert.IsTrue(appendResult, "Fail - TryEnqueue failed with a 'false' result for entry: " + i.ToString());
 
                 // logical address has new entry every x bytes which is one entry less than the TailAddress
                 if (iteratorType == TryEnqueueIteratorType.SpanBatch)
@@ -130,7 +131,7 @@ namespace Tsavorite.test
                 else
                     ExpectedOutAddress = log.TailAddress - 104;
 
-                Assert.AreEqual(ExpectedOutAddress, logicalAddress);
+                ClassicAssert.AreEqual(ExpectedOutAddress, logicalAddress);
             }
 
             // Commit to the log
@@ -146,9 +147,9 @@ namespace Tsavorite.test
                     {
                         // Span Batch only added first entry several times so have separate verification
                         if (iteratorType == TryEnqueueIteratorType.SpanBatch)
-                            Assert.AreEqual((byte)entryFlag, result[0]);
+                            ClassicAssert.AreEqual((byte)entryFlag, result[0]);
                         else
-                            Assert.AreEqual((byte)entryFlag, result[currentEntry]);
+                            ClassicAssert.AreEqual((byte)entryFlag, result[currentEntry]);
 
                         currentEntry++;
                     }
@@ -156,7 +157,7 @@ namespace Tsavorite.test
             }
 
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
-            Assert.AreEqual(entryLength, currentEntry);
+            ClassicAssert.AreEqual(entryLength, currentEntry);
         }
 
     }

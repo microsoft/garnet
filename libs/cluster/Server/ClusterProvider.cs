@@ -15,7 +15,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
             /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
             SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
         BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
@@ -120,6 +120,18 @@ namespace Garnet.cluster
             => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.REPLICA || replicationManager?.Recovering == true;
 
         /// <inheritdoc />
+        public bool IsReplica(string nodeId)
+        {
+            var config = clusterManager?.CurrentConfig;
+            if (config is null)
+            {
+                return false;
+            }
+
+            return config.GetNodeRoleFromNodeId(nodeId) == NodeRole.REPLICA;
+        }
+
+        /// <inheritdoc />
         public void ResetGossipStats()
             => clusterManager?.gossipStats.Reset();
 
@@ -166,7 +178,7 @@ namespace Garnet.cluster
             else
             {
                 if (serverOptions.MainMemoryReplication)
-                    storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(CheckpointCoveredAofAddress, truncateLog: true, noFlush: true);
+                    storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(CheckpointCoveredAofAddress, truncateLog: true);
                 else
                 {
                     storeWrapper.appendOnlyFile?.TruncateUntil(CheckpointCoveredAofAddress);
@@ -255,8 +267,22 @@ namespace Garnet.cluster
                     new("gossip_full_send", metricsDisabled ? "0" : gossipStats.gossip_full_send.ToString()),
                     new("gossip_empty_send", metricsDisabled ? "0" : gossipStats.gossip_empty_send.ToString()),
                     new("gossip_bytes_send", metricsDisabled ? "0" : gossipStats.gossip_bytes_send.ToString()),
-                    new("gossip_bytes_recv", metricsDisabled ? "0" : gossipStats.gossip_bytes_recv.ToString())
+                    new("gossip_bytes_recv", metricsDisabled ? "0" : gossipStats.gossip_bytes_recv.ToString()),
+                    new("gossip_open_connections", metricsDisabled ? "0" : this.clusterManager.clusterConnectionStore.Count.ToString())
                 ];
+        }
+
+        public MetricsItem[] GetBufferPoolStats()
+            => [new("migration_manager", migrationManager.GetBufferPoolStats()), new("replication_manager", replicationManager.GetBufferPoolStats())];
+
+        public void PurgeBufferPool(ManagerType managerType)
+        {
+            if (managerType == ManagerType.MigrationManager)
+                migrationManager.Purge();
+            else if (managerType == ManagerType.ReplicationManager)
+                replicationManager.Purge();
+            else
+                throw new GarnetException();
         }
 
         internal ReplicationLogCheckpointManager GetReplicationLogCheckpointManager(StoreType storeType)
@@ -281,7 +307,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         internal bool BumpAndWaitForEpochTransition()
         {
-            var server = storeWrapper.GetServer();
+            var server = storeWrapper.GetTcpServer();
             BumpCurrentEpoch();
             while (true)
             {

@@ -74,14 +74,14 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **MemorySize** | ```-m```<br/>```--memory``` | ```string``` | Memory size | Total log memory used in bytes (rounds down to power of 2) |
 | **PageSize** | ```-p```<br/>```--page``` | ```string``` | Memory size | Size of each page in bytes (rounds down to power of 2) |
 | **SegmentSize** | ```-s```<br/>```--segment``` | ```string``` | Memory size | Size of each log segment in bytes on disk (rounds down to power of 2) |
-| **IndexSize** | ```-i```<br/>```--index``` | ```string``` | Memory size | Size of hash index in bytes (rounds down to power of 2) |
+| **IndexSize** | ```-i```<br/>```--index``` | ```string``` | Memory size | Start size of hash index in bytes (rounds down to power of 2) |
 | **IndexMaxSize** | ```--index-max-size``` | ```string``` | Memory size | Max size of hash index in bytes (rounds down to power of 2) |
 | **MutablePercent** | ```--mutable-percent``` | ```int``` |  | Percentage of log memory that is kept mutable |
-| **ObjectStoreTotalMemorySize** | ```--obj-total-memory``` | ```string``` | Memory size | Total object store log memory used including heap memory in bytes |
-| **ObjectStoreLogMemorySize** | ```--obj-memory``` | ```string``` | Memory size | Object store log memory used in bytes excluding heap memory |
+| **ObjectStoreHeapMemorySize** | ```--obj-heap-memory``` | ```string``` | Memory size | Object store heap memory size in bytes (Sum of size taken up by all object instances in the heap) |
+| **ObjectStoreLogMemorySize** | ```--obj-log-memory``` | ```string``` | Memory size | Object store log memory used in bytes (Size of only the log with references to heap objects, excludes size of heap memory consumed by the objects themselves referred to from the log) |
 | **ObjectStorePageSize** | ```--obj-page``` | ```string``` | Memory size | Size of each object store page in bytes (rounds down to power of 2) |
 | **ObjectStoreSegmentSize** | ```--obj-segment``` | ```string``` | Memory size | Size of each object store log segment in bytes on disk (rounds down to power of 2) |
-| **ObjectStoreIndexSize** | ```--obj-index``` | ```string``` | Memory size | Size of object store hash index in bytes (rounds down to power of 2) |
+| **ObjectStoreIndexSize** | ```--obj-index``` | ```string``` | Memory size | Start size of object store hash index in bytes (rounds down to power of 2) |
 | **ObjectStoreIndexMaxSize** | ```--obj-index-max-size``` | ```string``` | Memory size | Max size of object store hash index in bytes (rounds down to power of 2) |
 | **ObjectStoreMutablePercent** | ```--obj-mutable-percent``` | ```int``` |  | Percentage of object store log memory that is kept mutable |
 | **EnableStorageTier** | ```--storage-tier``` | ```bool``` |  | Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use --logdir to specify storage directory. |

@@ -11,6 +11,7 @@ using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 
@@ -53,12 +54,12 @@ namespace Garnet.test
             }
 
             // Check that all properties in Options have a default value in defaults.conf
-            Assert.IsNotNull(jsonSettings);
+            ClassicAssert.IsNotNull(jsonSettings);
             foreach (var property in typeof(Options).GetProperties().Where(pi =>
                          pi.GetCustomAttribute<OptionAttribute>() != null &&
                          pi.GetCustomAttribute<System.Text.Json.Serialization.JsonIgnoreAttribute>() == null))
             {
-                Assert.Contains(property.Name, jsonSettings.Keys);
+                ClassicAssert.Contains(property.Name, jsonSettings.Keys);
             }
         }
 
@@ -73,65 +74,67 @@ namespace Garnet.test
             // No import path, no command line args
             // Check values match those on defaults.conf
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.AreEqual(invalidOptions.Count, 0);
-            Assert.AreEqual("32m", options.PageSize);
-            Assert.AreEqual("16g", options.MemorySize);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            ClassicAssert.AreEqual("32m", options.PageSize);
+            ClassicAssert.AreEqual("16g", options.MemorySize);
 
             // No import path, include command line args, export to file
             // Check values from command line override values from defaults.conf
             static string GetFullExtensionBinPath(string testProjectName) => Path.GetFullPath(testProjectName, TestUtils.RootTestsProjectPath);
-            var args = new string[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--extension-bin-paths", $"{GetFullExtensionBinPath("Garnet.test")},{GetFullExtensionBinPath("Garnet.test.cluster")}" };
+            var args = new string[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--extension-bin-paths", $"{GetFullExtensionBinPath("Garnet.test")},{GetFullExtensionBinPath("Garnet.test.cluster")}", "--loadmodulecs", $"{Assembly.GetExecutingAssembly().Location}" };
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.AreEqual(invalidOptions.Count, 0);
-            Assert.AreEqual("4m", options.PageSize);
-            Assert.AreEqual("128m", options.MemorySize);
-            Assert.AreEqual("2g", options.SegmentSize);
-            Assert.AreEqual(53, options.Port);
-            Assert.AreEqual(2, options.RevivObjBinRecordCount);
-            Assert.AreEqual(0.5, options.RevivifiableFraction);
-            Assert.IsTrue(options.Recover);
-            Assert.IsTrue(File.Exists(configPath));
-            Assert.AreEqual(2, options.ExtensionBinPaths.Count());
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            ClassicAssert.AreEqual("4m", options.PageSize);
+            ClassicAssert.AreEqual("128m", options.MemorySize);
+            ClassicAssert.AreEqual("2g", options.SegmentSize);
+            ClassicAssert.AreEqual(53, options.Port);
+            ClassicAssert.AreEqual(2, options.RevivObjBinRecordCount);
+            ClassicAssert.AreEqual(0.5, options.RevivifiableFraction);
+            ClassicAssert.IsTrue(options.Recover);
+            ClassicAssert.IsTrue(File.Exists(configPath));
+            ClassicAssert.AreEqual(2, options.ExtensionBinPaths.Count());
+            ClassicAssert.AreEqual(1, options.LoadModuleCS.Count());
+            ClassicAssert.AreEqual(Assembly.GetExecutingAssembly().Location, options.LoadModuleCS.First());
 
             // Import from previous export command, no command line args
             // Check values from import path override values from default.conf
             args = ["--config-import-path", configPath];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.AreEqual(invalidOptions.Count, 0);
-            Assert.IsTrue(options.PageSize == "4m");
-            Assert.IsTrue(options.MemorySize == "128m");
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            ClassicAssert.IsTrue(options.PageSize == "4m");
+            ClassicAssert.IsTrue(options.MemorySize == "128m");
 
             // Import from previous export command, include command line args, export to file
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
             args = ["--config-import-path", configPath, "-p", "12m", "-s", "1g", "--recover", "false", "--port", "0", "--no-obj", "--aof"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.AreEqual(invalidOptions.Count, 0);
-            Assert.AreEqual("12m", options.PageSize);
-            Assert.AreEqual("128m", options.MemorySize);
-            Assert.AreEqual("1g", options.SegmentSize);
-            Assert.AreEqual(0, options.Port);
-            Assert.IsFalse(options.Recover);
-            Assert.IsTrue(options.DisableObjects);
-            Assert.IsTrue(options.EnableAOF);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            ClassicAssert.AreEqual("12m", options.PageSize);
+            ClassicAssert.AreEqual("128m", options.MemorySize);
+            ClassicAssert.AreEqual("1g", options.SegmentSize);
+            ClassicAssert.AreEqual(0, options.Port);
+            ClassicAssert.IsFalse(options.Recover);
+            ClassicAssert.IsTrue(options.DisableObjects);
+            ClassicAssert.IsTrue(options.EnableAOF);
 
             // No import path, include command line args
             // Check that all invalid options flagged
             args = ["--bind", "1.1.1.257", "-m", "12mg", "--port", "-1", "--mutable-percent", "101", "--acl-file", "nx_dir/nx_file.txt", "--tls", "--reviv-fraction", "1.1", "--cert-file-name", "testcert.crt"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-            Assert.IsFalse(parseSuccessful);
-            Assert.IsNull(options);
-            Assert.AreEqual(7, invalidOptions.Count);
-            Assert.IsTrue(invalidOptions.Contains(nameof(Options.Address)));
-            Assert.IsTrue(invalidOptions.Contains(nameof(Options.MemorySize)));
-            Assert.IsTrue(invalidOptions.Contains(nameof(Options.Port)));
-            Assert.IsTrue(invalidOptions.Contains(nameof(Options.MutablePercent)));
-            Assert.IsTrue(invalidOptions.Contains(nameof(Options.AclFile)));
-            Assert.IsTrue(invalidOptions.Contains(nameof(Options.RevivifiableFraction)));
-            Assert.IsTrue(invalidOptions.Contains(nameof(Options.CertFileName)));
+            ClassicAssert.IsFalse(parseSuccessful);
+            ClassicAssert.IsNull(options);
+            ClassicAssert.AreEqual(7, invalidOptions.Count);
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.Address)));
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.MemorySize)));
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.Port)));
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.MutablePercent)));
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.AclFile)));
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.RevivifiableFraction)));
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.CertFileName)));
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
@@ -149,38 +152,38 @@ namespace Garnet.test
             // Check values from import path override values from default.conf
             var args = new[] { "--config-import-path", redisConfigPath, "--config-import-format", "RedisConf" };
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.AreEqual(invalidOptions.Count, 0);
-            Assert.AreEqual("127.0.0.1", options.Address);
-            Assert.AreEqual(6379, options.Port);
-            Assert.AreEqual("20gb", options.MemorySize);
-            Assert.AreEqual("./garnet-log", options.FileLogger);
-            Assert.AreEqual("./", options.CheckpointDir);
-            Assert.IsTrue(options.EnableCluster);
-            Assert.AreEqual("foobared", options.Password);
-            Assert.AreEqual(4, options.ThreadPoolMinThreads);
-            Assert.AreEqual(15000, options.ClusterTimeout);
-            Assert.AreEqual(LogLevel.Information, options.LogLevel);
-            Assert.AreEqual(5, options.ReplicaSyncDelayMs);
-            Assert.IsTrue(options.EnableTLS);
-            Assert.IsTrue(options.ClientCertificateRequired);
-            Assert.AreEqual("testcert.pfx", options.CertFileName);
-            Assert.AreEqual("placeholder", options.CertPassword);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            ClassicAssert.AreEqual("127.0.0.1", options.Address);
+            ClassicAssert.AreEqual(6379, options.Port);
+            ClassicAssert.AreEqual("20gb", options.MemorySize);
+            ClassicAssert.AreEqual("./garnet-log", options.FileLogger);
+            ClassicAssert.AreEqual("./", options.CheckpointDir);
+            ClassicAssert.IsTrue(options.EnableCluster);
+            ClassicAssert.AreEqual("foobared", options.Password);
+            ClassicAssert.AreEqual(4, options.ThreadPoolMinThreads);
+            ClassicAssert.AreEqual(15000, options.ClusterTimeout);
+            ClassicAssert.AreEqual(LogLevel.Information, options.LogLevel);
+            ClassicAssert.AreEqual(5, options.ReplicaSyncDelayMs);
+            ClassicAssert.IsTrue(options.EnableTLS);
+            ClassicAssert.IsTrue(options.ClientCertificateRequired);
+            ClassicAssert.AreEqual("testcert.pfx", options.CertFileName);
+            ClassicAssert.AreEqual("placeholder", options.CertPassword);
 
             // Import from redis.conf file, include command line args
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
             args = ["--config-import-path", redisConfigPath, "--config-import-format", "RedisConf", "--config-export-path", garnetConfigPath, "-p", "12m", "--tls", "false", "--minthreads", "6", "--client-certificate-required", "true"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.AreEqual(invalidOptions.Count, 0);
-            Assert.AreEqual("12m", options.PageSize);
-            Assert.AreEqual("20gb", options.MemorySize);
-            Assert.AreEqual("1g", options.SegmentSize);
-            Assert.AreEqual(6, options.ThreadPoolMinThreads);
-            Assert.AreEqual(5, options.ReplicaSyncDelayMs);
-            Assert.IsFalse(options.EnableTLS);
-            Assert.IsTrue(options.ClientCertificateRequired);
-            Assert.IsTrue(File.Exists(garnetConfigPath));
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            ClassicAssert.AreEqual("12m", options.PageSize);
+            ClassicAssert.AreEqual("20gb", options.MemorySize);
+            ClassicAssert.AreEqual("1g", options.SegmentSize);
+            ClassicAssert.AreEqual(6, options.ThreadPoolMinThreads);
+            ClassicAssert.AreEqual(5, options.ReplicaSyncDelayMs);
+            ClassicAssert.IsFalse(options.EnableTLS);
+            ClassicAssert.IsTrue(options.ClientCertificateRequired);
+            ClassicAssert.IsTrue(File.Exists(garnetConfigPath));
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
         }

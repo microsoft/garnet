@@ -5,6 +5,7 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -35,11 +36,11 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(Directory.GetParent(testModuleDir)?.FullName);
         }
 
-        private string CreateTestModule(string onLoadBody)
+        private string CreateTestModule(string onLoadBody, string moduleName = "TestModule.dll")
         {
             var runtimePath = RuntimeEnvironment.GetRuntimeDirectory();
             var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            Assert.IsNotNull(binPath);
+            ClassicAssert.IsNotNull(binPath);
 
             var referenceFiles = new[]
             {
@@ -64,7 +65,6 @@ namespace Garnet.test
                     using System.Collections.Generic; 
                     using Garnet; 
                     using Garnet.server; 
-                    using Garnet.server.Module; 
                     using Tsavorite.core; 
                     namespace TestGarnetModule  
                     {  
@@ -78,7 +78,7 @@ namespace Garnet.test
                     }");
             }
 
-            var modulePath = Path.Combine(dir1, "TestModule.dll");
+            var modulePath = Path.Combine(dir1, moduleName);
             var filesToCompile = new[] {
                 testFilePath,
                 Path.GetFullPath(@"../main/GarnetServer/Extensions/SetIfPM.cs", TestUtils.RootTestsProjectPath),
@@ -124,52 +124,101 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var resp = db.Execute($"MODULE", ["LOADCS", modulePath]);
-            Assert.AreEqual("OK", (string)resp);
+            ClassicAssert.AreEqual("OK", (string)resp);
 
             // Test SETIFPM
             string key = "testkey";
             string value = "foovalue1";
             db.StringSet(key, value);
             var retValue = db.StringGet(key);
-            Assert.AreEqual(value, retValue.ToString());
+            ClassicAssert.AreEqual(value, retValue.ToString());
 
             string newValue = "foovalue2";
             resp = db.Execute("TestModule.SETIFPM", key, newValue, "foo");
-            Assert.AreEqual("OK", (string)resp);
+            ClassicAssert.AreEqual("OK", (string)resp);
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue, retValue.ToString());
+            ClassicAssert.AreEqual(newValue, retValue.ToString());
 
             string writekey1 = "writekey1";
             string writekey2 = "writekey2";
 
             var result = db.Execute("TestModule.READWRITETX", key, writekey1, writekey2);
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             // Read keys to verify transaction succeeded
             retValue = db.StringGet(writekey1);
-            Assert.IsNotNull(retValue);
-            Assert.AreEqual(newValue, retValue.ToString());
+            ClassicAssert.IsNotNull(retValue);
+            ClassicAssert.AreEqual(newValue, retValue.ToString());
 
             retValue = db.StringGet(writekey2);
-            Assert.AreEqual(newValue, retValue.ToString());
+            ClassicAssert.AreEqual(newValue, retValue.ToString());
 
             // Test MYDICTSET
             var dictKey = "dictkey";
             var dictField = "dictfield";
             var dictValue = "dictvalue";
             resp = db.Execute("TestModule.MYDICTSET", dictKey, dictField, dictValue);
-            Assert.AreEqual("OK", (string)resp);
+            ClassicAssert.AreEqual("OK", (string)resp);
 
             var dictRetValue = db.Execute("TestModule.MYDICTGET", dictKey, dictField);
-            Assert.AreEqual(dictValue, (string)dictRetValue);
+            ClassicAssert.AreEqual(dictValue, (string)dictRetValue);
 
             // Test SUM command
             db.StringSet("key1", "1");
             db.StringSet("key2", "2");
             db.StringSet("key3", "3");
             result = db.Execute("TestModule.SUM", "key1", "key2", "key3");
-            Assert.IsNotNull(result);
-            Assert.AreEqual("6", result.ToString());
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual("6", result.ToString());
+        }
+
+
+        [Test]
+        public void TestModuleLoadUsingGarnetOptions()
+        {
+            var onLoad =
+                    @"context.Initialize(""TestModule1"", 1);
+                    
+                    context.RegisterCommand(""TestModule1.SetIfPM"", new SetIfPMCustomCommand(), CommandType.ReadModifyWrite,
+                    new RespCommandsInfo { Name = ""TestModule.SETIFPM"", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1,
+                    Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.String | RespAclCategories.Write });";
+
+            var onLoad2 =
+                   @"context.Initialize(""TestModule2"", 1);
+                   
+                    context.RegisterProcedure(""TestModule2.SUM"", new Sum());";
+
+            var module1Path = CreateTestModule(onLoad, "TestModule1.dll");
+            var module2Path = CreateTestModule(onLoad2, "TestModule2.dll");
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                disablePubSub: true,
+                loadModulePaths: [module1Path, module2Path]);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            //// Test SETIFPM
+            string key = "testkey";
+            string value = "foovalue1";
+            db.StringSet(key, value);
+            var retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(value, retValue.ToString());
+
+            string newValue = "foovalue2";
+            var resp = db.Execute("TestModule1.SETIFPM", key, newValue, "foo");
+            ClassicAssert.AreEqual("OK", (string)resp);
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newValue, retValue.ToString());
+
+            // Test SUM command
+            db.StringSet("key1", "1");
+            db.StringSet("key2", "2");
+            db.StringSet("key3", "3");
+            var result = db.Execute("TestModule2.SUM", "key1", "key2", "key3");
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual("6", result.ToString());
         }
 
         [Test]
@@ -193,7 +242,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var resp = db.Execute($"MODULE", ["LOADCS", modulePath, "arg0", "arg1"]);
-            Assert.AreEqual("OK", (string)resp);
+            ClassicAssert.AreEqual("OK", (string)resp);
         }
 
         [Test]
@@ -211,7 +260,7 @@ namespace Garnet.test
             }
             catch (RedisException ex)
             {
-                Assert.AreEqual("ERR Error during module OnLoad", ex.Message);
+                ClassicAssert.AreEqual("ERR Error during module OnLoad", ex.Message);
             }
         }
 
@@ -232,7 +281,7 @@ namespace Garnet.test
             }
             catch (RedisException ex)
             {
-                Assert.AreEqual("ERR Error during module OnLoad", ex.Message);
+                ClassicAssert.AreEqual("ERR Error during module OnLoad", ex.Message);
             }
         }
 
@@ -252,7 +301,7 @@ namespace Garnet.test
             }
             catch (RedisException ex)
             {
-                Assert.AreEqual("ERR unable to access one or more binary files.", ex.Message);
+                ClassicAssert.AreEqual("ERR unable to access one or more binary files.", ex.Message);
             }
         }
     }

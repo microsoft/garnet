@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -35,8 +36,8 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
-            Assert.IsNotNull(respCustomCommandsInfo);
+            ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
+            ClassicAssert.IsNotNull(respCustomCommandsInfo);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, lowMemory: true);
             server.Start();
         }
@@ -67,9 +68,9 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey1");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
                 recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
             }
         }
 
@@ -92,14 +93,14 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey1");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
                 recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
             }
         }
 
         [Test]
-        [Timeout(10_000)]
+        [CancelAfter(10_000)]
         public void AofUpsertStoreCommitTaskRecoverTest()
         {
             server.Dispose(false);
@@ -122,9 +123,9 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey1");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
                 recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
             }
         }
 
@@ -149,9 +150,9 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey1");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
                 recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
             }
         }
 
@@ -169,7 +170,7 @@ namespace Garnet.test
                 transaction.StringSetAsync("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1");
                 transaction.StringSetAsync("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
 
-                Assert.IsTrue(transaction.Execute());
+                ClassicAssert.IsTrue(transaction.Execute());
             }
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
@@ -179,9 +180,9 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey1");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
                 recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
             }
         }
 
@@ -212,11 +213,11 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey1");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
                 recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
                 recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey3");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue3", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue3", recoveredValue.ToString());
             }
         }
 
@@ -239,9 +240,9 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey1");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
                 recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
-                Assert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
             }
         }
 
@@ -255,14 +256,14 @@ namespace Garnet.test
                 db.StringSet("SeAofDeleteRecoverTestKey2", "SeAofDeleteRecoverTestKey2");
 
                 var val = (string)db.StringGet("SeAofDeleteRecoverTestKey1");
-                Assert.AreEqual("SeAofDeleteRecoverTestKey1", val);
+                ClassicAssert.AreEqual("SeAofDeleteRecoverTestKey1", val);
 
                 val = (string)db.StringGet("SeAofDeleteRecoverTestKey2");
-                Assert.AreEqual("SeAofDeleteRecoverTestKey2", val);
+                ClassicAssert.AreEqual("SeAofDeleteRecoverTestKey2", val);
 
                 db.KeyDelete("SeAofDeleteRecoverTestKey1");
                 val = (string)db.StringGet("SeAofDeleteRecoverTestKey1");
-                Assert.AreEqual(null, val);
+                ClassicAssert.AreEqual(null, val);
             }
 
             server.Store.CommitAOF(true);
@@ -275,10 +276,10 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
 
                 var val = (string)db.StringGet("SeAofDeleteRecoverTestKey1");
-                Assert.AreEqual(null, val);
+                ClassicAssert.AreEqual(null, val);
 
                 val = (string)db.StringGet("SeAofDeleteRecoverTestKey2");
-                Assert.AreEqual("SeAofDeleteRecoverTestKey2", val);
+                ClassicAssert.AreEqual("SeAofDeleteRecoverTestKey2", val);
             }
         }
 
@@ -295,9 +296,9 @@ namespace Garnet.test
                 db.StringSet("AofExpiryRMWStoreRecoverTestKey2", "AofExpiryRMWStoreRecoverTestValue4", expiry: TimeSpan.FromSeconds(10), when: When.NotExists);
 
                 var recoveredValue = db.StringGet("AofExpiryRMWStoreRecoverTestKey1");
-                Assert.AreEqual("AofExpiryRMWStoreRecoverTestValue1", recoveredValue.ToString());
+                ClassicAssert.AreEqual("AofExpiryRMWStoreRecoverTestValue1", recoveredValue.ToString());
                 recoveredValue = db.StringGet("AofExpiryRMWStoreRecoverTestKey2");
-                Assert.AreEqual("AofExpiryRMWStoreRecoverTestValue4", recoveredValue.ToString());
+                ClassicAssert.AreEqual("AofExpiryRMWStoreRecoverTestValue4", recoveredValue.ToString());
             }
 
             server.Store.CommitAOF(true);
@@ -309,9 +310,9 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var recoveredValue = db.StringGet("AofExpiryRMWStoreRecoverTestKey1");
-                Assert.AreEqual("AofExpiryRMWStoreRecoverTestValue1", recoveredValue.ToString());
+                ClassicAssert.AreEqual("AofExpiryRMWStoreRecoverTestValue1", recoveredValue.ToString());
                 recoveredValue = db.StringGet("AofExpiryRMWStoreRecoverTestKey2");
-                Assert.AreEqual("AofExpiryRMWStoreRecoverTestValue4", recoveredValue.ToString());
+                ClassicAssert.AreEqual("AofExpiryRMWStoreRecoverTestValue4", recoveredValue.ToString());
             }
         }
 
@@ -327,11 +328,11 @@ namespace Garnet.test
                 var added = db.SortedSetAdd(key, entries);
 
                 var score = db.SortedSetScore(key, "a");
-                Assert.True(score.HasValue);
-                Assert.AreEqual(1, score.Value);
+                ClassicAssert.True(score.HasValue);
+                ClassicAssert.AreEqual(1, score.Value);
 
                 score = db.SortedSetScore(key, "x");
-                Assert.False(score.HasValue);
+                ClassicAssert.False(score.HasValue);
             }
 
             server.Store.CommitAOF(true);
@@ -344,11 +345,11 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
 
                 var score = db.SortedSetScore(key, "a");
-                Assert.True(score.HasValue);
-                Assert.AreEqual(1, score.Value);
+                ClassicAssert.True(score.HasValue);
+                ClassicAssert.AreEqual(1, score.Value);
 
                 score = db.SortedSetScore(key, "x");
-                Assert.False(score.HasValue);
+                ClassicAssert.False(score.HasValue);
             }
         }
 
@@ -363,19 +364,19 @@ namespace Garnet.test
 
                 var added = db.SortedSetAdd(key1, entries);
                 var score = db.SortedSetScore(key1, "a");
-                Assert.True(score.HasValue);
-                Assert.AreEqual(1, score.Value);
+                ClassicAssert.True(score.HasValue);
+                ClassicAssert.AreEqual(1, score.Value);
 
                 score = db.SortedSetScore(key1, "x");
-                Assert.False(score.HasValue);
+                ClassicAssert.False(score.HasValue);
 
                 added = db.SortedSetAdd(key2, entries);
                 score = db.SortedSetScore(key2, "a");
-                Assert.True(score.HasValue);
-                Assert.AreEqual(1, score.Value);
+                ClassicAssert.True(score.HasValue);
+                ClassicAssert.AreEqual(1, score.Value);
 
                 score = db.SortedSetScore(key2, "x");
-                Assert.False(score.HasValue);
+                ClassicAssert.False(score.HasValue);
 
                 db.KeyDelete(key1);
             }
@@ -389,9 +390,9 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var exist1 = db.KeyExists(key1);
-                Assert.IsFalse(exist1);
+                ClassicAssert.IsFalse(exist1);
                 var exist2 = db.KeyExists(key2);
-                Assert.IsTrue(exist2);
+                ClassicAssert.IsTrue(exist2);
             }
         }
 
@@ -409,8 +410,8 @@ namespace Garnet.test
                     db.SortedSetAdd(key + i, entry);
 
                     var score = db.SortedSetScore(key + i, "a");
-                    Assert.True(score.HasValue);
-                    Assert.AreEqual(1, score.Value);
+                    ClassicAssert.True(score.HasValue);
+                    ClassicAssert.AreEqual(1, score.Value);
 
                 }
                 SortedSetEntry[] newEntries = [new SortedSetEntry("bbbb", 4)];
@@ -426,11 +427,11 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
 
                 var score = db.SortedSetScore(key + 1, "bbbb");
-                Assert.True(score.HasValue);
-                Assert.AreEqual(4, score.Value);
+                ClassicAssert.True(score.HasValue);
+                ClassicAssert.AreEqual(4, score.Value);
 
                 score = db.SortedSetScore(key + 1, "x");
-                Assert.False(score.HasValue);
+                ClassicAssert.False(score.HasValue);
             }
         }
 
@@ -445,18 +446,18 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var count = db.ListRightPush(key1, origList);
-                Assert.AreEqual(4, count);
+                ClassicAssert.AreEqual(4, count);
 
                 var result = db.ListRange(key1);
-                Assert.AreEqual(origList, result);
+                ClassicAssert.AreEqual(origList, result);
 
                 var rb = db.KeyRename(key1, key2);
-                Assert.IsTrue(rb);
+                ClassicAssert.IsTrue(rb);
                 result = db.ListRange(key1);
-                Assert.AreEqual(Array.Empty<RedisValue>(), result);
+                ClassicAssert.AreEqual(Array.Empty<RedisValue>(), result);
 
                 result = db.ListRange(key2);
-                Assert.AreEqual(origList, result);
+                ClassicAssert.AreEqual(origList, result);
             }
 
             server.Store.CommitAOF(true);
@@ -469,7 +470,7 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
 
                 var result = db.ListRange(key2);
-                Assert.AreEqual(origList, result);
+                ClassicAssert.AreEqual(origList, result);
             }
         }
 
@@ -498,15 +499,15 @@ namespace Garnet.test
 
                 db.Execute("MYDICTSET", mainKey1, subKey, subKeyValue);
                 var retValue = db.Execute("MYDICTGET", mainKey1, subKey);
-                Assert.AreEqual(subKeyValue, (string)retValue);
+                ClassicAssert.AreEqual(subKeyValue, (string)retValue);
 
                 var rb = db.KeyRename(mainKey1, mainKey2);
-                Assert.IsTrue(rb);
+                ClassicAssert.IsTrue(rb);
                 retValue = db.Execute("MYDICTGET", mainKey1, subKey);
-                Assert.IsTrue(retValue.IsNull);
+                ClassicAssert.IsTrue(retValue.IsNull);
 
                 retValue = db.Execute("MYDICTGET", mainKey2, subKey);
-                Assert.AreEqual(subKeyValue, (string)retValue);
+                ClassicAssert.AreEqual(subKeyValue, (string)retValue);
             }
 
             server.Store.CommitAOF(true);
@@ -520,7 +521,7 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
 
                 var retValue = db.Execute("MYDICTGET", mainKey2, subKey);
-                Assert.AreEqual(subKeyValue, (string)retValue);
+                ClassicAssert.AreEqual(subKeyValue, (string)retValue);
             }
         }
 
@@ -530,10 +531,10 @@ namespace Garnet.test
             static void ValidateServerData(IDatabase db, string strKey, string strValue, string listKey, string listValue)
             {
                 var retValue = db.StringGet(strKey);
-                Assert.AreEqual(strValue, (string)retValue);
+                ClassicAssert.AreEqual(strValue, (string)retValue);
                 var retList = db.ListRange(listKey);
-                Assert.AreEqual(1, retList.Length);
-                Assert.AreEqual(listValue, (string)retList[0]);
+                ClassicAssert.AreEqual(1, retList.Length);
+                ClassicAssert.AreEqual(listValue, (string)retList[0]);
             }
 
             server.Dispose(false);
@@ -574,7 +575,7 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
                 ret = db.StringIncrement("key1", 2);
-                Assert.AreEqual(2, ret);
+                ClassicAssert.AreEqual(2, ret);
 
                 server.Save(SaveType.BackgroundSave);
                 long lastSave = server.LastSave().Ticks;
@@ -585,7 +586,7 @@ namespace Garnet.test
                 }
 
                 ret = db.StringIncrement("key1", 2);
-                Assert.AreEqual(4, ret);
+                ClassicAssert.AreEqual(4, ret);
 
                 // Wait one second to ensure that the last save time is updated
                 Thread.Sleep(1000);
@@ -599,7 +600,7 @@ namespace Garnet.test
                 }
 
                 ret = db.StringIncrement("key1", 2);
-                Assert.AreEqual(6, ret);
+                ClassicAssert.AreEqual(6, ret);
             }
 
             server.Store.CommitAOF(true);
@@ -611,7 +612,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 ret = db.StringIncrement("key1", 2);
-                Assert.AreEqual(8, ret);
+                ClassicAssert.AreEqual(8, ret);
             }
         }
 
@@ -626,11 +627,11 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
 
                 var count = db.ListLeftPush(key, ldata);
-                Assert.AreEqual(4, count);
+                ClassicAssert.AreEqual(4, count);
 
                 ldata = ldata.Select(x => x).Reverse().ToArray();
                 returned_data_before_recovery = db.ListRange(key);
-                Assert.AreEqual(ldata, returned_data_before_recovery);
+                ClassicAssert.AreEqual(ldata, returned_data_before_recovery);
             }
 
             server.Store.CommitAOF(true);
@@ -642,8 +643,8 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var returnedData = db.ListRange(key);
-                Assert.AreEqual(returned_data_before_recovery, returnedData);
-                Assert.AreEqual(ldata, returnedData);
+                ClassicAssert.AreEqual(returned_data_before_recovery, returnedData);
+                ClassicAssert.AreEqual(ldata, returnedData);
             }
         }
     }

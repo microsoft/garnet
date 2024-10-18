@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -21,7 +20,7 @@ namespace Garnet.cluster
         {
             // Check if we need to initialize cluster migrate command arguments
             if (_gcs.InitMigrateCommand)
-                _gcs.SetClusterMigrate(_sourceNodeId, Encoding.ASCII.GetBytes(_replaceOption ? "T" : "F"), Encoding.ASCII.GetBytes("SSTORE"));
+                _gcs.SetClusterMigrate(_sourceNodeId, _replaceOption, isMainStore: true);
 
             // Try write serialized key value to client buffer
             while (!_gcs.TryWriteKeyValueSpanByte(ref key, ref value, out var task))
@@ -31,7 +30,7 @@ namespace Garnet.cluster
                     return false;
 
                 // re-initialize cluster migrate command parameters
-                _gcs.SetClusterMigrate(_sourceNodeId, Encoding.ASCII.GetBytes(_replaceOption ? "T" : "F"), Encoding.ASCII.GetBytes("SSTORE"));
+                _gcs.SetClusterMigrate(_sourceNodeId, _replaceOption, isMainStore: true);
             }
             return true;
         }
@@ -47,14 +46,14 @@ namespace Garnet.cluster
         {
             // Check if we need to initialize cluster migrate command arguments
             if (_gcs.InitMigrateCommand)
-                _gcs.SetClusterMigrate(_sourceNodeId, Encoding.ASCII.GetBytes(_replaceOption ? "T" : "F"), Encoding.ASCII.GetBytes("OSTORE"));
+                _gcs.SetClusterMigrate(_sourceNodeId, _replaceOption, isMainStore: false);
 
             while (!_gcs.TryWriteKeyValueByteArray(key, value, expiration, out var task))
             {
                 // Flush key value pairs in the buffer
                 if (!HandleMigrateTaskResponse(task))
                     return false;
-                _gcs.SetClusterMigrate(_sourceNodeId, Encoding.ASCII.GetBytes(_replaceOption ? "T" : "F"), Encoding.ASCII.GetBytes("OSTORE"));
+                _gcs.SetClusterMigrate(_sourceNodeId, _replaceOption, isMainStore: false);
             }
             return true;
         }
@@ -70,12 +69,12 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    _ = task.ContinueWith(resp =>
+                    return task.ContinueWith(resp =>
                     {
                         // Check if setslotsrange executed correctly
                         if (!resp.Result.Equals("OK", StringComparison.Ordinal))
                         {
-                            logger?.LogError("TrySetSlot error: {error}", resp);
+                            logger?.LogError("ClusterMigrate Keys failed with error:{error}.", resp);
                             Status = MigrateState.FAIL;
                             return false;
                         }

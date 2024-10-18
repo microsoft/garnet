@@ -28,12 +28,6 @@
     <Compile Include="..\..\main\GarnetServer\Extensions\SetStringAndList.cs" Link="SetStringAndList.cs" />
   </ItemGroup>
 
-	<ItemGroup>
-	  <EmbeddedResource Include="CustomRespCommandsInfo.json" Link="CustomRespCommandsInfo.json">
-	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-	  </EmbeddedResource>
-	</ItemGroup>
-
   <ItemGroup>
 	  <EmbeddedResource Include="..\..\libs\host\defaults.conf" Link="defaults.conf" />
 	  <None Include="..\testcerts\testcert.pfx" Link="testcert.pfx">
@@ -53,6 +47,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="StackExchange.Redis" />
+    <PackageReference Include="System.Text.Json" />
   </ItemGroup>
 
   <ItemGroup>
@@ -65,6 +60,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Update="RespCommandTests.cs">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="CustomRespCommandsDocs.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="CustomRespCommandsInfo.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="redis.conf">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

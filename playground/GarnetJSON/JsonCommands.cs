@@ -16,15 +16,15 @@ namespace GarnetJSON
 
         public JsonSET(ILogger? logger = null) => this.logger = logger;
 
-        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output) => true;
+        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input, ref (IMemoryOwner<byte>, int) output) => true;
 
-        public override bool Updater(ReadOnlyMemory<byte> key, ReadOnlySpan<byte> input, IGarnetObject jsonObject, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        public override bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject jsonObject, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(jsonObject is JsonObject);
 
             int offset = 0;
-            var path = CustomCommandUtils.GetNextArg(input, ref offset);
-            var value = CustomCommandUtils.GetNextArg(input, ref offset);
+            var path = CustomCommandUtils.GetNextArg(ref input, ref offset);
+            var value = CustomCommandUtils.GetNextArg(ref input, ref offset);
 
             if (((JsonObject)jsonObject).TrySet(Encoding.UTF8.GetString(path), Encoding.UTF8.GetString(value), logger))
                 WriteSimpleString(ref output, "OK");
@@ -41,12 +41,12 @@ namespace GarnetJSON
 
         public JsonGET(ILogger? logger = null) => this.logger = logger;
 
-        public override bool Reader(ReadOnlyMemory<byte> key, ReadOnlySpan<byte> input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
+        public override bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
         {
             Debug.Assert(value is JsonObject);
 
             var offset = 0;
-            var path = CustomCommandUtils.GetNextArg(input, ref offset);
+            var path = CustomCommandUtils.GetNextArg(ref input, ref offset);
 
             if (((JsonObject)value).TryGet(Encoding.UTF8.GetString(path), out var result, logger))
                 CustomCommandUtils.WriteBulkString(ref output, Encoding.UTF8.GetBytes(result));

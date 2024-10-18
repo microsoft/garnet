@@ -51,13 +51,14 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
 
-            fixed (byte* ptr = key)
+            // Serializing key & ObjectInput to RMW log
+            fixed (byte* keyPtr = key)
             {
-                var sbKey = SpanByte.FromPinnedPointer(ptr, key.Length);
-                var sbInput = new ArgSlice(input.ToPointer(), sizeof(ObjectInput)).SpanByte;
-                var sbInputPayload = input.payload.SpanByte;
-                functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreRMW, version = version, sessionID = sessionID },
-                    ref sbKey, ref sbInput, ref sbInputPayload, out _);
+                var sbKey = SpanByte.FromPinnedPointer(keyPtr, key.Length);
+
+                functionsState.appendOnlyFile.Enqueue(
+                    new AofHeader { opType = AofEntryType.ObjectStoreRMW, version = version, sessionID = sessionID },
+                    ref sbKey, ref input, out _);
             }
         }
 
@@ -136,6 +137,7 @@ namespace Garnet.server
                         o->result1 = 1;
                         break;
                     case ExpireOption.GT:
+                    case ExpireOption.XXGT:
                         bool replace = expiration < value.Expiration;
                         value.Expiration = replace ? value.Expiration : expiration;
                         if (replace)
@@ -144,6 +146,7 @@ namespace Garnet.server
                             o->result1 = 1;
                         break;
                     case ExpireOption.LT:
+                    case ExpireOption.XXLT:
                         replace = expiration > value.Expiration;
                         value.Expiration = replace ? value.Expiration : expiration;
                         if (replace)
@@ -161,12 +164,14 @@ namespace Garnet.server
                 {
                     case ExpireOption.NX:
                     case ExpireOption.None:
+                    case ExpireOption.LT:  // If expiry doesn't exist, LT should treat the current expiration as infinite
                         value.Expiration = expiration;
                         o->result1 = 1;
                         break;
                     case ExpireOption.XX:
                     case ExpireOption.GT:
-                    case ExpireOption.LT:
+                    case ExpireOption.XXGT:
+                    case ExpireOption.XXLT:
                         o->result1 = 0;
                         break;
                     default:

@@ -34,6 +34,22 @@ Returns Integer reply of number of total commands in this Garnet server.
 Integer reply: the number of commands returned by COMMAND.
 
 ---
+### COMMAND DOCS
+#### Syntax
+
+```bash
+COMMAND DOCS [command-name [command-name ...]]
+```
+
+Return documentary information about commands.
+
+By default, the reply includes all of the server's commands. You can use the optional command-name argument to specify the names of one or more commands.
+
+#### Resp Reply
+
+Array reply: a map, as a flattened array, where each key is a command name, and each value is the documentary information.
+
+---
 ### COMMAND INFO
 #### Syntax
 
@@ -223,5 +239,21 @@ The TIME command returns the current server time as a two items lists: a Unix ti
 #### Resp Reply
 
 Array reply: specifically, a two-element array consisting of the Unix timestamp in seconds and the microseconds' count.
+
+---
+
+### MONITOR
+
+#### Syntax
+
+```bash
+MONITOR
+```
+
+MONITOR is a debugging command that streams back every command processed by the Redis server. It can help in understanding what is happening to the database.
+
+#### Resp Reply
+
+Non-standard return value. Dumps the received commands in an infinite flow.
 
 ---

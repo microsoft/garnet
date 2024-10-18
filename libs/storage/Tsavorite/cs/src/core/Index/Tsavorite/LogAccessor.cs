@@ -92,7 +92,7 @@ namespace Tsavorite.core
             allocatorBase.EmptyPageCount = pageCount;
             if (wait)
             {
-                long newHeadAddress = (allocatorBase.GetTailAddress() & ~allocatorBase.PageSizeMask) - allocatorBase.HeadOffsetLagAddress;
+                long newHeadAddress = (allocatorBase.GetTailAddress() & ~allocatorBase.PageSizeMask) - allocatorBase.HeadAddressLagOffset;
                 ShiftHeadAddress(newHeadAddress, wait);
             }
         }
@@ -106,6 +106,11 @@ namespace Tsavorite.core
         /// Actual memory used by log (not including heap objects) and overflow pages
         /// </summary>
         public long MemorySizeBytes => ((long)(allocatorBase.AllocatedPageCount + allocator.OverflowPageCount)) << allocatorBase.LogPageSizeBits;
+
+        /// <summary>
+        /// Maximum memory size in bytes
+        /// </summary>
+        public long MaxMemorySizeBytes => allocatorBase.MaxMemorySizeBytes;
 
         /// <summary>
         /// Number of pages allocated

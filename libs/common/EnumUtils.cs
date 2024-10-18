@@ -91,8 +91,8 @@ namespace Garnet.common
 
         private static void AddTypeToCache<T>()
         {
-            var valToDesc = new Dictionary<string, string>();
-            var descToVals = new Dictionary<string, List<string>>();
+            var valToDesc = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var descToVals = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var flagFieldInfo in typeof(T).GetFields())
             {

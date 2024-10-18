@@ -8,7 +8,7 @@ using System.Linq;
 using System.Reflection;
 using Microsoft.Extensions.Logging;
 
-namespace Garnet.server.Module
+namespace Garnet.server
 {
     /// <summary>
     /// Abstract base class that all Garnet modules must inherit from.
@@ -93,14 +93,15 @@ namespace Garnet.server.Module
         /// <param name="type">Command type</param>
         /// <param name="customFunctions">Custom raw string function implementation</param>
         /// <param name="commandInfo">Command info</param>
+        /// <param name="commandDocs">RESP command docs</param>
         /// <param name="expirationTicks">Expiration ticks for the key</param>
         /// <returns>Registration status</returns>
-        public ModuleActionStatus RegisterCommand(string name, CustomRawStringFunctions customFunctions, CommandType type = CommandType.ReadModifyWrite, RespCommandsInfo commandInfo = null, long expirationTicks = 0)
+        public ModuleActionStatus RegisterCommand(string name, CustomRawStringFunctions customFunctions, CommandType type = CommandType.ReadModifyWrite, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null, long expirationTicks = 0)
         {
             if (string.IsNullOrEmpty(name) || customFunctions == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
-            customCommandManager.Register(name, type, customFunctions, commandInfo, expirationTicks);
+            customCommandManager.Register(name, type, customFunctions, commandInfo, commandDocs, expirationTicks);
 
             return ModuleActionStatus.Success;
         }
@@ -109,15 +110,16 @@ namespace Garnet.server.Module
         /// Registers a custom transaction
         /// </summary>
         /// <param name="name">Transaction name</param>
-        /// <param name="proc">Transaction procedure implemenation</param>
+        /// <param name="proc">Transaction procedure implementation</param>
         /// <param name="commandInfo">Command info</param>
+        /// <param name="commandDocs">Command docs</param>
         /// <returns>Registration status</returns>
-        public ModuleActionStatus RegisterTransaction(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)
+        public ModuleActionStatus RegisterTransaction(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
         {
             if (string.IsNullOrEmpty(name) || proc == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
-            customCommandManager.Register(name, proc, commandInfo);
+            customCommandManager.Register(name, proc, commandInfo, commandDocs);
 
             return ModuleActionStatus.Success;
         }
@@ -143,13 +145,14 @@ namespace Garnet.server.Module
         /// <param name="command">Custom object function implementation</param>
         /// <param name="type">Command type</param>
         /// <param name="commandInfo">Command info</param>
+        /// <param name="commandDocs">RESP command docs</param>
         /// <returns></returns>
-        public ModuleActionStatus RegisterCommand(string name, CustomObjectFactory factory, CustomObjectFunctions command, CommandType type = CommandType.ReadModifyWrite, RespCommandsInfo commandInfo = null)
+        public ModuleActionStatus RegisterCommand(string name, CustomObjectFactory factory, CustomObjectFunctions command, CommandType type = CommandType.ReadModifyWrite, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
         {
             if (string.IsNullOrEmpty(name) || factory == null || command == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
-            customCommandManager.Register(name, type, factory, command, commandInfo);
+            customCommandManager.Register(name, type, factory, command, commandInfo, commandDocs);
 
             return ModuleActionStatus.Success;
         }
@@ -160,22 +163,23 @@ namespace Garnet.server.Module
         /// <param name="name">Procedure name</param>
         /// <param name="customScriptProc">Custom procedure implementation</param>
         /// <param name="commandInfo">Command info</param>
+        /// <param name="commandDocs">Command docs</param>
         /// <returns>Registration status</returns>
-        public ModuleActionStatus RegisterProcedure(string name, CustomProcedure customScriptProc, RespCommandsInfo commandInfo = null)
+        public ModuleActionStatus RegisterProcedure(string name, CustomProcedure customScriptProc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
         {
             if (string.IsNullOrEmpty(name) || customScriptProc == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
-            customCommandManager.Register(name, customScriptProc, commandInfo);
+            customCommandManager.Register(name, customScriptProc, commandInfo, commandDocs);
             return ModuleActionStatus.Success;
         }
     }
 
-    internal sealed class ModuleRegistrar
+    public sealed class ModuleRegistrar
     {
         private static readonly Lazy<ModuleRegistrar> lazy = new Lazy<ModuleRegistrar>(() => new ModuleRegistrar());
 
-        internal static ModuleRegistrar Instance { get { return lazy.Value; } }
+        public static ModuleRegistrar Instance { get { return lazy.Value; } }
 
         private ModuleRegistrar()
         {
@@ -184,7 +188,7 @@ namespace Garnet.server.Module
 
         private readonly ConcurrentDictionary<string, ModuleLoadContext> modules;
 
-        internal bool LoadModule(CustomCommandManager customCommandManager, Assembly loadedAssembly, string[] moduleArgs, ILogger logger, out ReadOnlySpan<byte> errorMessage)
+        public bool LoadModule(CustomCommandManager customCommandManager, Assembly loadedAssembly, string[] moduleArgs, ILogger logger, out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
 

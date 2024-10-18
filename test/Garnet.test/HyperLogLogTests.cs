@@ -4,8 +4,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -46,19 +48,19 @@ namespace Garnet.test
             for (int i = 0; i < data.Length; i++)
             {
                 fUpdated = db.HyperLogLogAdd(key, data[i]);
-                Assert.IsTrue(fUpdated);
+                ClassicAssert.IsTrue(fUpdated);
             }
 
             //HLL not updated
             for (int i = 0; i < data.Length; i++)
             {
                 fUpdated = db.HyperLogLogAdd(key, data[i]);
-                Assert.IsFalse(fUpdated);
+                ClassicAssert.IsFalse(fUpdated);
             }
 
             //estimate cardinality
             long pfcount = db.HyperLogLogLength(key);
-            Assert.AreEqual(6, pfcount);
+            ClassicAssert.AreEqual(6, pfcount);
         }
 
         public static void SimpleHyperLogLogArrayAddCount()
@@ -71,13 +73,13 @@ namespace Garnet.test
 
             string keyX = "x";
             var ret = db.HyperLogLogAdd(keyX, x);
-            Assert.IsTrue(ret);
+            ClassicAssert.IsTrue(ret);
 
             ret = db.HyperLogLogAdd(keyX, y);
-            Assert.IsTrue(ret);
+            ClassicAssert.IsTrue(ret);
 
             long pfcount = db.HyperLogLogLength(keyX);
-            Assert.AreEqual(7, pfcount);
+            ClassicAssert.AreEqual(7, pfcount);
         }
 
         [Test]
@@ -96,19 +98,19 @@ namespace Garnet.test
             //HLL updated           
             db.HyperLogLogAdd(keyX, x);
             long keyXCount = db.HyperLogLogLength(keyX);
-            Assert.AreEqual(keyXCount, 4);
+            ClassicAssert.AreEqual(keyXCount, 4);
 
             db.HyperLogLogAdd(keyY, y);
             long keyYCount = db.HyperLogLogLength(keyY);
-            Assert.AreEqual(keyYCount, 5);
+            ClassicAssert.AreEqual(keyYCount, 5);
 
             var res = db.Execute("PFMERGE", keyW, keyX);
             long keyWCount = db.HyperLogLogLength(keyW);
-            Assert.AreEqual(keyWCount, 4);
+            ClassicAssert.AreEqual(keyWCount, 4);
 
             res = db.Execute("PFMERGE", keyW, keyY);
             keyWCount = db.HyperLogLogLength(keyW);
-            Assert.AreEqual(keyWCount, 7);
+            ClassicAssert.AreEqual(keyWCount, 7);
         }
 
         [Test]
@@ -133,7 +135,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                Assert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
             }
 
             try
@@ -142,7 +144,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                Assert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
             }
 
             try
@@ -151,7 +153,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                Assert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
             }
 
             try
@@ -160,7 +162,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                Assert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
             }
 
             try
@@ -169,7 +171,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                Assert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
             }
         }
 
@@ -201,7 +203,7 @@ namespace Garnet.test
             {
                 response = lightClientRequest.SendCommandChunks("PFADD mykey " + data[i], bytesPerSend);
                 expectedResponse = i == 0 || data[i - 1] != data[i] ? ":1\r\n" : ":0\r\n";
-                Assert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+                ClassicAssert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
             }
             lightClientRequest.Dispose();
         }
@@ -220,42 +222,50 @@ namespace Garnet.test
             //1. PFADD mykey
             response = lightClientRequest.SendCommandChunks("PFADD mykey h e l l o", bytesPerSend);
             expectedResponse = ":1\r\n";
-            Assert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            var actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             //2. PFCOUNT mykey
             response = lightClientRequest.SendCommandChunks("PFCOUNT mykey", bytesPerSend);
             expectedResponse = ":4\r\n";
-            Assert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             //3. PFADD mykey2
             response = lightClientRequest.SendCommandChunks("PFADD mykey2 w o r l d", bytesPerSend);
             expectedResponse = ":1\r\n";
-            Assert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             //4. PFCOUNT mykey mykey2
             response = lightClientRequest.SendCommandChunks("PFCOUNT mykey mykey2", bytesPerSend);
-            expectedResponse = ":9\r\n";
-            Assert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            expectedResponse = ":7\r\n";
+            actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             //5. PFMERGE mykey3
             response = lightClientRequest.SendCommandChunks("PFMERGE mykey3 mykey", bytesPerSend);
             expectedResponse = "+OK\r\n";
-            Assert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             //6. PFCOUNT mykey3
             response = lightClientRequest.SendCommandChunks("PFCOUNT mykey3", bytesPerSend);
             expectedResponse = ":4\r\n";
-            Assert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             //7. PFMERGE mykey4 mykey mykey2
             response = lightClientRequest.SendCommandChunks("PFMERGE mykey4 mykey mykey2", bytesPerSend);
             expectedResponse = "+OK\r\n";
-            Assert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             //8. PFCOUNT mykey4
             response = lightClientRequest.SendCommandChunks("PFCOUNT mykey4", bytesPerSend);
             expectedResponse = ":7\r\n";
-            Assert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            actualResponse = Encoding.ASCII.GetString(response.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
         }
 
         private static unsafe ulong MurmurHash2x64A(byte* bString, int len, uint seed = 0)
@@ -346,7 +356,7 @@ namespace Garnet.test
                     expectedUpdated = HyperLogLog.DefaultHLL.UpdateDense(hllPtr, hv);
                 }
 
-                Assert.AreEqual(expectedUpdated, updated);
+                ClassicAssert.AreEqual(expectedUpdated, updated);
             }
         }
 
@@ -409,11 +419,11 @@ namespace Garnet.test
             }
 
             bool updated = db.HyperLogLogAdd(key, insertValues);
-            Assert.AreEqual(updated, expectedUpdated);
+            ClassicAssert.AreEqual(updated, expectedUpdated);
 
             long estimate = db.HyperLogLogLength(key);
             double error = EstimationError(estimate, set.Count);
-            Assert.IsTrue(error < 4.0);
+            ClassicAssert.IsTrue(error < 4.0);
 
             for (int i = 0; i < 10; i++)
             {
@@ -436,11 +446,11 @@ namespace Garnet.test
                 }
 
                 updated = db.HyperLogLogAdd(key, insertValues);
-                Assert.AreEqual(updated, expectedUpdated);
+                ClassicAssert.AreEqual(updated, expectedUpdated);
 
                 estimate = db.HyperLogLogLength(key);
                 error = EstimationError(estimate, set.Count);
-                Assert.IsTrue(error < 4.0);
+                ClassicAssert.IsTrue(error < 4.0);
             }
         }
 
@@ -471,9 +481,9 @@ namespace Garnet.test
             long countB = db.HyperLogLogLength(keyB);
             long countC = db.HyperLogLogLength(keyC);
 
-            Assert.AreEqual(4, countA);
-            Assert.AreEqual(5, countB);
-            Assert.AreEqual(6, countC);
+            ClassicAssert.AreEqual(4, countA);
+            ClassicAssert.AreEqual(5, countB);
+            ClassicAssert.AreEqual(6, countC);
 
             db.KeyDelete(keyA);
             db.KeyDelete(keyB);
@@ -484,7 +494,7 @@ namespace Garnet.test
             db.HyperLogLogAdd(keyC, dataC);
 
             long totalCount = db.HyperLogLogLength(keys);
-            Assert.AreEqual(countA + countB + countC, totalCount);
+            ClassicAssert.AreEqual(11, totalCount);
         }
 
         public long LongRandom() => ((long)this.r.Next() << 32) | (long)this.r.Next();
@@ -536,8 +546,8 @@ namespace Garnet.test
 
             long estimateA = db.HyperLogLogLength(keyA);
             long estimateB = db.HyperLogLogLength(keyB);
-            Assert.IsTrue(EstimationError(estimateA, setA.Count) < 4.0);
-            Assert.IsTrue(EstimationError(estimateB, setB.Count) < 4.0);
+            ClassicAssert.IsTrue(EstimationError(estimateA, setA.Count) < 4.0);
+            ClassicAssert.IsTrue(EstimationError(estimateB, setB.Count) < 4.0);
 
             setA.Clear();
             setB.Clear();
@@ -555,8 +565,8 @@ namespace Garnet.test
 
             long estimateC = db.HyperLogLogLength(keyA);
             long estimateD = db.HyperLogLogLength(keyB);
-            Assert.IsTrue(EstimationError(estimateC, setA.Count) < 4.0, $"{estimateC} ~ {setA.Count}");
-            Assert.IsTrue(EstimationError(estimateD, setB.Count) < 4.0, $"{estimateD} ~ {setB.Count}");
+            ClassicAssert.IsTrue(EstimationError(estimateC, setA.Count) < 4.0, $"{estimateC} ~ {setA.Count}");
+            ClassicAssert.IsTrue(EstimationError(estimateD, setB.Count) < 4.0, $"{estimateD} ~ {setB.Count}");
         }
 
         [Test]
@@ -570,13 +580,13 @@ namespace Garnet.test
             if (seqSize < 128)
                 server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                     lowMemory: true,
-                    MemorySize: "512",
+                    MemorySize: "1024",
                     PageSize: "512");
             else
                 server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                     lowMemory: true,
-                    MemorySize: "16384",
-                    PageSize: "16384");
+                    MemorySize: "32k",
+                    PageSize: "16k");
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -609,7 +619,7 @@ namespace Garnet.test
 
                 long estimate = db.HyperLogLogLength(sKey);
                 long expectedEstimate = hllKeyCollection[key].Count;
-                Assert.IsTrue(EstimationError(estimate, expectedEstimate) < 4.0);
+                ClassicAssert.IsTrue(EstimationError(estimate, expectedEstimate) < 4.0);
             }
         }
 
@@ -635,7 +645,7 @@ namespace Garnet.test
                 setA.UnionWith(ToList(vals));
 
                 long estimate = db.HyperLogLogLength(keyA);
-                Assert.IsTrue(EstimationError(estimate, setA.Count) < 4.0);
+                ClassicAssert.IsTrue(EstimationError(estimate, setA.Count) < 4.0);
             }
         }
 
@@ -665,20 +675,20 @@ namespace Garnet.test
             db.HyperLogLogAdd(keyA, rss);
             setA.UnionWith(ToList(rss));
             estimate = db.HyperLogLogLength(keyA);
-            Assert.IsTrue(EstimationError(estimate, setA.Count) < 4.0);
+            ClassicAssert.IsTrue(EstimationError(estimate, setA.Count) < 4.0);
 
             //2. HLL B
             rss = RandomRedisValueSubseq(largeInput, smallSeq);
             db.HyperLogLogAdd(keyB, rss);
             setB.UnionWith(ToList(rss));
             estimate = db.HyperLogLogLength(keyB);
-            Assert.IsTrue(EstimationError(estimate, setB.Count) < 4.0);
+            ClassicAssert.IsTrue(EstimationError(estimate, setB.Count) < 4.0);
 
             //3. Merge HLL B to HLL A
             db.HyperLogLogMerge(keyA, keyA, keyB);
             setA.UnionWith(setB);
             estimate = db.HyperLogLogLength(keyA);
-            Assert.IsTrue(EstimationError(estimate, setA.Count) < 4.0);
+            ClassicAssert.IsTrue(EstimationError(estimate, setA.Count) < 4.0);
         }
 
         [Test]
@@ -688,7 +698,7 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: "512",
+                MemorySize: "1024",
                 PageSize: "512");
             server.Start();
 
@@ -735,7 +745,7 @@ namespace Garnet.test
 
                 long estimate = db.HyperLogLogLength(sKey);
                 long expectedEstimate = hllKeyCollection[key].Count;
-                Assert.IsTrue(EstimationError(estimate, expectedEstimate) < 4.0);
+                ClassicAssert.IsTrue(EstimationError(estimate, expectedEstimate) < 4.0);
             }
         }
 
@@ -767,26 +777,26 @@ namespace Garnet.test
             db.HyperLogLogAdd(keyA, rss);
             setA.UnionWith(ToList(rss));
             estimate = db.HyperLogLogLength(keyA);
-            Assert.IsTrue(EstimationError(estimate, setA.Count) < 4.0);
+            ClassicAssert.IsTrue(EstimationError(estimate, setA.Count) < 4.0);
 
             //2. HLL B
             rss = RandomRedisValueSubseq(largeInput, smallSeq);
             db.HyperLogLogAdd(keyB, rss);
             setB.UnionWith(ToList(rss));
             estimate = db.HyperLogLogLength(keyB);
-            Assert.IsTrue(EstimationError(estimate, setB.Count) < 4.0);
+            ClassicAssert.IsTrue(EstimationError(estimate, setB.Count) < 4.0);
 
             //3. Merge HLL B to HLL C => dense to empty
             db.HyperLogLogMerge(keyC, keyC, keyB);
             setC.UnionWith(setB);
             estimate = db.HyperLogLogLength(keyC);
-            Assert.IsTrue(EstimationError(estimate, setC.Count) < 4.0);
+            ClassicAssert.IsTrue(EstimationError(estimate, setC.Count) < 4.0);
 
             //4. Merge HLL A to HLL C => sparse to dense
             db.HyperLogLogMerge(keyA, keyA, keyC);
             setA.UnionWith(setC);
             estimate = db.HyperLogLogLength(keyA);
-            Assert.IsTrue(EstimationError(estimate, setA.Count) < 4.0);
+            ClassicAssert.IsTrue(EstimationError(estimate, setA.Count) < 4.0);
         }
 
         [Test]
@@ -797,8 +807,8 @@ namespace Garnet.test
         {
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
-                MemorySize: "16384",
-                PageSize: "16384");
+                MemorySize: "32k",
+                PageSize: "16k");
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -846,7 +856,7 @@ namespace Garnet.test
 
                 long estimate = db.HyperLogLogLength(sKey);
                 long expectedEstimate = hllKeyCollection[key].Count;
-                Assert.IsTrue(EstimationError(estimate, expectedEstimate) < 4.0);
+                ClassicAssert.IsTrue(EstimationError(estimate, expectedEstimate) < 4.0);
             }
         }
 
@@ -878,26 +888,26 @@ namespace Garnet.test
             db.HyperLogLogAdd(keyA, rss);
             setA.UnionWith(ToList(rss));
             estimate = db.HyperLogLogLength(keyA);
-            Assert.IsTrue(EstimationError(estimate, setA.Count) < 4.0);
+            ClassicAssert.IsTrue(EstimationError(estimate, setA.Count) < 4.0);
 
             //2. HLL B
             rss = RandomRedisValueSubseq(largeInput, smallSeq);
             db.HyperLogLogAdd(keyB, rss);
             setB.UnionWith(ToList(rss));
             estimate = db.HyperLogLogLength(keyB);
-            Assert.IsTrue(EstimationError(estimate, setB.Count) < 4.0);
+            ClassicAssert.IsTrue(EstimationError(estimate, setB.Count) < 4.0);
 
             //3. Merge HLL B to HLL C => dense to empty
             db.HyperLogLogMerge(keyC, keyC, keyB);
             setC.UnionWith(setB);
             estimate = db.HyperLogLogLength(keyC);
-            Assert.IsTrue(EstimationError(estimate, setC.Count) < 4.0);
+            ClassicAssert.IsTrue(EstimationError(estimate, setC.Count) < 4.0);
 
             //4. Merge HLL A to HLL C => sparse to dense
             db.HyperLogLogMerge(keyA, keyA, keyC);
             setA.UnionWith(setC);
             estimate = db.HyperLogLogLength(keyA);
-            Assert.IsTrue(EstimationError(estimate, setA.Count) < 4.0);
+            ClassicAssert.IsTrue(EstimationError(estimate, setA.Count) < 4.0);
         }
 
         [Test]
@@ -907,8 +917,8 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: "16384",
-                PageSize: "16384");
+                MemorySize: "32k",
+                PageSize: "16k");
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -954,7 +964,7 @@ namespace Garnet.test
 
                 long estimate = db.HyperLogLogLength(sKey);
                 long expectedEstimate = hllKeyCollection[key].Count;
-                Assert.IsTrue(EstimationError(estimate, expectedEstimate) < 4.0);
+                ClassicAssert.IsTrue(EstimationError(estimate, expectedEstimate) < 4.0);
             }
         }
 
@@ -989,7 +999,7 @@ namespace Garnet.test
             db.HyperLogLogMerge(key, srcKeys);
             long estimate = db.HyperLogLogLength(key);
             double error = EstimationError(estimate, dstSet.Count);
-            Assert.IsTrue(error < 4.0);
+            ClassicAssert.IsTrue(error < 4.0);
         }
 
         [Test]
@@ -1000,7 +1010,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var result = db.Execute("HLLPROC", "hll", "a", "b", "c", "d", "e", "f", "g");
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
         }
 
         private static double EstimationError(long estimate, long cardinality)

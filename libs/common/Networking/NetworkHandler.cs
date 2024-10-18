@@ -26,7 +26,12 @@ namespace Garnet.networking
         protected readonly TServerHook serverHook;
 
         /// <summary>
-        /// Network buffer pool
+        /// Network buffer settings used to allocate send and receive buffers
+        /// </summary>
+        protected readonly NetworkBufferSettings networkBufferSettings;
+
+        /// <summary>
+        /// Network pool used to allocated send and receive buffers
         /// </summary>
         protected readonly LimitedFixedBufferPool networkPool;
 
@@ -51,8 +56,6 @@ namespace Garnet.networking
         /// Bytes read and read head for network buffer
         /// </summary>
         protected int networkBytesRead, networkReadHead;
-
-
 
         /// <summary>
         /// Buffer that application reads data from
@@ -98,7 +101,7 @@ namespace Garnet.networking
         /// <summary>
         /// Constructor
         /// </summary>
-        public unsafe NetworkHandler(TServerHook serverHook, TNetworkSender networkSender, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer = null, ILogger logger = null)
+        public unsafe NetworkHandler(TServerHook serverHook, TNetworkSender networkSender, NetworkBufferSettings networkBufferSettings, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer = null, ILogger logger = null)
             : base(networkPool.MinAllocationSize)
         {
             this.logger = logger;
@@ -106,6 +109,7 @@ namespace Garnet.networking
             this.networkSender = networkSender;
             this.session = messageConsumer;
             this.readerStatus = TlsReaderStatus.Rest;
+            this.networkBufferSettings = networkBufferSettings;
             this.networkPool = networkPool;
 
             if (!useTLS)
@@ -125,11 +129,11 @@ namespace Garnet.networking
                 expectingData = new SemaphoreSlim(0);
                 cancellationTokenSource = new();
 
-                transportReceiveBufferEntry = networkPool.Get(networkPool.MinAllocationSize);
+                transportReceiveBufferEntry = this.networkPool.Get(this.networkBufferSettings.initialReceiveBufferSize);
                 transportReceiveBuffer = transportReceiveBufferEntry.entry;
                 transportReceiveBufferPtr = transportReceiveBufferEntry.entryPtr;
 
-                transportSendBufferEntry = networkPool.Get(networkPool.MinAllocationSize);
+                transportSendBufferEntry = this.networkPool.Get(this.networkBufferSettings.sendBufferSize);
                 transportSendBuffer = transportSendBufferEntry.entry;
                 transportSendBufferPtr = transportSendBufferEntry.entryPtr;
             }

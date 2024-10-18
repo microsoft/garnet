@@ -30,6 +30,16 @@ namespace Garnet.server
         Set,
 
         /// <summary>
+        /// Special type indicating EXPIRETIME command
+        /// </summary>
+        ExpireTime = 0xf9,
+
+        /// <summary>
+        /// Special type indicating PEXPIRETIME command
+        /// </summary>
+        PExpireTime = 0xfa,
+
+        /// <summary>
         /// Special type indicating PERSIST command
         /// </summary>
         Persist = 0xfd,
@@ -43,6 +53,11 @@ namespace Garnet.server
         /// Special type indicating EXPIRE command
         /// </summary>
         Expire = 0xff,
+
+        /// <summary>
+        /// Special type indicating PEXPIRE command
+        /// </summary>
+        PExpire = 0xf8,
 
         /// <summary>
         /// Special type indicating PTTL command

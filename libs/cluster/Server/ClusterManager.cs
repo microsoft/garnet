@@ -4,7 +4,6 @@
 using System;
 using System.Threading;
 using Garnet.common;
-using Garnet.server;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -50,7 +49,7 @@ namespace Garnet.cluster
             clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "nodes.conf"));
             pool = new(1, (int)clusterConfigDevice.SectorSize);
 
-            var address = opts.Address ?? StoreWrapper.GetIp();
+            var address = clusterProvider.storeWrapper.GetIp();
             this.logger = logger;
             var recoverConfig = clusterConfigDevice.GetFileSize(0) > 0 && !opts.CleanClusterConfig;
 
@@ -176,7 +175,7 @@ namespace Garnet.cluster
             return ClusterInfo;
         }
 
-        private static string GetRange(int[] slots)
+        public static string GetRange(int[] slots)
         {
             var range = "> ";
             var start = slots[0];

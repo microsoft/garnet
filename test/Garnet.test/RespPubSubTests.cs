@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -40,8 +41,8 @@ namespace Garnet.test
 
             sub.Subscribe(RedisChannel.Pattern("messages"), (channel, message) =>
             {
-                Assert.AreEqual("messages", (string)channel);
-                Assert.AreEqual("published message", (string)message);
+                ClassicAssert.AreEqual("messages", (string)channel);
+                ClassicAssert.AreEqual("published message", (string)message);
                 evt.Set();
             });
 
@@ -54,7 +55,7 @@ namespace Garnet.test
                 var ret = evt.WaitOne(TimeSpan.FromSeconds(1));
                 if (ret) break;
                 repeat--;
-                Assert.IsTrue(repeat != 0, "Timeout waiting for subsciption receive");
+                ClassicAssert.IsTrue(repeat != 0, "Timeout waiting for subsciption receive");
             }
             sub.Unsubscribe(RedisChannel.Pattern("messages"));
         }
@@ -77,9 +78,9 @@ namespace Garnet.test
 
             sub.Subscribe(channel, (receivedChannel, message) =>
             {
-                Assert.AreEqual(glob, (string)channel);
-                Assert.AreEqual(actual, (string)receivedChannel);
-                Assert.AreEqual(value, (string)message);
+                ClassicAssert.AreEqual(glob, (string)channel);
+                ClassicAssert.AreEqual(actual, (string)receivedChannel);
+                ClassicAssert.AreEqual(value, (string)message);
                 evt.Set();
             });
 
@@ -92,7 +93,7 @@ namespace Garnet.test
                 var ret = evt.WaitOne(TimeSpan.FromSeconds(1));
                 if (ret) break;
                 repeat--;
-                Assert.IsTrue(repeat != 0, "Timeout waiting for subsciption receive");
+                ClassicAssert.IsTrue(repeat != 0, "Timeout waiting for subsciption receive");
             }
             sub.Unsubscribe(channel);
         }

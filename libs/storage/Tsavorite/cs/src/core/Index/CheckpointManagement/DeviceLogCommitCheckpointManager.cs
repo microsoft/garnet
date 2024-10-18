@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -426,7 +427,8 @@ namespace Tsavorite.core
         {
             if (errorCode != 0)
             {
-                logger?.LogError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                var errorMessage = new Win32Exception((int)errorCode).Message;
+                logger?.LogError("[DeviceLogCheckpointManager] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             semaphore.Release();
         }

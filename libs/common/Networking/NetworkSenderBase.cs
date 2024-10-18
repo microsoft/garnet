@@ -47,6 +47,9 @@ namespace Garnet.networking
         public abstract string RemoteEndpointName { get; }
 
         /// <inheritdoc />
+        public abstract string LocalEndpointName { get; }
+
+        /// <inheritdoc />
         public abstract void Enter();
 
         /// <inheritdoc />
@@ -87,5 +90,8 @@ namespace Garnet.networking
 
         /// <inheritdoc />
         public abstract void Throttle();
+
+        /// <inheritdoc />
+        public abstract bool TryClose();
     }
 }

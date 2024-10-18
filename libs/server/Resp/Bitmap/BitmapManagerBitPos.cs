@@ -73,22 +73,15 @@ namespace Garnet.server
         /// <summary>
         /// Main driver for bit position command.
         /// </summary>
-        /// <param name="input">Input properties for bitmap operation.</param>
+        /// <param name="setVal"></param>
+        /// <param name="startOffset"></param>
+        /// <param name="endOffset"></param>
+        /// <param name="offsetType"></param>
         /// <param name="value">Pointer to start of bitmap.</param>
         /// <param name="valLen">Length of bitmap.</param>
         /// <returns></returns>
-        public static long BitPosDriver(byte* input, byte* value, int valLen)
+        public static long BitPosDriver(byte setVal, long startOffset, long endOffset, byte offsetType, byte* value, int valLen)
         {
-            //4 byte: length
-            //1 byte: op-code
-            //1 byte: setVal
-            //4 byte: startOffset    // offset are byte indices not bits, therefore int is sufficient because max will be at most offset >> 3
-            //4 byte: endOffset            
-            byte bSetVal = *(input);
-            long startOffset = *(long*)(input + sizeof(byte));
-            long endOffset = *(long*)(input + sizeof(byte) + sizeof(long));
-            byte offsetType = *(input + sizeof(byte) + sizeof(long) * 2);
-
             if (offsetType == 0x0)
             {
                 startOffset = startOffset < 0 ? ProcessNegativeOffset(startOffset, valLen) : startOffset;
@@ -101,40 +94,36 @@ namespace Garnet.server
                     return -1;
 
                 endOffset = endOffset >= valLen ? valLen : endOffset;
-                return BitPosByte(value, bSetVal, startOffset, endOffset);
+                return BitPosByte(value, setVal, startOffset, endOffset);
             }
-            else
+
+            startOffset = startOffset < 0 ? ProcessNegativeOffset(startOffset, valLen * 8) : startOffset;
+            endOffset = endOffset < 0 ? ProcessNegativeOffset(endOffset, valLen * 8) : endOffset;
+
+            var startByte = (startOffset / 8);
+            var endByte = (endOffset / 8);
+            if (startByte == endByte)
             {
-                startOffset = startOffset < 0 ? ProcessNegativeOffset(startOffset, valLen * 8) : startOffset;
-                endOffset = endOffset < 0 ? ProcessNegativeOffset(endOffset, valLen * 8) : endOffset;
-
-                long startByte = (startOffset / 8);
-                long endByte = (endOffset / 8);
-                if (startByte == endByte)
-                {
-                    // Search only inside single byte for pos
-                    int leftBitIndex = (int)(startOffset & 7);
-                    int rightBitIndex = (int)((endOffset + 1) & 7);
-                    long _ipos = BitPosIndexBitSingleByteSearch(value[startByte], bSetVal, leftBitIndex, rightBitIndex);
-                    return _ipos == -1 ? _ipos : startOffset + _ipos;
-                }
-                else
-                {
-                    // Search prefix and terminate if found position of bit
-                    long _ppos = BitPosIndexBitSearch(value, bSetVal, startOffset);
-                    if (_ppos != -1) return startOffset + _ppos;
-
-                    // Adjust offsets to skip first and last byte
-                    long _startOffset = (startOffset / 8) + 1;
-                    long _endOffset = (endOffset / 8) - 1;
-                    long _bpos = BitPosByte(value, bSetVal, _startOffset, _endOffset);
-                    if (_bpos != -1) return _bpos;
-
-                    // Search suffix
-                    long _spos = BitPosIndexBitSearch(value, bSetVal, endOffset);
-                    return _spos;
-                }
+                // Search only inside single byte for pos
+                var leftBitIndex = (int)(startOffset & 7);
+                var rightBitIndex = (int)((endOffset + 1) & 7);
+                var _ipos = BitPosIndexBitSingleByteSearch(value[startByte], setVal, leftBitIndex, rightBitIndex);
+                return _ipos == -1 ? _ipos : startOffset + _ipos;
             }
+
+            // Search prefix and terminate if found position of bit
+            var _ppos = BitPosIndexBitSearch(value, setVal, startOffset);
+            if (_ppos != -1) return startOffset + _ppos;
+
+            // Adjust offsets to skip first and last byte
+            var _startOffset = (startOffset / 8) + 1;
+            var _endOffset = (endOffset / 8) - 1;
+            var _bpos = BitPosByte(value, setVal, _startOffset, _endOffset);
+            if (_bpos != -1) return _bpos;
+
+            // Search suffix
+            var _spos = BitPosIndexBitSearch(value, setVal, endOffset);
+            return _spos;
         }
 
         /// <summary>
@@ -183,7 +172,7 @@ namespace Garnet.server
             payload = (bSetVal == 0) ? ~payload : payload;
 
             if (payload == mask)
-                return -1;
+                return pos + 0;
 
             pos += (long)Lzcnt.X64.LeadingZeroCount((ulong)payload);
 

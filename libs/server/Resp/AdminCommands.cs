@@ -6,12 +6,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
 using Garnet.server.Custom;
-using Garnet.server.Module;
 
 namespace Garnet.server
 {
@@ -20,10 +18,12 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private void ProcessAdminCommands(RespCommand command, int count)
+        private void ProcessAdminCommands(RespCommand command)
         {
-            hasAdminCommand = true;
-
+            /*
+             * WARNING: Here is safe to add @slow commands (check how containsSlowCommand is used).
+             */
+            containsSlowCommand = true;
             if (_authenticator.CanAuthenticate && !_authenticator.IsAuthenticated)
             {
                 // If the current session is unauthenticated, we stop parsing, because no other commands are allowed
@@ -34,29 +34,31 @@ namespace Garnet.server
             var cmdFound = true;
             _ = command switch
             {
-                RespCommand.CONFIG_GET => NetworkCONFIG_GET(count),
-                RespCommand.CONFIG_REWRITE => NetworkCONFIG_REWRITE(count),
-                RespCommand.CONFIG_SET => NetworkCONFIG_SET(count),
+                RespCommand.CONFIG_GET => NetworkCONFIG_GET(),
+                RespCommand.CONFIG_REWRITE => NetworkCONFIG_REWRITE(),
+                RespCommand.CONFIG_SET => NetworkCONFIG_SET(),
                 RespCommand.FAILOVER or
                 RespCommand.REPLICAOF or
-                RespCommand.SECONDARYOF => NetworkProcessClusterCommand(command, count),
-                RespCommand.LATENCY_HELP => NetworkLatencyHelp(count),
-                RespCommand.LATENCY_HISTOGRAM => NetworkLatencyHistogram(count),
-                RespCommand.LATENCY_RESET => NetworkLatencyReset(count),
-                RespCommand.SAVE => NetworkSAVE(count),
-                RespCommand.LASTSAVE => NetworkLASTSAVE(count),
-                RespCommand.BGSAVE => NetworkBGSAVE(count),
-                RespCommand.COMMITAOF => NetworkCOMMITAOF(count),
-                RespCommand.FORCEGC => NetworkFORCEGC(count),
-                RespCommand.MONITOR => NetworkMonitor(count),
-                RespCommand.ACL_DELUSER => NetworkAclDelUser(count),
-                RespCommand.ACL_LIST => NetworkAclList(count),
-                RespCommand.ACL_LOAD => NetworkAclLoad(count),
-                RespCommand.ACL_SETUSER => NetworkAclSetUser(count),
-                RespCommand.ACL_USERS => NetworkAclUsers(count),
-                RespCommand.ACL_SAVE => NetworkAclSave(count),
-                RespCommand.REGISTERCS => NetworkRegisterCs(count, storeWrapper.customCommandManager),
+                RespCommand.MIGRATE or
+                RespCommand.SECONDARYOF => NetworkProcessClusterCommand(command),
+                RespCommand.LATENCY_HELP => NetworkLatencyHelp(),
+                RespCommand.LATENCY_HISTOGRAM => NetworkLatencyHistogram(),
+                RespCommand.LATENCY_RESET => NetworkLatencyReset(),
+                RespCommand.SAVE => NetworkSAVE(),
+                RespCommand.LASTSAVE => NetworkLASTSAVE(),
+                RespCommand.BGSAVE => NetworkBGSAVE(),
+                RespCommand.COMMITAOF => NetworkCOMMITAOF(),
+                RespCommand.FORCEGC => NetworkFORCEGC(),
+                RespCommand.MONITOR => NetworkMonitor(),
+                RespCommand.ACL_DELUSER => NetworkAclDelUser(),
+                RespCommand.ACL_LIST => NetworkAclList(),
+                RespCommand.ACL_LOAD => NetworkAclLoad(),
+                RespCommand.ACL_SETUSER => NetworkAclSetUser(),
+                RespCommand.ACL_USERS => NetworkAclUsers(),
+                RespCommand.ACL_SAVE => NetworkAclSave(),
+                RespCommand.REGISTERCS => NetworkRegisterCs(storeWrapper.customCommandManager),
                 RespCommand.MODULE_LOADCS => NetworkModuleLoad(storeWrapper.customCommandManager),
+                RespCommand.PURGEBP => NetworkPurgeBP(),
                 _ => cmdFound = false
             };
 
@@ -64,7 +66,7 @@ namespace Garnet.server
 
             if (command.IsClusterSubCommand())
             {
-                NetworkProcessClusterCommand(command, count);
+                NetworkProcessClusterCommand(command);
                 return;
             }
 
@@ -120,11 +122,11 @@ namespace Garnet.server
             storeWrapper.appendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
-        private bool NetworkMonitor(int count)
+        private bool NetworkMonitor()
         {
-            if (count != 0)
+            if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.MONITOR), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.MONITOR));
             }
 
             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
@@ -133,47 +135,36 @@ namespace Garnet.server
             return true;
         }
 
-        private bool LoadAssemblies(IEnumerable<string> binaryPaths, out IEnumerable<Assembly> loadedAssemblies, out ReadOnlySpan<byte> errorMessage)
+        private bool TryImportCommandsData<TData>(string cmdDataPath, out IReadOnlyDictionary<string, TData> cmdNameToData, out ReadOnlySpan<byte> errorMessage) where TData : class, IRespCommandData<TData>
         {
-            loadedAssemblies = null;
+            cmdNameToData = default;
             errorMessage = default;
 
-            // Get all binary file paths from inputs binary paths
-            if (!FileUtils.TryGetFiles(binaryPaths, out var files, out _, [".dll", ".exe"],
-                    SearchOption.AllDirectories))
+            // Check command info path, if specified
+            if (!File.Exists(cmdDataPath))
             {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_GETTING_BINARY_FILES;
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_GETTING_CMD_INFO_FILE;
                 return false;
             }
 
-            // Check that all binary files are contained in allowed binary paths
-            var binaryFiles = files.ToArray();
-            if (binaryFiles.Any(f =>
-                    storeWrapper.serverOptions.ExtensionBinPaths.All(p => !FileUtils.IsFileInDirectory(f, p))))
+            // Check command info path is in allowed paths
+            if (storeWrapper.serverOptions.ExtensionBinPaths.All(p => !FileUtils.IsFileInDirectory(cmdDataPath, p)))
             {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS;
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_CMD_INFO_FILE_NOT_IN_ALLOWED_PATHS;
                 return false;
             }
 
-            // Get all assemblies from binary files
-            if (!FileUtils.TryLoadAssemblies(binaryFiles, out loadedAssemblies, out _))
-            {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_LOADING_ASSEMBLIES;
-                return false;
-            }
+            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
+            var commandsInfoProvider =
+                RespCommandsDataProviderFactory.GetRespCommandsDataProvider<TData>();
 
-            // If necessary, check that all assemblies are digitally signed
-            if (!storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies)
+            var importSucceeded = commandsInfoProvider.TryImportRespCommandsData(cmdDataPath,
+                streamProvider, out cmdNameToData, logger);
+
+            if (!importSucceeded)
             {
-                foreach (var loadedAssembly in loadedAssemblies)
-                {
-                    var publicKey = loadedAssembly.GetName().GetPublicKey();
-                    if (publicKey == null || publicKey.Length == 0)
-                    {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
-                        return false;
-                    }
-                }
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_MALFORMED_COMMAND_INFO_JSON;
+                return false;
             }
 
             return true;
@@ -184,6 +175,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="binaryPaths">Binary paths from which to load assemblies</param>
         /// <param name="cmdInfoPath">Path of JSON file containing RespCommandsInfo for custom commands</param>
+        /// <param name="cmdDocsPath">Path of JSON file containing RespCommandDocs for custom commands</param>
         /// <param name="classNameToRegisterArgs">Mapping between class names to register and arguments required for registration</param>
         /// <param name="customCommandManager">CustomCommandManager instance used to register commands</param>
         /// <param name="errorMessage">If method returned false, contains ASCII encoded generic error string; otherwise <c>default</c></param>
@@ -191,44 +183,31 @@ namespace Garnet.server
         private bool TryRegisterCustomCommands(
             IEnumerable<string> binaryPaths,
             string cmdInfoPath,
+            string cmdDocsPath,
             Dictionary<string, List<RegisterArgsBase>> classNameToRegisterArgs,
             CustomCommandManager customCommandManager,
             out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
             var classInstances = new Dictionary<string, object>();
-            IReadOnlyDictionary<string, RespCommandsInfo> cmdNameToInfo = new Dictionary<string, RespCommandsInfo>();
+
+            IReadOnlyDictionary<string, RespCommandsInfo> cmdNameToInfo = default;
+            IReadOnlyDictionary<string, RespCommandDocs> cmdNameToDocs = default;
 
             if (cmdInfoPath != null)
             {
-                // Check command info path, if specified
-                if (!File.Exists(cmdInfoPath))
-                {
-                    errorMessage = CmdStrings.RESP_ERR_GENERIC_GETTING_CMD_INFO_FILE;
+                if (!TryImportCommandsData(cmdInfoPath, out cmdNameToInfo, out errorMessage))
                     return false;
-                }
-
-                // Check command info path is in allowed paths
-                if (storeWrapper.serverOptions.ExtensionBinPaths.All(p => !FileUtils.IsFileInDirectory(cmdInfoPath, p)))
-                {
-                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CMD_INFO_FILE_NOT_IN_ALLOWED_PATHS;
-                    return false;
-                }
-
-                var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
-                var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
-
-                var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(cmdInfoPath,
-                    streamProvider, out cmdNameToInfo, logger);
-
-                if (!importSucceeded)
-                {
-                    errorMessage = CmdStrings.RESP_ERR_GENERIC_MALFORMED_COMMAND_INFO_JSON;
-                    return false;
-                }
             }
 
-            if (!LoadAssemblies(binaryPaths, out var loadedAssemblies, out errorMessage))
+            if (cmdDocsPath != null)
+            {
+                if (!TryImportCommandsData(cmdDocsPath, out cmdNameToDocs, out errorMessage))
+                    return false;
+            }
+
+            if (!ModuleUtils.LoadAssemblies(binaryPaths, storeWrapper.serverOptions.ExtensionBinPaths,
+                storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies, out var loadedAssemblies, out errorMessage))
                 return false;
 
             foreach (var c in classNameToRegisterArgs.Keys)
@@ -288,9 +267,15 @@ namespace Garnet.server
                 foreach (var args in classNameToArgs.Value)
                 {
                     // Add command info to register arguments, if exists
-                    if (cmdNameToInfo.ContainsKey(args.Name))
+                    if (cmdNameToInfo != null && cmdNameToInfo.TryGetValue(args.Name, out var cmdInfo))
                     {
-                        args.CommandInfo = cmdNameToInfo[args.Name];
+                        args.CommandInfo = cmdInfo;
+                    }
+
+                    // Add command docs to register arguments, if exists
+                    if (cmdNameToDocs != null && cmdNameToDocs.TryGetValue(args.Name, out var cmdDocs))
+                    {
+                        args.CommandDocs = cmdDocs;
                     }
 
                     var registerApi =
@@ -321,31 +306,33 @@ namespace Garnet.server
         /// <summary>
         /// REGISTERCS - Registers one or more custom commands / transactions
         /// </summary>
-        private bool NetworkRegisterCs(int count, CustomCommandManager customCommandManager)
+        private bool NetworkRegisterCs(CustomCommandManager customCommandManager)
         {
             var readPathsOnly = false;
             var optionalParamsRead = 0;
 
             var binaryPaths = new HashSet<string>();
             string cmdInfoPath = default;
+            string cmdDocsPath = default;
 
             // Custom class name to arguments read from each sub-command
             var classNameToRegisterArgs = new Dictionary<string, List<RegisterArgsBase>>();
 
             ReadOnlySpan<byte> errorMsg = null;
 
-            if (count < 6)
+            if (parseState.Count < 6)
                 errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
 
             // Parse the REGISTERCS command - list of registration sub-commands
             // followed by an optional path to JSON file containing an array of RespCommandsInfo objects,
+            // followed by an optional path to JSON file containing an array of RespCommandsDocs objects,
             // followed by a list of paths to binary files / folders
             // Syntax - REGISTERCS cmdType name numParams className [expTicks] [objCmdName] [cmdType name numParams className [expTicks] [objCmdName]...]
-            // [INFO path] SRC path [path ...]
+            // [INFO path] [DOCS path] SRC path [path ...]
             RegisterArgsBase args = null;
 
             var tokenIdx = 0;
-            while (tokenIdx < count)
+            while (tokenIdx < parseState.Count)
             {
                 // Read first token of current sub-command or path
                 var token = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
@@ -368,13 +355,25 @@ namespace Garnet.server
                 else if (token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.INFO))
                 {
                     // If first token is not a cmdType and no other sub-command is previously defined, command is malformed
-                    if (classNameToRegisterArgs.Count == 0 || tokenIdx == count)
+                    if (classNameToRegisterArgs.Count == 0 || tokenIdx == parseState.Count)
                     {
                         errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                         break;
                     }
 
                     cmdInfoPath = parseState.GetString(tokenIdx++);
+                    continue;
+                }
+                else if (token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.DOCS))
+                {
+                    // If first token is not a cmdType and no other sub-command is previously defined, command is malformed
+                    if (classNameToRegisterArgs.Count == 0 || tokenIdx == parseState.Count)
+                    {
+                        errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
+                        break;
+                    }
+
+                    cmdDocsPath = parseState.GetString(tokenIdx++);
                     continue;
                 }
                 else if (readPathsOnly || token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SRC))
@@ -425,7 +424,7 @@ namespace Garnet.server
 
                 // At this point we expect at least 6 remaining tokens -
                 // 3 more tokens for command definition + 2 for source definition
-                if (count - tokenIdx < 5)
+                if (parseState.Count - tokenIdx < 5)
                 {
                     errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                     break;
@@ -455,7 +454,7 @@ namespace Garnet.server
 
             // If no error is found, continue to try register custom commands in the server
             if (errorMsg.IsEmpty &&
-                TryRegisterCustomCommands(binaryPaths, cmdInfoPath, classNameToRegisterArgs, customCommandManager, out errorMsg))
+                TryRegisterCustomCommands(binaryPaths, cmdInfoPath, cmdDocsPath, classNameToRegisterArgs, customCommandManager, out errorMsg))
             {
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
@@ -471,9 +470,9 @@ namespace Garnet.server
 
         private bool NetworkModuleLoad(CustomCommandManager customCommandManager)
         {
-            if (parseState.count < 1) // At least module path is required
+            if (parseState.Count < 1) // At least module path is required
             {
-                AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}", parseState.count);
+                AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}");
                 return true;
             }
 
@@ -481,11 +480,12 @@ namespace Garnet.server
             var modulePath = parseState.GetArgSliceByRef(0).ToString();
 
             // Read module args
-            var moduleArgs = new string[parseState.count - 1];
+            var moduleArgs = new string[parseState.Count - 1];
             for (var i = 0; i < moduleArgs.Length; i++)
                 moduleArgs[i] = parseState.GetArgSliceByRef(i + 1).ToString();
 
-            if (LoadAssemblies([modulePath], out var loadedAssemblies, out var errorMsg))
+            if (ModuleUtils.LoadAssemblies([modulePath], storeWrapper.serverOptions.ExtensionBinPaths,
+                storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies, out var loadedAssemblies, out var errorMsg))
             {
                 Debug.Assert(loadedAssemblies != null);
                 var assembliesList = loadedAssemblies.ToList();
@@ -507,11 +507,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkCOMMITAOF(int count)
+        private bool NetworkCOMMITAOF()
         {
-            if (count != 0)
+            if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMITAOF), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMITAOF));
             }
 
             CommitAof();
@@ -521,15 +521,15 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkFORCEGC(int count)
+        private bool NetworkFORCEGC()
         {
-            if (count > 1)
+            if (parseState.Count > 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FORCEGC), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FORCEGC));
             }
 
             var generation = GC.MaxGeneration;
-            if (count == 1)
+            if (parseState.Count == 1)
             {
                 if (!parseState.TryGetInt(0, out generation) || generation < 0 || generation > GC.MaxGeneration)
                 {
@@ -546,7 +546,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkProcessClusterCommand(RespCommand command, int count)
+        private bool NetworkProcessClusterCommand(RespCommand command)
         {
             if (clusterSession == null)
             {
@@ -555,15 +555,15 @@ namespace Garnet.server
                 return true;
             }
 
-            clusterSession.ProcessClusterCommands(command, count, recvBufferPtr, bytesRead, ref readHead, ref dcurr, ref dend, out var result);
-            return result;
+            clusterSession.ProcessClusterCommands(command, ref parseState, ref dcurr, ref dend);
+            return true;
         }
 
-        private bool NetworkSAVE(int count)
+        private bool NetworkSAVE()
         {
-            if (count != 0)
+            if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE));
             }
 
             if (!storeWrapper.TakeCheckpoint(false, StoreType.All, logger))
@@ -580,11 +580,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkLASTSAVE(int count)
+        private bool NetworkLASTSAVE()
         {
-            if (count != 0)
+            if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE));
             }
 
             var seconds = storeWrapper.lastSaveTime.ToUnixTimeSeconds();
@@ -594,11 +594,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkBGSAVE(int count)
+        private bool NetworkBGSAVE()
         {
-            if (count > 1)
+            if (parseState.Count > 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BGSAVE), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BGSAVE));
             }
 
             var success = storeWrapper.TakeCheckpoint(true, StoreType.All, logger);

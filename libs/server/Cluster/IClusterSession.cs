@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 using Garnet.server.ACL;
 
 namespace Garnet.server
@@ -11,6 +12,11 @@ namespace Garnet.server
     /// </summary>
     public interface IClusterSession
     {
+        /// <summary>
+        /// If the current session is being used by a remote cluster node, the id that was last presented during a GOSSIP message.
+        /// </summary>
+        string RemoteNodeId { get; }
+
         /// <summary>
         /// Type of session
         /// </summary>
@@ -44,17 +50,28 @@ namespace Garnet.server
         /// <summary>
         /// Process cluster commands
         /// </summary>
-        unsafe bool ProcessClusterCommands(RespCommand command, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend, out bool result);
+        unsafe void ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
-        /// Single key slot verify (check only, do not write result to network)
+        /// Reset cached slot verification result
         /// </summary>
-        unsafe bool CheckSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking);
+        void ResetCachedSlotVerificationResult();
 
         /// <summary>
-        /// Single key slot verify (write result to network)
+        /// Verification method that works iteratively by caching the verification result between calls.
+        /// NOTE: Caller must call ResetCachedSlotVerificationResult appropriately
         /// </summary>
-        unsafe bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend);
+        /// <param name="keySlice"></param>
+        /// <param name="readOnly"></param>
+        /// <param name="SessionAsking"></param>
+        /// <returns></returns>
+        bool NetworkIterativeSlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking);
+
+        /// <summary>
+        /// Write cached slot verification message to output
+        /// </summary>
+        /// <param name="output"></param>
+        public void WriteCachedSlotVerificationMessage(ref MemoryResult<byte> output);
 
         /// <summary>
         /// Key array slot verify (write result to network)

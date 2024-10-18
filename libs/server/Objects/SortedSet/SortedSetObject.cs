@@ -47,6 +47,37 @@ namespace Garnet.server
         ZMSCORE
     }
 
+    [Flags]
+    public enum SortedSetAddOption
+    {
+        None = 0,
+        /// <summary>
+        /// Only update elements that already exist. Don't add new elements.
+        /// </summary>
+        XX = 1,
+        /// <summary>
+        /// Only add new elements. Don't update already existing elements.
+        /// </summary>
+        NX = 1 << 1,
+        /// <summary>
+        /// Only update existing elements if the new score is less than the current score.
+        /// </summary>
+        LT = 1 << 2,
+        /// <summary>
+        /// Only update existing elements if the new score is greater than the current score.
+        /// </summary>
+        GT = 1 << 3,
+        /// <summary>
+        /// Modify the return value from the number of new elements added, to the total number of elements changed.
+        /// Changed elements are new elements added and elements already existing for which the score was updated.
+        /// </summary>
+        CH = 1 << 4,
+        /// <summary>
+        /// When this option is specified ZADD acts like ZINCRBY. Only one score-element pair can be specified in this mode.
+        /// </summary>
+        INCR = 1 << 5,
+    }
+
     /// <summary>
     /// Order variations for sorted set commands
     /// </summary>
@@ -180,8 +211,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
         {
-            byte* _input = null;
-
             fixed (byte* outputSpan = output.SpanByte.AsSpan())
             {
                 var header = input.header;
@@ -194,11 +223,12 @@ namespace Garnet.server
                     return true;
                 }
 
-                long prevSize = this.Size;
-                switch (header.SortedSetOp)
+                var prevSize = this.Size;
+                var op = header.SortedSetOp;
+                switch (op)
                 {
                     case SortedSetOperation.ZADD:
-                        SortedSetAdd(ref input, outputSpan);
+                        SortedSetAdd(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREM:
                         SortedSetRemove(ref input, outputSpan);
@@ -207,7 +237,7 @@ namespace Garnet.server
                         SortedSetLength(outputSpan);
                         break;
                     case SortedSetOperation.ZPOPMAX:
-                        SortedSetPop(ref input, ref output);
+                        SortedSetPopMinOrMaxCount(ref input, ref output, op);
                         break;
                     case SortedSetOperation.ZSCORE:
                         SortedSetScore(ref input, ref output);
@@ -216,7 +246,7 @@ namespace Garnet.server
                         SortedSetScores(ref input, ref output);
                         break;
                     case SortedSetOperation.ZCOUNT:
-                        SortedSetCount(ref input, outputSpan);
+                        SortedSetCount(ref input, ref output);
                         break;
                     case SortedSetOperation.ZINCRBY:
                         SortedSetIncrement(ref input, ref output);
@@ -228,10 +258,10 @@ namespace Garnet.server
                         SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.ZRANGEBYSCORE:
-                        SortedSetRangeByScore(ref input, ref output);
+                        SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.GEOADD:
-                        GeoAdd(ref input, outputSpan);
+                        GeoAdd(ref input, ref output);
                         break;
                     case SortedSetOperation.GEOHASH:
                         GeoHash(ref input, ref output);
@@ -246,41 +276,47 @@ namespace Garnet.server
                         GeoSearch(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREVRANGE:
-                        SortedSetReverseRange(ref input, ref output);
+                        SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREVRANGEBYSCORE:
                         SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREVRANK:
-                        SortedSetReverseRank(ref input, ref output);
+                        SortedSetRank(ref input, ref output, ascending: false);
                         break;
                     case SortedSetOperation.ZREMRANGEBYLEX:
-                        SortedSetRemoveRangeByLex(ref input, outputSpan);
+                        SortedSetRemoveOrCountRangeByLex(ref input, outputSpan, op);
                         break;
                     case SortedSetOperation.ZREMRANGEBYRANK:
-                        SortedSetRemoveRangeByRank(ref input, outputSpan);
+                        SortedSetRemoveRangeByRank(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREMRANGEBYSCORE:
-                        SortedSetRemoveRangeByScore(ref input, outputSpan);
+                        SortedSetRemoveRangeByScore(ref input, ref output);
                         break;
                     case SortedSetOperation.ZLEXCOUNT:
-                        SortedSetCountByLex(ref input, outputSpan);
+                        SortedSetRemoveOrCountRangeByLex(ref input, outputSpan, op);
                         break;
                     case SortedSetOperation.ZPOPMIN:
-                        SortedSetPopMin(ref input, ref output);
+                        SortedSetPopMinOrMaxCount(ref input, ref output, op);
                         break;
                     case SortedSetOperation.ZRANDMEMBER:
                         SortedSetRandomMember(ref input, ref output);
                         break;
                     case SortedSetOperation.ZSCAN:
-                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern, out var patternLength, out int limitCount, out int bytesDone))
+                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
+                                out var patternLength, out var limitCount, out var _, out var error))
                         {
-                            Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern, patternLength: patternLength);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, bytesDone);
+                            Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
+                                patternLength: patternLength);
+                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output);
+                        }
+                        else
+                        {
+                            ObjectUtils.WriteScanError(error, ref output);
                         }
                         break;
                     default:
-                        throw new GarnetException($"Unsupported operation {input.header.SortedSetOp} in SortedSetObject.Operate");
+                        throw new GarnetException($"Unsupported operation {op} in SortedSetObject.Operate");
                 }
                 sizeChange = this.Size - prevSize;
             }
@@ -290,7 +326,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0)
+        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0, bool isNoValue = false)
         {
             cursor = start;
             items = new List<byte[]>();

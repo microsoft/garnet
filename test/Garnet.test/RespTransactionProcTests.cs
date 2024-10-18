@@ -4,6 +4,7 @@
 using System.Threading;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -46,15 +47,15 @@ namespace Garnet.test
 
             var result = db.Execute("READWRITETX", readkey, writekey1, writekey2);
 
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             // Read keys to verify transaction succeeded
             string retValue = db.StringGet(writekey1);
-            Assert.IsNotNull(retValue);
-            Assert.AreEqual(value, retValue);
+            ClassicAssert.IsNotNull(retValue);
+            ClassicAssert.AreEqual(value, retValue);
 
             retValue = db.StringGet(writekey2);
-            Assert.AreEqual(value, retValue);
+            ClassicAssert.AreEqual(value, retValue);
         }
 
         [Test]
@@ -76,7 +77,7 @@ namespace Garnet.test
             catch (RedisServerException e)
             {
                 var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.RUNTXP));
-                Assert.AreEqual(expectedErrorMessage, e.Message);
+                ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
             }
 
             string readkey = "readkey";
@@ -95,19 +96,19 @@ namespace Garnet.test
             catch (RedisServerException e)
             {
                 var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgsTxn, id, numParams, 1);
-                Assert.AreEqual(expectedErrorMessage, e.Message);
+                ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
             }
 
             var result = db.Execute("RUNTXP", id, readkey, writekey1, writekey2);
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             // Read keys to verify transaction succeeded
             string retValue = db.StringGet(writekey1);
-            Assert.IsNotNull(retValue);
-            Assert.AreEqual(value, retValue);
+            ClassicAssert.IsNotNull(retValue);
+            ClassicAssert.AreEqual(value, retValue);
 
             retValue = db.StringGet(writekey2);
-            Assert.AreEqual(value, retValue);
+            ClassicAssert.AreEqual(value, retValue);
         }
 
         [Test]
@@ -132,17 +133,17 @@ namespace Garnet.test
             var result = db.Execute("SAMPLEUPDATETX", stringKey, stringValue,
                 sortedSet1key, value1, score, sortedSetSecondkey, secondValue, score2);
 
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             long size = db.SortedSetLength(sortedSet1key);
 
-            Assert.AreEqual(1, size);
+            ClassicAssert.AreEqual(1, size);
 
             SortedSetEntry? retEntry = db.SortedSetPop(sortedSet1key);
-            Assert.NotNull(retEntry);
-            Assert.AreEqual(value1, (string)retEntry?.Element);
-            Assert.AreEqual(score, retEntry?.Score);
-            Assert.AreEqual(0, db.SortedSetLength(sortedSet1key));
+            ClassicAssert.NotNull(retEntry);
+            ClassicAssert.AreEqual(value1, (string)retEntry?.Element);
+            ClassicAssert.AreEqual(score, retEntry?.Score);
+            ClassicAssert.AreEqual(0, db.SortedSetLength(sortedSet1key));
         }
 
         [Test]
@@ -169,17 +170,17 @@ namespace Garnet.test
             var result = db.Execute("SAMPLEDELETETX", mainStoreKey,
                 sortedSet1key, value, sortedSetSecondkey, secondValue);
 
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             long size = db.SortedSetLength(sortedSet1key);
 
-            Assert.AreEqual(0, size);
+            ClassicAssert.AreEqual(0, size);
 
             SortedSetEntry? retEntry = db.SortedSetPop(sortedSetSecondkey);
-            Assert.IsNull(retEntry);
+            ClassicAssert.IsNull(retEntry);
             string retValue = db.StringGet(mainStoreKey);
 
-            Assert.IsNull(retValue);
+            ClassicAssert.IsNull(retValue);
         }
 
         [Test]
@@ -195,17 +196,17 @@ namespace Garnet.test
 
             var result = db.Execute("WRITEWITHEXPIRYTX", key, value, 5);
 
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             Thread.Sleep(10);
             // Read keys to verify transaction succeeded
             string retValue = db.StringGet(key);
-            Assert.IsNull(retValue);
+            ClassicAssert.IsNull(retValue);
 
             result = db.Execute("WRITEWITHEXPIRYTX", key, value, 1000);
             Thread.Sleep(10);
             retValue = db.StringGet(key);
-            Assert.AreEqual(value, retValue);
+            ClassicAssert.AreEqual(value, retValue);
         }
 
         [Test]
@@ -222,24 +223,24 @@ namespace Garnet.test
             db.SortedSetAdd(key, value, 100);
             long size = db.SortedSetLength(key);
 
-            Assert.AreEqual(1, size);
+            ClassicAssert.AreEqual(1, size);
             var result = db.Execute("OBJECTEXPIRYTX", key, 1000);
 
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             Thread.Sleep(15);
             size = db.SortedSetLength(key);
 
-            Assert.AreEqual(1, size);
+            ClassicAssert.AreEqual(1, size);
 
             Thread.Sleep(1000);
             size = db.SortedSetLength(key);
 
-            Assert.AreEqual(0, size);
+            ClassicAssert.AreEqual(0, size);
 
             var retEntry = db.SortedSetPop(key);
 
-            Assert.IsNull(retEntry);
+            ClassicAssert.IsNull(retEntry);
         }
 
         [Test]
@@ -258,12 +259,12 @@ namespace Garnet.test
 
             var result = db.Execute("SORTEDSETREMOVETX", sortedSetKey, value);
 
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
-            Assert.AreEqual(0, db.SortedSetLength(sortedSetKey));
+            ClassicAssert.AreEqual(0, db.SortedSetLength(sortedSetKey));
 
             SortedSetEntry? retEntry = db.SortedSetPop(sortedSetKey);
-            Assert.IsNull(retEntry);
+            ClassicAssert.IsNull(retEntry);
         }
 
         [Test]
@@ -281,10 +282,10 @@ namespace Garnet.test
 
             var result = db.Execute("DELETETX", key);
 
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             var retValue = db.StringGet(key);
-            Assert.IsFalse(retValue.HasValue);
+            ClassicAssert.IsFalse(retValue.HasValue);
         }
 
         [Test]
@@ -298,11 +299,11 @@ namespace Garnet.test
 
             // Sending zadd pairs
             var result = db.Execute("SORTEDSETPROC", ssA, 1, "item1", 2, "item2", 3, "item3", 4, "item4", 5, "item5", 6, "item6", 7, "item7", 8, "item8", 9, "item9", 10, "item10", "1", "9", "*em*");
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             // Read keys to verify transaction succeeded
             long len = db.SortedSetLength("ssA");
-            Assert.AreEqual(1, len);
+            ClassicAssert.AreEqual(1, len);
 
         }
 
@@ -319,14 +320,14 @@ namespace Garnet.test
 
             var result = db.Execute("LISTPROC", lstA, lstB, "item1", "item2", "item3", "item4", "item5", "item6", "item7", "item8", "item9", "item10");
 
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             // Read keys to verify transaction succeeded
             long lenListA = db.ListLength("listA");
-            Assert.AreEqual(8, lenListA);
+            ClassicAssert.AreEqual(8, lenListA);
 
             long lenListB = db.ListLength("listB");
-            Assert.AreEqual(3, lenListB);
+            ClassicAssert.AreEqual(3, lenListB);
         }
 
         [Test]
@@ -341,11 +342,11 @@ namespace Garnet.test
 
             var result = db.Execute("SETPROC", setA, "item1", "item2", "item3", "item4", "item5", "item6", "item7", "item8", "item9", "item10", "item3");
 
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             // Read keys to verify transaction succeeded
             long lenSetA = db.SetLength("setA");
-            Assert.AreEqual(lenSetA, 2);
+            ClassicAssert.AreEqual(lenSetA, 2);
         }
 
 
@@ -360,11 +361,11 @@ namespace Garnet.test
             string mh = "myHash";
             var result = db.Execute("HASHPROC", mh, "field1", "foo", "field2", "faa", "field3", "fii", "field4", "fee", "field5", "foo", "age", "25", "field1");
 
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             // Read keys to verify transaction succeeded
             long lenhash = db.HashLength("myHash");
-            Assert.AreEqual(lenhash, 5);
+            ClassicAssert.AreEqual(lenhash, 5);
         }
 
         [Test]
@@ -385,8 +386,8 @@ namespace Garnet.test
 
             var result = db.Execute("GETTWOKEYSNOTXN", readkey1, readkey2);
 
-            Assert.AreEqual(value1, ((string[])result)[0]);
-            Assert.AreEqual(value2, ((string[])result)[1]);
+            ClassicAssert.AreEqual(value1, ((string[])result)[0]);
+            ClassicAssert.AreEqual(value2, ((string[])result)[1]);
         }
 
         [Test]
@@ -414,7 +415,7 @@ namespace Garnet.test
             var result = db.Execute("MSETPX", args);
 
             // Verify transaction succeeded
-            Assert.AreEqual("OK", (string)result);
+            ClassicAssert.AreEqual("OK", (string)result);
 
             // Read keys to verify transaction succeeded
             for (int i = 0; i < NumKeys; i++)
@@ -422,7 +423,7 @@ namespace Garnet.test
                 string key = $"key{i}";
                 string value = $"value{i}";
                 string retValue = db.StringGet(key);
-                Assert.AreEqual(value, retValue);
+                ClassicAssert.AreEqual(value, retValue);
             }
 
             // Wait for keys to expire
@@ -433,7 +434,7 @@ namespace Garnet.test
             {
                 string key = $"key{i}";
                 string retValue = db.StringGet(key);
-                Assert.IsNull(retValue);
+                ClassicAssert.IsNull(retValue);
             }
         }
 
@@ -464,7 +465,7 @@ namespace Garnet.test
             var result1 = (string)db.Execute("MSETPX", args1);
 
             // Verify transaction succeeded
-            Assert.AreEqual("OK", result1);
+            ClassicAssert.AreEqual("OK", result1);
 
             // Read keys to verify transaction succeeded
             for (int i = 0; i < NumKeys; i++)
@@ -472,7 +473,7 @@ namespace Garnet.test
                 string key = $"key{i}";
                 string value = $"value{i}";
                 string retValue = db.StringGet(key);
-                Assert.AreEqual(value, retValue);
+                ClassicAssert.AreEqual(value, retValue);
             }
 
             var args2 = new string[1 + NumKeys];
@@ -491,11 +492,11 @@ namespace Garnet.test
 
             // Verify results
             int expectedCount = NumKeys - 9; // only values with specified prefix
-            Assert.AreEqual(2 * expectedCount, result2.Length);
+            ClassicAssert.AreEqual(2 * expectedCount, result2.Length);
             // Verify that keys have the correct prefix
             for (int i = 0; i < expectedCount; i++)
             {
-                Assert.AreEqual(prefix, result2[2 * i + 1].Substring(0, prefix.Length));
+                ClassicAssert.AreEqual(prefix, result2[2 * i + 1].Substring(0, prefix.Length));
             }
         }
     }

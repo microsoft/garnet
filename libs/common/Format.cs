@@ -168,6 +168,21 @@ namespace Garnet.common
 
             return "";
         }
+
+        public static string MemoryBytes(long size)
+        {
+            if( size < (1 << 20))
+                return KiloBytes(size);
+            else if (size < (1 << 30))
+                return MegaBytes(size);
+            else return GigaBytes(size);
+        }
+
+        public static string GigaBytes(long size) => (((size - 1) >> 30) + 1).ToString("n0") + "GB";
+
+        public static string MegaBytes(long size) => (((size - 1) >> 20) + 1).ToString("n0") + "MB";
+
+        public static string KiloBytes(long size) =>(((size - 1) >> 10) + 1).ToString("n0") + "KB";
     }
 #pragma warning restore format
 }

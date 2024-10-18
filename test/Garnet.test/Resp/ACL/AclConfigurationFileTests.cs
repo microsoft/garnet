@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Garnet.server.ACL;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test.Resp.ACL
@@ -35,8 +36,8 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             string[] users = await c.ExecuteForArrayAsync("ACL", "USERS");
-            Assert.IsTrue(1 == users.Length);
-            Assert.Contains("default", users);
+            ClassicAssert.IsTrue(1 == users.Length);
+            ClassicAssert.Contains("default", users);
         }
 
         /// <summary>
@@ -59,10 +60,10 @@ namespace Garnet.test.Resp.ACL
             // Ensure Garnet started up with three users:
             // the 2 specified users and the automatically created default user
             string[] users = await c.ExecuteForArrayAsync("ACL", "USERS");
-            Assert.IsTrue(3 == users.Length);
-            Assert.Contains("default", users);
-            Assert.Contains("testA", users);
-            Assert.Contains("testB", users);
+            ClassicAssert.IsTrue(3 == users.Length);
+            ClassicAssert.Contains("default", users);
+            ClassicAssert.Contains("testA", users);
+            ClassicAssert.Contains("testB", users);
         }
 
         /// <summary>
@@ -84,10 +85,10 @@ namespace Garnet.test.Resp.ACL
 
             // Ensure all three users are defined
             string[] users = await c.ExecuteForArrayAsync("ACL", "USERS");
-            Assert.IsTrue(3 == users.Length);
-            Assert.Contains("default", users);
-            Assert.Contains("testA", users);
-            Assert.Contains("testB", users);
+            ClassicAssert.IsTrue(3 == users.Length);
+            ClassicAssert.Contains("default", users);
+            ClassicAssert.Contains("testA", users);
+            ClassicAssert.Contains("testB", users);
 
             // Ensure that the default password used to create Garnet was ignored
             users = await c.ExecuteForArrayAsync("ACL", "LIST");
@@ -96,7 +97,7 @@ namespace Garnet.test.Resp.ACL
                 if (user.StartsWith("user default"))
                 {
                     // No password should have been defined
-                    Assert.IsTrue(!user.Contains('#'));
+                    ClassicAssert.IsTrue(!user.Contains('#'));
                 }
             }
         }
@@ -124,11 +125,11 @@ namespace Garnet.test.Resp.ACL
 
             // Ensure Garnet started up 4 users: testA, testB, testC and default
             string[] users = await c.ExecuteForArrayAsync("ACL", "USERS");
-            Assert.IsTrue(4 == users.Length);
-            Assert.Contains("default", users);
-            Assert.Contains("testA", users);
-            Assert.Contains("testB", users);
-            Assert.Contains("testC", users);
+            ClassicAssert.IsTrue(4 == users.Length);
+            ClassicAssert.Contains("default", users);
+            ClassicAssert.Contains("testA", users);
+            ClassicAssert.Contains("testB", users);
+            ClassicAssert.Contains("testC", users);
 
             // Check that (1) testB contains two passwords and (2) default user has no password
             users = await c.ExecuteForArrayAsync("ACL", "LIST");
@@ -136,11 +137,11 @@ namespace Garnet.test.Resp.ACL
             {
                 if (user.StartsWith("user testB"))
                 {
-                    Assert.AreEqual(2, user.Count(x => x == '#'));
+                    ClassicAssert.AreEqual(2, user.Count(x => x == '#'));
                 }
                 else if (user.StartsWith("user default"))
                 {
-                    Assert.AreEqual(0, user.Count(x => x == '#'));
+                    ClassicAssert.AreEqual(0, user.Count(x => x == '#'));
                 }
             }
 
@@ -152,10 +153,10 @@ namespace Garnet.test.Resp.ACL
             users = await c.ExecuteForArrayAsync("ACL", "USERS");
 
             // Verify the ACL now contains only three users
-            Assert.IsTrue(3 == users.Length);
-            Assert.Contains("default", users);
-            Assert.Contains("testD", users);
-            Assert.Contains("testB", users);
+            ClassicAssert.IsTrue(3 == users.Length);
+            ClassicAssert.Contains("default", users);
+            ClassicAssert.Contains("testD", users);
+            ClassicAssert.Contains("testB", users);
 
             // Ensure that (1) one password was removed from testB and (2) defaut password was set
             users = await c.ExecuteForArrayAsync("ACL", "LIST");
@@ -163,11 +164,11 @@ namespace Garnet.test.Resp.ACL
             {
                 if (user.StartsWith("user testB"))
                 {
-                    Assert.AreEqual(1, user.Count(x => x == '#'));
+                    ClassicAssert.AreEqual(1, user.Count(x => x == '#'));
                 }
                 else if (user.StartsWith("user default"))
                 {
-                    Assert.IsTrue(user.Contains(DummyPasswordHash));
+                    ClassicAssert.IsTrue(user.Contains(DummyPasswordHash));
                 }
             }
         }
@@ -195,9 +196,9 @@ namespace Garnet.test.Resp.ACL
 
             // Ensure Garnet started up 2 users: testA and default
             string[] users = await c.ExecuteForArrayAsync("ACL", "USERS");
-            Assert.IsTrue(2 == users.Length);
-            Assert.Contains("default", users);
-            Assert.Contains("testA", users);
+            ClassicAssert.IsTrue(2 == users.Length);
+            ClassicAssert.Contains("default", users);
+            ClassicAssert.Contains("testA", users);
 
             // Update and reload the configuration file
             // Ensure the command fails and that the user list has not changed
@@ -210,15 +211,15 @@ namespace Garnet.test.Resp.ACL
             }
             catch (Exception exception)
             {
-                Assert.IsTrue(exception.Message.StartsWith("ERR"));
+                ClassicAssert.IsTrue(exception.Message.StartsWith("ERR"));
             }
 
             users = await c.ExecuteForArrayAsync("ACL", "USERS");
 
             // Check that we still only know testA and default
-            Assert.IsTrue(2 == users.Length);
-            Assert.Contains("default", users);
-            Assert.Contains("testA", users);
+            ClassicAssert.IsTrue(2 == users.Length);
+            ClassicAssert.Contains("default", users);
+            ClassicAssert.Contains("testA", users);
 
             // Ensure that testA does not contain the dummy password
             users = await c.ExecuteForArrayAsync("ACL", "LIST");
@@ -226,8 +227,8 @@ namespace Garnet.test.Resp.ACL
             {
                 if (user.StartsWith("user testA"))
                 {
-                    Assert.AreEqual(1, user.Count(x => x == '#'));
-                    Assert.IsFalse(user.Contains(DummyPasswordHash));
+                    ClassicAssert.AreEqual(1, user.Count(x => x == '#'));
+                    ClassicAssert.IsFalse(user.Contains(DummyPasswordHash));
                 }
             }
         }
@@ -250,9 +251,9 @@ namespace Garnet.test.Resp.ACL
 
             // Ensure correct users were created
             string[] users = await c.ExecuteForArrayAsync("ACL", "USERS");
-            Assert.IsTrue(2 == users.Length);
-            Assert.Contains("default", users);
-            Assert.Contains("test", users);
+            ClassicAssert.IsTrue(2 == users.Length);
+            ClassicAssert.Contains("default", users);
+            ClassicAssert.Contains("test", users);
 
             // Expected behavior: the second rule modifies the first one
             foreach (string user in users)
@@ -260,11 +261,11 @@ namespace Garnet.test.Resp.ACL
                 if (user.StartsWith($"user test"))
                 {
                     // Should contain exactly 1 password (from first rule)
-                    Assert.IsTrue(user.Count(x => x == '#') == 1);
-                    Assert.IsTrue(user.Contains(DummyPasswordHash));
+                    ClassicAssert.IsTrue(user.Count(x => x == '#') == 1);
+                    ClassicAssert.IsTrue(user.Contains(DummyPasswordHash));
 
                     // Should be set to off (second rule)
-                    Assert.IsTrue(user.Contains("off"));
+                    ClassicAssert.IsTrue(user.Contains("off"));
                 }
             }
         }
@@ -288,12 +289,42 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public void BadInputMalformedStatement()
         {
-            // Create an empty input file
-            var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
-            File.WriteAllText(configurationFile, "user test on >password123 +@admin\r\nuser testB badinput on >passw0rd >password +@admin ");
+            // Test badinput
+            {
+                var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
+                File.WriteAllText(configurationFile, "user test on >password123 +@admin\r\nuser testB badinput on >passw0rd >password +@admin ");
 
-            // Ensure Garnet starts up and just ignores the malformed statement
-            Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+                // Ensure Garnet starts up and just ignores the malformed statement
+                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+            }
+
+            // Test numeric RespCommand rejected
+            //{
+            //    var configurationFile = Path.Join(TestUtils.MethodTestDir, "users2.acl");
+            //    File.WriteAllText(configurationFile, "user test on >password123 +1");
+
+            //    // Ensure Garnet starts up and just ignores the malformed statement
+            //    Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+            //}
+
+            // Test None rejected
+            {
+                var configurationFile = Path.Join(TestUtils.MethodTestDir, "users3.acl");
+                File.WriteAllText(configurationFile, "user test on >password123 +none");
+
+                // Ensure Garnet starts up and just ignores the malformed statement
+                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+            }
+
+
+            // Test Invalid rejected
+            {
+                var configurationFile = Path.Join(TestUtils.MethodTestDir, "users4.acl");
+                File.WriteAllText(configurationFile, "user test on >password123 +invalid");
+
+                // Ensure Garnet starts up and just ignores the malformed statement
+                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+            }
         }
 
         [Test]
@@ -319,35 +350,35 @@ namespace Garnet.test.Resp.ACL
 
             // Update existing user
             var resp = (string)db.Execute("ACL", ["SETUSER", updateUser, $">{updatePass}"]);
-            Assert.AreEqual("OK", resp);
+            ClassicAssert.AreEqual("OK", resp);
 
             // List users
             var users = (string[])db.Execute("ACL", "USERS");
-            Assert.IsTrue(users.ToHashSet().Contains(updateUser));
+            ClassicAssert.IsTrue(users.ToHashSet().Contains(updateUser));
 
             // Reload acl config
             resp = (string)db.Execute("ACL", "LOAD");
-            Assert.AreEqual("OK", resp);
+            ClassicAssert.AreEqual("OK", resp);
 
             // Retrieve users after reload and ensure user does not exist
             users = (string[])db.Execute("ACL", "USERS");
-            Assert.IsFalse(users.ToHashSet().Contains(updateUser));
+            ClassicAssert.IsFalse(users.ToHashSet().Contains(updateUser));
 
             // Update existing user
             resp = (string)db.Execute("ACL", ["SETUSER", updateUser, $">{updatePass}"]);
-            Assert.AreEqual("OK", resp);
+            ClassicAssert.AreEqual("OK", resp);
 
             // Save in memory ACL
             resp = (string)db.Execute("ACL", "SAVE");
-            Assert.AreEqual("OK", resp);
+            ClassicAssert.AreEqual("OK", resp);
 
             // Reload acl config
             resp = (string)db.Execute("ACL", "LOAD");
-            Assert.AreEqual("OK", resp);
+            ClassicAssert.AreEqual("OK", resp);
 
             // Retrieve users after save and ensure user does exist
             users = (string[])db.Execute("ACL", "USERS");
-            Assert.IsTrue(users.ToHashSet().Contains(updateUser));
+            ClassicAssert.IsTrue(users.ToHashSet().Contains(updateUser));
         }
     }
 }
