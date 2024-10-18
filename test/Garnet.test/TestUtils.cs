@@ -148,7 +148,7 @@ namespace Garnet.test
         static bool IsAzuriteRunning()
         {
             // If Azurite is running, it will run on localhost and listen on port 10000 and/or 10001.
-            IPAddress expectedIp = new(new byte[] { 127, 0, 0, 1 });
+            IPAddress expectedIp = new([127, 0, 0, 1]);
             var expectedPorts = new[] { 10000, 10001 };
 
             var activeTcpListeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners();

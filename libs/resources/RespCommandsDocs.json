@@ -2271,6 +2271,65 @@
     ]
   },
   {
+    "Command": "GETEX",
+    "Name": "GETEX",
+    "Summary": "Returns the string value of a key after setting its expiration time.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "UNIX-TIME-SECONDS",
+            "DisplayText": "unix-time-seconds",
+            "Type": "UnixTime",
+            "Token": "EXAT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "UNIX-TIME-MILLISECONDS",
+            "DisplayText": "unix-time-milliseconds",
+            "Type": "UnixTime",
+            "Token": "PXAT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "PERSIST",
+            "DisplayText": "persist",
+            "Type": "PureToken",
+            "Token": "PERSIST"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "GETRANGE",
     "Name": "GETRANGE",
     "Summary": "Returns a substring of the string stored at a key.",
@@ -2295,6 +2354,30 @@
         "Name": "END",
         "DisplayText": "end",
         "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "GETSET",
+    "Name": "GETSET",
+    "Summary": "Returns the previous string value of a key after setting it to a new value.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060SET\u0060 with the \u0060!GET\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
       }
     ]
   },
@@ -4524,6 +4607,30 @@
     ]
   },
   {
+    "Command": "SETNX",
+    "Name": "SETNX",
+    "Summary": "Set the string value of a key only when the key doesn\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060SET\u0060 with the \u0060NX\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      }
+    ]
+  },
+  {
     "Command": "SETRANGE",
     "Name": "SETRANGE",
     "Summary": "Overwrites a part of a string value with another by an offset. Creates the key if it doesn\u0027t exist.",
@@ -4857,6 +4964,36 @@
     ]
   },
   {
+    "Command": "SUBSTR",
+    "Name": "SUBSTR",
+    "Summary": "Returns a substring from a string value.",
+    "Group": "String",
+    "Complexity": "O(N) where N is the length of the returned string. The complexity is ultimately determined by the returned length, but because creating a substring from an existing string is very cheap, it can be considered O(1) for small strings.",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060GETRANGE\u0060",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "END",
+        "DisplayText": "end",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
     "Command": "SUNION",
     "Name": "SUNION",
     "Summary": "Returns the union of multiple sets.",
@@ -4982,42 +5119,40 @@
     "Summary": "Monitors changes to keys to determine the execution of a transaction.",
     "Group": "Transactions",
     "Complexity": "O(1) for every key.",
-    "SubCommands": [
+    "Arguments": [
       {
-        "Command": "WATCH_MS",
-        "Name": "WATCH|MS",
-        "Summary": "Monitors changes to keys in main store to determine the execution of a transaction.",
-        "Group": "Transactions",
-        "Complexity": "O(1) for every key.",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandKeyArgument",
-            "Name": "KEY",
-            "DisplayText": "key",
-            "Type": "Key",
-            "ArgumentFlags": "Multiple",
-            "KeySpecIndex": 0
-          }
-        ]
-      },
-      {
-        "Command": "WATCH_OS",
-        "Name": "WATCH|OS",
-        "Summary": "Monitors changes to keys in object store to determine the execution of a transaction.",
-        "Group": "Transactions",
-        "Complexity": "O(1) for every key.",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandKeyArgument",
-            "Name": "KEY",
-            "DisplayText": "key",
-            "Type": "Key",
-            "ArgumentFlags": "Multiple",
-            "KeySpecIndex": 0
-          }
-        ]
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
       }
-    ],
+    ]
+  },
+  {
+    "Command": "WATCHMS",
+    "Name": "WATCHMS",
+    "Summary": "Monitors changes to keys in main store to determine the execution of a transaction.",
+    "Group": "Transactions",
+    "Complexity": "O(1) for every key.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "WATCHOS",
+    "Name": "WATCHOS",
+    "Summary": "Monitors changes to keys in object store to determine the execution of a transaction.",
+    "Group": "Transactions",
+    "Complexity": "O(1) for every key.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
