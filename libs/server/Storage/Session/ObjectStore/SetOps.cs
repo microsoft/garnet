@@ -712,6 +712,41 @@ namespace Garnet.server
             => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
 
         /// <summary>
+        /// Returns whether each member is a member of the set stored at key.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="members"></param>
+        /// <param name="objectContext"></param>
+        /// <returns></returns>
+        public unsafe GarnetStatus SetIsMember<TObjectContext>(ArgSlice key, ArgSlice[] members, out int[] result, ref TObjectContext objectContext)
+             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            result = default;
+
+            if (key.Length == 0)
+                return GarnetStatus.OK;
+
+            var parseState = new SessionParseState();
+            parseState.InitializeWithArguments(members);
+
+            // Prepare the input
+            var input = new ObjectInput(new RespInputHeader
+            {
+                type = GarnetObjectType.Set,
+                SetOp = SetOperation.SMISMEMBER,
+            }, ref parseState, 0);
+
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
+
+            if (status == GarnetStatus.OK)
+                result = ProcessRespIntegerArrayOutput(outputFooter, out _);
+
+            return status;
+        }
+
+        /// <summary>
         /// Removes and returns one or more random members from the set at key.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
