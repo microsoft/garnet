@@ -728,20 +728,14 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
-            parseState.InitializeWithArguments(ref parseStateBuffer, members);
+            parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var input = new ObjectInput
+            var input = new ObjectInput(new RespInputHeader
             {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SMISMEMBER,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 0,
-            };
+                type = GarnetObjectType.Set,
+                SetOp = SetOperation.SMISMEMBER,
+            }, ref parseState, 0);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);

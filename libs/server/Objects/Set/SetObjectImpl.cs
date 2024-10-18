@@ -105,11 +105,11 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                var totalCount = input.parseState.Count - input.parseStateStartIdx;
+                var totalCount = input.parseState.Count - input.parseStateFirstArgIdx;
                 while (!RespWriteUtils.WriteArrayLength(totalCount, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                var argCurr = input.parseStateStartIdx;
+                var argCurr = input.parseStateFirstArgIdx;
                 while (argCurr < input.parseState.Count)
                 {
                     var member = input.parseState.GetArgSliceByRef(argCurr).SpanByte.ToByteArray();
