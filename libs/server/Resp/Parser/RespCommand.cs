@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -16,7 +17,7 @@ namespace Garnet.server
     /// </summary>
     public enum RespCommand : ushort
     {
-        NONE = 0x0000,
+        NONE = 0x00,
 
         // Read-only commands. NOTE: Should immediately follow NONE.
         BITCOUNT,
@@ -302,7 +303,7 @@ namespace Garnet.server
         HELLO,
         QUIT, // Note: Update IsNoAuth if adding new no-auth commands after this
 
-        INVALID = 0xFFFF,
+        INVALID,
     }
 
     /// <summary>
@@ -357,15 +358,19 @@ namespace Garnet.server
             RespCommand.MULTI,
         ];
 
-        // long is 64 bits, 4 longs accomodate 256 resp commands which is more than enough to provide a lookup for each resp command
-        private static readonly ulong[] AofIndepenedentBitLookup = [0, 0, 0, 0];
+        private static readonly ulong[] AofIndependentBitLookup;
 
         private const int sizeOfLong = 64;
 
         // The static ctor maybe expensive but it is only ever run once, and doesn't interfere with common path
         static RespCommandExtensions()
         {
-            foreach (RespCommand cmd in Enum.GetValues(typeof(RespCommand)))
+            var commands = Enum.GetValues<RespCommand>();
+            var maxCommandValue = (ushort)commands.Max();
+            var lookupTableSize = ((maxCommandValue + 1) / 64) + ((maxCommandValue + 1) % 64 == 0 ? 0 : 1);
+            AofIndependentBitLookup = new ulong[lookupTableSize];
+
+            foreach (var cmd in commands)
             {
                 if (Array.IndexOf(AofIndependentCommands, cmd) == -1)
                     continue;
@@ -375,7 +380,7 @@ namespace Garnet.server
                 // set the respCommand's bit to indicate
                 int bitIdxOffset = (int)cmd % sizeOfLong;
                 ulong bitmask = 1UL << bitIdxOffset;
-                AofIndepenedentBitLookup[bitIdxToUse] |= bitmask;
+                AofIndependentBitLookup[bitIdxToUse] |= bitmask;
             }
         }
 
@@ -389,7 +394,7 @@ namespace Garnet.server
             int bitIdxToUse = (int)cmd / sizeOfLong;
             int bitIdxOffset = (int)cmd % sizeOfLong;
             ulong bitmask = 1UL << bitIdxOffset;
-            return (AofIndepenedentBitLookup[bitIdxToUse] & bitmask) != 0;
+            return (AofIndependentBitLookup[bitIdxToUse] & bitmask) != 0;
         }
 
         /// <summary>
