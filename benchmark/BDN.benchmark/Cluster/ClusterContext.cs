@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Embedded.perftest;
 using Garnet.common;
@@ -49,6 +50,8 @@ namespace BDN.benchmark.Cluster
                 Port = Port,
                 CleanClusterConfig = true,
             };
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                opt.CheckpointDir = "/tmp";
             server = new EmbeddedRespServer(opt);
             session = server.GetRespSession();
             server.Register.NewTransactionProc(CustomProcSetBench.CommandName, () => new CustomProcSetBench(), new RespCommandsInfo { Arity = CustomProcSetBench.Arity });
