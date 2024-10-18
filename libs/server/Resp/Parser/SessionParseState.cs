@@ -39,7 +39,7 @@ namespace Garnet.server
         /// <summary>
         /// Get a Span of the parsed parameters in the form an ArgSlice
         /// </summary>
-        public readonly Span<ArgSlice> Parameters => new(bufferPtr, Count);
+        public readonly ReadOnlySpan<ArgSlice> Parameters => new(bufferPtr, Count);
 
         /// <summary>
         /// Initialize the parse state at the start of a session

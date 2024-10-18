@@ -91,23 +91,21 @@ namespace Garnet.server
                     var valueLength = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).Length;
                     return sizeof(int) + valueLength;
 
-                case RespCommand.INCRBY:
-                    if (!input.parseState.TryGetLong(input.parseStateFirstArgIdx, out var next))
-                        return sizeof(int);
+                case RespCommand.INCR:
+                    return sizeof(int) + 1; // # of digits in "1"
 
+                case RespCommand.DECR:
+                    return sizeof(int) + 2; // # of digits in "-1"
+
+                case RespCommand.INCRBY:
                     var fNeg = false;
-                    var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
+                    var ndigits = NumUtils.NumDigitsInLong(input.arg1, ref fNeg);
 
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
 
                 case RespCommand.DECRBY:
-                    if (!input.parseState.TryGetLong(input.parseStateFirstArgIdx, out next))
-                        return sizeof(int);
-
-                    next = -next;
-
                     fNeg = false;
-                    ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
+                    ndigits = NumUtils.NumDigitsInLong(-input.arg1, ref fNeg);
 
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
 
@@ -148,8 +146,7 @@ namespace Garnet.server
                 {
                     case RespCommand.INCR:
                     case RespCommand.INCRBY:
-                        // We don't need to TryGetLong here because InPlaceUpdater will raise an error before we reach this point
-                        var incrByValue = input.parseState.GetLong(input.parseStateFirstArgIdx);
+                        var incrByValue = input.header.cmd == RespCommand.INCRBY ? input.arg1 : 1;
 
                         var curr = NumUtils.BytesToLong(t.AsSpan());
                         var next = curr + incrByValue;
@@ -162,11 +159,10 @@ namespace Garnet.server
 
                     case RespCommand.DECR:
                     case RespCommand.DECRBY:
-                        // We don't need to TryGetLong here because InPlaceUpdater will raise an error before we reach this point
-                        var decrByValue = input.parseState.GetLong(input.parseStateFirstArgIdx);
+                        var decrByValue = input.header.cmd == RespCommand.DECRBY ? input.arg1 : 1;
 
                         curr = NumUtils.BytesToLong(t.AsSpan());
-                        next = curr + (cmd == RespCommand.DECR ? decrByValue : -decrByValue);
+                        next = curr - decrByValue;
 
                         fNeg = false;
                         ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
@@ -251,21 +247,17 @@ namespace Garnet.server
                 }
             }
 
-            return sizeof(int) + input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).ReadOnlySpan.Length +
+            return sizeof(int) + input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).Length +
                 (input.arg1 == 0 ? 0 : sizeof(long));
         }
 
         public int GetUpsertValueLength(ref SpanByte t, ref RawStringInput input)
         {
-            if (input.header.cmd != RespCommand.NONE)
+            switch (input.header.cmd)
             {
-                var cmd = input.header.cmd;
-                switch (cmd)
-                {
-                    case RespCommand.SET:
-                    case RespCommand.SETEX:
-                        return input.arg1 > 0 && t.MetadataSize == 0 ? t.TotalSize + sizeof(long) : t.TotalSize;
-                }
+                case RespCommand.SET:
+                case RespCommand.SETEX:
+                    return input.arg1 == 0 ? t.TotalSize : sizeof(int) + t.LengthWithoutMetadata + sizeof(long);
             }
 
             return t.TotalSize;

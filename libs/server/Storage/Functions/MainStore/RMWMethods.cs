@@ -138,25 +138,31 @@ namespace Garnet.server
 
                     CopyValueLengthToOutput(ref value, ref output);
                     break;
+                case RespCommand.INCR:
+                    value.UnmarkExtraMetadata();
+                    value.ShrinkSerializedLength(1); // # of digits in "1"
+                    CopyUpdateNumber(1, ref value, ref output);
+                    break;
                 case RespCommand.INCRBY:
                     value.UnmarkExtraMetadata();
-                    // Check if input contains a valid number
-                    if (!input.parseState.TryGetLong(input.parseStateFirstArgIdx, out var incrBy))
-                    {
-                        output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
-                        return true;
-                    }
+                    var fNeg = false;
+                    var incrBy = input.arg1;
+                    var ndigits = NumUtils.NumDigitsInLong(incrBy, ref fNeg);
+                    value.ShrinkSerializedLength(ndigits + (fNeg ? 1 : 0));
                     CopyUpdateNumber(incrBy, ref value, ref output);
+                    break;
+                case RespCommand.DECR:
+                    value.UnmarkExtraMetadata();
+                    value.ShrinkSerializedLength(2); // # of digits in "-1"
+                    CopyUpdateNumber(-1, ref value, ref output);
                     break;
                 case RespCommand.DECRBY:
                     value.UnmarkExtraMetadata();
-                    // Check if input contains a valid number
-                    if (!input.parseState.TryGetLong(input.parseStateFirstArgIdx, out var decrBy))
-                    {
-                        output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
-                        return true;
-                    }
-                    CopyUpdateNumber(-decrBy, ref value, ref output);
+                    fNeg = false;
+                    var decrBy = -input.arg1;
+                    ndigits = NumUtils.NumDigitsInLong(decrBy, ref fNeg);
+                    value.ShrinkSerializedLength(ndigits + (fNeg ? 1 : 0));
+                    CopyUpdateNumber(decrBy, ref value, ref output);
                     break;
                 case RespCommand.INCRBYFLOAT:
                     value.UnmarkExtraMetadata();
@@ -350,20 +356,11 @@ namespace Garnet.server
 
                 case RespCommand.INCRBY:
                     // Check if input contains a valid number
-                    if (!input.parseState.TryGetLong(input.parseStateFirstArgIdx, out var incrBy))
-                    {
-                        output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
-                        return true;
-                    }
+                    var incrBy = input.arg1;
                     return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: incrBy);
 
                 case RespCommand.DECRBY:
-                    // Check if input contains a valid number
-                    if (!input.parseState.TryGetLong(input.parseStateFirstArgIdx, out var decrBy))
-                    {
-                        output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
-                        return true;
-                    }
+                    var decrBy = input.arg1;
                     return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: -decrBy);
 
                 case RespCommand.INCRBYFLOAT:
@@ -659,24 +656,12 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.INCRBY:
-                    // Check if input contains a valid number
-                    if (!input.parseState.TryGetLong(input.parseStateFirstArgIdx, out var incrBy))
-                    {
-                        // Move to tail of the log
-                        oldValue.CopyTo(ref newValue);
-                        break;
-                    }
+                    var incrBy = input.arg1;
                     TryCopyUpdateNumber(ref oldValue, ref newValue, ref output, input: incrBy);
                     break;
 
                 case RespCommand.DECRBY:
-                    // Check if input contains a valid number
-                    if (!input.parseState.TryGetLong(input.parseStateFirstArgIdx, out var decrBy))
-                    {
-                        // Move to tail of the log
-                        oldValue.CopyTo(ref newValue);
-                        break;
-                    }
+                    var decrBy = input.arg1;
                     TryCopyUpdateNumber(ref oldValue, ref newValue, ref output, input: -decrBy);
                     break;
 

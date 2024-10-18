@@ -631,26 +631,25 @@ namespace Garnet.server
             Debug.Assert(cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY || cmd == RespCommand.INCR ||
                          cmd == RespCommand.DECR);
 
+            if ((parseState.Count < 1 && (cmd == RespCommand.INCR || cmd == RespCommand.DECR))
+                || (parseState.Count < 2 && (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY)))
+                return AbortWithWrongNumberOfArguments(cmd.ToString());
+
             var key = parseState.GetArgSliceByRef(0);
 
-            var input = new RawStringInput(cmd, ref parseState);
+            long incrByValue = 0;
+            if (parseState.Count > 1 && !parseState.TryGetLong(1, out incrByValue))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
-            if (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY)
-            {
-                input.parseStateFirstArgIdx = 1;
-                storageApi.Increment(key, ref input, ref output);
-            }
-            else if (cmd == RespCommand.INCR || cmd == RespCommand.DECR)
-            {
-                var valueSlice = scratchBufferManager.CreateArgSlice(cmd == RespCommand.INCR ? "1"u8 : "-1"u8);
-
-                // Prepare the parse state
-                parseState.InitializeWithArgument(valueSlice);
-                storageApi.Increment(key, ref input, ref output);
-            }
+            var input = new RawStringInput(cmd, 0, incrByValue);
+            storageApi.Increment(key, ref input, ref output);
 
             var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1
                 ? (OperationError)output.Span[0]

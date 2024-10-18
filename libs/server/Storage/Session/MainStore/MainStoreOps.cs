@@ -1063,14 +1063,7 @@ namespace Garnet.server
                 increment = -increment;
             }
 
-            var incrementNumDigits = NumUtils.NumDigitsInLong(increment);
-            var incrementSlice = scratchBufferManager.CreateArgSlice(incrementNumDigits);
-            var incrementSpan = incrementSlice.Span;
-            NumUtils.LongToSpanByte(increment, incrementSpan);
-
-            parseState.InitializeWithArgument(incrementSlice);
-
-            var input = new RawStringInput(cmd, ref parseState);
+            var input = new RawStringInput(cmd, 0, increment);
 
             const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;
             var outputBuffer = stackalloc byte[outputBufferLength];
@@ -1081,8 +1074,6 @@ namespace Garnet.server
             var status = context.RMW(ref _key, ref input, ref _output);
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref _output, ref context);
-
-            scratchBufferManager.RewindScratchBuffer(ref incrementSlice);
 
             Debug.Assert(_output.IsSpanByte);
             Debug.Assert(_output.Length == outputBufferLength);
