@@ -172,24 +172,41 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Create output as error message, from given string
+        /// </summary>
+        protected static unsafe void WriteError(ref MemoryResult<byte> output, ReadOnlySpan<char> errorMessage)
+        {
+            var _output = (output.MemoryOwner, output.Length);
+            WriteError(ref _output, errorMessage);
+            output.MemoryOwner = _output.MemoryOwner;
+            output.Length = _output.Length;
+        }
+
+        /// <summary>
         /// Get argument from input, at specified offset (starting from 0)
         /// </summary>
-        /// <param name="input">Input as ArgSlice</param>
-        /// <param name="offset">Current offset into input</param>
+        /// <param name="parseState">Current parse state</param>
+        /// <param name="parseStateFirstArgIdx"></param>
+        /// <param name="offset">Current offset into parse state</param>
         /// <returns>Argument as a span</returns>
-        protected static unsafe ArgSlice GetNextArg(ArgSlice input, ref int offset)
+        protected static unsafe ArgSlice GetNextArg(ref SessionParseState parseState, int parseStateFirstArgIdx, ref int offset)
         {
-            byte* result = null;
-            int len = 0;
+            var arg = parseStateFirstArgIdx + offset < parseState.Count
+                ? parseState.GetArgSliceByRef(parseStateFirstArgIdx + offset)
+                : default;
+            offset++;
+            return arg;
+        }
 
-            byte* ptr = input.ptr + offset;
-            byte* end = input.ptr + input.Length;
-            if (ptr < end && RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref ptr, end))
-            {
-                offset = (int)(ptr - input.ptr);
-                return new ArgSlice(result, len);
-            }
-            return default;
+        /// <summary>
+        /// Get argument from input, at specified offset (starting from 0)
+        /// </summary>
+        /// <param name="procInput">Procedure input</param>
+        /// <param name="offset">Current offset into parse state</param>
+        /// <returns>Argument as a span</returns>
+        protected static unsafe ArgSlice GetNextArg(ref CustomProcedureInput procInput, ref int offset)
+        {
+            return GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
         }
     }
 }

@@ -16,7 +16,7 @@ namespace Garnet.server
     /// Garnet API implementation
     /// </summary>
     public partial struct GarnetApi<TContext, TObjectContext> : IGarnetApi, IGarnetWatchApi
-        where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
     {
         #region SortedSet Methods
@@ -300,6 +300,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SetIsMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.SetIsMember(key, ref input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SetIsMember(ArgSlice key, ArgSlice[] members, out int[] result)
+            => storageSession.SetIsMember(key, members, out result, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetPop(ArgSlice key, out ArgSlice member)

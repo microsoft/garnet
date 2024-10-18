@@ -18,7 +18,7 @@ namespace Garnet.server
     {
         NONE = 0x00,
 
-        // Read-only commands
+        // Read-only commands. NOTE: Should immediately follow NONE.
         BITCOUNT,
         BITFIELD_RO,
         BITPOS,
@@ -59,12 +59,17 @@ namespace Garnet.server
         SINTER,
         SISMEMBER,
         SMEMBERS,
+        SMISMEMBER,
         SRANDMEMBER,
         SSCAN,
         STRLEN,
+        SUBSTR,
         SUNION,
         TTL,
         TYPE,
+        WATCH,
+        WATCHMS,
+        WATCHOS,
         ZCARD,
         ZCOUNT,
         ZDIFF,
@@ -78,10 +83,10 @@ namespace Garnet.server
         ZREVRANGEBYSCORE,
         ZREVRANK,
         ZSCAN,
-        ZSCORE, // Note: Update OneIfRead if adding new read commands after this
+        ZSCORE, // Note: Last read command should immediately precede FirstWriteCommand
 
         // Write commands
-        APPEND, // Note: Update OneIfWrite if adding new write commands before this
+        APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
         BITFIELD,
         DECR,
         DECRBY,
@@ -92,6 +97,8 @@ namespace Garnet.server
         FLUSHDB,
         GEOADD,
         GETDEL,
+        GETEX,
+        GETSET,
         HDEL,
         HINCRBY,
         HINCRBYFLOAT,
@@ -100,6 +107,7 @@ namespace Garnet.server
         HSETNX,
         INCR,
         INCRBY,
+        INCRBYFLOAT,
         LINSERT,
         LMOVE,
         LMPOP,
@@ -134,6 +142,7 @@ namespace Garnet.server
         SETEX,
         SETEXNX,
         SETEXXX,
+        SETNX,
         SETKEEPTTL,
         SETKEEPTTLXX,
         SETRANGE,
@@ -157,7 +166,11 @@ namespace Garnet.server
         BITOP_AND,
         BITOP_OR,
         BITOP_XOR,
-        BITOP_NOT, // Note: Update OneIfWrite if adding new write commands after this
+        BITOP_NOT, // Note: Update LastWriteCommand if adding new write commands after this
+
+        // Script execution commands
+        EVAL,
+        EVALSHA, // Note: Update LastDataCommand if adding new data commands after this
 
         // Neither read nor write key commands
         ASYNC,
@@ -211,9 +224,7 @@ namespace Garnet.server
         CustomObjCmd,
         CustomProcedure,
 
-        // Scripting commands
-        EVAL,
-        EVALSHA,
+        // Script commands
         SCRIPT,
 
         ACL,
@@ -233,10 +244,6 @@ namespace Garnet.server
 
         MEMORY,
         // MEMORY_USAGE is a read-only command, so moved up
-
-        WATCH,
-        WATCH_MS,
-        WATCH_OS,
 
         CONFIG,
         CONFIG_GET,
@@ -418,21 +425,19 @@ namespace Garnet.server
                 };
         }
 
-        public static RespCommand FirstReadCommand()
-            => RespCommand.NONE + 1;
+        internal const RespCommand FirstReadCommand = RespCommand.NONE + 1;
 
-        public static RespCommand LastReadCommand()
-            => RespCommand.APPEND - 1;
+        internal const RespCommand LastReadCommand = RespCommand.APPEND - 1;
 
-        public static RespCommand FirstWriteCommand()
-            => RespCommand.APPEND;
+        internal const RespCommand FirstWriteCommand = RespCommand.APPEND;
 
-        public static RespCommand LastWriteCommand()
-            => RespCommand.BITOP_NOT;
+        internal const RespCommand LastWriteCommand = RespCommand.BITOP_NOT;
+
+        internal const RespCommand LastDataCommand = RespCommand.EVALSHA;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsReadOnly(this RespCommand cmd)
-            => cmd <= LastReadCommand();
+            => cmd <= LastReadCommand;
 
         public static bool IsDataCommand(this RespCommand cmd)
         {
@@ -446,7 +451,7 @@ namespace Garnet.server
                 RespCommand.FLUSHALL => false,
                 RespCommand.KEYS => false,
                 RespCommand.SCAN => false,
-                _ => cmd >= FirstReadCommand() && cmd <= LastWriteCommand()
+                _ => cmd >= FirstReadCommand && cmd <= LastDataCommand
             };
         }
 
@@ -454,10 +459,10 @@ namespace Garnet.server
         public static bool IsWriteOnly(this RespCommand cmd)
         {
             // If cmd < RespCommand.Append - underflows, setting high bits
-            var test = (uint)((int)cmd - (int)FirstWriteCommand());
+            var test = (uint)((int)cmd - (int)FirstWriteCommand);
 
             // Force to be branchless for same reasons as OneIfRead
-            return test <= (LastWriteCommand() - FirstWriteCommand());
+            return test <= (LastWriteCommand - FirstWriteCommand);
         }
 
         /// <summary>
@@ -632,11 +637,14 @@ namespace Garnet.server
                         (2 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("NAMENX\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("RE"u8) => RespCommand.RENAMENX,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETBIT\r\n"u8) => RespCommand.GETBIT,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("APPEND\r\n"u8) => RespCommand.APPEND,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETSET\r\n"u8) => RespCommand.GETSET,
                         (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && ptr[8] == 'P' => RespCommand.PUBLISH,
                         (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("FMERGE\r\n"u8) && ptr[8] == 'P' => RespCommand.PFMERGE,
+                        (2 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nSETNX\r\n"u8) => RespCommand.SETNX,
                         (3 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nSETEX\r\n"u8) => RespCommand.SETEX,
                         (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("PSETEX\r\n"u8) => RespCommand.PSETEX,
                         (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("SETBIT\r\n"u8) => RespCommand.SETBIT,
+                        (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("SUBSTR\r\n"u8) => RespCommand.SUBSTR,
                         (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("SE"u8) => RespCommand.SETRANGE,
                         (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("GE"u8) => RespCommand.GETRANGE,
 
@@ -644,6 +652,7 @@ namespace Garnet.server
                         {
                             // Commands with dynamic number of arguments
                             >= ((3 << 4) | 3) and <= ((3 << 4) | 6) when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SETEXNX,
+                            >= ((5 << 4) | 1) and <= ((5 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("\nGETEX\r\n"u8) => RespCommand.GETEX,
                             >= ((6 << 4) | 0) and <= ((6 << 4) | 9) when lastWord == MemoryMarshal.Read<ulong>("RUNTXP\r\n"u8) => RespCommand.RUNTXP,
                             >= ((6 << 4) | 2) and <= ((6 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) => RespCommand.EXPIRE,
                             >= ((6 << 4) | 2) and <= ((6 << 4) | 5) when lastWord == MemoryMarshal.Read<ulong>("BITPOS\r\n"u8) => RespCommand.BITPOS,
@@ -982,28 +991,6 @@ namespace Garnet.server
                                     case 'W':
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nWATCH\r\n"u8))
                                         {
-                                            // WATCH OS|MS key
-                                            // 8 = "$2\r\nOS\r\n".Length
-                                            if (count > 1 && remainingBytes >= length + 8)
-                                            {
-                                                // Optimistically consume the subcommand
-                                                count--;
-                                                readHead += 8;
-
-                                                if (*(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nOS\r\n"u8))
-                                                {
-                                                    return RespCommand.WATCH_OS;
-                                                }
-                                                else if (*(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nMS\r\n"u8))
-                                                {
-                                                    return RespCommand.WATCH_MS;
-                                                }
-
-                                                // Undo the optimistic advance
-                                                count++;
-                                                readHead -= 8;
-                                            }
-
                                             return RespCommand.WATCH;
                                         }
                                         break;
@@ -1224,6 +1211,18 @@ namespace Garnet.server
                                             return RespCommand.PFMERGE;
                                         }
                                         break;
+                                    case 'W':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("WATCHMS\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return RespCommand.WATCHMS;
+                                        }
+
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("WATCHOS\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return RespCommand.WATCHOS;
+                                        }
+
+                                        break;
 
                                     case 'Z':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPOPMIN\r"u8) && *(byte*)(ptr + 12) == '\n')
@@ -1333,9 +1332,13 @@ namespace Garnet.server
                                 {
                                     return RespCommand.SDIFFSTORE;
                                 }
-                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nEXPI"u8) && *(uint*)(ptr + 9) == MemoryMarshal.Read<uint>("RETIME\r\n"u8))
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nEXPI"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
                                 {
                                     return RespCommand.EXPIRETIME;
+                                }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nSMIS"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("MEMBER\r\n"u8))
+                                {
+                                    return RespCommand.SMISMEMBER;
                                 }
                                 break;
 
@@ -1364,9 +1367,13 @@ namespace Garnet.server
                                 {
                                     return RespCommand.SINTERSTORE;
                                 }
-                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nPEXPI"u8) && *(uint*)(ptr + 10) == MemoryMarshal.Read<uint>("RETIME\r\n"u8))
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nPEXPI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
                                 {
                                     return RespCommand.PEXPIRETIME;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nINCRB"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("YFLOAT\r\n"u8))
+                                {
+                                    return RespCommand.INCRBYFLOAT;
                                 }
                                 break;
 
@@ -2021,7 +2028,7 @@ namespace Garnet.server
             }
 
             // Set up parse state
-            parseState.Initialize(ref parseStateBuffer, count);
+            parseState.Initialize(count);
             var ptr = recvBufferPtr + readHead;
             for (int i = 0; i < count; i++)
             {

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -32,22 +33,9 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SADD,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             var status = storageApi.SetAdd(keyBytes, ref input, out var output);
 
@@ -271,22 +259,9 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SREM,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             var status = storageApi.SetRemove(keyBytes, ref input, out var output);
 
@@ -328,20 +303,9 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SCARD,
-                },
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SCARD };
+            var input = new ObjectInput(header);
 
             var status = storageApi.SetLength(keyBytes, ref input, out var output);
 
@@ -383,20 +347,9 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SMEMBERS,
-                },
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
+            var input = new ObjectInput(header);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -422,34 +375,34 @@ namespace Garnet.server
             return true;
         }
 
-        private unsafe bool SetIsMember<TGarnetApi>(ref TGarnetApi storageApi)
+        private unsafe bool SetIsMember<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.Count != 2)
+            Debug.Assert(cmd == RespCommand.SISMEMBER || cmd == RespCommand.SMISMEMBER);
+
+            var isSingle = cmd == RespCommand.SISMEMBER;
+            if (isSingle)
             {
-                return AbortWithWrongNumberOfArguments("SISMEMBER");
+                if (parseState.Count != 2)
+                {
+                    return AbortWithWrongNumberOfArguments("SISMEMBER");
+                }
+            }
+            else
+            {
+                if (parseState.Count < 2)
+                {
+                    return AbortWithWrongNumberOfArguments("SMISMEMBER");
+                }
             }
 
             // Get the key
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SISMEMBER,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = isSingle ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -463,8 +416,24 @@ namespace Garnet.server
                     ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                        SendAndReset();
+                    if (isSingle)
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        var count = parseState.Count - 1; // Remove key
+                        while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
+                            SendAndReset();
+
+                        for (var i = 0; i < count; i++)
+                        {
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                    }
+
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -493,11 +462,6 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
             var countParameter = int.MinValue;
             if (parseState.Count == 2)
             {
@@ -520,15 +484,8 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SPOP,
-                },
-                arg1 = countParameter,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SPOP };
+            var input = new ObjectInput(header, countParameter);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -621,11 +578,6 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             var countParameter = int.MinValue;
             if (parseState.Count == 2)
             {
@@ -651,16 +603,8 @@ namespace Garnet.server
             var seed = Random.Shared.Next();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SRANDMEMBER,
-                },
-                arg1 = countParameter,
-                arg2 = seed,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SRANDMEMBER };
+            var input = new ObjectInput(header, countParameter, seed);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };

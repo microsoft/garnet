@@ -12,6 +12,8 @@ namespace Tsavorite.benchmark
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct Value
     {
+        public const int Size = 8;
+
         [FieldOffset(0)]
         public long value;
     }

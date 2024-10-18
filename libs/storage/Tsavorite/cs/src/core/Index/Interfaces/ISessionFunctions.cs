@@ -189,6 +189,11 @@ namespace Tsavorite.core
         /// Initial expected length of value object when populated by RMW using given input
         /// </summary>
         int GetRMWInitialValueLength(ref TInput input);
+
+        /// <summary>
+        /// Length of resulting value object when performing Upsert of value using given input
+        /// </summary>
+        int GetUpsertValueLength(ref TValue value, ref TInput input);
         #endregion Variable-length value size
 
         /// <summary>

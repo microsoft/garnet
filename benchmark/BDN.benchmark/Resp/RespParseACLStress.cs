@@ -12,7 +12,7 @@ namespace BDN.benchmark.Resp
         [Params(false, true)]
         public bool UseACLs { get; set; }
 
-        public new void GlobalSetup()
+        public override void GlobalSetup()
         {
             string aclFile = null;
 

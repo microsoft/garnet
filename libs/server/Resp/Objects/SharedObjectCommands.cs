@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -47,22 +46,9 @@ namespace Garnet.server
                 return true;
             }
 
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = objectType,
-                },
-                arg1 = cursorValue,
-                arg2 = storeWrapper.serverOptions.ObjectScanCountLimit,
-                parseState = parseState,
-                parseStateStartIdx = 2,
-            };
+            var header = new RespInputHeader(objectType);
+            var input = new ObjectInput(header, ref parseState, 2, -1, cursorValue,
+                storeWrapper.serverOptions.ObjectScanCountLimit);
 
             switch (objectType)
             {
