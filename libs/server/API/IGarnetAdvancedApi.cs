@@ -13,7 +13,7 @@ namespace Garnet.server
         /// <summary>
         /// GET with support for pending multiple ongoing operations, scatter gather IO for outputs
         /// </summary>
-        GarnetStatus GET_WithPending(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, long ctx, out bool pending);
+        GarnetStatus GET_WithPending(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, long ctx, out bool pending);
 
         /// <summary>
         /// Complete pending read operations on main store
@@ -28,17 +28,17 @@ namespace Garnet.server
         /// <param name="completedOutputs"></param>
         /// <param name="wait"></param>
         /// <returns></returns>
-        bool GET_CompletePending(out CompletedOutputIterator<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long> completedOutputs, bool wait = false);
+        bool GET_CompletePending(out CompletedOutputIterator<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long> completedOutputs, bool wait = false);
 
         /// <summary>
         /// RMW operation on main store
         /// </summary>
-        GarnetStatus RMW_MainStore(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus RMW_MainStore(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Read operation on main store
         /// </summary>
-        GarnetStatus Read_MainStore(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus Read_MainStore(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// RMW operation on object store

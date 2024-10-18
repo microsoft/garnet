@@ -21,14 +21,14 @@ namespace Garnet.test.cluster
         /// </summary>
         /// <typeparam name="TGarnetReadApi"></typeparam>
         /// <param name="api"></param>
-        /// <param name="input"></param>
+        /// <param name="procInput"></param>
         /// <returns></returns>
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             var offset = 0;
-            var getA = GetNextArg(input, ref offset);
-            var getB = GetNextArg(input, ref offset);
-            var getC = GetNextArg(input, ref offset);
+            var getA = GetNextArg(ref procInput, ref offset);
+            var getB = GetNextArg(ref procInput, ref offset);
+            var getC = GetNextArg(ref procInput, ref offset);
 
             AddKey(getA, LockType.Shared, isObject: false);
             AddKey(getB, LockType.Shared, isObject: false);
@@ -37,12 +37,12 @@ namespace Garnet.test.cluster
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             var offset = 0;
-            var getA = GetNextArg(input, ref offset);
-            var getB = GetNextArg(input, ref offset);
-            var getC = GetNextArg(input, ref offset);
+            var getA = GetNextArg(ref procInput, ref offset);
+            var getB = GetNextArg(ref procInput, ref offset);
+            var getC = GetNextArg(ref procInput, ref offset);
 
             var status = api.GET(getA, out _);
             ClassicAssert.AreEqual(GarnetStatus.NOTFOUND, status);
@@ -96,14 +96,13 @@ namespace Garnet.test.cluster
         /// </summary>
         /// <typeparam name="TGarnetReadApi"></typeparam>
         /// <param name="api"></param>
-        /// <param name="input"></param>
         /// <returns></returns>
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             var offset = 0;
-            var getA = GetNextArg(input, ref offset);
-            var setB = GetNextArg(input, ref offset);
-            var setC = GetNextArg(input, ref offset);
+            var getA = GetNextArg(ref procInput, ref offset);
+            var setB = GetNextArg(ref procInput, ref offset);
+            var setC = GetNextArg(ref procInput, ref offset);
 
             AddKey(getA, LockType.Shared, isObject: false);
             AddKey(setB, LockType.Exclusive, isObject: false);
@@ -112,12 +111,12 @@ namespace Garnet.test.cluster
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             var offset = 0;
-            var getA = GetNextArg(input, ref offset);
-            var setB = GetNextArg(input, ref offset).SpanByte;
-            var setC = GetNextArg(input, ref offset).SpanByte;
+            var getA = GetNextArg(ref procInput, ref offset);
+            var setB = GetNextArg(ref procInput, ref offset).SpanByte;
+            var setC = GetNextArg(ref procInput, ref offset).SpanByte;
 
             _ = api.GET(getA, out _);
             var status = api.SET(ref setB, ref setB);

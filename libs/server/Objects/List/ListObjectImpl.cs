@@ -27,7 +27,7 @@ namespace Garnet.server
             _output->result1 = int.MinValue;
 
             // get the source string to remove
-            var itemSpan = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
+            var itemSpan = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).ReadOnlySpan;
 
             var removedCount = 0;
             _output->result1 = 0;
@@ -83,7 +83,7 @@ namespace Garnet.server
 
             if (list.Count > 0)
             {
-                var currTokenIdx = input.parseStateStartIdx;
+                var currTokenIdx = input.parseStateFirstArgIdx;
 
                 // figure out where to insert BEFORE or AFTER
                 var position = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
@@ -282,7 +282,7 @@ namespace Garnet.server
             *_output = default;
 
             _output->result1 = 0;
-            for (var currTokenIdx = input.parseStateStartIdx; currTokenIdx < input.parseState.Count; currTokenIdx++)
+            for (var currTokenIdx = input.parseStateFirstArgIdx; currTokenIdx < input.parseState.Count; currTokenIdx++)
             {
                 var value = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
 
@@ -367,7 +367,7 @@ namespace Garnet.server
             var output_end = output_currptr + output.Length;
 
             ObjectOutputHeader _output = default;
-            var currTokenIdx = input.parseStateStartIdx;
+            var currTokenIdx = input.parseStateFirstArgIdx;
             try
             {
                 if (list.Count == 0)
@@ -422,8 +422,8 @@ namespace Garnet.server
 
         private void ListPosition(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var element = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
-            input.parseStateStartIdx++;
+            var element = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).ReadOnlySpan;
+            input.parseStateFirstArgIdx++;
 
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -582,7 +582,7 @@ namespace Garnet.server
 
         private static unsafe bool ReadListPositionInput(ref ObjectInput input, out int rank, out int count, out bool isDefaultCount, out int maxlen, out ReadOnlySpan<byte> error)
         {
-            var currTokenIdx = input.parseStateStartIdx;
+            var currTokenIdx = input.parseStateFirstArgIdx;
 
             rank = 1; // By default, LPOS takes first match element
             count = 1; // By default, LPOS return 1 element

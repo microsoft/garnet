@@ -33,21 +33,11 @@ namespace Garnet.server
             saddCount = 0;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
-            parseState.InitializeWithArguments(ref parseStateBuffer, member);
+            parseState.InitializeWithArgument(member);
 
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SADD,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 0,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
+            var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
 
@@ -75,21 +65,11 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
-            parseState.InitializeWithArguments(ref parseStateBuffer, members);
+            parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SADD,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 0,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
+            var input = new ObjectInput(header, ref parseState);
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
 
@@ -116,21 +96,11 @@ namespace Garnet.server
             sremCount = 0;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
-            parseState.InitializeWithArguments(ref parseStateBuffer, member);
+            parseState.InitializeWithArgument(member);
 
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SREM,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 0,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
+            var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
             sremCount = output.result1;
@@ -159,21 +129,11 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
-            parseState.InitializeWithArguments(ref parseStateBuffer, members);
+            parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SREM,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 0,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
+            var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
 
@@ -198,14 +158,8 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SCARD,
-                },
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SCARD };
+            var input = new ObjectInput(header);
 
             var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
 
@@ -230,14 +184,8 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SMEMBERS,
-                },
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
+            var input = new ObjectInput(header);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
@@ -286,15 +234,8 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SPOP,
-                },
-                arg1 = count,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SPOP };
+            var input = new ObjectInput(header, count);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
