@@ -703,6 +703,69 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Computes the difference between the first and all successive sorted sets and store resulting pairs in the destination key.
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="destinationKey"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        public unsafe GarnetStatus SortedSetDifferenceStore(ArgSlice[] keys, ArgSlice destinationKey, out int count)
+        {
+            count = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                var status = SortedSetDifference(keys, out var result);
+
+                if (status != GarnetStatus.OK)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                count = result is null ? 0 : result.Count;
+
+                if (count > 0)
+                {
+                    SortedSetObject newSetObject = new();
+                    foreach (var (element, score) in result)
+                    {
+                        newSetObject.Add(element, score);
+                    }
+                    _ = SET(destinationKey.ToArray(), newSetObject, ref setObjectStoreLockableContext);
+                }
+                else
+                {
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                        ref lockableContext, ref setObjectStoreLockableContext);
+                }
+
+                return status;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
+
+        /// <summary>
         /// Returns the rank of member in the sorted set, the scores in the sorted set are ordered from high to low
         /// <param name="key">The key of the sorted set</param>
         /// <param name="member">The member to get the rank</param>
