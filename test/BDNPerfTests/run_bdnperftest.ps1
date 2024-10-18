@@ -119,7 +119,7 @@ if ($IsLinux) {
     $CurrentOS = "Linux"
 }
 
-Write-Host "************** Start BDN.benchmark ********************" 
+Write-Host "************** Start BDN.benchmark Test Run ********************" 
 Write-Host " "
 
 # Set all the config options (args to benchmark app) based on values from config json file
@@ -191,11 +191,6 @@ $BDNbenchmarkErrorFile = "$errorLogDir/$justResultsFileNameNoExt" + "_StandardEr
 Write-Output "** Start BDN Benchmark: $filter"
 Write-Output " "
 Write-Output "** Start:  dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath --exporters json > $resultsFile 2> $BDNbenchmarkErrorFile"
-
-# DEBUG DEBUG
-$filter = "*Resp*"
-# DEBUG DEBUG
-
 dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath --exporters json  > $resultsFile 2> $BDNbenchmarkErrorFile
 
 Write-Output "** BDN Benchmark for $filter finished"
