@@ -393,7 +393,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsAofIndependent(this RespCommand cmd)
         {
-            Debug.Assert(cmd <= LastValidCommand);
+            if (cmd > LastValidCommand) return false;
 
             // check if cmd maps to a bit vec that was set back when static ctor was run
             int bitIdxToUse = (int)cmd / sizeOfLong;

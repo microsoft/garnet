@@ -14,6 +14,8 @@ namespace Garnet.server
     {
         internal static readonly ushort StartOffset = (ushort)(RespCommandExtensions.LastValidCommand + 1);
         internal static readonly int MaxRegistrations = ushort.MaxValue - StartOffset;
+        internal static readonly byte TypeIdStartOffset = (byte)(GarnetObjectTypeExtensions.LastObjectType + 1);
+        internal static readonly int MaxTypeRegistrations = (byte)(GarnetObjectTypeExtensions.FirstSpecialObjectType) - TypeIdStartOffset;
 
         internal readonly CustomRawStringCommand[] rawStringCommandMap;
         internal readonly CustomObjectCommandWrapper[] objectCommandMap;
@@ -34,7 +36,7 @@ namespace Garnet.server
         public CustomCommandManager()
         {
             rawStringCommandMap = new CustomRawStringCommand[MaxRegistrations];
-            objectCommandMap = new CustomObjectCommandWrapper[MaxRegistrations];
+            objectCommandMap = new CustomObjectCommandWrapper[MaxTypeRegistrations];
             transactionProcMap = new CustomTransaction[MaxRegistrations]; // can increase up to byte.MaxValue
             customProcedureMap = new CustomProcedureWrapper[MaxRegistrations];
         }
@@ -73,7 +75,7 @@ namespace Garnet.server
             do
             {
                 type = Interlocked.Increment(ref ObjectTypeId) - 1;
-                if (type >= MaxRegistrations)
+                if (type >= MaxTypeRegistrations)
                     throw new Exception("Out of registration space");
             } while (objectCommandMap[type] != null);
 
@@ -84,7 +86,7 @@ namespace Garnet.server
 
         internal void RegisterType(int objectTypeId, CustomObjectFactory factory)
         {
-            if (objectTypeId >= MaxRegistrations)
+            if (objectTypeId >= MaxTypeRegistrations)
                 throw new Exception("Type is outside registration space");
 
             if (ObjectTypeId <= objectTypeId) ObjectTypeId = objectTypeId + 1;
@@ -106,7 +108,7 @@ namespace Garnet.server
             if (objectTypeId == -1)
             {
                 objectTypeId = Interlocked.Increment(ref ObjectTypeId) - 1;
-                if (objectTypeId >= MaxRegistrations)
+                if (objectTypeId >= MaxTypeRegistrations)
                     throw new Exception("Out of registration space");
                 objectCommandMap[objectTypeId] = new CustomObjectCommandWrapper((byte)objectTypeId, factory);
             }
@@ -135,7 +137,7 @@ namespace Garnet.server
             if (objectTypeId == -1)
             {
                 objectTypeId = Interlocked.Increment(ref ObjectTypeId) - 1;
-                if (objectTypeId >= MaxRegistrations)
+                if (objectTypeId >= MaxTypeRegistrations)
                     throw new Exception("Out of registration space");
                 objectCommandMap[objectTypeId] = new CustomObjectCommandWrapper((byte)objectTypeId, factory);
             }
