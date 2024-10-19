@@ -63,7 +63,7 @@ namespace Garnet.server
                             break;
                         case FindKeysUnknown:
                         default:
-                            throw new GarnetException("FindKeysUnknown range");
+                            throw new GarnetException("FindKeys spec not known");
                     }
 
                     break;
@@ -77,7 +77,7 @@ namespace Garnet.server
                         case FindKeysKeyNum:
                         case FindKeysUnknown:
                         default:
-                            throw new GarnetException("FindKeysUnknown range");
+                            throw new GarnetException("FindKeys spec not known");
                     }
 
                     var searchIndex1 = (BeginSearchIndex)specs[1].BeginSearch;
@@ -96,12 +96,12 @@ namespace Garnet.server
                             break;
                         case FindKeysUnknown:
                         default:
-                            throw new GarnetException("FindKeysUnknown range");
+                            throw new GarnetException("FindKeys spec not known");
                     }
 
                     break;
                 default:
-                    throw new GarnetException("KeySpecification unknown count");
+                    throw new GarnetException("KeySpecification not supported count");
             }
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
