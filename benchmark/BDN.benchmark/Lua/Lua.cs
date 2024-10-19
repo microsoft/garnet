@@ -19,11 +19,11 @@ namespace BDN.benchmark.Lua
         {
             state = new NLua.Lua();
 
-            state.RegisterFunction("garnet_call", this, GetType().GetMethod("garnet_call"));
+            _ = state.RegisterFunction("garnet_call", this, GetType().GetMethod("garnet_call"));
             state["KEYS"] = new string[] { "key1", "key2" };
             state["ARGV"] = new string[] { "arg1", "arg2" };
 
-            state.DoString(@"
+            _ = state.DoString(@"
                 import = function () end
                 redis = {}
                 function redis.call(a)

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using BDN.benchmark.CustomProcs;
 using BenchmarkDotNet.Attributes;
 using Embedded.perftest;
 using Garnet;

@@ -5,7 +5,7 @@ using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
 
-namespace BDN.benchmark
+namespace BDN.benchmark.CustomProcs
 {
     sealed class CustomProcSet : CustomTransactionProcedure
     {
