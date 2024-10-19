@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Runtime.CompilerServices;
 using System.Text;
 using Embedded.perftest;
 using Garnet.common;
@@ -9,19 +8,7 @@ using Garnet.server;
 
 namespace BDN.benchmark.Cluster
 {
-    public unsafe struct Request
-    {
-        public byte[] buffer;
-        public byte* ptr;
-
-        public Request(int size)
-        {
-            buffer = GC.AllocateArray<byte>(size, pinned: true);
-            ptr = (byte*)Unsafe.AsPointer(ref buffer[0]);
-        }
-    }
-
-    public unsafe class ClusterContext
+    unsafe class ClusterContext
     {
         EmbeddedRespServer server;
         RespServerSession session;
@@ -51,7 +38,7 @@ namespace BDN.benchmark.Cluster
             };
             server = new EmbeddedRespServer(opt);
             session = server.GetRespSession();
-            server.Register.NewTransactionProc(CustomProcSetBench.CommandName, () => new CustomProcSetBench(), new RespCommandsInfo { Arity = CustomProcSetBench.Arity });
+            server.Register.NewTransactionProc(CustomProcSet.CommandName, () => new CustomProcSet(), new RespCommandsInfo { Arity = CustomProcSet.Arity });
         }
 
         public void AddSlotRange(List<(int, int)> slotRanges)

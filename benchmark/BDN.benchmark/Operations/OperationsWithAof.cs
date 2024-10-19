@@ -6,10 +6,10 @@ using BenchmarkDotNet.Attributes;
 using Embedded.perftest;
 using Garnet.server;
 
-namespace BDN.benchmark.Resp
+namespace BDN.benchmark.Operations
 {
     [MemoryDiagnoser]
-    public unsafe class RespAofStress
+    public unsafe class OperationsWithAof
     {
         EmbeddedRespServer server;
         RespServerSession session;

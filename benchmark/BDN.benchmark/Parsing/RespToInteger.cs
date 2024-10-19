@@ -5,9 +5,10 @@ using System.Text;
 using BenchmarkDotNet.Attributes;
 using Garnet.common;
 
-namespace BDN.benchmark.Resp
+namespace BDN.benchmark.Parsing
 {
-    public unsafe class RespIntegerReadBenchmarks
+    [MemoryDiagnoser]
+    public unsafe class RespToInteger
     {
         [Benchmark]
         [ArgumentsSource(nameof(LengthHeaderValues))]
@@ -70,25 +71,25 @@ namespace BDN.benchmark.Resp
         }
 
         public static IEnumerable<object> SignedInt32EncodedValues
-            => ToRespIntegerTestCases(RespIntegerWriteBenchmarks.SignedInt32Values);
+            => ToRespIntegerTestCases(IntegerToResp.SignedInt32Values);
 
         public static IEnumerable<object> LengthHeaderValues
-           => ToRespLengthHeaderTestCases(RespIntegerWriteBenchmarks.SignedInt32Values);
+           => ToRespLengthHeaderTestCases(IntegerToResp.SignedInt32Values);
 
         public static IEnumerable<object> SignedInt64EncodedValues
-            => ToRespIntegerTestCases(RespIntegerWriteBenchmarks.SignedInt64Values);
+            => ToRespIntegerTestCases(IntegerToResp.SignedInt64Values);
 
         public static IEnumerable<object> UnsignedInt64EncodedValues
-            => ToRespIntegerTestCases(RespIntegerWriteBenchmarks.UnsignedInt64Values);
+            => ToRespIntegerTestCases(IntegerToResp.UnsignedInt64Values);
 
         public static IEnumerable<object> SignedInt32EncodedValuesWithLengthHeader
-            => ToRespIntegerWithLengthHeader(RespIntegerWriteBenchmarks.SignedInt32Values);
+            => ToRespIntegerWithLengthHeader(IntegerToResp.SignedInt32Values);
 
         public static IEnumerable<object> SignedInt64EncodedValuesWithLengthHeader
-            => ToRespIntegerWithLengthHeader(RespIntegerWriteBenchmarks.SignedInt64Values);
+            => ToRespIntegerWithLengthHeader(IntegerToResp.SignedInt64Values);
 
         public static IEnumerable<object> UnsignedInt64EncodedValuesWithLengthHeader
-            => ToRespIntegerWithLengthHeader(RespIntegerWriteBenchmarks.UnsignedInt64Values);
+            => ToRespIntegerWithLengthHeader(IntegerToResp.UnsignedInt64Values);
 
         public static IEnumerable<AsciiTestCase> ToRespIntegerTestCases<T>(T[] integerValues) where T : struct
             => integerValues.Select(testCase => new AsciiTestCase($":{testCase}\r\n"));

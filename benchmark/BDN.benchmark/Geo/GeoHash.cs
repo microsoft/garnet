@@ -3,12 +3,10 @@
 
 using BenchmarkDotNet.Attributes;
 
-using Garnet.server;
-
-namespace BDN.benchmark
+namespace BDN.benchmark.Geo
 {
     [MemoryDiagnoser]
-    public class GeoHashBenchmarks
+    public class GeoHash
     {
         private const double Latitude = 47.642219912251285;
         private const double Longitude = -122.14205560231471;
@@ -16,12 +14,12 @@ namespace BDN.benchmark
         private const long GeoHashInteger = 1557413161902764;
 
         [Benchmark]
-        public long GeoToLongValue() => GeoHash.GeoToLongValue(Latitude, Longitude);
+        public long GeoToLongValue() => Garnet.server.GeoHash.GeoToLongValue(Latitude, Longitude);
 
         [Benchmark]
-        public (double, double) GetCoordinatesFromLong() => GeoHash.GetCoordinatesFromLong(GeoHashInteger);
+        public (double, double) GetCoordinatesFromLong() => Garnet.server.GeoHash.GetCoordinatesFromLong(GeoHashInteger);
 
         [Benchmark]
-        public string GetGeoHashCode() => GeoHash.GetGeoHashCode(GeoHashInteger);
+        public string GetGeoHashCode() => Garnet.server.GeoHash.GetGeoHashCode(GeoHashInteger);
     }
 }

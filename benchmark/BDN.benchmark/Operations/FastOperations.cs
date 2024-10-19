@@ -8,10 +8,10 @@ using Garnet;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
 
-namespace BDN.benchmark.Resp
+namespace BDN.benchmark.Operations
 {
     [MemoryDiagnoser]
-    public unsafe class RespParseStress
+    public unsafe class FastOperations
     {
         EmbeddedRespServer server;
         RespServerSession session;
@@ -42,6 +42,10 @@ namespace BDN.benchmark.Resp
         static ReadOnlySpan<byte> GET => "*2\r\n$3\r\nGET\r\n$1\r\nb\r\n"u8;
         byte[] getRequestBuffer;
         byte* getRequestBufferPointer;
+
+        static ReadOnlySpan<byte> GETF => "*2\r\n$3\r\nGET\r\n$1\r\na\r\n"u8;
+        byte[] getfRequestBuffer;
+        byte* getfRequestBufferPointer;
 
         static ReadOnlySpan<byte> INCR => "*2\r\n$4\r\nINCR\r\n$1\r\ni\r\n"u8;
         byte[] incrRequestBuffer;
@@ -85,7 +89,7 @@ namespace BDN.benchmark.Resp
             server.Register.NewType(factory);
             server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
             server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
-            server.Register.NewTransactionProc(CustomProcSetBench.CommandName, () => new CustomProcSetBench(), new RespCommandsInfo { Arity = CustomProcSetBench.Arity });
+            server.Register.NewTransactionProc(CustomProcSet.CommandName, () => new CustomProcSet(), new RespCommandsInfo { Arity = CustomProcSet.Arity });
 
             session = server.GetRespSession();
 
@@ -118,6 +122,11 @@ namespace BDN.benchmark.Resp
             getRequestBufferPointer = (byte*)Unsafe.AsPointer(ref getRequestBuffer[0]);
             for (int i = 0; i < batchSize; i++)
                 GET.CopyTo(new Span<byte>(getRequestBuffer).Slice(i * GET.Length));
+
+            getfRequestBuffer = GC.AllocateArray<byte>(GETF.Length * batchSize, pinned: true);
+            getfRequestBufferPointer = (byte*)Unsafe.AsPointer(ref getfRequestBuffer[0]);
+            for (int i = 0; i < batchSize; i++)
+                GETF.CopyTo(new Span<byte>(getfRequestBuffer).Slice(i * GETF.Length));
 
             incrRequestBuffer = GC.AllocateArray<byte>(INCR.Length * batchSize, pinned: true);
             incrRequestBufferPointer = (byte*)Unsafe.AsPointer(ref incrRequestBuffer[0]);
@@ -214,7 +223,13 @@ namespace BDN.benchmark.Resp
         }
 
         [Benchmark]
-        public void Get()
+        public void GetFound()
+        {
+            _ = session.TryConsumeMessages(getRequestBufferPointer, getRequestBuffer.Length);
+        }
+
+        [Benchmark]
+        public void GetNotFound()
         {
             _ = session.TryConsumeMessages(getRequestBufferPointer, getRequestBuffer.Length);
         }

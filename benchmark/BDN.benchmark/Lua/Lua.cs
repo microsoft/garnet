@@ -4,12 +4,12 @@
 using BenchmarkDotNet.Attributes;
 using NLua;
 
-namespace BDN.benchmark.Resp
+namespace BDN.benchmark.Lua
 {
     [MemoryDiagnoser]
-    public unsafe class RespLuaStress
+    public unsafe class Lua
     {
-        Lua state;
+        NLua.Lua state;
         LuaFunction f1, f2, f3, f4;
 
         public string garnet_call(string arg1) => arg1;
@@ -17,9 +17,9 @@ namespace BDN.benchmark.Resp
         [GlobalSetup]
         public void GlobalSetup()
         {
-            state = new Lua();
+            state = new NLua.Lua();
 
-            state.RegisterFunction("garnet_call", this, this.GetType().GetMethod("garnet_call"));
+            state.RegisterFunction("garnet_call", this, GetType().GetMethod("garnet_call"));
             state["KEYS"] = new string[] { "key1", "key2" };
             state["ARGV"] = new string[] { "arg1", "arg2" };
 

@@ -7,9 +7,10 @@ using Embedded.perftest;
 using Garnet.common;
 using Garnet.server;
 
-namespace BDN.benchmark.Resp
+namespace BDN.benchmark.Operations
 {
-    public unsafe class RespIncrementStress
+    [MemoryDiagnoser]
+    public unsafe class Increment
     {
         EmbeddedRespServer server;
         RespServerSession session;
@@ -76,9 +77,9 @@ namespace BDN.benchmark.Resp
         public static IEnumerable<object> IncrByBenchInput => values.Select(x => Get(RespCommand.INCRBY, x));
         public static IEnumerable<object> DecrByBenchInput => values.Select(x => Get(RespCommand.DECRBY, x));
 
-        public static int[] values => [int.MinValue, -1, 0, int.MaxValue];
+        static int[] values => [int.MinValue, -1, 0, int.MaxValue];
 
-        public static byte[] Get(RespCommand cmd, long val)
+        static byte[] Get(RespCommand cmd, long val)
         {
             var length = NumUtils.NumDigitsInLong(val);
             return cmd switch

@@ -6,7 +6,7 @@ using BenchmarkDotNet.Attributes;
 namespace BDN.benchmark.Cluster
 {
     [MemoryDiagnoser]
-    public unsafe class RespClusterDisableSlotVerificationBench : RespClusterBench
+    public unsafe class ClusterOperationsWithoutSlotVerification : ClusterOperations
     {
         public override void GlobalSetup()
         {

@@ -6,7 +6,7 @@ using BenchmarkDotNet.Attributes;
 namespace BDN.benchmark.Cluster
 {
     [MemoryDiagnoser]
-    public unsafe class RespClusterBench
+    public unsafe class ClusterOperations
     {
         protected bool enableCluster = true;
         ClusterContext cc;

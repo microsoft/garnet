@@ -7,7 +7,7 @@ using Tsavorite.core;
 
 namespace BDN.benchmark
 {
-    sealed class CustomProcSetBench : CustomTransactionProcedure
+    sealed class CustomProcSet : CustomTransactionProcedure
     {
         /// <summary>
         /// Parameters including command

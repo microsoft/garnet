@@ -9,7 +9,7 @@ using Garnet.common;
 namespace BDN.benchmark.Cluster
 {
     [MemoryDiagnoser]
-    public unsafe class RespClusterMigrateBench
+    public unsafe class ClusterMigrate
     {
         ClusterContext cc;
         [GlobalSetup]

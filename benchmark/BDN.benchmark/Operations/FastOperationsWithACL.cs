@@ -4,10 +4,10 @@
 using BenchmarkDotNet.Attributes;
 using Garnet.server.Auth.Settings;
 
-namespace BDN.benchmark.Resp
+namespace BDN.benchmark.Operations
 {
     [MemoryDiagnoser]
-    public unsafe class RespParseACLStress : RespParseStress
+    public unsafe class FastOperationsWithACL : FastOperations
     {
         [Params(false, true)]
         public bool UseACLs { get; set; }
