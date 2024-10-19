@@ -12,8 +12,8 @@ namespace Garnet.server
     /// </summary>
     public class CustomCommandManager
     {
-        internal const byte StartOffset = 200;
-        internal const int MaxRegistrations = ushort.MaxValue - StartOffset;
+        internal static readonly ushort StartOffset = (ushort)(RespCommandExtensions.LastValidCommand + 1);
+        internal static readonly int MaxRegistrations = ushort.MaxValue - StartOffset;
 
         internal readonly CustomRawStringCommand[] rawStringCommandMap;
         internal readonly CustomObjectCommandWrapper[] objectCommandMap;
