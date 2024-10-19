@@ -12,7 +12,7 @@ namespace BDN.benchmark.Cluster
     {
         EmbeddedRespServer server;
         RespServerSession session;
-        BenchUtils benchUtils = new();
+        readonly BenchUtils benchUtils = new();
 
         private readonly int Port = 7000;
 

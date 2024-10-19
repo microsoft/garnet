@@ -37,7 +37,7 @@ namespace BDN.benchmark.Operations
         }
 
         [Benchmark]
-        public void Increment()
+        public void SingleIncrement()
         {
             fixed (byte* ptr = SINGLE_INCR)
             {
@@ -46,7 +46,7 @@ namespace BDN.benchmark.Operations
         }
 
         [Benchmark]
-        public void Decrement()
+        public void SingleDecrement()
         {
             fixed (byte* ptr = SINGLE_DECR)
             {
