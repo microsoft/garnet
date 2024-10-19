@@ -459,7 +459,7 @@ namespace Garnet.server
         {
             var bitCount = (byte)(args.typeInfo & 0x7F);
 
-            switch ((RespCommand)args.secondaryCommand)
+            switch (args.secondaryCommand)
             {
                 case RespCommand.SET:
                     return SetBitfieldValue(value, valLen, args.offset, bitCount, args.typeInfo, args.value, args.overflowType);

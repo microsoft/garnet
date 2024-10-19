@@ -303,7 +303,10 @@ namespace Garnet.server
         HELLO,
         QUIT, // Note: Update IsNoAuth if adding new no-auth commands after this
 
-        INVALID,
+        // Max value of this enum (not including INVALID) will determine the size of RespCommand.AofIndependentBitLookup and CommandPermissionSet._commandList,
+        // so avoid manually setting high values unless necessary
+
+        INVALID = 0xFFFF,
     }
 
     /// <summary>
@@ -365,12 +368,12 @@ namespace Garnet.server
         // The static ctor maybe expensive but it is only ever run once, and doesn't interfere with common path
         static RespCommandExtensions()
         {
-            var commands = Enum.GetValues<RespCommand>();
-            var maxCommandValue = (ushort)commands.Max();
-            var lookupTableSize = ((maxCommandValue + 1) / 64) + ((maxCommandValue + 1) % 64 == 0 ? 0 : 1);
+            // # of bits needed to represent all valid commands
+            var maxBitsNeeded = (ushort)LastValidCommand + 1;
+            var lookupTableSize = (maxBitsNeeded / 64) + (maxBitsNeeded % 64 == 0 ? 0 : 1);
             AofIndependentBitLookup = new ulong[lookupTableSize];
 
-            foreach (var cmd in commands)
+            foreach (var cmd in Enum.GetValues<RespCommand>())
             {
                 if (Array.IndexOf(AofIndependentCommands, cmd) == -1)
                     continue;
@@ -390,6 +393,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsAofIndependent(this RespCommand cmd)
         {
+            Debug.Assert(cmd <= LastValidCommand);
+
             // check if cmd maps to a bit vec that was set back when static ctor was run
             int bitIdxToUse = (int)cmd / sizeOfLong;
             int bitIdxOffset = (int)cmd % sizeOfLong;
@@ -439,6 +444,11 @@ namespace Garnet.server
         internal const RespCommand LastWriteCommand = RespCommand.BITOP_NOT;
 
         internal const RespCommand LastDataCommand = RespCommand.EVALSHA;
+
+        /// <summary>
+        /// Last valid command (i.e. RespCommand with the largest value excluding INVALID).
+        /// </summary>
+        public static RespCommand LastValidCommand = Enum.GetValues<RespCommand>().Where(cmd => cmd != RespCommand.INVALID).Max();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsReadOnly(this RespCommand cmd)
