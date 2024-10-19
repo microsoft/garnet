@@ -568,6 +568,13 @@ namespace Garnet.server
                     {
                         return GarnetStatus.WRONGTYPE;
                     }
+
+                    if (keys.Length == 1)
+                    {
+                        pairs = firstSortedSet.Dictionary;
+                        return GarnetStatus.OK;
+                    }
+
                     // read the rest of the keys
                     for (var item = 1; item < keys.Length; item++)
                     {
