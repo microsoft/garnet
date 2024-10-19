@@ -2,75 +2,52 @@
 // Licensed under the MIT license.
 
 using BenchmarkDotNet.Attributes;
-using NLua;
+using Garnet.server;
 
 namespace BDN.benchmark.Lua
 {
     [MemoryDiagnoser]
     public unsafe class Lua
     {
-        NLua.Lua state;
-        LuaFunction f1, f2, f3, f4;
-
-        public string garnet_call(string arg1) => arg1;
+        LuaRunner r1, r2, r3, r4;
+        readonly string[] keys = ["key1"];
 
         [GlobalSetup]
         public void GlobalSetup()
         {
-            state = new NLua.Lua();
-
-            _ = state.RegisterFunction("garnet_call", this, GetType().GetMethod("garnet_call"));
-            state["KEYS"] = new string[] { "key1", "key2" };
-            state["ARGV"] = new string[] { "arg1", "arg2" };
-
-            _ = state.DoString(@"
-                import = function () end
-                redis = {}
-                function redis.call(a)
-                    return garnet_call(a)
-                end
-                function load_sandboxed(source)
-                    if (not source) then return nil end
-                    return load(source)
-                end
-            ");
-
-            f1 = CreateFunction("return");
-            f2 = CreateFunction("return 1 + 1");
-            f3 = CreateFunction("return KEYS[1]");
-            f4 = CreateFunction("return redis.call(KEYS[1])");
+            r1 = new LuaRunner("return");
+            r1.Compile();
+            r2 = new LuaRunner("return 1 + 1");
+            r2.Compile();
+            r3 = new LuaRunner("return KEYS[1]");
+            r3.Compile();
+            r4 = new LuaRunner("return redis.call(KEYS[1])");
+            r4.Compile();
         }
 
         [GlobalCleanup]
         public void GlobalCleanup()
         {
-            f1.Dispose();
-            f2.Dispose();
-            f3.Dispose();
-            f4.Dispose();
-            state.Dispose();
-        }
-
-        LuaFunction CreateFunction(string source)
-        {
-            using var loader = (LuaFunction)state["load_sandboxed"];
-            return loader.Call(source)[0] as LuaFunction;
+            r1.Dispose();
+            r2.Dispose();
+            r3.Dispose();
+            r4.Dispose();
         }
 
         [Benchmark]
-        public void BasicLua1()
-            => f1.Call();
+        public void Lua1()
+            => r1.Run();
 
         [Benchmark]
-        public void BasicLua2()
-            => f2.Call();
+        public void Lua2()
+            => r2.Run();
 
         [Benchmark]
-        public void BasicLua3()
-            => f3.Call();
+        public void Lua3()
+            => r3.Run(keys, null);
 
         [Benchmark]
-        public void BasicLua4()
-            => f4.Call();
+        public void Lua4()
+            => r4.Run(keys, null);
     }
 }

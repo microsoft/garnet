@@ -7,7 +7,7 @@ using Garnet.server.Auth.Settings;
 namespace BDN.benchmark.Operations
 {
     [MemoryDiagnoser]
-    public unsafe class FastOperationsWithACL : FastOperations
+    public unsafe class RawStringOperationsWithACL : RawStringOperations
     {
         [Params(false, true)]
         public bool UseACLs { get; set; }
