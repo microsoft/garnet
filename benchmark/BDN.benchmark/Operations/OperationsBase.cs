@@ -14,12 +14,37 @@ namespace BDN.benchmark.Operations
         internal RespServerSession session;
         protected IAuthenticationSettings authSettings = null;
         protected const int batchSize = 128;
+        protected bool useAof = false;
+        protected bool useACLs = false;
 
         protected void Setup()
         {
-            var opts = new GarnetServerOptions();
-            opts.QuietMode = true;
-            opts.AuthSettings = authSettings;
+            var opts = new GarnetServerOptions
+            {
+                QuietMode = true
+            };
+            if (useAof)
+            {
+                opts.EnableAOF = true;
+                opts.UseAofNullDevice = true;
+                opts.MainMemoryReplication = true;
+                opts.CommitFrequencyMs = -1;
+                opts.AofPageSize = "128m";
+                opts.AofMemorySize = "256m";
+            }
+            if (useACLs)
+            {
+                var aclFile = Path.GetTempFileName();
+                try
+                {
+                    File.WriteAllText(aclFile, @"user default on nopass -@all +ping +set +get");
+                    opts.AuthSettings = new AclAuthenticationPasswordSettings(aclFile);
+                }
+                finally
+                {
+                    File.Delete(aclFile);
+                }
+            }
             server = new EmbeddedRespServer(opts);
             session = server.GetRespSession();
         }
