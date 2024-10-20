@@ -52,7 +52,7 @@ namespace Garnet.server
             init
             {
                 argFlags = value;
-                respFormatArgFlags = EnumUtils.GetEnumDescriptions(argFlags);
+                respFormatArgFlags = EnumUtils.GetRespCommandArgumentFlagsDescriptions(default);
             }
         }
 
@@ -97,7 +97,7 @@ namespace Garnet.server
 
             key = "type";
             sb.Append($"${key.Length}\r\n{key}\r\n");
-            var respType = EnumUtils.GetEnumDescriptions(this.Type)[0];
+            var respType = EnumUtils.GetRespCommandArgumentTypeDescriptions(this.Type)[0];
             sb.Append($"${respType.Length}\r\n{respType}\r\n");
             ArgCount += 2;
 
@@ -488,6 +488,7 @@ namespace Garnet.server
     /// <summary>
     /// An enum representing a RESP command argument's type
     /// </summary>
+    [GenerateEnumDescriptionUtils]
     public enum RespCommandArgumentType : byte
     {
         None,
@@ -551,6 +552,7 @@ namespace Garnet.server
     /// Argument flags
     /// </summary>
     [Flags]
+    [GenerateEnumDescriptionUtils]
     public enum RespCommandArgumentFlags : byte
     {
         None = 0,

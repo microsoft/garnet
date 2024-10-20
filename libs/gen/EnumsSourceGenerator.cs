@@ -28,18 +28,19 @@ public class EnumsSourceGenerator : IIncrementalGenerator
     private static EnumDetails TransformEnumDetails(EnumDeclarationSyntax enumDeclaration, SemanticModel semanticModel)
     {
         var namespaceDeclaration = enumDeclaration.FirstAncestorOrSelf<NamespaceDeclarationSyntax>();
+        var flags = enumDeclaration.AttributeLists.Where(al => al.Attributes.Any(a => a?.Name?.ToString() == "Flags")).Any();
         var enumName = enumDeclaration.Identifier.Text;
-
         var values = enumDeclaration.Members
             .Select(m => (
                 m.Identifier.Text,
-                semanticModel.GetOperation(m.EqualsValue!.Value)!.ConstantValue.Value,
+                Value: m.EqualsValue is not null ? semanticModel.GetOperation(m.EqualsValue.Value)!.ConstantValue.Value : null,
                 Description: m.AttributeLists
                     .SelectMany(al => al.Attributes).Where(a => a.Name.ToString() == "Description")
                     .SingleOrDefault()?.ArgumentList?.Arguments.Single().ToString()
             ))
             .ToArray();
-        return new EnumDetails(namespaceDeclaration!.Name.ToString(), enumName, new EquatableArray<(string Name, object? Value, string? Description)>(values));
+
+        return new EnumDetails(namespaceDeclaration!.Name.ToString(), enumName, flags, new EquatableArray<(string Name, object? Value, string? Description)>(values));
     }
 
     private static (string EnumName, string ClassSource) Execute(EnumDetails details)
@@ -120,25 +121,30 @@ public class EnumsSourceGenerator : IIncrementalGenerator
         classWriter.WriteLine($"public static string[] Get{details.EnumName}Descriptions({details.EnumName} value)");
         classWriter.WriteLine("{");
         classWriter.Indent++;
-        foreach (var (name, value, description) in details.Values)
+        if (details.Flags)
         {
-            if (!IsPow2(value))
+            foreach (var (name, value, description) in details.Values)
             {
-                var toStringValue = description ?? $"\"{name}\"";
-                classWriter.WriteLine($"if (value is {details.EnumName}.{name}) return [{toStringValue}];");
+                if (!IsPow2(value))
+                {
+                    var toStringValue = description ?? $"\"{name}\"";
+                    classWriter.WriteLine($"if (value is {details.EnumName}.{name}) return [{toStringValue}];");
+                }
             }
+
+            classWriter.WriteLine("var setFlags = BitOperations.PopCount((ulong)value);");
+            classWriter.WriteLine("if (setFlags is 1)");
+            classWriter.WriteLine("{");
+            classWriter.Indent++;
         }
-        classWriter.WriteLine("var setFlags = BitOperations.PopCount((ulong)value);");
-        classWriter.WriteLine("if (setFlags == 1)");
-        classWriter.WriteLine("{");
-        classWriter.Indent++;
+
         classWriter.WriteLine("return value switch");
         classWriter.WriteLine("{");
         classWriter.Indent++;
         foreach (var (name, value, description) in details.Values)
         {
             if (description is null) continue;
-            if (!IsPow2(value)) continue;
+            if (details.Flags && !IsPow2(value)) continue;
             classWriter.WriteLine($"{details.EnumName}.{name} => [{description}],");
         }
         classWriter.WriteLine($"_ => [value.ToString()],");
@@ -147,13 +153,19 @@ public class EnumsSourceGenerator : IIncrementalGenerator
         classWriter.Indent--;
         classWriter.WriteLine("}");
         classWriter.WriteLine();
+
+        if (!details.Flags)
+        {
+            return;
+        }
+
         classWriter.WriteLine("var descriptions = new string[setFlags];");
         classWriter.WriteLine("var index = 0;");
         foreach (var (name, value, description) in details.Values)
         {
             if (description is null) continue;
             if (!IsPow2(value)) continue;
-            classWriter.WriteLine($"if ((value & {details.EnumName}.{name}) != 0) descriptions[index++] = {description};");
+            classWriter.WriteLine($"if ((value & {details.EnumName}.{name}) is not 0) descriptions[index++] = {description};");
         }
         classWriter.WriteLine();
         classWriter.WriteLine("return descriptions;");
@@ -167,21 +179,5 @@ public class EnumsSourceGenerator : IIncrementalGenerator
         return false;
     }
 
-    private record struct EnumDetails(string Namespace, string EnumName, EquatableArray<(string Name, object? Value, string? Description)> Values);
-
-    private class EnumDetailsComparer : IEqualityComparer<EnumDetails>
-    {
-        public bool Equals(EnumDetails x, EnumDetails y) => x.EnumName.Equals(y.EnumName) && x.Namespace.Equals(y.Namespace) && x.Values.SequenceEqual(y.Values);
-        public int GetHashCode(EnumDetails obj)
-        {
-            var hash = new HashCode();
-            hash.Add(obj.EnumName);
-            hash.Add(obj.Namespace);
-            foreach (var value in obj.Values)
-            {
-                hash.Add(value);
-            }
-            return hash.ToHashCode();
-        }
-    }
+    private record struct EnumDetails(string Namespace, string EnumName, bool Flags, EquatableArray<(string Name, object? Value, string? Description)> Values);
 }

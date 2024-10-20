@@ -49,7 +49,7 @@ namespace Garnet.server
             init
             {
                 docFlags = value;
-                respFormatDocFlags = EnumUtils.GetEnumDescriptions(docFlags);
+                respFormatDocFlags = EnumUtils.GetRespCommandDocFlagsDescriptions(docFlags);
             }
         }
 
@@ -236,7 +236,7 @@ namespace Garnet.server
 
             key = "group";
             sb.Append($"${key.Length}\r\n{key}\r\n");
-            var respType = EnumUtils.GetEnumDescriptions(this.Group)[0];
+            var respType = EnumUtils.GetRespCommandGroupDescriptions(this.Group)[0];
             sb.Append($"${respType.Length}\r\n{respType}\r\n");
             argCount += 2;
 
@@ -303,6 +303,7 @@ namespace Garnet.server
     /// <summary>
     /// Enum representing the functional group to which the command belongs
     /// </summary>
+    [GenerateEnumDescriptionUtils]
     public enum RespCommandGroup : byte
     {
         None,
@@ -348,6 +349,7 @@ namespace Garnet.server
     /// Documentation flags
     /// </summary>
     [Flags]
+    [GenerateEnumDescriptionUtils]
     public enum RespCommandDocFlags : byte
     {
         None = 0,
