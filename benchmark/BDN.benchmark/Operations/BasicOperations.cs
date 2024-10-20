@@ -12,10 +12,9 @@ namespace BDN.benchmark.Operations
         byte[] pingRequestBuffer;
         byte* pingRequestBufferPointer;
 
-        [GlobalSetup]
-        public void GlobalSetup()
+        public override void GlobalSetup()
         {
-            Setup();
+            base.GlobalSetup();
             SetupOperation(ref pingRequestBuffer, ref pingRequestBufferPointer, INLINE_PING);
         }
 

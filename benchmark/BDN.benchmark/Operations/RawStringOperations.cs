@@ -48,10 +48,9 @@ namespace BDN.benchmark.Operations
         byte[] decrbyRequestBuffer;
         byte* decrbyRequestBufferPointer;
 
-        [GlobalSetup]
-        public virtual void GlobalSetup()
+        public override void GlobalSetup()
         {
-            Setup();
+            base.GlobalSetup();
             SetupOperation(ref setRequestBuffer, ref setRequestBufferPointer, SET);
             SetupOperation(ref setexRequestBuffer, ref setexRequestBufferPointer, SETEX);
             SetupOperation(ref setnxRequestBuffer, ref setnxRequestBufferPointer, SETNX);

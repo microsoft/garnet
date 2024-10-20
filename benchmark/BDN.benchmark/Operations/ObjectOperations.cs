@@ -46,10 +46,9 @@ namespace BDN.benchmark.Operations
             server.Register.NewTransactionProc(CustomProcs.CustomProcSet.CommandName, () => new CustomProcSet(), new RespCommandsInfo { Arity = CustomProcs.CustomProcSet.Arity });
         }
 
-        [GlobalSetup]
-        public void GlobalSetup()
+        public override void GlobalSetup()
         {
-            Setup();
+            base.GlobalSetup();
             CreateExtensions();
             SetupOperation(ref zAddRemRequestBuffer, ref zAddRemRequestBufferPointer, ZADDREM);
             SetupOperation(ref lPushPopRequestBuffer, ref lPushPopRequestBufferPointer, LPUSHPOP);

@@ -18,7 +18,8 @@ namespace BDN.benchmark.Operations
         protected bool useAof = false;
         protected bool useACLs = false;
 
-        protected void Setup()
+        [GlobalSetup]
+        public virtual void GlobalSetup()
         {
             var opts = new GarnetServerOptions
             {
