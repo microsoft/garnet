@@ -40,7 +40,7 @@ namespace Garnet.server
             init
             {
                 this.flags = value;
-                this.respFormatFlags = EnumUtils.GetEnumDescriptions(this.flags);
+                this.respFormatFlags = EnumUtils.GetKeySpecificationFlagsDescriptions(this.flags);
             }
         }
 
@@ -100,6 +100,7 @@ namespace Garnet.server
     /// RESP key specification flags
     /// </summary>
     [Flags]
+    [GenerateEnumDescriptionUtils]
     public enum KeySpecificationFlags : ushort
     {
         None = 0,
