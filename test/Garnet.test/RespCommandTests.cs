@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -23,17 +24,27 @@ namespace Garnet.test
         GarnetServer server;
         private string extTestDir;
         private IReadOnlyDictionary<string, RespCommandsInfo> respCommandsInfo;
+        private IReadOnlyDictionary<string, RespCommandsInfo> respSubCommandsInfo;
+        private IReadOnlyDictionary<string, RespCommandDocs> respCommandsDocs;
+        private IReadOnlyDictionary<string, RespCommandDocs> respSubCommandsDocs;
         private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
+        private IReadOnlyDictionary<string, RespCommandDocs> respCustomCommandsDocs;
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             extTestDir = Path.Combine(TestUtils.MethodTestDir, "test");
-            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo, externalOnly: true));
+            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo, externalOnly: false));
+            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespSubCommandsInfo(out respSubCommandsInfo, externalOnly: false));
+            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespCommandsDocs(out respCommandsDocs, externalOnly: false));
+            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespSubCommandsDocs(out respSubCommandsDocs, externalOnly: false));
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
+            ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsDocs(out respCustomCommandsDocs));
             ClassicAssert.IsNotNull(respCommandsInfo);
+            ClassicAssert.IsNotNull(respCommandsDocs);
             ClassicAssert.IsNotNull(respCustomCommandsInfo);
+            ClassicAssert.IsNotNull(respCustomCommandsDocs);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true,
                 extensionBinPaths: [extTestDir]);
             server.Start();
@@ -114,6 +125,52 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Test COMMAND DOCS command
+        /// </summary>
+        [Test]
+        public void CommandDocsTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Get all commands using COMMAND DOCS command
+            var results = (RedisResult[])db.Execute("COMMAND", "DOCS");
+
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(respCommandsDocs.Count, results.Length / 2);
+
+            // Register custom commands
+            var customCommandsRegistered = RegisterCustomCommands();
+
+            // Dynamically register custom commands
+            var customCommandsRegisteredDyn = DynamicallyRegisterCustomCommands(db);
+
+            // Get all commands (including custom commands) using COMMAND DOCS command
+            results = (RedisResult[])db.Execute("COMMAND", "DOCS");
+
+            ClassicAssert.IsNotNull(results);
+            var expectedCommands =
+                respCommandsDocs.Keys
+                    .Union(customCommandsRegistered)
+                    .Union(customCommandsRegisteredDyn).OrderBy(c => c);
+
+            var cmdNameToResult = new Dictionary<string, RedisResult>();
+            for (var i = 0; i < results.Length; i += 2)
+            {
+                cmdNameToResult.Add(results[i].ToString(), results[i + 1]);
+            }
+
+            var actualCommands = cmdNameToResult.Keys.OrderBy(c => c);
+            CollectionAssert.AreEqual(expectedCommands, actualCommands);
+
+            foreach (var cmdName in respCommandsDocs.Keys.Union(customCommandsRegistered).Union(customCommandsRegisteredDyn))
+            {
+                ClassicAssert.Contains(cmdName, cmdNameToResult.Keys);
+                VerifyCommandDocs(cmdName, cmdNameToResult[cmdName]);
+            }
+        }
+
+        /// <summary>
         /// Test COMMAND COUNT command
         /// </summary>
         [Test]
@@ -166,8 +223,8 @@ namespace Garnet.test
         /// Test COMMAND INFO [command-name [command-name ...]]
         /// </summary>
         [Test]
-        [TestCase(["GET", "SET", "COSCAN"])]
-        [TestCase(["get", "set", "coscan"])]
+        [TestCase(["GET", "SET", "COSCAN", "ACL|LOAD", "WATCH"])]
+        [TestCase(["get", "set", "coscan", "acl|load", "watch"])]
         public void CommandInfoWithCommandNamesTest(params string[] commands)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -185,6 +242,33 @@ namespace Garnet.test
             {
                 var info = results[i];
                 VerifyCommandInfo(commands[i], info);
+            }
+        }
+
+        /// <summary>
+        /// Test COMMAND DOCS [command-name [command-name ...]]
+        /// </summary>
+        [Test]
+        [TestCase(["GET", "SET", "COSCAN", "ACL|LOAD", "WATCH"])]
+        [TestCase(["get", "set", "coscan", "acl|load", "watch"])]
+        public void CommandDocsWithCommandNamesTest(params string[] commands)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var args = new object[] { "DOCS" }.Union(commands).ToArray();
+
+            // Get basic commands using COMMAND INFO command
+            var results = (RedisResult[])db.Execute("COMMAND", args);
+
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(commands.Length, results.Length / 2);
+
+            for (var i = 0; i < commands.Length; i++)
+            {
+                ClassicAssert.AreEqual(commands[i].ToUpper(), results[2 * i].ToString());
+                var info = results[(2 * i) + 1];
+                VerifyCommandDocs(commands[i], info);
             }
         }
 
@@ -220,6 +304,39 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>
+        /// Test COMMAND INFO with custom commands
+        /// </summary>
+        [Test]
+        [TestCase(["SETIFPM", "MYDICTSET", "MGETIFPM", "READWRITETX", "MYDICTGET"])]
+        [TestCase(["setifpm", "mydictset", "mgetifpm", "readwritetx", "mydictget"])]
+        public void CommandDocsWithCustomCommandNamesTest(params string[] commands)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Register custom commands
+            RegisterCustomCommands();
+
+            // Dynamically register custom commands
+            DynamicallyRegisterCustomCommands(db);
+
+            var args = new object[] { "DOCS" }.Union(commands).ToArray();
+
+            // Get basic commands using COMMAND DOCS command
+            var results = (RedisResult[])db.Execute("COMMAND", args);
+
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(commands.Length, results.Length / 2);
+
+            for (var i = 0; i < commands.Length; i++)
+            {
+                ClassicAssert.AreEqual(commands[i].ToUpper(), results[2 * i].ToString());
+                var info = results[(2 * i) + 1];
+                VerifyCommandDocs(commands[i], info);
+            }
+        }
+
         [Test]
         public void AofIndependentCommandsTest()
         {
@@ -228,7 +345,6 @@ namespace Garnet.test
                 RespCommand.PING,
                 RespCommand.SELECT,
                 RespCommand.ECHO,
-                RespCommand.CLIENT,
                 RespCommand.MONITOR,
                 RespCommand.MODULE_LOADCS,
                 RespCommand.REGISTERCS,
@@ -244,9 +360,15 @@ namespace Garnet.test
                 RespCommand.ACL_SETUSER,
                 RespCommand.ACL_USERS,
                 RespCommand.ACL_WHOAMI,
+                // Client
+                RespCommand.CLIENT_ID,
+                RespCommand.CLIENT_INFO,
+                RespCommand.CLIENT_LIST,
+                RespCommand.CLIENT_KILL,
                 // Command
                 RespCommand.COMMAND,
                 RespCommand.COMMAND_COUNT,
+                RespCommand.COMMAND_DOCS,
                 RespCommand.COMMAND_INFO,
                 RespCommand.MEMORY_USAGE,
                 // Config
@@ -273,14 +395,14 @@ namespace Garnet.test
             var registeredCommands = new[] { "SETIFPM", "MYDICTSET", "MGETIFPM" };
 
             var factory = new MyDictFactory();
-            server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), respCustomCommandsInfo["SETIFPM"]);
-            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), respCustomCommandsInfo["MYDICTSET"]);
-            server.Register.NewTransactionProc("MGETIFPM", () => new MGetIfPM(), respCustomCommandsInfo["MGETIFPM"]);
+            server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), respCustomCommandsInfo["SETIFPM"], respCustomCommandsDocs["SETIFPM"]);
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), respCustomCommandsInfo["MYDICTSET"], respCustomCommandsDocs["MYDICTSET"]);
+            server.Register.NewTransactionProc("MGETIFPM", () => new MGetIfPM(), respCustomCommandsInfo["MGETIFPM"], respCustomCommandsDocs["MGETIFPM"]);
 
             return registeredCommands;
         }
 
-        private (string, string) CreateTestLibrary()
+        private (string, string, string) CreateTestLibrary()
         {
             var runtimePath = RuntimeEnvironment.GetRuntimeDirectory();
             var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
@@ -336,19 +458,23 @@ namespace Garnet.test
             var cmdInfoPath = Path.Combine(dir1, Path.GetFileName(TestUtils.CustomRespCommandInfoJsonPath)!);
             File.Copy(TestUtils.CustomRespCommandInfoJsonPath!, cmdInfoPath);
 
-            return (cmdInfoPath, Path.Combine(dir1, "testLib1.dll"));
+            var cmdDocsPath = Path.Combine(dir1, Path.GetFileName(TestUtils.CustomRespCommandDocsJsonPath)!);
+            File.Copy(TestUtils.CustomRespCommandDocsJsonPath!, cmdDocsPath);
+
+            return (cmdInfoPath, cmdDocsPath, Path.Combine(dir1, "testLib1.dll"));
         }
 
         private string[] DynamicallyRegisterCustomCommands(IDatabase db)
         {
             var registeredCommands = new[] { "READWRITETX", "MYDICTGET" };
-            var (cmdInfoPath, srcPath) = CreateTestLibrary();
+            var (cmdInfoPath, cmdDocsPath, srcPath) = CreateTestLibrary();
 
             var args = new List<object>
             {
                 "TXN", "READWRITETX", 3, "ReadWriteTxn",
                 "READ", "MYDICTGET", 1, "MyDictFactory",
                 "INFO", cmdInfoPath,
+                "DOCS", cmdDocsPath,
                 "SRC", srcPath
             };
 
@@ -362,21 +488,49 @@ namespace Garnet.test
 
         private void VerifyCommandInfo(string cmdName, RedisResult result)
         {
-            RespCommandsInfo cmdInfo = default;
-            if (respCommandsInfo.ContainsKey(cmdName))
-            {
-                cmdInfo = respCommandsInfo[cmdName];
-            }
-            else if (respCustomCommandsInfo.ContainsKey(cmdName))
-            {
-                cmdInfo = respCustomCommandsInfo[cmdName];
-            }
-            else Assert.Fail();
+            if (!respCommandsInfo.TryGetValue(cmdName, out var cmdInfo) &&
+                !respSubCommandsInfo.TryGetValue(cmdName, out cmdInfo) &&
+                !respCustomCommandsInfo.TryGetValue(cmdName, out cmdInfo))
+                Assert.Fail();
 
             ClassicAssert.IsNotNull(result);
             ClassicAssert.AreEqual(10, result.Length);
             ClassicAssert.AreEqual(cmdInfo.Name, (string)result[0]);
             ClassicAssert.AreEqual(cmdInfo.Arity, (int)result[1]);
+        }
+
+        private void VerifyCommandDocs(string cmdName, RedisResult result)
+        {
+            ClassicAssert.IsNotNull(result);
+
+            if (!respCommandsDocs.TryGetValue(cmdName, out var cmdDoc) &&
+                !respSubCommandsDocs.TryGetValue(cmdName, out cmdDoc) &&
+                !respCustomCommandsDocs.TryGetValue(cmdName, out cmdDoc))
+                Assert.Fail();
+
+            for (var i = 0; i < result.Length; i += 2)
+            {
+                var key = result[i].ToString();
+                var value = result[i + 1];
+
+                switch (key)
+                {
+                    case "summary":
+                        ClassicAssert.AreEqual(cmdDoc.Summary, value.ToString());
+                        break;
+                    case "group":
+                        if (cmdDoc.Group == RespCommandGroup.None) continue;
+                        ClassicAssert.IsTrue(EnumUtils.TryParseEnumFromDescription(value.ToString(), out RespCommandGroup group));
+                        ClassicAssert.AreEqual(cmdDoc.Group, group);
+                        break;
+                    case "arguments":
+                        ClassicAssert.AreEqual(cmdDoc.Arguments.Length, value.Length);
+                        break;
+                    case "subcommands":
+                        ClassicAssert.AreEqual(cmdDoc.SubCommands.Length, value.Length / 2);
+                        break;
+                }
+            }
         }
     }
 }

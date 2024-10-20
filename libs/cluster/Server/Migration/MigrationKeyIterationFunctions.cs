@@ -14,13 +14,18 @@ namespace Garnet.cluster
     {
         internal sealed class MigrationKeyIterationFunctions
         {
-            internal unsafe struct MainStoreGetKeysInSlots : IScanIteratorFunctions<SpanByte, SpanByte>
+            internal sealed unsafe class MainStoreGetKeysInSlots : IScanIteratorFunctions<SpanByte, SpanByte>
             {
                 MigrationScanIterator iterator;
 
                 internal MainStoreGetKeysInSlots(MigrateSession session, HashSet<int> slots, int bufferSize = 1 << 17)
                 {
                     iterator = new MigrationScanIterator(session, slots, bufferSize);
+                }
+
+                internal void Dispose()
+                {
+                    iterator.Dispose();
                 }
 
                 public void AdvanceIterator() => iterator.AdvanceIterator();
@@ -61,6 +66,11 @@ namespace Garnet.cluster
                     iterator = new MigrationScanIterator(session, slots, bufferSize);
                 }
 
+                internal void Dispose()
+                {
+                    iterator.Dispose();
+                }
+
                 public void AdvanceIterator() => iterator.AdvanceIterator();
 
                 public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
@@ -90,10 +100,12 @@ namespace Garnet.cluster
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-            internal struct MigrationScanIterator
+            internal sealed class MigrationScanIterator
             {
                 readonly MigrateSession session;
                 readonly HashSet<int> slots;
+
+                readonly PoolEntry poolEntry;
 
                 long offset;
                 long currentOffset;
@@ -108,9 +120,15 @@ namespace Garnet.cluster
                     offset = 0;
                     currentOffset = 0;
 
-                    keyBuffer = GC.AllocateArray<byte>(bufferSize, pinned: true);
+                    poolEntry = session.GetNetworkPool.Get(size: bufferSize);
+                    keyBuffer = poolEntry.entry;
                     currPtr = (byte*)Unsafe.AsPointer(ref keyBuffer[0]);
                     endPtr = (byte*)Unsafe.AsPointer(ref keyBuffer[^1]);
+                }
+
+                internal void Dispose()
+                {
+                    poolEntry.Dispose();
                 }
 
                 /// <summary>

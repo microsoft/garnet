@@ -13,7 +13,7 @@
     "KeySpecifications": null,
     "SubCommands": [
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_AOFSYNC",
         "Name": "CLUSTER|AOFSYNC",
         "IsInternal": true,
         "Arity": 3,
@@ -26,7 +26,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_APPENDLOG",
         "Name": "CLUSTER|APPENDLOG",
         "IsInternal": true,
         "Arity": 6,
@@ -39,7 +39,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_BANLIST",
         "Name": "CLUSTER|BANLIST",
         "IsInternal": true,
         "Arity": 1,
@@ -52,7 +52,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_BEGIN_REPLICA_RECOVER",
         "Name": "CLUSTER|BEGIN_REPLICA_RECOVER",
         "IsInternal": true,
         "Arity": 8,
@@ -65,7 +65,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_DELKEYSINSLOT",
         "Name": "CLUSTER|DELKEYSINSLOT",
         "IsInternal": true,
         "Arity": 2,
@@ -78,7 +78,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_DELKEYSINSLOTRANGE",
         "Name": "CLUSTER|DELKEYSINSLOTRANGE",
         "IsInternal": true,
         "Arity": -3,
@@ -91,7 +91,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_ENDPOINT",
         "Name": "CLUSTER|ENDPOINT",
         "IsInternal": true,
         "Arity": 2,
@@ -104,7 +104,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_FAILSTOPWRITES",
         "Name": "CLUSTER|FAILSTOPWRITES",
         "IsInternal": true,
         "Arity": 2,
@@ -117,7 +117,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_FAILREPLICATIONOFFSET",
         "Name": "CLUSTER|FAILREPLICATIONOFFSET",
         "IsInternal": true,
         "Arity": 2,
@@ -130,7 +130,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_GOSSIP",
         "Name": "CLUSTER|GOSSIP",
         "IsInternal": true,
         "Arity": -2,
@@ -143,7 +143,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_HELP",
         "Name": "CLUSTER|HELP",
         "IsInternal": false,
         "Arity": 1,
@@ -156,7 +156,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_INITIATE_REPLICA_SYNC",
         "Name": "CLUSTER|INITIATE_REPLICA_SYNC",
         "IsInternal": true,
         "Arity": 6,
@@ -169,7 +169,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_MIGRATE",
         "Name": "CLUSTER|MIGRATE",
         "IsInternal": true,
         "Arity": 4,
@@ -182,7 +182,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_MTASKS",
         "Name": "CLUSTER|MTASKS",
         "IsInternal": true,
         "Arity": 1,
@@ -195,7 +195,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_MYPARENTID",
         "Name": "CLUSTER|MYPARENTID",
         "IsInternal": true,
         "Arity": 1,
@@ -208,7 +208,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_SEND_CKPT_FILE_SEGMENT",
         "Name": "CLUSTER|SEND_CKPT_FILE_SEGMENT",
         "IsInternal": true,
         "Arity": 6,
@@ -221,7 +221,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_SEND_CKPT_METADATA",
         "Name": "CLUSTER|SEND_CKPT_METADATA",
         "IsInternal": true,
         "Arity": 4,
@@ -234,7 +234,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_SETSLOTSRANGE",
         "Name": "CLUSTER|SETSLOTSRANGE",
         "IsInternal": true,
         "Arity": -4,
@@ -247,7 +247,7 @@
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_SLOTSTATE",
         "Name": "CLUSTER|SLOTSTATE",
         "IsInternal": true,
         "Arity": 1,
@@ -370,7 +370,7 @@
     "KeySpecifications": null,
     "SubCommands": [
       {
-        "Command": "LATENCY",
+        "Command": "LATENCY_HELP",
         "Name": "LATENCY|HELP",
         "IsInternal": false,
         "Arity": 0,
@@ -425,15 +425,15 @@
     "SubCommands": null
   },
   {
-    "Command": "WATCH",
-    "Name": "WATCH",
+    "Command": "WATCHMS",
+    "Name": "WATCHMS",
     "IsInternal": false,
     "Arity": -2,
     "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
     "FirstKey": 1,
     "LastKey": -1,
     "Step": 1,
-    "AclCategories": "Fast, Transaction",
+    "AclCategories": "Fast, Read, Transaction",
     "Tips": null,
     "KeySpecifications": [
       {
@@ -451,36 +451,36 @@
         "Flags": "RO"
       }
     ],
-    "SubCommands": [
+    "SubCommands": null
+  },
+  {
+    "Command": "WATCHOS",
+    "Name": "WATCHOS",
+    "IsInternal": false,
+    "Arity": -2,
+    "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Transaction",
+    "Tips": null,
+    "KeySpecifications": [
       {
-        "Command": "WATCH",
-        "Name": "WATCH|MS",
-        "IsInternal": false,
-        "Arity": -3,
-        "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
-        "FirstKey": 2,
-        "LastKey": -2,
-        "Step": 1,
-        "AclCategories": "Fast, Transaction, Garnet",
-        "Tips": null,
-        "KeySpecifications": null,
-        "SubCommands": null
-      },
-      {
-        "Command": "WATCH",
-        "Name": "WATCH|OS",
-        "IsInternal": false,
-        "Arity": -3,
-        "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
-        "FirstKey": 2,
-        "LastKey": -2,
-        "Step": 1,
-        "AclCategories": "Fast, Transaction, Garnet",
-        "Tips": null,
-        "KeySpecifications": null,
-        "SubCommands": null
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
       }
-    ]
+    ],
+    "SubCommands": null
   },
   {
     "Command": "ASYNC",
@@ -511,7 +511,7 @@
     "KeySpecifications": null,
     "SubCommands": [
       {
-        "Command": "MODULE",
+        "Command": "MODULE_LOADCS",
         "Name": "MODULE|LOADCS",
         "IsInternal": false,
         "Arity": -3,

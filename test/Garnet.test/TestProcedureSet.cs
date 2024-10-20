@@ -18,10 +18,10 @@ namespace Garnet
 
     sealed class TestProcedureSet : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
-            int offset = 0;
-            var setA = GetNextArg(input, ref offset);
+            var offset = 0;
+            var setA = GetNextArg(ref procInput, ref offset);
 
             if (setA.Length == 0)
                 return false;
@@ -30,25 +30,25 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
-            var result = TestAPI(api, input);
+            var result = TestAPI(api, ref procInput);
             WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
         }
 
-        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ArgSlice input) where TGarnetApi : IGarnetApi
+        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput) where TGarnetApi : IGarnetApi
         {
             var offset = 0;
             var elements = new ArgSlice[10];
 
-            var setA = GetNextArg(input, ref offset);
+            var setA = GetNextArg(ref procInput, ref offset);
 
             if (setA.Length == 0)
                 return false;
 
             for (var i = 0; i < elements.Length; i++)
             {
-                elements[i] = GetNextArg(input, ref offset);
+                elements[i] = GetNextArg(ref procInput, ref offset);
             }
 
             var status = api.SetAdd(setA, elements.Take(9).ToArray(), out var count);
@@ -59,7 +59,7 @@ namespace Garnet
             if (status != GarnetStatus.OK || count != 1)
                 return false;
 
-            var toRemove = GetNextArg(input, ref offset);
+            var toRemove = GetNextArg(ref procInput, ref offset);
             status = api.SetRemove(setA, toRemove, out count);
             if (status != GarnetStatus.OK || count == 0)
                 return false;
@@ -78,6 +78,10 @@ namespace Garnet
 
             status = api.SetMembers(setA, out var members);
             if (status != GarnetStatus.OK || members.Length != 5)
+                return false;
+
+            status = api.SetIsMember(setA, elements[0..5], out var result);
+            if (status != GarnetStatus.OK || result.Length != 5)
                 return false;
 
             status = api.SetPop(setA, out var member);

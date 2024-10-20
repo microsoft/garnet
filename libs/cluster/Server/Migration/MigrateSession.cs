@@ -69,6 +69,16 @@ namespace Garnet.cluster
         /// </summary>
         public HashSet<int> GetSlots => _sslots;
 
+        /// <summary>
+        /// Get network buffer specs
+        /// </summary>
+        public NetworkBufferSettings GetNetworkBufferSettings => clusterProvider.migrationManager.GetNetworkBufferSettings;
+
+        /// <summary>
+        /// Get network pool
+        /// </summary>
+        public LimitedFixedBufferPool GetNetworkPool => clusterProvider.migrationManager.GetNetworkPool;
+
         readonly GarnetClientSession _gcs;
 
         /// <summary>
@@ -79,9 +89,10 @@ namespace Garnet.cluster
         public bool Overlap(MigrateSession session)
             => session._sslots.Overlaps(_sslots);
 
-        readonly int _clientBufferSize;
-
-        TransferOption transferOption;
+        /// <summary>
+        /// Transfer option used for this migrateSession
+        /// </summary>
+        readonly TransferOption transferOption;
 
         /// <summary>
         /// MigrateSession Constructor
@@ -130,7 +141,7 @@ namespace Garnet.cluster
             this._timeout = TimeSpan.FromMilliseconds(_timeout);
             this._sslots = _slots;
             this._slotRanges = GetRanges();
-            this._keys = keys == null ? new MigratingKeysWorkingSet() : keys;
+            this._keys = keys ?? new MigratingKeysWorkingSet();
             this.transferOption = transferOption;
 
             if (clusterProvider != null)
@@ -138,14 +149,14 @@ namespace Garnet.cluster
             Status = MigrateState.PENDING;
 
             // Single key value size + few bytes for command header and arguments
-            _clientBufferSize = 256 + (1 << clusterProvider.serverOptions.PageSizeBits());
             _gcs = new(
                 _targetAddress,
                 _targetPort,
+                networkBufferSettings: GetNetworkBufferSettings,
+                networkPool: GetNetworkPool,
                 clusterProvider?.serverOptions.TlsOptions?.TlsClientOptions,
                 authUsername: _username,
                 authPassword: _passwd,
-                bufferSize: _clientBufferSize,
                 logger: logger);
         }
 
@@ -266,7 +277,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Reset local slot state
         /// </summary>
-        public void ResetLocalSlot() => clusterProvider.clusterManager.ResetSlotsState(_sslots);
+        public void ResetLocalSlot() => clusterProvider.clusterManager.TryResetSlotState(_sslots);
 
         /// <summary>
         /// Prepare remote node for importing

@@ -37,6 +37,7 @@ namespace Garnet.server
         MetricsItem[] persistenceInfo = null;
         MetricsItem[] clientsInfo = null;
         MetricsItem[] keyspaceInfo = null;
+        MetricsItem[] bufferPoolStats = null;
 
         public GarnetInfoMetrics() { }
 
@@ -68,18 +69,27 @@ namespace Garnet.server
             var total_main_store_size = main_store_index_size + main_store_log_memory_size + main_store_read_cache_size;
 
             var object_store_index_size = -1L;
-            var object_store_log_memory_references_size = -1L;
-            var object_store_read_cache_size = -1L;
+            var object_store_log_memory_size = -1L;
+            var object_store_read_cache_log_memory_size = -1L;
+            var object_store_heap_memory_size = -1L;
+            var object_store_read_cache_heap_memory_size = -1L;
             var total_object_store_size = -1L;
             var disableObj = storeWrapper.serverOptions.DisableObjects;
+
+            var aof_log_memory_size = storeWrapper.appendOnlyFile?.MemorySizeBytes ?? -1;
 
             if (!disableObj)
             {
                 object_store_index_size = storeWrapper.objectStore.IndexSize * 64;
-                object_store_log_memory_references_size = storeWrapper.objectStore.Log.MemorySizeBytes;
-                object_store_read_cache_size = (storeWrapper.objectStore.ReadCache != null ? storeWrapper.objectStore.ReadCache.MemorySizeBytes : 0);
-                total_object_store_size = object_store_index_size + object_store_log_memory_references_size + object_store_read_cache_size;
+                object_store_log_memory_size = storeWrapper.objectStore.Log.MemorySizeBytes;
+                object_store_read_cache_log_memory_size = storeWrapper.objectStore.ReadCache?.MemorySizeBytes ?? 0;
+                object_store_heap_memory_size = storeWrapper.objectStoreSizeTracker?.mainLogTracker.LogHeapSizeBytes ?? 0;
+                object_store_read_cache_heap_memory_size = storeWrapper.objectStoreSizeTracker?.readCacheTracker?.LogHeapSizeBytes ?? 0;
+                total_object_store_size = object_store_index_size + object_store_log_memory_size + object_store_read_cache_log_memory_size + object_store_heap_memory_size + object_store_read_cache_heap_memory_size;
             }
+
+            var gcMemoryInfo = GC.GetGCMemoryInfo();
+            var gcAvailableMemory = gcMemoryInfo.TotalCommittedBytes - gcMemoryInfo.HeapSizeBytes;
 
             memoryInfo =
             [
@@ -104,14 +114,21 @@ namespace Garnet.server
                 new("proc_physical_memory_size(MB)", SystemMetrics.GetPhysicalMemoryUsage(1 << 20).ToString()),
                 new("proc_peak_physical_memory_size", SystemMetrics.GetPeakPhysicalMemoryUsage().ToString()),
                 new("proc_peak_physical_memory_size(MB)", SystemMetrics.GetPeakPhysicalMemoryUsage(1 << 20).ToString()),
+                new("gc_committed_bytes", gcMemoryInfo.TotalCommittedBytes.ToString()),
+                new("gc_heap_bytes", gcMemoryInfo.HeapSizeBytes.ToString()),
+                new("gc_managed_memory_bytes_excluding_heap", gcAvailableMemory.ToString()),
+                new("gc_fragmented_bytes", gcMemoryInfo.FragmentedBytes.ToString()),
                 new("main_store_index_size", main_store_index_size.ToString()),
                 new("main_store_log_memory_size", main_store_log_memory_size.ToString()),
                 new("main_store_read_cache_size", main_store_read_cache_size.ToString()),
                 new("total_main_store_size", total_main_store_size.ToString()),
                 new("object_store_index_size", object_store_index_size.ToString()),
-                new("object_store_log_memory_references_size", object_store_log_memory_references_size.ToString()),
-                new("object_store_read_cache_size", object_store_read_cache_size.ToString()),
-                new("total_object_store_size", total_object_store_size.ToString())
+                new("object_store_log_memory_size", object_store_log_memory_size.ToString()),
+                new("object_store_read_cache_log_memory_size", object_store_read_cache_log_memory_size.ToString()),
+                new("object_store_heap_memory_size", object_store_heap_memory_size.ToString()),
+                new("object_store_read_cache_heap_memory_size", object_store_read_cache_heap_memory_size.ToString()),
+                new("total_object_store_size", total_object_store_size.ToString()),
+                new("aof_memory_size", aof_log_memory_size.ToString())
             ];
         }
 
@@ -224,15 +241,15 @@ namespace Garnet.server
                 ];
         }
 
-        public void PopulateStoreHashDistribution(StoreWrapper storeWrapper) => storeHashDistrInfo = [new("", storeWrapper.store.DumpDistribution())];
+        private void PopulateStoreHashDistribution(StoreWrapper storeWrapper) => storeHashDistrInfo = [new("", storeWrapper.store.DumpDistribution())];
 
-        public void PopulateObjectStoreHashDistribution(StoreWrapper storeWrapper) => objectStoreHashDistrInfo = [new("", storeWrapper.objectStore.DumpDistribution())];
+        private void PopulateObjectStoreHashDistribution(StoreWrapper storeWrapper) => objectStoreHashDistrInfo = [new("", storeWrapper.objectStore.DumpDistribution())];
 
-        public void PopulateStoreRevivInfo(StoreWrapper storeWrapper) => storeRevivInfo = [new("", storeWrapper.store.DumpRevivificationStats())];
+        private void PopulateStoreRevivInfo(StoreWrapper storeWrapper) => storeRevivInfo = [new("", storeWrapper.store.DumpRevivificationStats())];
 
-        public void PopulateObjectStoreRevivInfo(StoreWrapper storeWrapper) => objectStoreRevivInfo = [new("", storeWrapper.objectStore.DumpRevivificationStats())];
+        private void PopulateObjectStoreRevivInfo(StoreWrapper storeWrapper) => objectStoreRevivInfo = [new("", storeWrapper.objectStore.DumpRevivificationStats())];
 
-        public void PopulatePersistenceInfo(StoreWrapper storeWrapper)
+        private void PopulatePersistenceInfo(StoreWrapper storeWrapper)
         {
             bool aofEnabled = storeWrapper.serverOptions.EnableAOF;
             persistenceInfo =
@@ -258,6 +275,13 @@ namespace Garnet.server
             keyspaceInfo = null;
         }
 
+        private void PopulateClusterBufferPoolStats(StoreWrapper storeWrapper)
+        {
+            bufferPoolStats = [new("server_socket", storeWrapper.GetTcpServer().GetBufferPoolStats())];
+            if (storeWrapper.clusterProvider != null)
+                bufferPoolStats = [.. bufferPoolStats, .. storeWrapper.clusterProvider.GetBufferPoolStats()];
+        }
+
         public static string GetSectionHeader(InfoMetricsType infoType)
         {
             return infoType switch
@@ -277,6 +301,7 @@ namespace Garnet.server
                 InfoMetricsType.CLIENTS => "Clients",
                 InfoMetricsType.KEYSPACE => "Keyspace",
                 InfoMetricsType.MODULES => "Modules",
+                InfoMetricsType.BPSTATS => "BufferPool Stats",
                 _ => "Default",
             };
         }
@@ -353,6 +378,9 @@ namespace Garnet.server
                     return GetSectionRespInfo(InfoMetricsType.KEYSPACE, keyspaceInfo);
                 case InfoMetricsType.MODULES:
                     return GetSectionRespInfo(section, null);
+                case InfoMetricsType.BPSTATS:
+                    PopulateClusterBufferPoolStats(storeWrapper);
+                    return GetSectionRespInfo(InfoMetricsType.BPSTATS, bufferPoolStats);
                 default:
                     return "";
             }
@@ -364,7 +392,9 @@ namespace Garnet.server
             for (var i = 0; i < sections.Length; i++)
             {
                 var section = sections[i];
-                response += GetRespInfo(section, storeWrapper);
+                var resp = GetRespInfo(section, storeWrapper);
+                if (string.IsNullOrEmpty(resp)) continue;
+                response += resp;
                 response += sections.Length - 1 == i ? "" : "\r\n";
             }
             return response;

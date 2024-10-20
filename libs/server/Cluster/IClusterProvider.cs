@@ -11,7 +11,7 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
             /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
             SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
         BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
@@ -44,10 +44,27 @@ namespace Garnet.server
         MetricsItem[] GetReplicationInfo();
 
         /// <summary>
+        /// Get buffer poolt stats
+        /// </summary>
+        /// <returns></returns>
+        MetricsItem[] GetBufferPoolStats();
+
+        /// <summary>
+        /// Purger buffer pool for provided manager
+        /// </summary>
+        /// <param name="managerType"></param>
+        void PurgeBufferPool(ManagerType managerType);
+
+        /// <summary>
         /// Is replica
         /// </summary>
         /// <returns></returns>
         bool IsReplica();
+
+        /// <summary>
+        /// Returns true if the given nodeId is a replica, according to the current cluster configuration.
+        /// </summary>
+        bool IsReplica(string nodeId);
 
         /// <summary>
         /// On checkpoint initiated

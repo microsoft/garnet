@@ -266,12 +266,12 @@ namespace Garnet.test.cluster
 
             var sourceIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot((ushort)slot, context.logger);
             var expectedKeyCount = context.clusterTestUtils.CountKeysInSlot(slot, context.logger);
-            ClassicAssert.AreEqual(expectedKeyCount, keyCount);
+            ClassicAssert.AreEqual(keyCount, expectedKeyCount);
             _ = context.clusterTestUtils.CountKeysInSlot(-1, context.logger);
             _ = context.clusterTestUtils.CountKeysInSlot(ushort.MaxValue, context.logger);
 
             var result = context.clusterTestUtils.GetKeysInSlot(sourceIndex, slot, expectedKeyCount, context.logger);
-            ClassicAssert.AreEqual(result.Count, keyCount);
+            ClassicAssert.AreEqual(keyCount, result.Count);
             _ = context.clusterTestUtils.GetKeysInSlot(-1, expectedKeyCount);
             _ = context.clusterTestUtils.GetKeysInSlot(ushort.MaxValue, expectedKeyCount);
 
@@ -1664,6 +1664,110 @@ namespace Garnet.test.cluster
                 var resp = context.clusterTestUtils.GetKey(dstNodeIndex, key, out _, out _, out _, out var responseState, logger: context.logger);
                 ClassicAssert.AreEqual(ResponseState.OK, responseState);
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(key), resp);
+            }
+        }
+
+        [Test, Order(16)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateLargePayload([Values] bool expiration, [Values] bool largePayload)
+        {
+            var r = new Random(674386);
+            var key = new byte[12];
+            ClusterTestUtils.RandomBytes(ref r, ref key);
+            var value = new byte[largePayload ? 6789 : 123];
+            ClusterTestUtils.RandomBytes(ref r, ref value);
+
+            List<(byte[], byte[])> data = [(key, value)];
+            ClusterMigrateExpirationWithVaryingPayload(expiration, data);
+        }
+
+        [Test, Order(16)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateIncreasingPayload([Values] bool expiration, [Values] bool largeSameSize)
+        {
+            var r = new Random(674386);
+            List<(byte[], byte[])> data = [];
+            var valueSize = largeSameSize ? 1234 : 12;
+
+            for (var i = 0; i < 8; i++)
+            {
+                var key = new byte[12];
+                ClusterTestUtils.RandomBytes(ref r, ref key);
+                var value = new byte[valueSize];
+                ClusterTestUtils.RandomBytes(ref r, ref value);
+
+                data.Add((key, value));
+                if (!largeSameSize) valueSize += valueSize * 2;
+            }
+
+            ClusterMigrateExpirationWithVaryingPayload(expiration, data);
+        }
+
+        private void ClusterMigrateExpirationWithVaryingPayload(bool expiration, List<(byte[], byte[])> data)
+        {
+            var Shards = 2;
+            context.CreateInstances(Shards, useTLS: UseTLS);
+            context.CreateConnection(useTLS: UseTLS);
+
+            var srcNodeIndex = 0;
+            var dstNodeIndex = 1;
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(srcNodeIndex, [(0, 16383)], addslot: true, logger: context.logger));
+
+            context.clusterTestUtils.SetConfigEpoch(srcNodeIndex, srcNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(dstNodeIndex, dstNodeIndex + 2, logger: context.logger);
+            context.clusterTestUtils.Meet(srcNodeIndex, dstNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(dstNodeIndex, srcNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(srcNodeIndex, dstNodeIndex, logger: context.logger);
+            var config1 = context.clusterTestUtils.ClusterNodes(srcNodeIndex, logger: context.logger);
+            var config2 = context.clusterTestUtils.ClusterNodes(dstNodeIndex, logger: context.logger);
+            ClassicAssert.AreEqual(config1.GetBySlot(0).NodeId, config2.GetBySlot(0).NodeId);
+            ClassicAssert.AreEqual(Shards, config1.Nodes.Count);
+            ClassicAssert.AreEqual(Shards, config2.Nodes.Count);
+            ClassicAssert.AreEqual(config1.Nodes.Last().NodeId, config2.Nodes.First().NodeId);
+            ClassicAssert.AreEqual(config2.Nodes.Last().NodeId, config1.Nodes.First().NodeId);
+
+            var db = context.clusterTestUtils.GetDatabase();
+            foreach (var pair in data)
+                ClassicAssert.IsTrue(db.StringSet(pair.Item1, pair.Item2));
+
+            foreach (var pair in data)
+            {
+                var returnedValue = (string)db.StringGet(pair.Item1);
+                ClassicAssert.AreEqual(pair.Item2, returnedValue);
+            }
+
+            if (expiration)
+            {
+                foreach (var pair in data)
+                {
+                    ClassicAssert.IsNull(db.KeyTimeToLive(pair.Item1), "set key should not have an existing expiry");
+                    ClassicAssert.AreEqual(true, db.KeyExpire(pair.Item1, TimeSpan.FromSeconds(10000)));
+                    ClassicAssert.IsNotNull(db.KeyTimeToLive(pair.Item1));
+                }
+            }
+
+            var sourceEndPoint = context.clusterTestUtils.GetEndPoint(srcNodeIndex);
+            var targetEndPoint = context.clusterTestUtils.GetEndPoint(dstNodeIndex);
+            context.clusterTestUtils.MigrateSlots(
+                sourceEndPoint,
+                targetEndPoint,
+                [0, 16383],
+                range: true,
+                logger: context.logger);
+
+            context.clusterTestUtils.WaitForMigrationCleanup(srcNodeIndex, logger: context.logger);
+
+            foreach (var pair in data)
+            {
+                var returnedValue = (string)db.StringGet(pair.Item1);
+                ClassicAssert.AreEqual(pair.Item2, returnedValue, "returned value mismatch after migration");
+            }
+
+
+            if (expiration)
+            {
+                foreach (var pair in data)
+                    ClassicAssert.IsNotNull(db.KeyTimeToLive(pair.Item1), "key does not have expiry after migration");
             }
         }
     }

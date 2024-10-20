@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Garnet.common;
 
 namespace Garnet.server
@@ -11,16 +12,6 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        /// <summary>
-        /// This method is used to verify slot ownership for provided key.
-        /// On error this method writes to response buffer but does not drain recv buffer (caller is responsible for draining).
-        /// </summary>
-        /// <param name="key">Key bytes</param>
-        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation.</param>
-        /// <returns>True when ownership is verified, false otherwise</returns>
-        bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly)
-            => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(key, readOnly, SessionAsking, ref dcurr, ref dend);
-
         /// <summary>
         /// This method is used to verify slot ownership for provided array of key argslices.
         /// </summary>
@@ -33,9 +24,7 @@ namespace Garnet.server
 
         bool CanServeSlot(RespCommand cmd)
         {
-            // If cluster is disable all commands
-            if (clusterSession == null)
-                return true;
+            Debug.Assert(clusterSession != null);
 
             // Verify slot for command if it falls into data command category
             if (!cmd.IsDataCommand())
@@ -68,7 +57,7 @@ namespace Garnet.server
                         case FindKeysKeyNum:
                             var findKeysKeyNum = (FindKeysKeyNum)specs[0].FindKeys;
                             csvi.firstKey = searchIndex.Index + findKeysKeyNum.FirstKey - 1;
-                            csvi.lastKey = searchIndex.Index + parseState.GetInt(0);
+                            csvi.lastKey = csvi.firstKey + parseState.GetInt(searchIndex.Index + findKeysKeyNum.KeyNumIdx - 1);
                             csvi.step = findKeysKeyNum.KeyStep;
                             break;
                         case FindKeysUnknown:

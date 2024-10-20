@@ -11,23 +11,29 @@ Note that this list is subject to change as we continue to expand our API comman
 ### Command Categories
 1. [ACL](#acl)
 2. [BITMAP](#bitmap)
-3. [CLUSTER](#cluster)
-4. [CONNECTION](#connection)
-5. [FUNCTIONS](#functions)
-6. [GENERIC](#generic)
-7. [GEO](#geo)
-8. [HASH](#hash)
-9. [HYPERLOGLOG](#hyperloglog)
-10. [KEYS](#keys)
-11. [LIST](#list)
-12. [PUB/SUB](#pubsub)
-13. [SCRIPTING](#scripting)
-14. [SERVER](#server)
-15. [SET](#set)
-16. [SORTED SET](#sorted-set)
-17. [STREAM](#stream)
-18. [STRING](#string)
-10. [TRANSACTIONS](#transactions)
+3. [CLIENT](#client)
+4. [CLUSTER](#cluster)
+5. [COMMAND](#command)
+6. [CONNECTION](#connection)
+7. [FUNCTIONS](#functions)
+8. [GENERIC](#generic)
+9. [GEO](#geo)
+10. [HASH](#hash)
+11. [HYPERLOGLOG](#hyperloglog)
+12. [KEYS](#keys)
+13. [LATENCY](#latency)
+14. [LIST](#list)
+15. [MEMORY](#memory)
+16. [MODULE](#module)
+17. [OBJECT](#object)
+18. [PUB/SUB](#pubsub)
+19. [SCRIPTING](#scripting)
+20. [SERVER](#server)
+21. [SET](#set)
+22. [SORTED SET](#sorted-set)
+23. [STREAM](#stream)
+24. [STRING](#string)
+25. [TRANSACTIONS](#transactions)
 
 ### Full Commands List
 
@@ -40,6 +46,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | GETUSER | ➖ |  |
 |  | [LIST](acl.md#acl-list) | ➕ |  |
 |  | [LOAD](acl.md#acl-load) | ➕ |  |
+|  | HELP | ➖ |  |
 |  | LOG | ➖ |  |
 |  | SAVE | ➖ |  |
 |  | [SETUSER](acl.md#acl-setuser) | ➕ |  |
@@ -53,9 +60,27 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [BITPOS](analytics.md#bitpos) | ➕ |  |
 |  | [GETBIT](analytics.md#getbit) | ➕ |  |
 |  | [SETBIT](analytics.md#setbit) | ➕ |  |
+| <span id="client">**CLIENT**</span> | CACHING | ➖ |  |
+|  | GETNAME | ➖ |  |
+|  | GETREDIR | ➖ |  |
+|  | HELP | ➖ |  |
+|  | [ID](client.md#client-id) | ➕ |  |
+|  | [INFO](client.md#client-info) | ➕ |  |
+|  | [KILL](client.md#client-kill) | ➕ |  |
+|  | [LIST](client.md#client-list) | ➕ |  |
+|  | NO-EVICT | ➖ |  |
+|  | NO-TOUCH | ➖ |  |
+|  | PAUSE | ➖ |  |
+|  | REPLY | ➖ |  |
+|  | SETINFO | ➖ |  |
+|  | SETNAME | ➖ |  |
+|  | TRACKING | ➖ |  |
+|  | TRACKINGINFO | ➖ |  |
+|  | UNBLOCK | ➖ |  |
+|  | UNPAUSE | ➖ |  |
 | <span id="cluster">**CLUSTER**</span> | [ADDSLOTS](cluster.md#cluster-addslots) | ➕ |  |
 |  | [ADDSLOTSRANGE](cluster.md#cluster-addslotsrange) | ➕ |  |
-|  | ASKING | ➕ |  |
+|  | [ASKING](cluster.md#asking) | ➕ |  |
 |  | [BUMPEPOCH](cluster.md#cluster-bumpepoch) | ➕ |  |
 |  | COUNT-FAILURE-REPORTS | ➖ |  |
 |  | [COUNTKEYSINSLOT](cluster.md#cluster-countkeysinslot) | ➕ |  |
@@ -65,41 +90,57 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | FLUSHSLOTS | ➖ |  |
 |  | [FORGET](cluster.md#cluster-forget) | ➕ |  |
 |  | [GETKEYINSLOT](cluster.md#cluster-getkeysinslot) | ➕ |  |
-|  | INFO | ➕ |  |
+|  | [INFO](cluster.md#cluster-info) | ➕ |  |
 |  | [KEYSLOT](cluster.md#cluster-keyslot) | ➕ |  |
 |  | LINKS | ➖ |  |
 |  | [MEET](cluster.md#cluster-meet) | ➕ |  |
 |  | [MYID](cluster.md#cluster-myid) | ➕ |  |
+|  | MYSHARDID | ➖ |  |
 |  | [NODES](cluster.md#cluster-nodes) | ➕ |  |
-|  | READONLY | ➕ |  |
-|  | READWRITE | ➕ |  |
+|  | [READONLY](cluster.md#readonly) | ➕ |  |
+|  | [READWRITE](cluster.md#readwrite) | ➕ |  |
 |  | [REPLICAS](cluster.md#cluster-replicas) | ➕ |  |
 |  | [REPLICATE](cluster.md#cluster-replicate) | ➕ |  |
-|  | RESET | ➕ |  |
+|  | [RESET](cluster.md#reset) | ➕ |  |
 |  | SAVECONFIG | ➖ |  |
 |  | [SET-CONFIG-EPOCH](cluster.md#cluster-set-config-epoch) | ➕ |  |
 |  | [SETSLOT](cluster.md#cluster-setslot) | ➕ |  |
-|  | [SLAVES](cluster.md#slaves) | ➕ |  |
-|  | SLOTS | ➕ |  |
+|  | SHARDS | ➖ |  |
+|  | [SLAVES](cluster.md#slaves) | ➕ | (Deprecated) |
+|  | [SLOTS](cluster.md#cluster-slots) | ➕ | (deprecated) |
+| <span id="command">**COMMAND**</span> | [COMMAND](server.md#command) | ➕ |  |
+|  | [COUNT](server.md#command-count) | ➕ |  |
+|  | [DOCS](server.md#command-docs) | ➕ |  |
+|  | GETKEYS | ➖ |  |
+|  | GETKEYSANDFLAGS | ➖ |  | 
+|  | HELP | ➖ |  | 
+|  | [INFO](server.md#command-info) | ➕ |  | 
+|  | LIST | ➖ |  | 
 | <span id="connection">**CONNECTION**</span> | [AUTH](generic-commands.md#auth) | ➕ |  |
-|  | CLIENT CACHING | ➖ |  |
 |  | [ECHO](generic-commands.md#echo) | ➕ |  |
 |  | [HELLO](generic-commands.md#hello) | ➕ |  |
 |  | [PING](generic-commands.md#ping) | ➕ |  |
-|  | [QUIT](generic-commands.md#quit) | ➕ |  |
-|  | SELECT | ➕ |  |
+|  | [QUIT](generic-commands.md#quit) | ➕ | (Deprecated) |
+|  | [SELECT](generic-commands.md#select) | ➕ |  |
 | <span id="functions">**FUNCTIONS**</span> | FCALL | ➖ |  |
 |  | FCALL_RO | ➖ |  |
-|  | FUNCTION | ➖ |
-| <span id="generic">**GENERIC**</span> | OBJECT | ➖ |  |
-|  | [PERSIST](generic-commands.md#persist) | ➕ |  |
+|  | DELETE | ➖ |
+|  | DUMP | ➖ |
+|  | FLUSH | ➖ |
+|  | HELP | ➖ |
+|  | KILL | ➖ |
+|  | LIST | ➖ |
+|  | LOAD | ➖ |
+|  | RESTORE | ➖ |
+|  | STATS | ➖ |
+| <span id="generic">**GENERIC**</span> | [PERSIST](generic-commands.md#persist) | ➕ |  |
 |  | [PEXPIRE](generic-commands.md#pexpire) | ➕ |  |
-|  | PEXPIREAT | ➖ |  |
-|  | PEXPIRETIME | ➖ |  |
+|  | [PEXPIREAT](generic-commands.md#pexpireat) | ➕ |  |
+|  | [PEXPIRETIME](generic-commands.md#pexpiretime) | ➕ |  |
 |  | [PTTL](generic-commands.md#pttl) | ➕ |  |
 |  | RANDOMKEY | ➖ |  |
 |  | [RENAME](generic-commands.md#rename) | ➕ |  |
-|  | RENAMENX | ➖ |  |
+|  | [RENAMENX](generic-commands.md#renamenx) | ➕ |  |
 |  | RESTORE | ➖ |  |
 |  | [SCAN](generic-commands.md#scan) | ➕ |  |
 |  | SORT | ➖ |  |
@@ -109,17 +150,22 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [TYPE](generic-commands.md#type) | ➕ |  |
 |  | [UNLINK](generic-commands.md#unlink) | ➕ |  |
 |  | WAIT | ➖ |  |
+|  | WAITAOF | ➖ |  |
 | <span id="geo">**GEO**</span> | [GEOADD](data-structures.md#geoadd) | ➕ |  |
 |  | [GEODIST](data-structures.md#geodist) | ➕ |  |
 |  | [GEOHASH](data-structures.md#geohash) | ➕ |  |
 |  | [GEOPOS](data-structures.md#geopos) | ➕ |  |
-|  | GEORADIUS | ➖ |  |
-|  | GEORADIUS_RO | ➖ |  |
-|  | GEORADIUSBYMEMBER | ➖ |  |
+|  | GEORADIUS | ➖ | (Deprecated) |
+|  | GEORADIUS_RO | ➖ | (Deprecated) |
+|  | GEORADIUSBYMEMBER | ➖ | (Deprecated) |
+|  | GEORADIUSBYMEMBER_RO | ➖ | (Deprecated) |
 |  | [GEOSEARCH](data-structures.md#geosearch) | ➕ | Partially Implemented |
 |  | GEOSEARCHSTORE | ➖ |  |
 | <span id="hash">**HASH**</span> | [HDEL](data-structures.md#hdel) | ➕ |  |
 |  | [HEXISTS](data-structures.md#hexists) | ➕ |  |
+|  | HEXPIRE | ➖ |  |
+|  | HEXPIREAT | ➖ |  |
+|  | HEXPIRETIME | ➖ |  |
 |  | [HGET](data-structures.md#hget) | ➕ |  |
 |  | [HGETALL](data-structures.md#hgetall) | ➕ |  |
 |  | [HINCRBY](data-structures.md#hincrby) | ➕ |  |
@@ -127,40 +173,53 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [HKEYS](data-structures.md#hkeys) | ➕ |  |
 |  | [HLEN](data-structures.md#hlen) | ➕ |  |
 |  | [HMGET](data-structures.md#hmget) | ➕ |  |
-|  | [HMSET](data-structures.md#hmset) | ➕ |  |
+|  | [HMSET](data-structures.md#hmset) | ➕ | (Deprecated) |
+|  | HPERSIST | ➖ |  |
+|  | HPEXPIRE | ➖ |  |
+|  | HPEXPIREAT | ➖ |  |
+|  | HPEXPIRETIME | ➖ |  |
+|  | HPTTL | ➖ |  |
 |  | [HRANDFIELD](data-structures.md#hrandfield) | ➕ |  |
 |  | [HSCAN](data-structures.md#hscan) | ➕ |  |
 |  | [HSET](data-structures.md#hset) | ➕ |  |
 |  | [HSETNX](data-structures.md#hsetnx) | ➕ |  |
 |  | [HSTRLEN](data-structures.md#hstrlen) | ➕ |  |
+|  | HTTL | ➖ |  |
 |  | [HVALS](data-structures.md#hvals) | ➕ |  |
 | <span id="hyperloglog">**HYPERLOGLOG**</span> | [PFADD](analytics.md#pfadd) | ➕ |  |
 |  | [PFCOUNT](analytics.md#pfcount) | ➕ |  |
-|  | PFDEBUG | ➖ |  |
+|  | PFDEBUG | ➖ | Internal command |
 |  | [PFMERGE](analytics.md#pfmerge) | ➕ |  |
-|  | PFSELFTEST | ➖ |  |
+|  | PFSELFTEST | ➖ | Internal command |
 | <span id="keys">**KEYS**</span> | COPY | ➖ |  |
-|  | [DEL](generic-commands.md#del)  | ➕ |  |
+|  | [DEL](generic-commands.md#del) | ➕ |  |
 |  | DUMP | ➖ |  |
 |  | [EXISTS](generic-commands.md#exists) | ➕ |  |
 |  | [EXPIRE](generic-commands.md#expire) | ➕ |  |
-|  | EXPIREAT | ➖ |  |
-|  | EXPIRETIME | ➖ |  |
+|  | [EXPIREAT](generic-commands.md#expireat) | ➕ |  |
+|  | [EXPIRETIME](generic-commands.md#expiretime) | ➕ |  |
 |  | [KEYS](generic-commands.md#keys) | ➕ |  |
 |  | [MIGRATE](generic-commands.md#migrate) | ➕ |  |
 |  | MOVE | ➖ |  |
+| <span id="latency">**LATENCY**</span> | DOCTOR | ➖ |  |
+|  | GRAPH | ➖ |  |
+|  | HELP | ➖ |  |
+|  | [HISTOGRAM](server.md#latency-histogram) | ➕ |  |
+|  | HISTORY | ➖ |  |
+|  | LATEST | ➖ |  |
+|  | [RESET](server.md#latency-reset) | ➕ |  |
 | <span id="list">**LIST**</span> | [BLMOVE](data-structures.md#blmove) | ➕ |  |
 |  | BLMPOP | ➖ |  |
 |  | [BLPOP](data-structures.md#blpop) | ➕ |  |
 |  | [BRPOP](data-structures.md#brpop) | ➕ |  |
-|  | BRPOPLPUSH | ➖ |  |
+|  | BRPOPLPUSH | ➖ | (Deprecated) |
 |  | [LINDEX](data-structures.md#lindex) | ➕ |  |
 |  | [LINSERT](data-structures.md#linsert) | ➕ |  |
 |  | [LLEN](data-structures.md#llen) | ➕ |  |
 |  | [LMOVE](data-structures.md#lmove) | ➕ |  |
-|  | LMPOP | ➖ |  |
+|  | [LMPOP](data-structures.md#lmpop) | ➕ |  |
 |  | [LPOP](data-structures.md#lpop) | ➕ |  |
-|  | LPOS | ➖ |  |
+|  | [LPOS](data-structures.md#lpos) | ➕ |  |
 |  | [LPUSH](data-structures.md#lpush) | ➕ |  |
 |  | [LPUSHX](data-structures.md#lpushx) | ➕ |  |
 |  | [LRANGE](data-structures.md#lrange) | ➕ |  |
@@ -168,57 +227,62 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [LSET](data-structures.md#lset) | ➕ |  |
 |  | [LTRIM](data-structures.md#ltrim) | ➕ |  |
 |  | [RPOP](data-structures.md#rpop) | ➕ |  |
-|  | [RPOPLPUSH](data-structures.md#rpoplpush) | ➕ |  |
+|  | [RPOPLPUSH](data-structures.md#rpoplpush) | ➕ | (Deprecated) |
 |  | [RPUSH](data-structures.md#rpush) | ➕ |  |
 |  | [RPUSHX](data-structures.md#rpushx) | ➕ |  |
+| <span id="memory">**MEMORY**</span> | DOCTOR | ➖ |  |
+|  | HELP | ➖ |  |
+|  | MALLOC-STATS | ➖ |  |
+|  | PURGE | ➖ |  |
+|  | STATS | ➖ |  |
+|  | [USAGE](server.md#memory-usage) | ➕ |  |
+| <span id="module">**MODULE**</span> | HELP | ➖ |  |
+|  | LIST | ➖ |  |
+|  | LOAD | ➖ |  |
+|  | LOADEX | ➖ |  |
+|  | UNLOAD | ➖ |  |
+| <span id="object">**OBJECT**</span> | ENCODING | ➖ |  |
+|  | FREQ | ➖ |  |
+|  | HELP | ➖ |  |
+|  | IDLETIME | ➖ |  |
+|  | REFCOUNT | ➖ |  |
 | <span id="pubsub">**PUB/SUB**</span> | [PSUBSCRIBE](analytics.md#psubscribe) | ➕ |  |
 |  | [PUBLISH](analytics.md#publish) | ➕ |  |
 |  | PUBSUB CHANNELS | ➖ |  |
+|  | PUBSUB HELP | ➖ |  |
 |  | PUBSUB NUMPAT | ➖ |  |
 |  | PUBSUB NUMSUB | ➖ |  |
+|  | PUBSUB SHARDCHANNELS | ➖ |  |
+|  | PUBSUB SHARDNUMSUB | ➖ |  |
 |  | [PUNSUBSCRIBE](analytics.md#punsubscribe) | ➕ |  |
 |  | [SUBSCRIBE](analytics.md#subscribe) | ➕ |  |
 |  | [UNSUBSCRIBE](analytics.md#unsubscribe) | ➕ |  |
-| <span id="scripting">**SCRIPTING**</span> | EVAL | ➕ |  |
+| <span id="scripting">**SCRIPTING**</span> | [EVAL](scripting-and-functions.md#eval) | ➕ |  |
 |  | EVAL_RO | ➖ |  |
-|  | EVALSHA | ➕ |  |
+|  | [EVALSHA](scripting-and-functions.md#evalsha) | ➕ |  |
 |  | EVALSHA_RO | ➖ |  |
 |  | SCRIPT DEBUG | ➖ |  |
-|  | SCRIPT EXISTS | ➕ |  |
-|  | SCRIPT FLUSH | ➕ |  |
+|  | [SCRIPT EXISTS](scripting-and-functions.md#script-exists) | ➕ |  |
+|  | [SCRIPT FLUSH](scripting-and-functions.md#script-flush) | ➕ |  |
+|  | SCRIPT HELP | ➖ |  |
 |  | SCRIPT KILL | ➖ |  |
-|  | SCRIPT LOAD | ➕ |  |
+|  | [SCRIPT LOAD](scripting-and-functions.md#script-load) | ➕ |  |
 | <span id="server">**SERVER**</span> | ACL | ➖ |  |
 |  | BGREWRITEAOF | ➖ |  |
 |  | [BGSAVE](checkpoint.md#bgsave) | ➕ |  |
-|  | [COMMAND](server.md#command) | ➕ |  |
-|  | [COMMAND COUNT](server.md#command-count) | ➕ |  |
-|  | COMMAND DOCS | ➖ |  |
-|  | COMMAND GETKEYS | ➖ |  |
-|  | COMMAND GETKEYSANDFLAGS | ➖ |  | 
-|  | [COMMAND INFO](server.md#command-info) | ➕ |  | 
-|  | COMMAND LIST | ➖ |  | 
 |  | [COMMITAOF](server.md#commitaof) | ➕ |  |
 |  | [CONFIG GET](server.md#config-get) | ➕ |  |
+|  | CONFIG HELP | ➖ |  |
+|  | CONFIG RESETSTAT | ➖ |  |
+|  | CONFIG REWRITE | ➖ |  |
 |  | [CONFIG SET](server.md#config-set) | ➕ |  |
 |  | [DBSIZE](server.md#dbsize) | ➕ |  |
+|  | DEBUG | ➖ | Internal command |
 |  | [FLUSHALL](server.md#flushall) | ➕ |  |
 |  | [FLUSHDB](server.md#flushdb) | ➕ |  |
 |  | [LASTSAVE](checkpoint.md#lastsave) | ➕ |  |
-|  | LATENCY DOCTOR | ➖ |  |
-|  | LATENCY GRAPH | ➖ |  |
-|  | [LATENCY HISTOGRAM](server.md#latency-histogram) | ➕ |  |
-|  | LATENCY HISTORY | ➖ |  |
-|  | LATENCY LATEST | ➖ |  |
-|  | [LATENCY RESET](server.md#latency-reset) | ➕ |  |
-|  | LOLWUT | ➕ |  |
-|  | MEMORY DOCTOR | ➖ |  |
-|  | MEMORY MALLOC-STATS | ➖ |  |
-|  | MEMORY PURGE | ➖ |  |
-|  | MEMORY STATS | ➖ |  |
-|  | [MEMORY USAGE](server.md#memory-usage) | ➕ |  |
-|  | MODULE | ➖ |  |
-|  | MONITOR | ➖ |  |
+|  | LOLWUT | ➖ |  |
+|  | [MONITOR](server.md#monitor) | ➕ |  |
 |  | PSYNC | ➖ |  |
 |  | REPLCONF | ➖ |  |
 |  | [REPLICAOF](server.md#replicaof) | ➕ |  |
@@ -226,8 +290,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | ROLE | ➖ |  |
 |  | [SAVE](checkpoint.md#save) | ➕ |  |
 |  | SHUTDOWN | ➖ |  |
-|  | SLAVEOF | ➖ |  |
-|  | SLOWLOG | ➖ |  |
+|  | SLAVEOF | ➖ | (Deprecated) |
 |  | SWAPDB | ➖ |  |
 |  | SYNC | ➖ |  |
 |  | [TIME](server.md#time) | ➕ |  |
@@ -238,17 +301,24 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SINTER](data-structures.md#sinter) | ➕ |  |
 |  | [SINTERSTORE](data-structures.md#sinterstore) | ➕ |  |
 |  | SINTERCARD | ➖ |  |
-|  | SISMEMBER | ➕ |  |
+|  | [SISMEMBER](data-structures.md#sismember) | ➕ |  |
 |  | [SMEMBERS](data-structures.md#smembers) | ➕ |  |
-|  | SMISMEMBER | ➖ |  |
-|  | SMOVE | ➖ |  |
+|  | [SMISMEMBER](data-structures.md#smismember) | ➕ |  |
+|  | [SMOVE](data-structures.md#smove) | ➕ |  |
 |  | [SPOP](data-structures.md#spop) | ➕ |  |
+|  | SPUBLISH | ➖ |  |
 |  | [SRANDMEMBER](data-structures.md#srandmember) | ➕ |  |
 |  | [SREM](data-structures.md#srem) | ➕ |  |
 |  | [SSCAN](data-structures.md#sscan) | ➕ |  |
+|  | SSUBSCRIBE | ➖ |  |
 |  | [SUNION](data-structures.md#sunion) | ➕ |  |
 |  | [SUNIONSTORE](data-structures.md#sunionstore) | ➕ |  |
-| <span id="sorted-set">**SORTED SET**</span> | BZPOP | ➖ |  |
+|  | SUNSUBSCRIBE | ➖ |  |
+| <span id="sorted-set">**SLOWLOG**</span> | GET | ➖ |  |
+|  | HELP | ➖ |  |
+|  | LEN | ➖ |  |
+|  | RESET | ➖ |  |
+| <span id="sorted-set">**SORTED SET**</span> | BZMPOP | ➖ |  |
 |  | BZPOPMAX | ➖ |  |
 |  | BZPOPMIN | ➖ |  |
 |  | [ZADD](data-structures.md#zadd) | ➕ |  |
@@ -267,17 +337,17 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZPOPMIN](data-structures.md#zpopmin) | ➕ |  |
 |  | [ZRANDMEMBER](data-structures.md#zrandmember) | ➕ |  |
 |  | [ZRANGE](data-structures.md#zrange) | ➕ |  |
-|  | [ZRANGEBYLEX](data-structures.md#zrangebylex) | ➕ |  |
-|  | [ZRANGEBYSCORE](data-structures.md#zrangebyscore) | ➕ |  |
+|  | [ZRANGEBYLEX](data-structures.md#zrangebylex) | ➕ | (Deprecated) |
+|  | [ZRANGEBYSCORE](data-structures.md#zrangebyscore) | ➕ | (Deprecated) |
 |  | ZRANGESTORE | ➖ |  |
 |  | [ZRANK](data-structures.md#zrank) | ➕ |  |
 |  | [ZREM](data-structures.md#zrem) | ➕ |  |
 |  | [ZREMRANGEBYLEX](data-structures.md#zremrangebylex) | ➕ |  |
 |  | [ZREMRANGEBYRANK](data-structures.md#zremrangebyrank) | ➕ |  |
 |  | [ZREMRANGEBYSCORE](data-structures.md#zremrangebyscore) | ➕ |  |
-|  | [ZREVRANGE](data-structures.md#zrevrange) | ➕ |  |
-|  | ZREVRANGEBYLEX | ➖ |  |
-|  | ZREVRANGEBYSCORE | ➖ |  |
+|  | [ZREVRANGE](data-structures.md#zrevrange) | ➕ | (Deprecated) |
+|  | ZREVRANGEBYLEX | ➖ | (Deprecated) |
+|  | [ZREVRANGEBYSCORE](data-structures.md#zrevrangebyscore) | ➕ | (Deprecated) |
 |  | [ZREVRANK](data-structures.md#zrevrank) | ➕ |  |
 |  | [ZSCAN](data-structures.md#zscan) | ➕ |  |
 |  | [ZSCORE](data-structures.md#zscore) | ➕ |  |
@@ -288,8 +358,16 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | XAUTOCLAIM | ➖ |  |
 |  | XCLAIM | ➖ |  |
 |  | XDEL | ➖ |  |
-|  | XGROUP | ➖ |  |
-|  | XINFO | ➖ |  |
+|  | XGROUP CREATE | ➖ |  |
+|  | XGROUP CREATECONSUMER | ➖ |  |
+|  | XGROUP DELCONSUMER | ➖ |  |
+|  | XGROUP DESTROY | ➖ |  |
+|  | XGROUP HELP | ➖ |  |
+|  | XGROUP SETID | ➖ |  |
+|  | XINFO CONSUMERS | ➖ |  |
+|  | XINFO GROUPS | ➖ |  |
+|  | XINFO HELP | ➖ |  |
+|  | XINFO STREAM | ➖ |  |
 |  | XLEN | ➖ |  |
 |  | XPENDING | ➖ |  |
 |  | XRANGE | ➖ |  |
@@ -298,29 +376,28 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | XREVRANGE | ➖ |  |
 |  | XSETID | ➖ |  |
 |  | XTRIM | ➖ |  |
-| <span id="string">**STRING**</span> | APPEND | ➕ |  |
+| <span id="string">**STRING**</span> | [APPEND](raw-string.md#append) | ➕ |  |
 |  | [DECR](raw-string.md#decr) | ➕ |  |
 |  | [DECRBY](raw-string.md#decrby) | ➕ |  |
 |  | [GET](raw-string.md#get) | ➕ |  |
 |  | [GETDEL](raw-string.md#getdel) | ➕ |  |
-|  | GETEX | ➖ |  |
+|  | [GETEX](raw-string.md#getex) | ➕ |  |
 |  | [GETRANGE](raw-string.md#getrange) | ➕ |  |
-|  | GETSET | ➖ |  |
+|  | [GETSET](raw-string.md#getset) | ➖ |  |
 |  | [INCR](raw-string.md#incr) | ➕ |  |
 |  | [INCRBY](raw-string.md#incrby) | ➕ |  |
-|  | INCRBYFLOAT | ➖ |  |
+|  | [INCRBYFLOAT](raw-string.md#incrbyfloat) | ➖ |  |
 |  | LCS | ➖ |  |
 |  | [MGET](raw-string.md#mget) | ➕ |  |
 |  | [MSET](raw-string.md#mset) | ➕ |  |
 |  | [MSETNX](raw-string.md#msetnx) | ➕ |  |
-|  | [PSETEX](raw-string.md#psetex) | ➕ |  |
+|  | [PSETEX](raw-string.md#psetex) | ➕ | (Deprecated) |
 |  | [SET](raw-string.md#set) | ➕ |  |
-|  | [SET ... NX](raw-string.md#set) | ➕ |  |
-|  | [SETEX](raw-string.md#setex) | ➕ |  |
-|  | SETNX | ➖ |  |
-|  | SETRANGE | ➕ |  |
+|  | [SETEX](raw-string.md#setex) | ➕ | (Deprecated) |
+|  | [SETNX](raw-string.md#setnx) | ➖ |  |
+|  | [SETRANGE](raw-string.md#setrange) | ➕ |  |
 |  | [STRLEN](raw-string.md#strlen) | ➕ |  |
-|  | SUBSTR | ➖ |  |
+|  | SUBSTR | ➖ | (Deprecated) |
 | <span id="transactions">**TRANSACTIONS**</span> | [DISCARD](transactions.md#discard) | ➕ |  |
 |  | [EXEC](transactions.md#exec) | ➕ |  |
 |  | [MULTI](transactions.md#multi) | ➕ |  |

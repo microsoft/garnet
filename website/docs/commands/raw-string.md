@@ -6,6 +6,22 @@ title: Raw String
 
 # Raw String Commands
 
+### APPEND
+
+#### Syntax
+
+```bash
+    APPEND key value
+```
+
+If key already exists and is a string, this command appends the value at the end of the string. If key does not exist it is created and set as an empty string. 
+
+#### RESP Reply
+
+Integer reply: the length of the string after the append operation.
+
+---
+
 ### DECR
 
 #### Syntax
@@ -57,6 +73,33 @@ One of the following:
 
 ---
 
+### GETEX
+
+#### Syntax
+
+```bash
+    GETEX key [EX seconds | PX milliseconds | EXAT unix-time-seconds | PXAT unix-time-milliseconds | PERSIST]
+```
+
+Get the value of key and optionally set its expiration. GETEX is similar to GET, but is a write command with additional options.
+
+The GETEX command supports a set of options that modify its behavior:
+
+* EX seconds -- Set the specified expire time, in seconds.
+* PX milliseconds -- Set the specified expire time, in milliseconds.
+* EXAT timestamp-seconds -- Set the specified Unix time at which the key will expire, in seconds.
+* PXAT timestamp-milliseconds -- Set the specified Unix time at which the key will expire, in milliseconds.
+* PERSIST -- Remove the time to live associated with the key.
+
+#### Resp Reply
+
+One of the following:
+
+* Bulk string reply: the value of the key.
+* Nil reply: if the key does not exist or if the key's value type is not a string.
+
+---
+
 ### GETDEL
 
 #### Syntax
@@ -76,12 +119,51 @@ One of the following:
 
 ---
 
+### GETSET
+
+Note: GETSET is a deprecated command, use [SET](#set) with the `GET` argument when migrating or writing new code.
+
+#### Syntax
+
+```bash
+    GETSET key value
+```
+
+Atomically sets key to value and returns the old value stored at key.
+
+#### Resp Reply
+
+One of the following:
+
+* Bulk string reply: the old value stored at the key.
+* Null reply: if the key does not exist.
+
+---
+
 ### GETRANGE
 
 #### Syntax
 
 ```bash
     GETRANGE key start end
+```
+
+Returns the substring of the string value stored at key, determined by the offsets start and end (both are inclusive). 
+
+#### Resp Reply
+
+Bulk string reply: The substring of the string value stored at key, determined by the offsets start and end (both are inclusive).
+
+---
+
+### SUBSTR
+
+Note: SUBSTR is a deprecated command, use [GETRANGE](#getrange) when migrating or writing new code.
+
+#### Syntax
+
+```bash
+    SUBSTR key start end
 ```
 
 Returns the substring of the string value stored at key, determined by the offsets start and end (both are inclusive). 
@@ -121,6 +203,22 @@ Increments the number stored at key by the value of the parameter increment. If 
 #### Resp Reply
 
 Integer reply: the value of the key after the increment.
+
+---
+
+### INCRBYFLOAT
+
+#### Syntax
+
+```bash
+    INCRBYFLOAT key increment
+```
+
+Increment the string representing a floating point number stored at key by the specified increment. By using a negative increment value, the result is that the value stored at the key is decremented. If the key does not exist, it is set to 0 before performing the operation.
+
+#### Resp Reply
+
+Bulk string reply: the value of the key after the increment.
 
 ---
 
@@ -231,6 +329,27 @@ Simple string reply: OK.
 
 ---
 
+### SETNX
+
+Note: SETNX is a deprecated command, use [SET](#set) with the `NX` argument when migrating or writing new code.
+
+#### Syntax
+
+```bash
+    SETNX key value
+```
+
+Set key to hold string value if key does not exist. When key already holds a value, no operation is performed. 
+
+#### Resp Reply
+
+One of the following:
+
+* Integer reply: 0 if the key was not set.
+* Integer reply: 1 if the key was set.
+
+---
+
 ### STRLEN
 
 #### Syntax
@@ -244,3 +363,21 @@ Returns the length of the string value stored at **key**.
 #### Resp Reply
 
 * Integer reply: the length of the string stored at key, or 0 when the key does not exist.
+
+---
+
+### SETRANGE
+
+#### Syntax
+
+```bash
+    SETRANGE key offset value
+```
+
+Overwrites part of the string stored at key, starting at the specified offset, for the entire length of value. 
+
+#### Resp Reply
+
+* Integer reply: the length of the string after it was modified by the command.
+
+---

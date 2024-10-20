@@ -57,8 +57,5 @@ namespace Garnet.cluster
                 replicaSyncSessionTaskStore.TryRemove(replicaId);
             }
         }
-
-        public void DisposeReplicaSyncSessionTasks()
-            => replicaSyncSessionTaskStore.Dispose();
     }
 }

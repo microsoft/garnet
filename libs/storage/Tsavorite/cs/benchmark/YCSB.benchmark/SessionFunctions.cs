@@ -82,6 +82,7 @@ namespace Tsavorite.benchmark
 
         public int GetRMWModifiedValueLength(ref Value value, ref Input input) => 0;
         public int GetRMWInitialValueLength(ref Input input) => 0;
+        public int GetUpsertValueLength(ref Value value, ref Input input) => Value.Size;
 
         public void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo) { }
 

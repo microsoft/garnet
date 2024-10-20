@@ -132,8 +132,8 @@ namespace Tsavorite.core
         /// </summary>
         public KVSettings() { }
 
-        internal readonly ILoggerFactory loggerFactory;
-        internal readonly ILogger logger;
+        public ILoggerFactory loggerFactory;
+        public ILogger logger;
 
         /// <summary>
         /// Create default configuration backed by local storage at given base directory.

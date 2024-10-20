@@ -27,7 +27,11 @@ namespace Garnet.server
             commandInfo = default;
 
             // Command info is null
-            if (new ReadOnlySpan<byte>(ptr, 5).SequenceEqual("$-1\r\n"u8)) return true;
+            if (new ReadOnlySpan<byte>(ptr, 5).SequenceEqual("$-1\r\n"u8))
+            {
+                ptr += 5;
+                return true;
+            }
 
             // Verify command info array length
             if (!RespReadUtils.ReadUnsignedArrayLength(out var infoElemCount, ref ptr, end)
@@ -99,8 +103,9 @@ namespace Garnet.server
 
             commandInfo = new RespCommandsInfo()
             {
-                Command = supportedCommands[parentCommand ?? name],
+                Command = supportedCommands.GetValueOrDefault(name, RespCommand.NONE),
                 Name = name.ToUpper(),
+                IsInternal = false,
                 Arity = arity,
                 Flags = flags,
                 FirstKey = firstKey,

@@ -12,7 +12,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
             /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
             SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
         BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
@@ -422,7 +422,7 @@ namespace Garnet.cluster
         /// Reset slot state to <see cref="SlotState.STABLE"/>
         /// </summary>
         /// <param name="slot">Slot id to reset state</param>
-        public void ResetSlotState(int slot)
+        public void TryResetSlotState(int slot)
         {
             var current = currentConfig;
             var slotState = current.GetState((ushort)slot);
@@ -445,12 +445,16 @@ namespace Garnet.cluster
         /// Reset local slot state to <see cref="SlotState.STABLE"/>
         /// </summary>
         /// <param name="slots">Slot list</param>
-        public void ResetSlotsState(HashSet<int> slots)
+        public void TryResetSlotState(HashSet<int> slots)
         {
-            foreach (var slot in slots)
+            while (true)
             {
-                ResetSlotState(slot);
+                var current = currentConfig;
+                var newConfig = currentConfig.ResetMultiSlotState(slots);
+                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                    break;
             }
+            FlushConfig();
         }
 
         /// <summary>

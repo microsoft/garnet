@@ -58,7 +58,7 @@ namespace Garnet.common
                 }
 
                 var nextDigit = (uint)(*readHead - '0');
-                if (nextDigit > 9)
+                if (nextDigit > 9 || readHead == end)
                 {
                     goto Done;
                 }
@@ -77,7 +77,7 @@ namespace Garnet.common
                 }
 
                 var nextDigit = (uint)(*readHead - '0');
-                if (nextDigit > 9)
+                if (nextDigit > 9 || readHead == end)
                 {
                     goto Done;
                 }
@@ -101,26 +101,68 @@ namespace Garnet.common
 
         /// <summary>
         /// Tries to read a signed 64-bit integer from a given ASCII-encoded input stream.
+        /// This method will throw if an overflow occurred.
         /// </summary>
         /// <param name="ptr">Pointer to the beginning of the ASCII encoded input string.</param>
         /// <param name="end">The end of the string to parse.</param>
         /// <param name="value">If parsing was successful, contains the parsed long value.</param>
         /// <param name="bytesRead">If parsing was successful, contains the number of bytes that were parsed.</param>
+        /// <param name="allowLeadingZeros">True if leading zeros allowed</param>
         /// <returns>
         /// True if a long was successfully parsed, false if the input string did not start with
         /// a valid integer or the end of the string was reached before finishing parsing.
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadLong(ref byte* ptr, byte* end, out long value, out ulong bytesRead)
+        public static bool TryReadLong(ref byte* ptr, byte* end, out long value, out ulong bytesRead, bool allowLeadingZeros = true)
+        {
+            if (TryReadLongSafe(ref ptr, end, out value, out bytesRead, out var signRead,
+                    out var overflow, allowLeadingZeros))
+                return true;
+
+            if (overflow)
+            {
+                var digitsRead = signRead ? bytesRead - 1 : bytesRead;
+                RespParsingException.ThrowIntegerOverflow(ptr - digitsRead, (int)digitsRead);
+                return false;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Tries to read a signed 64-bit integer from a given ASCII-encoded input stream.
+        /// </summary>
+        /// <param name="ptr">Pointer to the beginning of the ASCII encoded input string.</param>
+        /// <param name="end">The end of the string to parse.</param>
+        /// <param name="value">If parsing was successful, contains the parsed long value.</param>
+        /// <param name="bytesRead">If parsing was successful, contains the number of bytes that were parsed.</param>
+        /// <param name="signRead">True if +/- sign was read during parsing</param>
+        /// <param name="overflow">True if overflow occured during parsing</param>
+        /// <param name="allowLeadingZeros">True if leading zeros allowed</param>
+        /// <returns>
+        /// True if a long was successfully parsed, false if the input string did not start with
+        /// a valid integer or the end of the string was reached before finishing parsing.
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryReadLongSafe(ref byte* ptr, byte* end, out long value, out ulong bytesRead, out bool signRead, out bool overflow, bool allowLeadingZeros = true)
         {
             bytesRead = 0;
             value = 0;
+            overflow = false;
 
             // Parse optional leading sign
-            if (TryReadSign(ptr, out var negative))
+            signRead = TryReadSign(ptr, out var negative);
+            if (signRead)
             {
                 ptr++;
                 bytesRead = 1;
+            }
+
+            if (!allowLeadingZeros)
+            {
+                // Do not allow leading zeros
+                if (end - ptr > 1 && *ptr == '0')
+                    return false;
             }
 
             // Parse digits as ulong
@@ -134,7 +176,8 @@ namespace Garnet.common
             {
                 if (number > ((ulong)long.MaxValue) + 1)
                 {
-                    RespParsingException.ThrowIntegerOverflow(ptr - digitsRead, (int)digitsRead);
+                    overflow = true;
+                    return false;
                 }
 
                 value = -1 - (long)(number - 1);
@@ -143,7 +186,8 @@ namespace Garnet.common
             {
                 if (number > long.MaxValue)
                 {
-                    RespParsingException.ThrowIntegerOverflow(ptr - digitsRead, (int)digitsRead);
+                    overflow = true;
+                    return false;
                 }
                 value = (long)number;
             }
@@ -155,23 +199,58 @@ namespace Garnet.common
 
         /// <summary>
         /// Tries to read a signed 32-bit integer from a given ASCII-encoded input stream.
+        /// This method will throw if an overflow occurred.
         /// </summary>
         /// <param name="ptr">Pointer to the beginning of the ASCII encoded input string.</param>
         /// <param name="end">The end of the string to parse.</param>
         /// <param name="value">If parsing was successful, contains the parsed int value.</param>
         /// <param name="bytesRead">If parsing was successful, contains the number of bytes that were parsed.</param>
+        /// <param name="allowLeadingZeros">True if leading zeros allowed</param>
         /// <returns>
         /// True if an int was successfully parsed, false if the input string did not start with
         /// a valid integer or the end of the string was reached before finishing parsing.
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadInt(ref byte* ptr, byte* end, out int value, out ulong bytesRead)
+        public static bool TryReadInt(ref byte* ptr, byte* end, out int value, out ulong bytesRead, bool allowLeadingZeros = true)
+        {
+            if (TryReadIntSafe(ref ptr, end, out value, out bytesRead, out var signRead,
+                    out var overflow, allowLeadingZeros))
+                return true;
+
+            if (overflow)
+            {
+                var digitsRead = signRead ? bytesRead - 1 : bytesRead;
+                RespParsingException.ThrowIntegerOverflow(ptr - digitsRead, (int)digitsRead);
+                return false;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Tries to read a signed 32-bit integer from a given ASCII-encoded input stream.
+        /// </summary>
+        /// <param name="ptr">Pointer to the beginning of the ASCII encoded input string.</param>
+        /// <param name="end">The end of the string to parse.</param>
+        /// <param name="value">If parsing was successful, contains the parsed int value.</param>
+        /// <param name="bytesRead">If parsing was successful, contains the number of bytes that were parsed.</param>
+        /// <param name="signRead">True if +/- sign was read during parsing</param>
+        /// <param name="overflow">True if overflow occured during parsing</param>
+        /// <param name="allowLeadingZeros">True if leading zeros allowed</param>
+        /// <returns>
+        /// True if an int was successfully parsed, false if the input string did not start with
+        /// a valid integer or the end of the string was reached before finishing parsing.
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryReadIntSafe(ref byte* ptr, byte* end, out int value, out ulong bytesRead, out bool signRead, out bool overflow, bool allowLeadingZeros = true)
         {
             bytesRead = 0;
             value = 0;
+            overflow = false;
 
             // Parse optional leading sign
-            if (TryReadSign(ptr, out var negative))
+            signRead = TryReadSign(ptr, out var negative);
+            if (signRead)
             {
                 ptr++;
                 bytesRead = 1;
@@ -188,7 +267,8 @@ namespace Garnet.common
             {
                 if (number > ((ulong)int.MaxValue) + 1)
                 {
-                    RespParsingException.ThrowIntegerOverflow(ptr - digitsRead, (int)digitsRead);
+                    overflow = true;
+                    return false;
                 }
 
                 value = (int)(0 - (long)number);
@@ -197,7 +277,8 @@ namespace Garnet.common
             {
                 if (number > int.MaxValue)
                 {
-                    RespParsingException.ThrowIntegerOverflow(ptr - digitsRead, (int)digitsRead);
+                    overflow = true;
+                    return false;
                 }
                 value = (int)number;
             }
@@ -856,7 +937,7 @@ namespace Garnet.common
             {
                 if (*ptr == '$')
                 {
-                    if (!ReadStringWithLengthHeader(out result[i], ref ptr, end))
+                    if (!ReadStringResponseWithLengthHeader(out result[i], ref ptr, end))
                         return false;
                 }
                 else if (*ptr == '+')

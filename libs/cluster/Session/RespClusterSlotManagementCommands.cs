@@ -439,15 +439,28 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var subcommand = parseState.GetString(1);
+            if (!parseState.TryGetEnum<SlotState>(1, ignoreCase: true, out var slotState) || !slotState.IsValid(parseState.GetArgSliceByRef(1).ReadOnlySpan))
+            {
+                var slotStateStr = parseState.GetString(1);
+                while (!RespWriteUtils.WriteError($"ERR Slot state {slotStateStr} not supported.", ref dcurr, dend))
+                    SendAndReset();
 
-            if (!Enum.TryParse(subcommand, ignoreCase: true, out SlotState slotState))
-                slotState = SlotState.INVALID;
+                return true;
+            }
 
             string nodeId = null;
             if (parseState.Count > 2)
             {
                 nodeId = parseState.GetString(2);
+            }
+
+            // Check that node id is only provided for options other than STABLE
+            if ((slotState == SlotState.STABLE && nodeId is not null) || (slotState != SlotState.STABLE && nodeId is null))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
             }
 
             if (!ClusterConfig.OutOfRange(slot))
@@ -459,7 +472,7 @@ namespace Garnet.cluster
                 {
                     case SlotState.STABLE:
                         setSlotsSucceeded = true;
-                        clusterProvider.clusterManager.ResetSlotState(slot);
+                        clusterProvider.clusterManager.TryResetSlotState(slot);
                         break;
                     case SlotState.IMPORTING:
                         setSlotsSucceeded = clusterProvider.clusterManager.TryPrepareSlotForImport(slot, nodeId, out errorMessage);
@@ -471,9 +484,7 @@ namespace Garnet.cluster
                         setSlotsSucceeded = clusterProvider.clusterManager.TryPrepareSlotForOwnershipChange(slot, nodeId, out errorMessage);
                         break;
                     default:
-                        setSlotsSucceeded = false;
-                        errorMessage = Encoding.ASCII.GetBytes($"ERR Slot state {subcommand} not supported.");
-                        break;
+                        throw new InvalidOperationException($"Unexpected {nameof(SlotState)}: {slotState}");
                 }
 
                 if (setSlotsSucceeded)
@@ -524,21 +535,28 @@ namespace Garnet.cluster
             var subcommand = parseState.GetString(0);
 
             // Try parse slot state
-            if (!Enum.TryParse(subcommand, out SlotState slotState))
+            if (!Enum.TryParse(subcommand, ignoreCase: true, out SlotState slotState))
             {
                 // Log error for invalid slot state option
                 logger?.LogError("The given input '{input}' is not a valid slot state option.", subcommand);
                 slotState = SlotState.INVALID;
             }
 
+            if (slotState == SlotState.INVALID)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_SLOT_STATE, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             // Extract nodeid for operations other than stable
-            if (slotState != SlotState.STABLE && slotState != SlotState.INVALID)
+            if (slotState is not SlotState.STABLE and not SlotState.INVALID)
             {
                 nodeId = parseState.GetString(1);
             }
 
             // Try to parse slot ranges. The parsing may give errorMessage even if the TryParseSlots returns true.
-            var slotsParsed = TryParseSlots(2, out var slots, out var errorMessage, range: true);
+            var slotsParsed = TryParseSlots(slotState == SlotState.STABLE ? 1 : 2, out var slots, out var errorMessage, range: true);
             if (!slotsParsed)
             {
                 while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
@@ -552,7 +570,7 @@ namespace Garnet.cluster
             {
                 case SlotState.STABLE:
                     setSlotsSucceeded = true;
-                    clusterProvider.clusterManager.ResetSlotsState(slots);
+                    clusterProvider.clusterManager.TryResetSlotState(slots);
                     break;
                 case SlotState.IMPORTING:
                     setSlotsSucceeded = clusterProvider.clusterManager.TryPrepareSlotsForImport(slots, nodeId, out errorMessage);

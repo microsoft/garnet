@@ -52,6 +52,8 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_SLOT => "ERR Invalid or out of range slot"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER => "ERR value is not an integer or out of range."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_NOT_BOOLEAN => "ERR value is not a boolean."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_RESET_WITH_KEYS_ASSIGNED => "-ERR CLUSTER RESET can't be called with master nodes containing keys\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "ERR syntax error"u8;
 
         /// <summary>
         /// Generic error response strings for <c>MIGRATE</c> command
@@ -61,6 +63,7 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SLOTNOTMIGRATING => "ERR slot state not set to MIGRATING state"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_FAILEDTOADDKEY => "ERR Failed to add key for migration tracking"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_PARSING => "ERR Parsing error"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SLOT_STATE => "ERR Invalid slot state"u8;
 
         /// <summary>
         /// Simple error respone strings, i.e. these are of the form "-errorString\r\n"

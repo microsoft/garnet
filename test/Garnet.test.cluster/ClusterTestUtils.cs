@@ -670,7 +670,7 @@ namespace Garnet.test.cluster
             if (gcsConnections[nodeIndex] == null)
             {
                 var endpoint = GetEndPoint(nodeIndex).ToIPEndPoint();
-                gcsConnections[nodeIndex] = new GarnetClientSession(endpoint.Address.ToString(), endpoint.Port);
+                gcsConnections[nodeIndex] = new GarnetClientSession(endpoint.Address.ToString(), endpoint.Port, new());
                 gcsConnections[nodeIndex].Connect();
             }
             return gcsConnections[nodeIndex];
@@ -709,6 +709,9 @@ namespace Garnet.test.cluster
         }
 
         public void RandomBytes(ref byte[] data, int startOffset = -1, int endOffset = -1)
+            => RandomBytes(ref r, ref data, startOffset, endOffset);
+
+        public static void RandomBytes(ref Random r, ref byte[] data, int startOffset = -1, int endOffset = -1)
         {
             startOffset = startOffset == -1 ? 0 : startOffset;
             endOffset = endOffset == -1 ? data.Length : endOffset;
@@ -1589,7 +1592,16 @@ namespace Garnet.test.cluster
 
         public static string SetSlot(ref LightClientRequest node, int slot, string state, string nodeid)
         {
-            var resp = node.SendCommand($"cluster setslot {slot} {state} {nodeid}");
+            byte[] resp;
+            if (nodeid != "")
+            {
+                resp = node.SendCommand($"cluster setslot {slot} {state} {nodeid}");
+            }
+            else
+            {
+                resp = node.SendCommand($"cluster setslot {slot} {state}");
+            }
+
             return ParseRespToString(resp, out _);
         }
 
@@ -1604,7 +1616,17 @@ namespace Garnet.test.cluster
             var server = GetServer(endPoint);
             try
             {
-                return (string)server.Execute("cluster", "setslot", $"{slot}", $"{state}", $"{nodeid}");
+                string ret;
+                if (nodeid != "")
+                {
+                    ret = (string)server.Execute("cluster", "setslot", $"{slot}", $"{state}", $"{nodeid}");
+                }
+                else
+                {
+                    ret = (string)server.Execute("cluster", "setslot", $"{slot}", $"{state}");
+                }
+
+                return ret;
             }
             catch (RedisTimeoutException tex)
             {
@@ -1969,6 +1991,23 @@ namespace Garnet.test.cluster
                 logger?.LogError(ex, "An error has occured; ClusterKeySlot");
                 Assert.Fail();
                 return -1;
+            }
+        }
+
+        public void FlushAll(int nodeIndex, ILogger logger = null)
+            => FlushAll((IPEndPoint)endpoints[nodeIndex], logger);
+
+        public void FlushAll(IPEndPoint endPoint, ILogger logger = null)
+        {
+            try
+            {
+                var server = redis.GetServer(endPoint);
+                server.FlushAllDatabases();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occured; FlushAllDatabases");
+                Assert.Fail();
             }
         }
 

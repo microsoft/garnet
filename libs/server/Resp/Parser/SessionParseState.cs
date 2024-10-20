@@ -7,20 +7,15 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
 using Garnet.common.Parsing;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
     /// <summary>
     /// Wrapper to hold parse state for a RESP session.
     /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = Size)]
     public unsafe struct SessionParseState
     {
-        /// <summary>
-        /// Size of parse state
-        /// </summary>
-        public const int Size = 12;
-
         /// <summary>
         /// Initial number of arguments parsed for a command
         /// </summary>
@@ -29,25 +24,27 @@ namespace Garnet.server
         /// <summary>
         /// Count of arguments for the command
         /// </summary>
-        [FieldOffset(0)]
         public int Count;
 
         /// <summary>
         /// Pointer to buffer
         /// </summary>
-        [FieldOffset(sizeof(int))]
         ArgSlice* bufferPtr;
+
+        /// <summary>
+        /// Arguments buffer
+        /// </summary>
+        ArgSlice[] buffer;
 
         /// <summary>
         /// Get a Span of the parsed parameters in the form an ArgSlice
         /// </summary>
-        public readonly Span<ArgSlice> Parameters => new(bufferPtr, Count);
+        public ReadOnlySpan<ArgSlice> Parameters => new(bufferPtr, Count);
 
         /// <summary>
         /// Initialize the parse state at the start of a session
         /// </summary>
-        /// <param name="buffer"></param>
-        public void Initialize(ref ArgSlice[] buffer)
+        public void Initialize()
         {
             Count = 0;
             buffer = GC.AllocateArray<ArgSlice>(MinParams, true);
@@ -57,10 +54,9 @@ namespace Garnet.server
         /// <summary>
         /// Initialize the parse state with a given count of arguments
         /// </summary>
-        /// <param name="buffer">Reference to arguments buffer (necessary for keeping buffer object rooted)</param>
         /// <param name="count">Size of argument array to allocate</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Initialize(ref ArgSlice[] buffer, int count)
+        public void Initialize(int count)
         {
             this.Count = count;
 
@@ -72,19 +68,209 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Initialize the parse state with one argument
+        /// </summary>
+        /// <param name="arg">Argument to initialize buffer with</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeWithArgument(ArgSlice arg)
+        {
+            Initialize(1);
+
+            buffer[0] = arg;
+        }
+
+        /// <summary>
+        /// Initialize the parse state with two arguments
+        /// </summary>
+        /// <param name="arg1">First argument</param>
+        /// <param name="arg2">Second argument</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeWithArguments(ArgSlice arg1, ArgSlice arg2)
+        {
+            Initialize(2);
+
+            buffer[0] = arg1;
+            buffer[1] = arg2;
+        }
+
+        /// <summary>
+        /// Initialize the parse state with three arguments
+        /// </summary>
+        /// <param name="arg1">First argument</param>
+        /// <param name="arg2">Second argument</param>
+        /// <param name="arg3">Third argument</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeWithArguments(ArgSlice arg1, ArgSlice arg2, ArgSlice arg3)
+        {
+            Initialize(3);
+
+            buffer[0] = arg1;
+            buffer[1] = arg2;
+            buffer[2] = arg3;
+        }
+
+        /// <summary>
+        /// Initialize the parse state with four arguments
+        /// </summary>
+        /// <param name="arg1">First argument</param>
+        /// <param name="arg2">Second argument</param>
+        /// <param name="arg3">Third argument</param>
+        /// <param name="arg4">Fourth argument</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeWithArguments(ArgSlice arg1, ArgSlice arg2, ArgSlice arg3, ArgSlice arg4)
+        {
+            Initialize(4);
+
+            buffer[0] = arg1;
+            buffer[1] = arg2;
+            buffer[2] = arg3;
+            buffer[3] = arg4;
+        }
+
+        /// <summary>
+        /// Initialize the parse state with four arguments
+        /// </summary>
+        /// <param name="arg1">First argument</param>
+        /// <param name="arg2">Second argument</param>
+        /// <param name="arg3">Third argument</param>
+        /// <param name="arg4">Fourth argument</param>
+        /// <param name="arg5">Fifth argument</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeWithArguments(ArgSlice arg1, ArgSlice arg2, ArgSlice arg3, ArgSlice arg4, ArgSlice arg5)
+        {
+            Initialize(5);
+
+            buffer[0] = arg1;
+            buffer[1] = arg2;
+            buffer[2] = arg3;
+            buffer[3] = arg4;
+            buffer[4] = arg5;
+        }
+
+        /// <summary>
         /// Initialize the parse state with a given set of arguments
         /// </summary>
-        /// <param name="buffer">Reference to arguments buffer (necessary for keeping buffer object rooted)</param>
         /// <param name="args">Set of arguments to initialize buffer with</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeWithArguments(ref ArgSlice[] buffer, params ArgSlice[] args)
+        public void InitializeWithArguments(ArgSlice[] args)
         {
-            Initialize(ref buffer, args.Length);
+            Initialize(args.Length);
 
             for (var i = 0; i < args.Length; i++)
             {
                 buffer[i] = args[i];
             }
+        }
+
+        /// <summary>
+        /// Set argument at a specific index
+        /// </summary>
+        /// <param name="i">Index of buffer at which to set argument</param>
+        /// <param name="arg">Argument to set</param>
+        public void SetArgument(int i, ArgSlice arg)
+        {
+            Debug.Assert(i < Count);
+            buffer[i] = arg;
+        }
+
+        /// <summary>
+        /// Set arguments starting at a specific index
+        /// </summary>
+        /// <param name="i">Index of buffer at which to start setting arguments</param>
+        /// <param name="args">Arguments to set</param>
+        public void SetArguments(int i, params ArgSlice[] args)
+        {
+            Debug.Assert(i + args.Length - 1 < Count);
+            for (var j = 0; j < args.Length; j++)
+            {
+                buffer[i + j] = args[j];
+            }
+        }
+
+        /// <summary>
+        /// Get serialized length of parse state when arguments are only
+        /// serialized starting at a specified index
+        /// </summary>
+        /// <param name="firstIdx">First index from which arguments are serialized</param>
+        /// <param name="lastIdx">Last index of arguments to serialize</param>
+        /// <returns>The serialized length</returns>
+        public int GetSerializedLength(int firstIdx, int lastIdx)
+        {
+            var serializedLength = sizeof(int);
+
+            var argCount = Count == 0 ? 0 : (lastIdx == -1 ? Count : lastIdx + 1) - firstIdx;
+
+            if (argCount > 0)
+            {
+                Debug.Assert(firstIdx + argCount <= Count);
+
+                for (var i = 0; i < argCount; i++)
+                {
+                    serializedLength += buffer[firstIdx + i].SpanByte.TotalSize;
+                }
+            }
+
+            return serializedLength;
+        }
+
+        /// <summary>
+        /// Serialize parse state to memory buffer
+        /// when arguments are only serialized starting at a specified index
+        /// </summary>
+        /// <param name="dest">The memory buffer to serialize into (of size at least SerializedLength(firstIdx) bytes)</param>
+        /// <param name="firstIdx">First index from which arguments are serialized</param>
+        /// <param name="lastIdx">Last index of arguments to serialize</param>
+        /// <param name="length">Length of buffer to serialize into.</param>
+        /// <returns>Total serialized bytes</returns>
+        public int CopyTo(byte* dest, int firstIdx, int lastIdx, int length)
+        {
+            Debug.Assert(length >= this.GetSerializedLength(firstIdx, lastIdx));
+
+            var curr = dest;
+
+            // Serialize argument count
+            var argCount = Count == 0 ? 0 : (lastIdx == -1 ? Count : lastIdx + 1) - firstIdx;
+            *(int*)curr = argCount;
+            curr += sizeof(int);
+
+            // Serialize arguments
+            if (argCount > 0)
+            {
+                Debug.Assert(firstIdx + argCount <= Count);
+
+                for (var i = 0; i < argCount; i++)
+                {
+                    var sbParam = buffer[firstIdx + i].SpanByte;
+                    sbParam.CopyTo(curr);
+                    curr += sbParam.TotalSize;
+                }
+            }
+
+            return (int)(dest - curr);
+        }
+
+        /// <summary>
+        /// Deserialize parse state from memory buffer into current struct
+        /// </summary>
+        /// <param name="src">Memory buffer to deserialize from</param>
+        /// <returns>Number of deserialized bytes</returns>
+        public unsafe int DeserializeFrom(byte* src)
+        {
+            var curr = src;
+
+            var argCount = *(int*)curr;
+            curr += sizeof(int);
+
+            Initialize(argCount);
+
+            for (var i = 0; i < argCount; i++)
+            {
+                ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
+                buffer[i] = new ArgSlice(ref sbArgument);
+                curr += sbArgument.TotalSize;
+            }
+
+            return (int)(src - curr);
         }
 
         /// <summary>
@@ -208,24 +394,38 @@ namespace Garnet.server
 
         /// <summary>
         /// Get enum argument at the given index
+        /// Note: this method exists for compatibility with existing code.
+        /// For best performance use: ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(""VALUE""u8) to figure out the current enum value
         /// </summary>
         /// <returns>True if enum parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public T GetEnum<T>(int i, bool ignoreCase) where T : struct
+        public T GetEnum<T>(int i, bool ignoreCase) where T : struct, Enum
         {
             Debug.Assert(i < Count);
-            return Enum.Parse<T>(GetString(i), ignoreCase);
+            var strRep = GetString(i);
+            var value = Enum.Parse<T>(strRep, ignoreCase);
+            // Extra check is to avoid numerical values being successfully parsed as enum value
+            return string.Equals(Enum.GetName(value), strRep,
+                ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ? value : default;
         }
 
         /// <summary>
         /// Try to get enum argument at the given index
+        /// Note: this method exists for compatibility with existing code.
+        /// For best performance use: ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(""VALUE""u8) to figure out the current enum value
         /// </summary>
         /// <returns>True if integer parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetEnum<T>(int i, bool ignoreCase, out T value) where T : struct
+        public bool TryGetEnum<T>(int i, bool ignoreCase, out T value) where T : struct, Enum
         {
             Debug.Assert(i < Count);
-            return Enum.TryParse(GetString(i), ignoreCase, out value);
+            var strRep = GetString(i);
+            var successful = Enum.TryParse(strRep, ignoreCase, out value) &&
+                             // Extra check is to avoid numerical values being successfully parsed as enum value
+                             string.Equals(Enum.GetName(value), strRep,
+                                 ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+            if (!successful) value = default;
+            return successful;
         }
 
         /// <summary>

@@ -4,11 +4,14 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Text;
 using System.Threading;
 using Garnet.cluster;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
+using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -25,6 +28,9 @@ namespace Garnet
     /// </summary>
     public class GarnetServer : IDisposable
     {
+        // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
+        readonly string version = "1.0.33";
+
         internal GarnetProvider Provider;
 
         private readonly GarnetServerOptions opts;
@@ -34,7 +40,6 @@ namespace Garnet
         private IDevice aofDevice;
         private TsavoriteLog appendOnlyFile;
         private SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
-        private CollectionItemBroker itemBroker;
         private KVSettings<SpanByte, SpanByte> kvSettings;
         private KVSettings<byte[], IGarnetObject> objKvSettings;
         private INamedDeviceFactory logFactory;
@@ -48,9 +53,6 @@ namespace Garnet
         /// Store and associated information used by this Garnet server
         /// </summary>
         protected StoreWrapper storeWrapper;
-
-        // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
-        readonly string version = "1.0.18";
 
         /// <summary>
         /// Resp protocol version
@@ -77,7 +79,9 @@ namespace Garnet
         /// </summary>
         /// <param name="commandLineArgs">Command line arguments</param>
         /// <param name="loggerFactory">Logger factory</param>
-        public GarnetServer(string[] commandLineArgs, ILoggerFactory loggerFactory = null, bool cleanupDir = false)
+        /// <param name="cleanupDir">Clean up directory.</param>
+        /// <param name="authenticationSettingsOverride">Override for custom authentication settings.</param>
+        public GarnetServer(string[] commandLineArgs, ILoggerFactory loggerFactory = null, bool cleanupDir = false, IAuthenticationSettings authenticationSettingsOverride = null)
         {
             Trace.Listeners.Add(new ConsoleTraceListener());
 
@@ -126,6 +130,7 @@ namespace Garnet
 
             // Assign values to GarnetServerOptions
             this.opts = serverSettings.GetServerOptions(this.loggerFactory.CreateLogger("Options"));
+            this.opts.AuthSettings = authenticationSettingsOverride ?? this.opts.AuthSettings;
             this.cleanupDir = cleanupDir;
             this.InitializeServer();
         }
@@ -184,14 +189,22 @@ namespace Garnet
                 throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {opts.ThreadPoolMaxThreads}");
 
             CreateMainStore(clusterFactory, out var checkpointDir);
-            CreateObjectStore(clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker, out itemBroker);
+            CreateObjectStore(clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker);
 
             if (!opts.DisablePubSub)
-                subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), true);
+                subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true);
 
             CreateAOF();
 
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
+
+            if (logger != null)
+            {
+                var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes + (store.ReadCache?.MaxMemorySizeBytes ?? 0) + (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
+                if (objectStore != null)
+                    configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes + (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) + (objectStoreSizeTracker?.TargetSize ?? 0);
+                logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
+            }
 
             // Create Garnet TCP server if none was provided.
             this.server ??= new GarnetServerTcp(opts.Address, opts.Port, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, logger);
@@ -200,7 +213,7 @@ namespace Garnet
                     customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet
-            Provider = new GarnetProvider(storeWrapper, subscribeBroker, itemBroker);
+            Provider = new GarnetProvider(storeWrapper, subscribeBroker);
 
             // Create user facing API endpoints
             Metrics = new MetricsApi(Provider);
@@ -208,11 +221,37 @@ namespace Garnet
             Store = new StoreApi(storeWrapper);
 
             server.Register(WireFormat.ASCII, Provider);
+
+            LoadModules(customCommandManager);
+        }
+
+        private void LoadModules(CustomCommandManager customCommandManager)
+        {
+            if (opts.LoadModuleCS == null)
+                return;
+
+            foreach (var moduleCS in opts.LoadModuleCS)
+            {
+                var moduleCSData = moduleCS.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (moduleCSData.Length < 1)
+                    continue;
+
+                var modulePath = moduleCSData[0];
+                var moduleArgs = moduleCSData.Length > 1 ? moduleCSData.Skip(1).ToArray() : [];
+                if (ModuleUtils.LoadAssemblies([modulePath], null, true, out var loadedAssemblies, out var errorMsg))
+                {
+                    ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs, logger, out errorMsg);
+                }
+                else
+                {
+                    logger?.LogError("Module {0} failed to load with error {1}", modulePath, Encoding.UTF8.GetString(errorMsg));
+                }
+            }
         }
 
         private void CreateMainStore(IClusterFactory clusterFactory, out string checkpointDir)
         {
-            kvSettings = opts.GetSettings(this.loggerFactory?.CreateLogger("TsavoriteKV [main]"), out logFactory);
+            kvSettings = opts.GetSettings(loggerFactory, out logFactory);
 
             checkpointDir = opts.CheckpointDir ?? opts.LogDir;
 
@@ -237,33 +276,37 @@ namespace Garnet
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
 
-        private void CreateObjectStore(IClusterFactory clusterFactory, CustomCommandManager customCommandManager, string CheckpointDir, out CacheSizeTracker objectStoreSizeTracker, out CollectionItemBroker itemBroker)
+        private void CreateObjectStore(IClusterFactory clusterFactory, CustomCommandManager customCommandManager, string CheckpointDir, out CacheSizeTracker objectStoreSizeTracker)
         {
             objectStoreSizeTracker = null;
-            itemBroker = null;
             if (!opts.DisableObjects)
             {
-                objKvSettings = opts.GetObjectStoreSettings(this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"), out var objTotalMemorySize);
+                objKvSettings = opts.GetObjectStoreSettings(this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"),
+                    out var objHeapMemorySize);
 
                 // Run checkpoint on its own thread to control p99
                 objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
                 objKvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
                 if (opts.EnableCluster)
-                    objKvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator(),
-                        new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"), isMainStore: false, logger);
+                    objKvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(
+                        opts.DeviceFactoryCreator(),
+                        new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"),
+                        isMainStore: false, logger);
                 else
                     objKvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator(),
-                        new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"), removeOutdated: true);
+                        new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"),
+                        removeOutdated: true);
 
                 objectStore = new(objKvSettings
-                    , StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(), () => new ByteArrayBinaryObjectSerializer(), () => new GarnetObjectSerializer(customCommandManager))
+                    , StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(),
+                        () => new ByteArrayBinaryObjectSerializer(),
+                        () => new GarnetObjectSerializer(customCommandManager))
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
-                if (objTotalMemorySize > 0)
-                    objectStoreSizeTracker = new CacheSizeTracker(objectStore, objKvSettings, objTotalMemorySize, this.loggerFactory);
-
-                itemBroker = new CollectionItemBroker();
+                if (objHeapMemorySize > 0)
+                    objectStoreSizeTracker = new CacheSizeTracker(objectStore, objKvSettings, objHeapMemorySize,
+                        this.loggerFactory);
             }
         }
 
@@ -331,7 +374,6 @@ namespace Garnet
             Provider?.Dispose();
             server.Dispose();
             subscribeBroker?.Dispose();
-            itemBroker?.Dispose();
             store.Dispose();
             appendOnlyFile?.Dispose();
             aofDevice?.Dispose();

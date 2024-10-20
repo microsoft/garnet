@@ -29,15 +29,16 @@ namespace Garnet.cluster
             TimeSpan failoverTimeout = default;
             if (parseState.Count > 0)
             {
-                var failoverOptionStr = parseState.GetString(0);
-
                 // Try to parse failover option
-                if (!Enum.TryParse(failoverOptionStr, ignoreCase: true, out failoverOption))
+                if (!parseState.TryGetEnum(0, ignoreCase: true, out failoverOption) || !failoverOption.IsValid(parseState.GetArgSliceByRef(0).Span))
                 {
+                    var failoverOptionStr = parseState.GetString(0);
+
                     // On failure set the invalid flag, write error and continue parsing to drain rest of parameters if any
                     while (!RespWriteUtils.WriteError($"ERR Failover option ({failoverOptionStr}) not supported", ref dcurr, dend))
                         SendAndReset();
-                    failoverOption = FailoverOption.INVALID;
+
+                    return true;
                 }
 
                 if (parseState.Count > 1)
@@ -51,10 +52,6 @@ namespace Garnet.cluster
                     failoverTimeout = TimeSpan.FromSeconds(failoverTimeoutSeconds);
                 }
             }
-
-            // If option provided is invalid return early
-            if (failoverOption == FailoverOption.INVALID)
-                return true;
 
             if (clusterProvider.serverOptions.EnableAOF)
             {

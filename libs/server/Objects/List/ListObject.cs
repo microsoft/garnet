@@ -34,6 +34,7 @@ namespace Garnet.server
         LSET,
         BRPOP,
         BLPOP,
+        LPOS,
     }
 
     /// <summary>
@@ -179,6 +180,9 @@ namespace Garnet.server
                     case ListOperation.LSET:
                         ListSet(ref input, ref output);
                         break;
+                    case ListOperation.LPOS:
+                        ListPosition(ref input, ref output);
+                        break;
 
                     default:
                         throw new GarnetException($"Unsupported operation {input.header.ListOp} in ListObject.Operate");
@@ -199,7 +203,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0)
+        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0, bool isNoValue = false)
         {
             throw new NotImplementedException("For scan items in a list use LRANGE command");
         }

@@ -1,8 +1,10 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Buffers;
 using System.Diagnostics;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -20,11 +22,12 @@ namespace Garnet.server
             switch (type)
             {
                 case GarnetObjectType.Expire:
+                case GarnetObjectType.PExpire:
                 case GarnetObjectType.Persist:
                     return false;
                 default:
                     if ((byte)type < CustomCommandManager.StartOffset)
-                        return GarnetObject.NeedToCreate(*(RespInputHeader*)input.ToPointer());
+                        return GarnetObject.NeedToCreate(input.header);
                     else
                     {
                         var customObjectCommand = GetCustomObjectCommand(ref input, type);
@@ -49,7 +52,7 @@ namespace Garnet.server
             }
             else
             {
-                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
+                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.PExpire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
 
                 var customObjectCommand = GetCustomObjectCommand(ref input, type);
                 var objectId = (byte)((byte)type - CustomCommandManager.StartOffset);
@@ -69,8 +72,7 @@ namespace Garnet.server
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
-                var header = (RespInputHeader*)input.ToPointer();
-                header->SetExpiredFlag();
+                input.header.SetExpiredFlag();
                 WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
             }
 
@@ -105,11 +107,29 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                    var currTokenIdx = input.parseStateStartIdx;
-                    var optionType = input.parseState.GetEnum<ExpireOption>(currTokenIdx++, true);
-                    var expiryExists = (value.Expiration > 0);
-                    var expiration = input.parseState.GetLong(currTokenIdx);
-                    return EvaluateObjectExpireInPlace(optionType, expiryExists, expiration, ref value, ref output);
+                case GarnetObjectType.PExpire:
+                    var expiryValue = input.parseState.GetLong(input.parseStateFirstArgIdx);
+
+                    var optionType = (ExpireOption)input.arg1;
+                    var expireAt = input.arg2 == 1;
+
+                    long expiryTicks;
+                    if (expireAt)
+                    {
+                        expiryTicks = input.header.type == GarnetObjectType.PExpire
+                            ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryValue)
+                            : ConvertUtils.UnixTimestampInSecondsToTicks(expiryValue);
+                    }
+                    else
+                    {
+                        var tsExpiry = input.header.type == GarnetObjectType.PExpire
+                            ? TimeSpan.FromMilliseconds(expiryValue)
+                            : TimeSpan.FromSeconds(expiryValue);
+                        expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
+                    }
+
+                    var expiryExists = value.Expiration > 0;
+                    return EvaluateObjectExpireInPlace(optionType, expiryExists, expiryTicks, ref value, ref output);
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
                     {
@@ -155,10 +175,8 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool CopyUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref IGarnetObject newValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            var header = (RespInputHeader*)input.ToPointer();
-
             // Expired data
-            if (oldValue.Expiration > 0 && header->CheckExpiry(oldValue.Expiration))
+            if (oldValue.Expiration > 0 && input.header.CheckExpiry(oldValue.Expiration))
             {
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
@@ -171,6 +189,7 @@ namespace Garnet.server
         {
             // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that 
             // the record was CASed into the hash chain before it gets modified
+            var oldValueSize = oldValue.Size;
             oldValue.CopyUpdate(ref oldValue, ref value, rmwInfo.RecordInfo.IsInNewVersion);
 
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
@@ -178,11 +197,30 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                    var currTokenIdx = input.parseStateStartIdx;
-                    var expireOption = input.parseState.GetEnum<ExpireOption>(currTokenIdx++, true);
-                    var expiryExists = (value.Expiration > 0);
-                    var expiration = input.parseState.GetLong(currTokenIdx);
-                    EvaluateObjectExpireInPlace(expireOption, expiryExists, expiration, ref value, ref output);
+                case GarnetObjectType.PExpire:
+                    var expiryValue = input.parseState.GetLong(input.parseStateFirstArgIdx);
+
+                    var optionType = (ExpireOption)input.arg1;
+                    var expireAt = input.arg2 == 1;
+
+                    long expiryTicks;
+                    if (expireAt)
+                    {
+                        expiryTicks = input.header.type == GarnetObjectType.PExpire
+                            ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryValue)
+                            : ConvertUtils.UnixTimestampInSecondsToTicks(expiryValue);
+                    }
+                    else
+                    {
+                        var tsExpiry = input.header.type == GarnetObjectType.PExpire
+                            ? TimeSpan.FromMilliseconds(expiryValue)
+                            : TimeSpan.FromSeconds(expiryValue);
+                        expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
+                    }
+
+                    var expiryExists = value.Expiration > 0;
+
+                    EvaluateObjectExpireInPlace(optionType, expiryExists, expiryTicks, ref value, ref output);
                     break;
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
@@ -220,7 +258,9 @@ namespace Garnet.server
                     }
             }
 
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateKeyValueSize(key, value));
+            // If oldValue has been set to null, subtract it's size from the tracked heap size
+            var sizeAdjustment = oldValue == null ? value.Size - oldValueSize : value.Size;
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeAdjustment);
 
             if (functionsState.appendOnlyFile != null)
                 WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);

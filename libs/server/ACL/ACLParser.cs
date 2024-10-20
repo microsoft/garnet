@@ -250,7 +250,7 @@ namespace Garnet.server.ACL
 
                 string effectiveName = isSubCommand ? commandName[..subCommandSepIx] + "_" + commandName[(subCommandSepIx + 1)..] : commandName;
 
-                if (!Enum.TryParse(effectiveName, ignoreCase: true, out command))
+                if (!Enum.TryParse(effectiveName, ignoreCase: true, out command) || !IsValidParse(command, effectiveName))
                 {
                     // We handle these commands specially because blind replacements would cause
                     // us to be too accepting of different values
@@ -276,13 +276,22 @@ namespace Garnet.server.ACL
                         throw new ACLException($"Couldn't load information for {command}, shouldn't be possible");
                     }
 
-                    if (info.SubCommand != command)
+                    if (info.Command != command)
                     {
                         return false;
                     }
                 }
 
                 return !IsInvalidCommandToAcl(command);
+            }
+
+            // Returns true if the parsed value could possibly result in this command
+            //
+            // Used to handle the weirdness in Enum.TryParse - long term we probably
+            // shift to something like IUtf8SpanParsable.
+            static bool IsValidParse(RespCommand command, ReadOnlySpan<char> fromStr)
+            {
+                return command != RespCommand.NONE && command != RespCommand.INVALID && !fromStr.ContainsAnyInRange('0', '9');
             }
 
             // Some commands aren't really commands, so ACLs shouldn't accept their names

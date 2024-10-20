@@ -13,6 +13,15 @@ namespace Garnet.server
     /// </summary>
     public interface IGarnetApi : IGarnetReadApi, IGarnetAdvancedApi
     {
+        #region GETEX
+
+        /// <summary>
+        /// GETEX
+        /// </summary>
+        GarnetStatus GETEX(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
+
+        #endregion
+
         #region SET
         /// <summary>
         /// SET
@@ -20,14 +29,19 @@ namespace Garnet.server
         GarnetStatus SET(ref SpanByte key, ref SpanByte value);
 
         /// <summary>
-        /// SET Conditional
+        /// SET
         /// </summary>
-        GarnetStatus SET_Conditional(ref SpanByte key, ref SpanByte input);
+        GarnetStatus SET(ref SpanByte key, ref RawStringInput input, ref SpanByte value);
 
         /// <summary>
         /// SET Conditional
         /// </summary>
-        GarnetStatus SET_Conditional(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input);
+
+        /// <summary>
+        /// SET Conditional
+        /// </summary>
+        GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// SET
@@ -80,24 +94,24 @@ namespace Garnet.server
         /// SETRANGE
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="value">Value</param>
-        /// <param name="offset">Offset in Bytes</param>
+        /// <param name="input"></param>
         /// <param name="output">The output of the operation</param>
         /// <returns></returns>
-        GarnetStatus SETRANGE(ArgSlice key, ArgSlice value, int offset, ref ArgSlice output);
+        GarnetStatus SETRANGE(ArgSlice key, ref RawStringInput input, ref ArgSlice output);
 
 
         #endregion
 
         #region APPEND
+
         /// <summary>
         /// APPEND command
         /// </summary>
         /// <param name="key">Key whose value is to be appended</param>
-        /// <param name="value">Value to be appended</param>
+        /// <param name="input"></param>
         /// <param name="output">Length of updated value</param>
         /// <returns>Operation status</returns>
-        GarnetStatus APPEND(ref SpanByte key, ref SpanByte value, ref SpanByteAndMemory output);
+        GarnetStatus APPEND(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// APPEND command
@@ -118,6 +132,16 @@ namespace Garnet.server
         /// <param name="storeType"></param>
         /// <returns></returns>
         GarnetStatus RENAME(ArgSlice oldKey, ArgSlice newKey, StoreType storeType = StoreType.All);
+
+        /// <summary>
+        /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
+        /// </summary>
+        /// <param name="oldKey">The old key to be renamed.</param>
+        /// <param name="newKey">The new key name.</param>
+        /// <param name="result">The result of the operation.</param>
+        /// <param name="storeType">The type of store to perform the operation on.</param>
+        /// <returns></returns>
+        GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, out int result, StoreType storeType = StoreType.All);
         #endregion
 
         #region EXISTS
@@ -146,15 +170,14 @@ namespace Garnet.server
         /// Set a timeout on key using a timeSpan in seconds
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="expiry">Expiry in TimeSpan</param>
+        /// <param name="input"></param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
         /// <param name="storeType">Store type: main, object, or both</param>
-        /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIRE(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIRE(ArgSlice key, ref RawStringInput input, out bool timeoutSet, StoreType storeType = StoreType.All);
 
         /// <summary>
-        /// Set a timeout on key using a timeSpan in milliseconds
+        /// Set a timeout on key using a timeSpan in seconds
         /// </summary>
         /// <param name="key">Key</param>
         /// <param name="expiry">Expiry in TimeSpan</param>
@@ -162,7 +185,32 @@ namespace Garnet.server
         /// <param name="storeType">Store type: main, object, or both</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus PEXPIRE(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIRE(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        #endregion
+
+        #region EXPIREAT
+
+        /// <summary>
+        /// Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970) in seconds
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="expiryTimestamp">Absolute Unix timestamp in seconds</param>
+        /// <param name="timeoutSet">Whether timeout was set by the call</param>
+        /// <param name="storeType">Store type: main, object, or both</param>
+        /// <param name="expireOption">Expire option</param>
+        /// <returns></returns>
+        GarnetStatus EXPIREAT(ArgSlice key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+
+        /// <summary>
+        /// Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970) in milliseconds
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="expiryTimestamp">Absolute Unix timestamp in milliseconds</param>
+        /// <param name="timeoutSet">Whether timeout was set by the call</param>
+        /// <param name="storeType">Store type: main, object, or both</param>
+        /// <param name="expireOption">Expire option</param>
+        /// <returns></returns>
+        GarnetStatus PEXPIREAT(ArgSlice key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
 
         #endregion
 
@@ -184,7 +232,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus Increment(ArgSlice key, ArgSlice input, ref ArgSlice output);
+        GarnetStatus Increment(ArgSlice key, ref RawStringInput input, ref ArgSlice output);
 
         /// <summary>
         /// Increment (INCR, INCRBY)
@@ -590,6 +638,16 @@ namespace Garnet.server
         #region ListPush Methods
 
         /// <summary>
+        /// The command returns the index of matching elements inside a Redis list.
+        /// By default, when no options are given, it will scan the list from head to tail, looking for the first match of "element".
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <returns></returns>
+        GarnetStatus ListPosition(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
         /// ListLeftPush ArgSlice version with ObjectOutputHeader output
         /// </summary>
         /// <param name="key"></param>
@@ -899,16 +957,16 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringSetBit(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus StringSetBit(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Performs a bitwise operations on multiple keys
         /// </summary>
-        /// <param name="keys"></param>
-        /// <param name="bitop"></param>
+        /// <param name="input"></param>
+        /// <param name="bitOp"></param>
         /// <param name="result"></param>
         /// <returns></returns>
-        GarnetStatus StringBitOperation(Span<ArgSlice> keys, BitmapOperation bitop, out long result);
+        GarnetStatus StringBitOperation(ref RawStringInput input, BitmapOperation bitOp, out long result);
 
         /// <summary>
         /// Perform a bitwise operation between multiple keys
@@ -929,7 +987,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="secondaryCommand"></param>
         /// <returns></returns>
-        GarnetStatus StringBitField(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output);
+        GarnetStatus StringBitField(ref SpanByte key, ref RawStringInput input, byte secondaryCommand, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Performs arbitrary bitfield integer operations on strings.
@@ -946,7 +1004,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogAdd(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus HyperLogLogAdd(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Adds all the element arguments to the HyperLogLog data structure stored at the variable name specified as key.
@@ -961,10 +1019,10 @@ namespace Garnet.server
         /// Merge multiple HyperLogLog values into a unique value that will approximate the cardinality
         /// of the union of the observed Sets of the source HyperLogLog structures.
         /// </summary>
-        /// <param name="keys"></param>
+        /// <param name="input"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogMerge(Span<ArgSlice> keys, out bool error);
+        GarnetStatus HyperLogLogMerge(ref RawStringInput input, out bool error);
 
         #endregion
     }
@@ -978,7 +1036,7 @@ namespace Garnet.server
         /// <summary>
         /// GET
         /// </summary>
-        GarnetStatus GET(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus GET(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// GET
@@ -1006,15 +1064,15 @@ namespace Garnet.server
         #endregion
 
         #region GETRANGE
+
         /// <summary>
         /// GETRANGE
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="sliceStart"></param>
-        /// <param name="sliceLength"></param>
+        /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GETRANGE(ref SpanByte key, int sliceStart, int sliceLength, ref SpanByteAndMemory output);
+        GarnetStatus GETRANGE(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
         #endregion
 
         #region TTL
@@ -1036,6 +1094,28 @@ namespace Garnet.server
         /// <param name="output">The span to allocate the output of the operation.</param>
         /// <returns></returns>
         GarnetStatus PTTL(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output);
+
+        #endregion
+
+        #region EXPIRETIME
+
+        /// <summary>
+        /// Returns the absolute Unix timestamp (since January 1, 1970) in seconds at which the given key will expire.
+        /// </summary>
+        /// <param name="key">The key to get the expiration time for.</param>
+        /// <param name="storeType">The type of store to retrieve the key from.</param>
+        /// <param name="output">The output containing the expiration time.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus EXPIRETIME(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output);
+
+        /// <summary>
+        /// Returns the absolute Unix timestamp (since January 1, 1970) in milliseconds at which the given key will expire.
+        /// </summary>
+        /// <param name="key">The key to get the expiration time for.</param>
+        /// <param name="storeType">The type of store to retrieve the key from.</param>
+        /// <param name="output">The output containing the expiration time.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus PEXPIRETIME(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output);
 
         #endregion
 
@@ -1279,6 +1359,14 @@ namespace Garnet.server
         GarnetStatus SetIsMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
+        /// Returns whether each member is a member of the set stored at key.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="members"></param>
+        /// <returns></returns>
+        GarnetStatus SetIsMember(ArgSlice key, ArgSlice[] members, out int[] result);
+
+        /// <summary>
         /// Iterates over the members of the Set with the given key using a cursor,
         /// a match pattern and count parameters.
         /// </summary>
@@ -1484,7 +1572,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringGetBit(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus StringGetBit(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Returns the bit value at offset in the key stored.
@@ -1503,7 +1591,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringBitCount(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus StringBitCount(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Count the number of set bits in a string.
@@ -1524,7 +1612,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringBitPosition(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus StringBitPosition(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Read-only variant of the StringBitField method.
@@ -1534,7 +1622,7 @@ namespace Garnet.server
         /// <param name="secondaryCommand"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output);
+        GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref RawStringInput input, byte secondaryCommand, ref SpanByteAndMemory output);
 
         #endregion
 
@@ -1543,12 +1631,11 @@ namespace Garnet.server
         /// Returns the approximated cardinality computed by the HyperLogLog data structure stored at the specified key,
         /// or 0 if the key does not exist.
         /// </summary>
-        /// <param name="keys"></param>
         /// <param name="input"></param>
         /// <param name="count"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error);
+        GarnetStatus HyperLogLogLength(ref RawStringInput input, out long count, out bool error);
 
         /// <summary>
         ///
@@ -1631,6 +1718,19 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Retrieve the current scratch buffer offset.
+        /// </summary>
+        /// <returns>Current offset</returns>
+        int GetScratchBufferOffset();
+
+        /// <summary>
+        /// Resets the scratch buffer to the given offset.
+        /// </summary>
+        /// <param name="offset">Offset to reset to</param>
+        /// <returns>True if successful, else false</returns>
+        bool ResetScratchBuffer(int offset);
 
         #endregion
 

@@ -9,14 +9,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Resp\RespCommandsInfo.json" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\..\libs\storage\Tsavorite\cs\src\core\Tsavorite.core.csproj" />
     <ProjectReference Include="..\..\metrics\HdrHistogram\HdrHistogram.csproj" />
     <ProjectReference Include="..\client\Garnet.client.csproj" />
     <ProjectReference Include="..\common\Garnet.common.csproj" />
+    <ProjectReference Include="..\resources\Garnet.resources.csproj" />
   </ItemGroup>
 
   <ItemGroup>

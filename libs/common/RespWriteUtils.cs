@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Buffers.Text;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -70,6 +71,18 @@ namespace Garnet.common
         {
             var numDigits = NumUtils.NumDigits(len);
             var totalLen = 1 + numDigits + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+            *curr++ = (byte)'*';
+            NumUtils.IntToBytes(len, numDigits, ref curr);
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        public static bool WriteArrayLength(int len, ref byte* curr, byte* end, out int numDigits, out int totalLen)
+        {
+            numDigits = NumUtils.NumDigits(len);
+            totalLen = 1 + numDigits + 2;
             if (totalLen > (int)(end - curr))
                 return false;
             *curr++ = (byte)'*';
@@ -194,6 +207,27 @@ namespace Garnet.common
             errorString.CopyTo(new Span<byte>(curr, errorString.Length));
             curr += errorString.Length;
             WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
+        /// Write simple error
+        /// </summary>
+        /// <param name="errorString">An ASCII encoded error string. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
+        public static bool WriteError(ReadOnlySpan<byte> errorString, ref MemoryResult<byte> output)
+        {
+            var totalLen = 1 + errorString.Length + 2;
+            output.MemoryOwner = MemoryPool<byte>.Shared.Rent(totalLen);
+            output.Length = totalLen;
+
+            fixed (byte* ptr = output.MemoryOwner.Memory.Span)
+            {
+                var curr = ptr;
+                *curr++ = (byte)'-';
+                errorString.CopyTo(new Span<byte>(curr, errorString.Length));
+                curr += errorString.Length;
+                WriteNewline(ref curr);
+            }
             return true;
         }
 

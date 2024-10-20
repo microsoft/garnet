@@ -29,11 +29,6 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
             var lop =
                 command switch
                 {
@@ -45,16 +40,8 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = lop,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             var status = command == RespCommand.LPUSH || command == RespCommand.LPUSHX
                 ? storageApi.ListLeftPush(keyBytes, ref input, out var output)
@@ -106,11 +93,6 @@ namespace Garnet.server
                 }
             }
 
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
             var lop =
                 command switch
                 {
@@ -120,15 +102,8 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = lop,
-                },
-                arg1 = popCount,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            var input = new ObjectInput(header, popCount);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -156,6 +131,52 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// The command returns the index of matching elements inside a Redis list.
+        /// By default, when no options are given, it will scan the list from head to tail, looking for the first match of "element".
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool ListPosition<TGarnetApi>(ref TGarnetApi storageApi)
+                            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.LPOS));
+            }
+
+            // Get the key for List
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var element = parseState.GetArgSliceByRef(1).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            // Prepare input
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LPOS };
+            var input = new ObjectInput(header, ref parseState, 1);
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var statusOp = storageApi.ListPosition(keyBytes, ref input, ref outputFooter);
+
+            switch (statusOp)
+            {
+                case GarnetStatus.OK:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }
 
         /// <summary>
         /// LMPOP numkeys key [key ...] LEFT | RIGHT [COUNT count]
@@ -278,7 +299,10 @@ namespace Garnet.server
                 return true;
             }
 
-            var result = itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
 
             if (!result.Found)
             {
@@ -311,19 +335,8 @@ namespace Garnet.server
 
             var srcKey = parseState.GetArgSliceByRef(0);
 
-            if (NetworkSingleKeySlotVerify(srcKey.ReadOnlySpan, false))
-            {
-                return true;
-            }
-
             // Read destination key
             cmdArgs[0] = parseState.GetArgSliceByRef(1);
-
-            if (NetworkSingleKeySlotVerify(cmdArgs[0].ReadOnlySpan, false))
-            {
-                return true;
-            }
-
             var srcDir = parseState.GetArgSliceByRef(2);
             var dstDir = parseState.GetArgSliceByRef(3);
 
@@ -347,7 +360,10 @@ namespace Garnet.server
                 return true;
             }
 
-            var result = itemBroker.MoveCollectionItemAsync(command, srcKey.ToArray(), this, timeout,
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            var result = storeWrapper.itemBroker.MoveCollectionItemAsync(command, srcKey.ToArray(), this, timeout,
                 cmdArgs).Result;
 
             if (!result.Found)
@@ -382,20 +398,9 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = ListOperation.LLEN,
-                },
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LLEN };
+            var input = new ObjectInput(header);
 
             var status = storageApi.ListLength(keyBytes, ref input, out var output);
 
@@ -447,22 +452,9 @@ namespace Garnet.server
                 return true;
             }
 
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = ListOperation.LTRIM,
-                },
-                arg1 = start,
-                arg2 = stop,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LTRIM };
+            var input = new ObjectInput(header, start, stop);
 
             var status = storageApi.ListTrim(keyBytes, ref input);
 
@@ -511,22 +503,9 @@ namespace Garnet.server
                 return true;
             }
 
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = ListOperation.LRANGE,
-                },
-                arg1 = start,
-                arg2 = end,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LRANGE };
+            var input = new ObjectInput(header, start, end);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -578,21 +557,9 @@ namespace Garnet.server
                 return true;
             }
 
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = ListOperation.LINDEX,
-                },
-                arg1 = index,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LINDEX };
+            var input = new ObjectInput(header, index);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -646,22 +613,9 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = ListOperation.LINSERT,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LINSERT };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             var statusOp = storageApi.ListInsert(keyBytes, ref input, out var output);
 
@@ -715,23 +669,9 @@ namespace Garnet.server
                 return true;
             }
 
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = ListOperation.LREM,
-                },
-                arg1 = nCount,
-                parseState = parseState,
-                parseStateStartIdx = 2,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LREM };
+            var input = new ObjectInput(header, ref parseState, 2, -1, nCount);
 
             var statusOp = storageApi.ListRemove(keyBytes, ref input, out var output);
 
@@ -758,7 +698,6 @@ namespace Garnet.server
             return true;
         }
 
-
         /// <summary>
         /// LMOVE source destination [LEFT | RIGHT] [LEFT | RIGHT]
         /// </summary>
@@ -775,12 +714,6 @@ namespace Garnet.server
 
             var srcKey = parseState.GetArgSliceByRef(0);
             var dstKey = parseState.GetArgSliceByRef(1);
-
-            if (NetworkSingleKeySlotVerify(srcKey.ReadOnlySpan, false) ||
-                NetworkSingleKeySlotVerify(dstKey.ReadOnlySpan, false))
-            {
-                return true;
-            }
 
             var srcDirSlice = parseState.GetArgSliceByRef(2);
             var dstDirSlice = parseState.GetArgSliceByRef(3);
@@ -836,12 +769,6 @@ namespace Garnet.server
 
             var srcKey = parseState.GetArgSliceByRef(0);
             var dstKey = parseState.GetArgSliceByRef(1);
-
-            if (NetworkSingleKeySlotVerify(srcKey.ReadOnlySpan, false) ||
-                NetworkSingleKeySlotVerify(dstKey.ReadOnlySpan, false))
-            {
-                return true;
-            }
 
             if (!ListMove(srcKey, dstKey, OperationDirection.Right, OperationDirection.Left,
                     out var node, ref storageApi, out var garnetStatus))
@@ -915,22 +842,9 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = ListOperation.LSET,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LSET };
+            var input = new ObjectInput(header, ref parseState, 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };

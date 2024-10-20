@@ -30,6 +30,91 @@ namespace Garnet.server
             public bool WithScores { get; set; }
         };
 
+        bool TryGetSortedSetAddOption(ReadOnlySpan<byte> item, out SortedSetAddOption options)
+        {
+            if (item.EqualsUpperCaseSpanIgnoringCase("XX"u8))
+            {
+                options = SortedSetAddOption.XX;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("NX"u8))
+            {
+                options = SortedSetAddOption.NX;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("LT"u8))
+            {
+                options = SortedSetAddOption.LT;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("GT"u8))
+            {
+                options = SortedSetAddOption.GT;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("CH"u8))
+            {
+                options = SortedSetAddOption.CH;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("INCR"u8))
+            {
+                options = SortedSetAddOption.INCR;
+                return true;
+            }
+            options = SortedSetAddOption.None;
+            return false;
+        }
+
+        bool GetOptions(ref ObjectInput input, ref int currTokenIdx, out SortedSetAddOption options, ref byte* curr, byte* end, ref SpanByteAndMemory output, ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle)
+        {
+            options = SortedSetAddOption.None;
+
+            while (currTokenIdx < input.parseState.Count)
+            {
+                if (!TryGetSortedSetAddOption(input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan, out var currOption))
+                    break;
+
+                options |= currOption;
+                currTokenIdx++;
+            }
+
+            // Validate ZADD options combination
+            ReadOnlySpan<byte> optionsError = default;
+
+            // XX & NX are mutually exclusive
+            if (options.HasFlag(SortedSetAddOption.XX) && options.HasFlag(SortedSetAddOption.NX))
+                optionsError = CmdStrings.RESP_ERR_XX_NX_NOT_COMPATIBLE;
+
+            // NX, GT & LT are mutually exclusive
+            if ((options.HasFlag(SortedSetAddOption.GT) && options.HasFlag(SortedSetAddOption.LT)) ||
+               ((options.HasFlag(SortedSetAddOption.GT) || options.HasFlag(SortedSetAddOption.LT)) &&
+                options.HasFlag(SortedSetAddOption.NX)))
+                optionsError = CmdStrings.RESP_ERR_GT_LT_NX_NOT_COMPATIBLE;
+
+            // INCR supports only one score-element pair
+            if (options.HasFlag(SortedSetAddOption.INCR) && (input.parseState.Count - currTokenIdx > 2))
+                optionsError = CmdStrings.RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR;
+
+            if (!optionsError.IsEmpty)
+            {
+                while (!RespWriteUtils.WriteError(optionsError, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                return false;
+            }
+
+            // From here on we expect only score-element pairs
+            // Remaining token count should be positive and even
+            if (currTokenIdx == input.parseState.Count || (input.parseState.Count - currTokenIdx) % 2 != 0)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                return false;
+            }
+
+            return true;
+        }
+
         private void SortedSetAdd(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             var isMemory = false;
@@ -40,43 +125,98 @@ namespace Garnet.server
             var end = curr + output.Length;
 
             ObjectOutputHeader outputHeader = default;
-            var added = 0;
+            var addedOrChanged = 0;
+            double incrResult = 0;
+
             try
             {
-                for (var currIdx = input.parseStateStartIdx; currIdx < input.parseState.Count; currIdx += 2)
+                var options = SortedSetAddOption.None;
+                var currTokenIdx = input.parseStateFirstArgIdx;
+                var parsedOptions = false;
+
+                while (currTokenIdx < input.parseState.Count)
                 {
-                    if (!input.parseState.TryGetDouble(currIdx, out var score))
+                    // Try to parse a Score field
+                    if (!input.parseState.TryGetDouble(currTokenIdx, out var score))
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        return;
+                        // Try to get and validate options before the Score field, if any
+                        if (!parsedOptions)
+                        {
+                            parsedOptions = true;
+                            if (!GetOptions(ref input, ref currTokenIdx, out options, ref curr, end, ref output, ref isMemory, ref ptr, ref ptrHandle))
+                                return;
+                            continue; // retry after parsing options
+                        }
+                        else
+                        {
+                            // Invalid Score encountered
+                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            return;
+                        }
                     }
 
-                    var memberSpan = input.parseState.GetArgSliceByRef(currIdx + 1).ReadOnlySpan;
+                    parsedOptions = true;
+                    currTokenIdx++;
 
-                    var memberArray = memberSpan.ToArray();
-                    if (!sortedSetDict.TryGetValue(memberArray, out var scoreStored))
+                    // Member
+                    var memberSpan = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                    var member = memberSpan.ToArray();
+
+                    // Add new member
+                    if (!sortedSetDict.TryGetValue(member, out var scoreStored))
                     {
-                        sortedSetDict.Add(memberArray, score);
-                        if (sortedSet.Add((score, memberArray)))
-                        {
-                            added++;
-                        }
+                        // Don't add new member if XX flag is set
+                        if (options.HasFlag(SortedSetAddOption.XX)) continue;
+
+                        sortedSetDict.Add(member, score);
+                        if (sortedSet.Add((score, member)))
+                            addedOrChanged++;
 
                         this.UpdateSize(memberSpan);
                     }
-                    else if (scoreStored != score)
+                    // Update existing member
+                    else
                     {
-                        sortedSetDict[memberArray] = score;
-                        var success = sortedSet.Remove((scoreStored, memberArray));
+                        // Update new score if INCR flag is set
+                        if (options.HasFlag(SortedSetAddOption.INCR))
+                        {
+                            score += scoreStored;
+                            incrResult = score;
+                        }
+
+                        // No need for update
+                        if (score == scoreStored)
+                            continue;
+
+                        // Don't update existing member if NX flag is set
+                        // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
+                        if (options.HasFlag(SortedSetAddOption.NX) ||
+                            (options.HasFlag(SortedSetAddOption.GT) && scoreStored > score) ||
+                            (options.HasFlag(SortedSetAddOption.LT) && scoreStored < score)) continue;
+
+                        sortedSetDict[member] = score;
+                        var success = sortedSet.Remove((scoreStored, member));
                         Debug.Assert(success);
-                        success = sortedSet.Add((score, memberArray));
+                        success = sortedSet.Add((score, member));
                         Debug.Assert(success);
+
+                        // If CH flag is set, add changed member to final count
+                        if (options.HasFlag(SortedSetAddOption.CH))
+                            addedOrChanged++;
                     }
                 }
 
-                while (!RespWriteUtils.WriteInteger(added, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                if (options.HasFlag(SortedSetAddOption.INCR))
+                {
+                    while (!RespWriteUtils.TryWriteDoubleBulkString(incrResult, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteInteger(addedOrChanged, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
             }
             finally
             {
@@ -93,7 +233,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            for (var currIdx = input.parseStateStartIdx; currIdx < input.parseState.Count; currIdx++)
+            for (var currIdx = input.parseStateFirstArgIdx; currIdx < input.parseState.Count; currIdx++)
             {
                 var value = input.parseState.GetArgSliceByRef(currIdx).ReadOnlySpan;
                 var valueArray = value.ToArray();
@@ -126,7 +266,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
             var member = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
 
             ObjectOutputHeader outputHeader = default;
@@ -173,7 +313,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteArrayLength(count - 1, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                for (var currIdx = input.parseStateStartIdx; currIdx < count; currIdx++)
+                for (var currIdx = input.parseStateFirstArgIdx; currIdx < count; currIdx++)
                 {
                     var member = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
 
@@ -209,7 +349,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
 
             // Read min & max
             var minParamSpan = input.parseState.GetArgSliceByRef(currIdx++).ReadOnlySpan;
@@ -263,7 +403,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader outputHeader = default;
 
@@ -323,7 +463,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader _output = default;
             try
@@ -540,7 +680,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader outputHeader = default;
 
@@ -601,7 +741,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
 
             ObjectOutputHeader outputHeader = default;
 
@@ -703,7 +843,7 @@ namespace Garnet.server
             // Using minValue for partial execution detection
             _output->result1 = int.MinValue;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
 
             var minParamBytes = input.parseState.GetArgSliceByRef(currIdx++).ReadOnlySpan;
             var maxParamBytes = input.parseState.GetArgSliceByRef(currIdx).ReadOnlySpan;
@@ -732,7 +872,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateStartIdx;
+            var currIdx = input.parseStateFirstArgIdx;
             var withScore = input.arg1 == 1;
 
             ObjectOutputHeader outputHeader = default;

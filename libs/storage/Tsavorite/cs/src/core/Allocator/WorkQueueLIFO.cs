@@ -3,95 +3,67 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Shared work queue that ensures one worker at any given time. Uses LIFO ordering of work.
+    /// Shared work queue with a single work processor task loop. Uses LIFO ordering of work.
     /// </summary>
     /// <typeparam name="T"></typeparam>
     internal sealed class WorkQueueLIFO<T> : IDisposable
     {
-        const int kMaxQueueSize = 1 << 30;
-        readonly ConcurrentStack<T> _queue;
-        readonly Action<T> _work;
-        private int _count;
-        private bool _disposed;
+        readonly ConcurrentStack<T> stack;
+        readonly Action<T> work;
+        readonly SingleWaiterAutoResetEvent onWork;
+        readonly Task processQueue;
+        private bool disposed;
 
         public WorkQueueLIFO(Action<T> work)
         {
-            _queue = new ConcurrentStack<T>();
-            _work = work;
-            _count = 0;
-            _disposed = false;
+            stack = new ConcurrentStack<T>();
+            this.work = work;
+            onWork = new()
+            {
+                RunContinuationsAsynchronously = true
+            };
+            processQueue = Task.Run(ProcessQueue);
         }
 
         public void Dispose()
         {
-            _disposed = true;
-            // All future enqueue requests will no longer perform work after _disposed is set to true.
-            while (_count != 0)
-                Thread.Yield();
-            // After this point, any previous work must have completed. Even if another enqueue request manipulates the
-            // count field, they are guaranteed to see disposed and not enqueue any actual work.
+            disposed = true;
+            onWork.Signal();
         }
 
         /// <summary>
-        /// Enqueue work item, take ownership of draining the work queue
-        /// if needed
+        /// Add work item
         /// </summary>
-        /// <param name="work">Work to enqueue</param>
-        /// <param name="asTask">Process work as separate task</param>
-        /// <returns> whether the enqueue is successful. Enqueuing into a disposed WorkQueue will fail and the task will not be performed</returns>>
-        public bool EnqueueAndTryWork(T work, bool asTask)
+        /// <param name="workItem">Work item</param>
+        /// <returns>Whether the add is successful</returns>>
+        public void AddWorkItem(T workItem)
         {
-            Interlocked.Increment(ref _count);
-            if (_disposed)
-            {
-                // Remove self from count in case Dispose() is actively waiting for completion
-                Interlocked.Decrement(ref _count);
-                return false;
-            }
-
-            _queue.Push(work);
-
-            // Try to take over work queue processing if needed
-            while (true)
-            {
-                int count = _count;
-                if (count >= kMaxQueueSize) return true;
-                if (Interlocked.CompareExchange(ref _count, count + kMaxQueueSize, count) == count)
-                    break;
-            }
-
-            if (asTask)
-                _ = Task.Run(ProcessQueue);
-            else
-                ProcessQueue();
-            return true;
+            // Add the work item
+            stack.Push(workItem);
+            // Signal the processing logic to check for work
+            onWork.Signal();
         }
 
-        private void ProcessQueue()
+        private async Task ProcessQueue()
         {
             // Process items in work queue
-            while (true)
+            while (!disposed)
             {
-                while (_queue.TryPop(out var workItem))
+                while (stack.TryPop(out var workItem))
                 {
                     try
                     {
-                        _work(workItem);
+                        work(workItem);
                     }
                     catch { }
-                    Interlocked.Decrement(ref _count);
+                    if (disposed) return;
                 }
-
-                int count = _count;
-                if (count != kMaxQueueSize) continue;
-                if (Interlocked.CompareExchange(ref _count, 0, count) == count)
-                    break;
+                await onWork.WaitAsync().ConfigureAwait(false);
             }
         }
     }

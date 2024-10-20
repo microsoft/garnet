@@ -9,7 +9,6 @@ using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Security;
-using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -49,9 +48,12 @@ namespace Garnet.test
 
         private static int procId = Process.GetCurrentProcess().Id;
         internal static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
+        internal static string CustomRespCommandDocsJsonPath = "CustomRespCommandsDocs.json";
 
         private static bool CustomCommandsInfoInitialized;
+        private static bool CustomCommandsDocsInitialized;
         private static IReadOnlyDictionary<string, RespCommandsInfo> RespCustomCommandsInfo;
+        private static IReadOnlyDictionary<string, RespCommandDocs> RespCustomCommandsDocs;
 
         internal static string AzureTestContainer
         {
@@ -97,9 +99,25 @@ namespace Garnet.test
             return true;
         }
 
+        /// <summary>
+        /// Get command info for custom commands defined in custom commands json file
+        /// </summary>
+        /// <param name="customCommandsDocs">Mapping between command name and command info</param>
+        /// <param name="logger">Logger</param>
+        /// <returns></returns>
+        internal static bool TryGetCustomCommandsDocs(out IReadOnlyDictionary<string, RespCommandDocs> customCommandsDocs, ILogger logger = null)
+        {
+            customCommandsDocs = default;
+
+            if (!CustomCommandsDocsInitialized && !TryInitializeCustomCommandsDocs(logger)) return false;
+
+            customCommandsDocs = RespCustomCommandsDocs;
+            return true;
+        }
+
         private static bool TryInitializeCustomCommandsInfo(ILogger logger)
         {
-            if (!TryGetRespCommandsInfo(CustomRespCommandInfoJsonPath, logger, out var tmpCustomCommandsInfo))
+            if (!TryGetRespCommandData<RespCommandsInfo>(CustomRespCommandInfoJsonPath, logger, out var tmpCustomCommandsInfo))
                 return false;
 
             RespCustomCommandsInfo = tmpCustomCommandsInfo;
@@ -107,26 +125,30 @@ namespace Garnet.test
             return true;
         }
 
-        private static bool TryGetRespCommandsInfo(string resourcePath, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo)
+        private static bool TryInitializeCustomCommandsDocs(ILogger logger)
         {
-            commandsInfo = default;
+            if (!TryGetRespCommandData<RespCommandDocs>(CustomRespCommandDocsJsonPath, logger, out var tmpCustomCommandsDocs))
+                return false;
 
-            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null, Assembly.GetExecutingAssembly());
-            var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
-
-            var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(resourcePath,
-                streamProvider, out var tmpCommandsInfo, logger);
-
-            if (!importSucceeded) return false;
-
-            commandsInfo = tmpCommandsInfo;
+            RespCustomCommandsDocs = tmpCustomCommandsDocs;
+            CustomCommandsDocsInitialized = true;
             return true;
+        }
+
+        private static bool TryGetRespCommandData<TData>(string resourcePath, ILogger logger, out IReadOnlyDictionary<string, TData> commandData)
+        where TData : class, IRespCommandData<TData>
+        {
+            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
+            var commandsInfoProvider = RespCommandsDataProviderFactory.GetRespCommandsDataProvider<TData>();
+
+            return commandsInfoProvider.TryImportRespCommandsData(resourcePath,
+                streamProvider, out commandData, logger);
         }
 
         static bool IsAzuriteRunning()
         {
             // If Azurite is running, it will run on localhost and listen on port 10000 and/or 10001.
-            IPAddress expectedIp = new(new byte[] { 127, 0, 0, 1 });
+            IPAddress expectedIp = new([127, 0, 0, 1]);
             var expectedPorts = new[] { 10000, 10001 };
 
             var activeTcpListeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners();
@@ -167,7 +189,7 @@ namespace Garnet.test
             string defaultPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
-            string objectStoreTotalMemorySize = default,
+            string objectStoreHeapMemorySize = default,
             string objectStoreIndexSize = "16k",
             string objectStoreIndexMaxSize = default,
             string indexSize = "1m",
@@ -178,7 +200,8 @@ namespace Garnet.test
             int indexResizeFrequencySecs = 60,
             IAuthenticationSettings authenticationSettings = null,
             bool enableLua = false,
-            ILogger logger = null)
+            ILogger logger = null,
+            IEnumerable<string> loadModulePaths = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -254,17 +277,18 @@ namespace Garnet.test
                 EnableScatterGatherGet = getSG,
                 IndexResizeFrequencySecs = indexResizeFrequencySecs,
                 ThreadPoolMinThreads = threadPoolMinThreads,
+                LoadModuleCS = loadModulePaths
             };
 
-            if (!string.IsNullOrEmpty(objectStoreTotalMemorySize))
-                opts.ObjectStoreTotalMemorySize = objectStoreTotalMemorySize;
+            if (!string.IsNullOrEmpty(objectStoreHeapMemorySize))
+                opts.ObjectStoreHeapMemorySize = objectStoreHeapMemorySize;
 
             if (indexMaxSize != default) opts.IndexMaxSize = indexMaxSize;
             if (objectStoreIndexMaxSize != default) opts.ObjectStoreIndexMaxSize = objectStoreIndexMaxSize;
 
             if (lowMemory)
             {
-                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "512" : MemorySize;
+                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "1024" : MemorySize;
                 opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
             }
 
@@ -333,7 +357,9 @@ namespace Garnet.test
             string aclFile = null,
             X509CertificateCollection certificates = null,
             ILoggerFactory loggerFactory = null,
-            AadAuthenticationSettings authenticationSettings = null)
+            AadAuthenticationSettings authenticationSettings = null,
+            int metricsSamplingFrequency = 0,
+            bool enableLua = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -372,7 +398,9 @@ namespace Garnet.test
                     aclFile: aclFile,
                     certificates: certificates,
                     logger: loggerFactory?.CreateLogger("GarnetServer"),
-                    aadAuthenticationSettings: authenticationSettings);
+                    aadAuthenticationSettings: authenticationSettings,
+                    metricsSamplingFrequency: metricsSamplingFrequency,
+                    enableLua: enableLua);
 
                 ClassicAssert.IsNotNull(opts);
                 int iter = 0;
@@ -417,6 +445,8 @@ namespace Garnet.test
             string aclFile = null,
             X509CertificateCollection certificates = null,
             AadAuthenticationSettings aadAuthenticationSettings = null,
+            int metricsSamplingFrequency = 0,
+            bool enableLua = false,
             ILogger logger = null)
         {
             if (UseAzureStorage)
@@ -468,6 +498,7 @@ namespace Garnet.test
                 MemorySize = "1g",
                 GossipDelay = gossipDelay,
                 EnableFastCommit = FastCommit,
+                MetricsSamplingFrequency = metricsSamplingFrequency,
                 TlsOptions = UseTLS ? new GarnetTlsOptions(
                     certFileName: certFile,
                     certPassword: certPassword,
@@ -500,11 +531,12 @@ namespace Garnet.test
                 AuthSettings = useAcl ? authenticationSettings : (authPassword != null ? authenticationSettings : null),
                 ClusterUsername = authUsername,
                 ClusterPassword = authPassword,
+                EnableLua = enableLua,
             };
 
             if (lowMemory)
             {
-                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "512" : MemorySize;
+                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "1024" : MemorySize;
                 opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
             }
 
@@ -624,7 +656,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClientSession(Address, Port, sslOptions);
+            return new GarnetClientSession(Address, Port, new(), tlsOptions: sslOptions);
         }
 
         public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, CountResponseType countResponseType = CountResponseType.Tokens)

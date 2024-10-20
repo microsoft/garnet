@@ -22,6 +22,24 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Reset cached slot verification result
+        /// </summary>
+        public void ResetCacheSlotVerificationResult()
+        {
+            if (!clusterEnabled) return;
+            respSession.clusterSession.ResetCachedSlotVerificationResult();
+        }
+
+        /// <summary>
+        /// Reset cached slot verification result
+        /// </summary>
+        public void WriteCachedSlotVerificationMessage(ref MemoryResult<byte> output)
+        {
+            if (!clusterEnabled) return;
+            respSession.clusterSession.WriteCachedSlotVerificationMessage(ref output);
+        }
+
+        /// <summary>
         /// Verify key ownership
         /// </summary>
         /// <param name="key"></param>
@@ -30,8 +48,8 @@ namespace Garnet.server
         {
             if (!clusterEnabled) return;
 
-            bool readOnly = type == LockType.Shared;
-            if (!clusterSession.CheckSingleKeySlotVerify(key, readOnly, respSession.SessionAsking))
+            var readOnly = type == LockType.Shared;
+            if (!respSession.clusterSession.NetworkIterativeSlotVerify(key, readOnly, respSession.SessionAsking))
             {
                 this.state = TxnState.Aborted;
                 return;
@@ -57,6 +75,7 @@ namespace Garnet.server
                 RespCommand.SMOVE => SetObjectKeys(SetOperation.SMOVE, inputCount),
                 RespCommand.SRANDMEMBER => SetObjectKeys(SetOperation.SRANDMEMBER, inputCount),
                 RespCommand.SISMEMBER => SetObjectKeys(SetOperation.SISMEMBER, inputCount),
+                RespCommand.SMISMEMBER => SetObjectKeys(SetOperation.SMISMEMBER, inputCount),
                 RespCommand.SUNION => SetObjectKeys(SetOperation.SUNION, inputCount),
                 RespCommand.SUNIONSTORE => SetObjectKeys(SetOperation.SUNIONSTORE, inputCount),
                 RespCommand.SDIFF => SetObjectKeys(SetOperation.SDIFF, inputCount),
@@ -126,7 +145,7 @@ namespace Garnet.server
                 RespCommand.PFADD => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.PFCOUNT => ListKeys(inputCount, false, LockType.Shared),
                 RespCommand.PFMERGE => ListKeys(inputCount, false, LockType.Exclusive),
-                RespCommand.SETEX => SingleKey(3, false, LockType.Exclusive),
+                RespCommand.SETEX => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.SETEXNX => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.SETEXXX => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.DEL => ListKeys(inputCount, false, LockType.Exclusive),
@@ -134,6 +153,7 @@ namespace Garnet.server
                 RespCommand.RENAME => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.INCR => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.INCRBY => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.INCRBYFLOAT => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.DECR => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.DECRBY => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.SETBIT => SingleKey(1, false, LockType.Exclusive),
@@ -164,6 +184,7 @@ namespace Garnet.server
                 RespCommand.CONFIG => 1,
                 RespCommand.CLIENT => 1,
                 RespCommand.PING => 1,
+                RespCommand.PUBLISH => 1,
                 _ => -1
             };
         }
@@ -256,6 +277,7 @@ namespace Garnet.server
                 SetOperation.SRANDMEMBER => SingleKey(1, true, LockType.Shared),
                 SetOperation.SPOP => SingleKey(1, true, LockType.Exclusive),
                 SetOperation.SISMEMBER => SingleKey(1, true, LockType.Shared),
+                SetOperation.SMISMEMBER => SingleKey(1, true, LockType.Shared),
                 SetOperation.SUNION => ListKeys(inputCount, true, LockType.Shared),
                 SetOperation.SUNIONSTORE => XSTOREKeys(inputCount, true),
                 SetOperation.SDIFF => ListKeys(inputCount, true, LockType.Shared),
@@ -302,7 +324,7 @@ namespace Garnet.server
 
             if (!NumUtils.TryParse(numKeysArg.ReadOnlySpan, out int numKeys)) return -2;
 
-            for (int i = 0; i < numKeys; i++)
+            for (var i = 0; i < numKeys; i++)
             {
                 var key = respSession.GetCommandAsArgSlice(out success);
                 if (!success) return -2;

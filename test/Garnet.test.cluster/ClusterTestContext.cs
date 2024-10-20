@@ -9,6 +9,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -57,8 +58,16 @@ namespace Garnet.test.cluster
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
             loggerFactory?.Dispose();
-            DisposeCluster();
-            TestUtils.DeleteDirectory(TestFolder, true);
+            if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(15)))
+                logger?.LogError("Timed out waiting for DisposeCluster");
+            if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(15)))
+                logger?.LogError("Timed out waiting for DisposeCluster");
+        }
+
+        public void RegisterCustomTxn(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
+        {
+            foreach (var node in nodes)
+                node.Register.NewTransactionProc(name, proc, commandInfo, commandDocs);
         }
 
         /// <summary>
@@ -108,7 +117,9 @@ namespace Garnet.test.cluster
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential(),
             AadAuthenticationSettings authenticationSettings = null,
-            bool disablePubSub = true)
+            bool disablePubSub = true,
+            int metricsSamplingFrequency = 0,
+            bool enableLua = false)
         {
             endpoints = TestUtils.GetEndPoints(shards, 7000);
             nodes = TestUtils.CreateGarnetCluster(
@@ -138,7 +149,9 @@ namespace Garnet.test.cluster
                 authUsername: clusterCreds.user,
                 authPassword: clusterCreds.password,
                 certificates: certificates,
-                authenticationSettings: authenticationSettings);
+                authenticationSettings: authenticationSettings,
+                metricsSamplingFrequency: metricsSamplingFrequency,
+                enableLua: enableLua);
 
             foreach (var node in nodes)
                 node.Start();
