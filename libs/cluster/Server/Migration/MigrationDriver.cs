@@ -88,19 +88,19 @@ namespace Garnet.cluster
                 #endregion
 
                 #region transferSlotOwnnershipToTargetNode
-                //5. Clear local migration set.
-                if (!RelinquishOwnership())
+                //5. Change ownership of slots to target node.
+                if (!TrySetSlotRanges(GetTargetNodeId, MigrateState.NODE))
                 {
-                    logger?.LogError("Failed to relinquish ownership from source node:({srcNode}) to target node: ({tgtNode})", GetSourceNodeId, GetTargetNodeId);
+                    logger?.LogError("Failed to assign ownership to target node:({tgtNodeId}) ({endpoint})", GetTargetNodeId, GetTargetEndpoint);
                     TryRecoverFromFailure();
                     Status = MigrateState.FAIL;
                     return;
                 }
 
-                //6. Change ownership of slots to target node.
-                if (!TrySetSlotRanges(GetTargetNodeId, MigrateState.NODE))
+                //6. Clear local migration set.
+                if (!RelinquishOwnership())
                 {
-                    logger?.LogError("Failed to assign ownership to target node:({tgtNodeId}) ({endpoint})", GetTargetNodeId, GetTargetEndpoint);
+                    logger?.LogError("Failed to relinquish ownership from source node:({srcNode}) to target node: ({tgtNode})", GetSourceNodeId, GetTargetNodeId);
                     TryRecoverFromFailure();
                     Status = MigrateState.FAIL;
                     return;
