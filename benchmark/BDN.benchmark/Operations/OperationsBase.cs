@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using BenchmarkDotNet.Attributes;
 using Embedded.perftest;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
@@ -32,24 +33,29 @@ namespace BDN.benchmark.Operations
                 opts.AofPageSize = "128m";
                 opts.AofMemorySize = "256m";
             }
-            if (useACLs)
+
+            string aclFile = null;
+            try
             {
-                var aclFile = Path.GetTempFileName();
-                try
+                if (useACLs)
                 {
-                    File.WriteAllText(aclFile, @"user default on nopass -@all +ping +set +get");
+                    aclFile = Path.GetTempFileName();
+                    File.WriteAllText(aclFile, @"user default on nopass -@all +ping +set +get +setex +incr +decr +incrby +decrby");
                     opts.AuthSettings = new AclAuthenticationPasswordSettings(aclFile);
                 }
-                finally
-                {
-                    File.Delete(aclFile);
-                }
+                server = new EmbeddedRespServer(opts);
             }
-            server = new EmbeddedRespServer(opts);
+            finally
+            {
+                if (aclFile != null)
+                    File.Delete(aclFile);
+            }
+
             session = server.GetRespSession();
         }
 
-        protected void Cleanup()
+        [GlobalCleanup]
+        public virtual void GlobalCleanup()
         {
             session.Dispose();
             server.Dispose();

@@ -40,11 +40,11 @@ namespace BDN.benchmark.Operations
         byte[] decrRequestBuffer;
         byte* decrRequestBufferPointer;
 
-        static ReadOnlySpan<byte> INCRBY => "*2\r\n$6\r\nINCRBY\r\n$1\r\nk\r\n$10\r\n1234567890\r\r"u8;
+        static ReadOnlySpan<byte> INCRBY => "*3\r\n$6\r\nINCRBY\r\n$1\r\nk\r\n$10\r\n1234567890\r\n"u8;
         byte[] incrbyRequestBuffer;
         byte* incrbyRequestBufferPointer;
 
-        static ReadOnlySpan<byte> DECRBY => "*2\r\n$6\r\nDECRBY\r\n$1\r\nl\r\n$10\r\n1234567890\r\r"u8;
+        static ReadOnlySpan<byte> DECRBY => "*3\r\n$6\r\nDECRBY\r\n$1\r\nl\r\n$10\r\n1234567890\r\n"u8;
         byte[] decrbyRequestBuffer;
         byte* decrbyRequestBufferPointer;
 
@@ -69,12 +69,6 @@ namespace BDN.benchmark.Operations
             SlowConsumeMessage("*3\r\n$3\r\nSET\r\n$1\r\nj\r\n$1\r\n0\r\n"u8);
             SlowConsumeMessage("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\n0\r\n"u8);
             SlowConsumeMessage("*3\r\n$3\r\nSET\r\n$1\r\nl\r\n$1\r\n0\r\n"u8);
-        }
-
-        [GlobalCleanup]
-        public void GlobalCleanup()
-        {
-            Cleanup();
         }
 
         [Benchmark]

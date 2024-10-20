@@ -19,12 +19,6 @@ namespace BDN.benchmark.Operations
             SetupOperation(ref pingRequestBuffer, ref pingRequestBufferPointer, INLINE_PING);
         }
 
-        [GlobalCleanup]
-        public void GlobalCleanup()
-        {
-            Cleanup();
-        }
-
         [Benchmark]
         public void InlinePing()
         {

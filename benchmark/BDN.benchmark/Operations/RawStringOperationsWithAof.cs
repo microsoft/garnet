@@ -8,13 +8,9 @@ namespace BDN.benchmark.Operations
     [MemoryDiagnoser]
     public class RawStringOperationsWithAof : RawStringOperations
     {
-        [Params(false, true)]
-        public bool UseAof { get; set; }
-
-        [GlobalSetup]
         public override void GlobalSetup()
         {
-            useAof = UseAof;
+            useAof = true;
             base.GlobalSetup();
         }
     }

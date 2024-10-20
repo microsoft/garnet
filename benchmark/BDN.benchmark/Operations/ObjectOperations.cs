@@ -67,12 +67,6 @@ namespace BDN.benchmark.Operations
             SlowConsumeMessage(cpbsetBuffer);
         }
 
-        [GlobalCleanup]
-        public void GlobalCleanup()
-        {
-            Cleanup();
-        }
-
         [Benchmark]
         public void ZAddRem()
         {
