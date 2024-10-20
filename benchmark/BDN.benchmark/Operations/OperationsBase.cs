@@ -9,15 +9,37 @@ using Garnet.server.Auth.Settings;
 
 namespace BDN.benchmark.Operations
 {
+    /// <summary>
+    /// Base class for operations benchmarks
+    /// </summary>
     public abstract unsafe class OperationsBase
     {
-        protected EmbeddedRespServer server;
+        /// <summary>
+        /// Batch size per method invocation
+        /// With a batchSize of 100, we have a convenient conversion of latency to throughput:
+        ///   5 us = 20 Mops/sec
+        ///  10 us = 10 Mops/sec
+        ///  20 us =  5 Mops/sec
+        ///  25 us =  4 Mops/sec
+        /// 100 us =  1 Mops/sec
+        /// </summary>
+        const int batchSize = 100;
+        internal EmbeddedRespServer server;
         internal RespServerSession session;
-        protected IAuthenticationSettings authSettings = null;
-        protected const int batchSize = 128;
+
+        /// <summary>
+        /// Whether AOF is enabled
+        /// </summary>
         protected bool useAof = false;
+
+        /// <summary>
+        /// Whether ACLs are enabled
+        /// </summary>
         protected bool useACLs = false;
 
+        /// <summary>
+        /// Setup
+        /// </summary>
         [GlobalSetup]
         public virtual void GlobalSetup()
         {
@@ -55,6 +77,9 @@ namespace BDN.benchmark.Operations
             session = server.GetRespSession();
         }
 
+        /// <summary>
+        /// Cleanup
+        /// </summary>
         [GlobalCleanup]
         public virtual void GlobalCleanup()
         {
