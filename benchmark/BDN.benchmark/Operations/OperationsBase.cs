@@ -3,7 +3,6 @@
 
 using System.Runtime.CompilerServices;
 using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Code;
 using Embedded.perftest;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
