@@ -206,30 +206,30 @@ namespace Garnet.test
             deviceFactory.Delete(new FileDescriptor { directoryName = "" });
 
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.IsEmpty(invalidOptions);
-            Assert.IsTrue(options.PageSize == "32m");
-            Assert.IsTrue(options.MemorySize == "16g");
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.IsEmpty(invalidOptions);
+            ClassicAssert.IsTrue(options.PageSize == "32m");
+            ClassicAssert.IsTrue(options.MemorySize == "16g");
 
             var args = new string[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "128m" };
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.IsEmpty(invalidOptions);
-            Assert.IsTrue(options.PageSize == "4m");
-            Assert.IsTrue(options.MemorySize == "128m");
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.IsEmpty(invalidOptions);
+            ClassicAssert.IsTrue(options.PageSize == "4m");
+            ClassicAssert.IsTrue(options.MemorySize == "128m");
 
             args = ["--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-import", "true", "--config-import-path", configPath];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.IsEmpty(invalidOptions);
-            Assert.IsTrue(options.PageSize == "4m");
-            Assert.IsTrue(options.MemorySize == "128m");
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.IsEmpty(invalidOptions);
+            ClassicAssert.IsTrue(options.PageSize == "4m");
+            ClassicAssert.IsTrue(options.MemorySize == "128m");
 
             args = ["--use-azure-storage", "--storage-string", AzureEmulatedStorageString];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.IsEmpty(invalidOptions);
-            Assert.AreEqual(AzureEmulatedStorageString, options.AzureStorageConnectionString);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.IsEmpty(invalidOptions);
+            ClassicAssert.AreEqual(AzureEmulatedStorageString, options.AzureStorageConnectionString);
 
             // Delete blob
             deviceFactory.Initialize(AzureTestDirectory);
@@ -242,44 +242,44 @@ namespace Garnet.test
             // missing both storage-string and managed-identity
             var args = new string[] { "--use-azure-storage" };
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.IsEmpty(invalidOptions);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.IsEmpty(invalidOptions);
             Assert.Throws<InvalidAzureConfiguration>(() => options.GetServerOptions());
 
             // valid storage-string
             args = ["--use-azure-storage", "--storage-string", "UseDevelopmentStorage=true;"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.IsEmpty(invalidOptions);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.IsEmpty(invalidOptions);
             Assert.DoesNotThrow(() => options.GetServerOptions());
 
             // insecure service-uri
             args = ["--use-azure-storage", "--storage-service-uri", "http://demo.blob.core.windows.net"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-            Assert.IsFalse(parseSuccessful);
-            Assert.AreEqual(invalidOptions.Count, 1);
-            Assert.AreEqual(invalidOptions[0], nameof(Options.AzureStorageServiceUri));
+            ClassicAssert.IsFalse(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 1);
+            ClassicAssert.AreEqual(invalidOptions[0], nameof(Options.AzureStorageServiceUri));
 
             // secure service-uri but missing managed-identity
             args = ["--use-azure-storage", "--storage-service-uri", "https://demo.blob.core.windows.net"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.IsEmpty(invalidOptions);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.IsEmpty(invalidOptions);
             Assert.Throws<InvalidAzureConfiguration>(() => options.GetServerOptions());
 
             // secure service-uri with managed-identity
             args = ["--use-azure-storage", "--storage-service-uri", "https://demo.blob.core.windows.net", "--storage-managed-identity", "demo"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.IsEmpty(invalidOptions);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.IsEmpty(invalidOptions);
             var serverOptions = options.GetServerOptions();
             Assert.DoesNotThrow(() => options.GetServerOptions());
 
             // both storage-string and managed-identity
             args = ["--use-azure-storage", "--storage-string", "UseDevelopmentStorage", "--storage-managed-identity", "demo", "--storage-service-uri", "https://demo.blob.core.windows.net"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-            Assert.IsTrue(parseSuccessful);
-            Assert.IsEmpty(invalidOptions);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.IsEmpty(invalidOptions);
             Assert.Throws<InvalidAzureConfiguration>(() => options.GetServerOptions());
         }
     }
