@@ -582,6 +582,10 @@ namespace Garnet
                 CompactionForceDelete = true;
             }
 
+            Func<INamedDeviceFactory> azureFactoryCreator = string.IsNullOrEmpty(AzureStorageConnectionString)
+                ? () => new AzureStorageNamedDeviceFactory(AzureStorageServiceUri, new DefaultAzureCredential(new DefaultAzureCredentialOptions{ ManagedIdentityClientId = AzureStorageManagedIdentity }), logger)
+                : () => new AzureStorageNamedDeviceFactory(AzureStorageConnectionString, logger);
+
             return new GarnetServerOptions(logger)
             {
                 Port = Port,
@@ -650,11 +654,7 @@ namespace Garnet
                 QuietMode = QuietMode.GetValueOrDefault(),
                 ThreadPoolMinThreads = ThreadPoolMinThreads,
                 ThreadPoolMaxThreads = ThreadPoolMaxThreads,
-                DeviceFactoryCreator = useAzureStorage
-                    ? string.IsNullOrEmpty(AzureStorageConnectionString)
-                        ? () => new AzureStorageNamedDeviceFactory(AzureStorageServiceUri, new ManagedIdentityCredential(AzureStorageManagedIdentity), logger)
-                        : () => new AzureStorageNamedDeviceFactory(AzureStorageConnectionString, logger)
-                    : () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
+                DeviceFactoryCreator = useAzureStorage ? azureFactoryCreator : () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
