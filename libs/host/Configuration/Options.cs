@@ -583,7 +583,7 @@ namespace Garnet
             }
 
             Func<INamedDeviceFactory> azureFactoryCreator = string.IsNullOrEmpty(AzureStorageConnectionString)
-                ? () => new AzureStorageNamedDeviceFactory(AzureStorageServiceUri, new DefaultAzureCredential(new DefaultAzureCredentialOptions{ ManagedIdentityClientId = AzureStorageManagedIdentity }), logger)
+                ? () => new AzureStorageNamedDeviceFactory(AzureStorageServiceUri, new DefaultAzureCredential(new DefaultAzureCredentialOptions { ManagedIdentityClientId = AzureStorageManagedIdentity }), logger)
                 : () => new AzureStorageNamedDeviceFactory(AzureStorageConnectionString, logger);
 
             return new GarnetServerOptions(logger)
