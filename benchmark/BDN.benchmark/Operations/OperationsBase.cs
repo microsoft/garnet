@@ -3,6 +3,7 @@
 
 using System.Runtime.CompilerServices;
 using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Code;
 using Embedded.perftest;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
@@ -27,15 +28,15 @@ namespace BDN.benchmark.Operations
         internal EmbeddedRespServer server;
         internal RespServerSession session;
 
-        /// <summary>
-        /// Whether AOF is enabled
-        /// </summary>
-        protected bool useAof = false;
+        [ParamsSource(nameof(OperationParamsProvider))]
+        public OperationParams Params { get; set; }
 
-        /// <summary>
-        /// Whether ACLs are enabled
-        /// </summary>
-        protected bool useACLs = false;
+        public IEnumerable<OperationParams> OperationParamsProvider()
+        {
+            yield return new(false, false);
+            yield return new(true, false);
+            yield return new(false, true);
+        }
 
         /// <summary>
         /// Setup
@@ -47,7 +48,7 @@ namespace BDN.benchmark.Operations
             {
                 QuietMode = true
             };
-            if (useAof)
+            if (Params.useAof)
             {
                 opts.EnableAOF = true;
                 opts.UseAofNullDevice = true;
@@ -60,7 +61,7 @@ namespace BDN.benchmark.Operations
             string aclFile = null;
             try
             {
-                if (useACLs)
+                if (Params.useACLs)
                 {
                     aclFile = Path.GetTempFileName();
                     File.WriteAllText(aclFile, @"user default on nopass -@all +ping +set +get +setex +incr +decr +incrby +decrby");
