@@ -5,7 +5,9 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -18,6 +20,8 @@ namespace Garnet.server
         /// Shared memory pool used by functions
         /// </summary>
         protected static MemoryPool<byte> MemoryPool => MemoryPool<byte>.Shared;
+
+        public CustomCommandManager customCommandManager;
 
         /// <summary>
         /// Create output as simple string, from given string
@@ -206,6 +210,25 @@ namespace Garnet.server
         protected static unsafe ArgSlice GetNextArg(ref CustomProcedureInput procInput, ref int idx)
         {
             return GetNextArg(ref procInput.parseState, ref idx);
+        }
+
+        protected void InvokeCustomRawStringCommand<TGarnetApi>(TGarnetApi garnetApi, string cmd, ArgSlice key, ArgSlice input)
+            where TGarnetApi : IGarnetApi
+        {
+
+            //var request = scratchBufferManager.FormatCommandAsResp(cmd, new[] { key, input }, null);
+            //_ = respServerSession.TryConsumeMessages(request.ptr, request.length);
+            //var response = scratchBufferNetworkSender.GetResponse();
+            //var result = ProcessResponse(response.ptr, response.length);
+            //scratchBufferNetworkSender.Reset();
+            //output = result;
+
+            //output = 
+            var output = new SpanByteAndMemory(null);
+            if (customCommandManager.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out CustomRawStringCommand customCommand))
+            {
+                garnetApi.CustomCommand(customCommand.id, key, input, ref output);
+            }
         }
     }
 }
