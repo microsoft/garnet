@@ -36,6 +36,8 @@ namespace BDN.benchmark.Cluster
                 Port = port,
                 CleanClusterConfig = true,
             };
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                opt.CheckpointDir = "/tmp";
             server = new EmbeddedRespServer(opt);
             session = server.GetRespSession();
             _ = server.Register.NewTransactionProc(CustomProcSet.CommandName, () => new CustomProcSet(), new RespCommandsInfo { Arity = CustomProcSet.Arity });
