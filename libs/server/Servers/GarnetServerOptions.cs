@@ -246,10 +246,21 @@ namespace Garnet.server
         /// </summary>
         public int ThreadPoolMaxThreads = 0;
 
+        private Func<INamedDeviceFactory> _deviceFactoryCreator;
+        private Lazy<INamedDeviceFactory> _deviceFactoryLazyCreator;
+
         /// <summary>
         /// Creator of device factories
         /// </summary>
-        public Func<INamedDeviceFactory> DeviceFactoryCreator = null;
+        public Func<INamedDeviceFactory> DeviceFactoryCreator
+        {
+            get => _deviceFactoryCreator;
+            set
+            {
+                _deviceFactoryCreator = value;
+                _deviceFactoryLazyCreator = new Lazy<INamedDeviceFactory>(_deviceFactoryCreator);
+            }
+        }
 
         /// <summary>
         /// Whether and by how much should we throttle the disk IO for checkpoints (default = 0)
@@ -640,7 +651,7 @@ namespace Garnet.server
                 throw new Exception("AOF Page size cannot be more than the AOF memory size.");
             }
             tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
-                MainMemoryReplication ? new NullNamedDeviceFactory() : DeviceFactoryCreator(),
+                MainMemoryReplication ? new NullNamedDeviceFactory() : GetDeviceFactory(),
                     new DefaultCheckpointNamingScheme(CheckpointDir + "/AOF"),
                     removeOutdated: true,
                     fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
@@ -739,6 +750,6 @@ namespace Garnet.server
         /// Get device factory
         /// </summary>
         /// <returns></returns>
-        public INamedDeviceFactory GetDeviceFactory() => DeviceFactoryCreator();
+        public INamedDeviceFactory GetDeviceFactory() => _deviceFactoryLazyCreator.Value;
     }
 }
