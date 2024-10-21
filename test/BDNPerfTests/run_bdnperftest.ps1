@@ -34,25 +34,24 @@ $OFS = "`r`n"
 function AnalyzeResult {
     param ($foundResultValue, $expectedResultValue, $acceptablePercentRange, $warnonly)
 
-    # Calculate the lower and upper bounds of the expected value
+    # Calculate the upper bounds of the expected value
     [double] $Tolerance = $acceptablePercentRange / 100
-    [double] $LowerBound = $expectedResultValue * (1 - $Tolerance)
     [double] $UpperBound = $expectedResultValue * (1 + $Tolerance)
     [double] $dblfoundResultValue = $foundResultValue
 
     # Check if the actual value is within the bounds
-    if ($dblfoundResultValue -ge $LowerBound -and $dblfoundResultValue -le $UpperBound) {
-        Write-Host "**             ** PASS! **  Acceptable Allocated Value result ($dblfoundResultValue) is in the acceptable range +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue " 
+    if ($dblfoundResultValue -le $UpperBound) {
+        Write-Host "**             ** PASS! **  The Allocated Value result ($dblfoundResultValue) is under the acceptable threshold ($UpperBound). Expected value $expectedResultValue +$acceptablePercentRange%." 
         Write-Host "** "
         return $true # the values are close enough
     }
     else {
         if ($warnonly) {
-            Write-Host "**   << PERF REGRESSION WARNING! >>  The BDN benchmark Allocated Value result ($dblfoundResultValue) is OUT OF RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue" 
+            Write-Host "**   << PERF REGRESSION WARNING! >>  The BDN benchmark Allocated Value result ($dblfoundResultValue) is above the acceptable threshold ($UpperBound). Expected value  $expectedResultValue +$acceptablePercentRange%." 
             Write-Host "** "
         }
         else {
-            Write-Host "**   << PERF REGRESSION FAIL! >>  The  BDN benchmark Allocated Value ($dblfoundResultValue) is OUT OF ACCEPTABLE RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue"
+            Write-Host "**   << PERF REGRESSION FAIL! >> The BDN benchmark Allocated Value result ($dblfoundResultValue) is above the acceptable threshold ($UpperBound). Expected value  $expectedResultValue +$acceptablePercentRange%." 
             Write-Host "** "
         }
         return $false # the values are too different
