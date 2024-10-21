@@ -7,7 +7,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -212,22 +211,13 @@ namespace Garnet.server
             return GetNextArg(ref procInput.parseState, ref idx);
         }
 
-        protected void InvokeCustomRawStringCommand<TGarnetApi>(TGarnetApi garnetApi, string cmd, ArgSlice key, ArgSlice input)
+        protected void InvokeCustomRawStringCommand<TGarnetApi>(TGarnetApi garnetApi, string cmd, ArgSlice key, ArgSlice[] input, out ArgSlice output)
             where TGarnetApi : IGarnetApi
         {
-
-            //var request = scratchBufferManager.FormatCommandAsResp(cmd, new[] { key, input }, null);
-            //_ = respServerSession.TryConsumeMessages(request.ptr, request.length);
-            //var response = scratchBufferNetworkSender.GetResponse();
-            //var result = ProcessResponse(response.ptr, response.length);
-            //scratchBufferNetworkSender.Reset();
-            //output = result;
-
-            //output = 
-            var output = new SpanByteAndMemory(null);
             if (customCommandManager.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out CustomRawStringCommand customCommand))
             {
-                garnetApi.CustomCommand(customCommand.id, key, input, ref output);
+                //garnetApi.CustomCommand(customCommand.GetRespCommand(), key, input, customCommand.type, out output);
+
             }
         }
     }

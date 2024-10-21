@@ -1124,23 +1124,62 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public unsafe GarnetStatus CustomCommand<TContext>(byte id, ArgSlice key, ArgSlice input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus CustomCommand<TContext>(RespCommand cmd, ArgSlice key, ArgSlice[] args, CommandType type, out ArgSlice value, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             var sbKey = key.SpanByte;
 
-            int inputSize = sizeof(int) + RespInputHeader.Size + input.Length;
-            byte* pbCmdInput = stackalloc byte[inputSize];
+            var sessionParseState = new SessionParseState();
+            sessionParseState.InitializeWithArguments(args);
 
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            (*(RespInputHeader*)pcurr).cmd = (RespCommand)(id + CustomCommandManager.StartOffset);
-            (*(RespInputHeader*)pcurr).flags = 0;
-            pcurr += RespInputHeader.Size;
-            Buffer.MemoryCopy(input.ptr, pcurr, input.Length, input.Length);
+            var rawStringInput = new RawStringInput(cmd, ref sessionParseState);
 
-            return RMW_MainStore(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref output, ref context);
+            var _output = new SpanByteAndMemory { SpanByte = scratchBufferManager.ViewRemainingArgSlice().SpanByte };
+
+            GarnetStatus status;
+            if (type == CommandType.ReadModifyWrite)
+            {
+                status = RMW_MainStore(ref sbKey, ref rawStringInput, ref _output, ref context);
+                //Debug.Assert(!output.IsSpanByte);
+
+                if (output.Memory != null)
+                    SendAndReset(output.Memory, output.Length);
+                else
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+            }
+            else
+            {
+                status = Read_MainStore(ref sbKey, ref rawStringInput, ref _output, ref context);
+                //Debug.Assert(!_output.IsSpanByte); // why?
+
+                if (status == GarnetStatus.OK)
+                    if (!_output.IsSpanByte)
+                    {
+                        value = scratchBufferManager.FormatScratch(0, _output.AsReadOnlySpan());
+                        _output.Memory.Dispose();
+                    }
+                    else
+                    {
+                        value = scratchBufferManager.CreateArgSlice(_output.Length);
+                    }
+            }
+
+
+            if (ret == GarnetStatus.OK)
+            {
+                if (!_output.IsSpanByte)
+                {
+                    value = scratchBufferManager.FormatScratch(0, _output.AsReadOnlySpan());
+                    _output.Memory.Dispose();
+                }
+                else
+                {
+                    value = scratchBufferManager.CreateArgSlice(_output.Length);
+                }
+            }
+
+            return RMW_MainStore(ref sbKey, ref rawStringInput, ref output, ref context);
         }
 
         public GarnetStatus GetKeyType<TContext, TObjectContext>(ArgSlice key, out string keyType, ref TContext context, ref TObjectContext objectContext)
