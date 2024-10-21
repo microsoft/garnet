@@ -14,6 +14,20 @@ namespace BDN.benchmark.Cluster
     [MemoryDiagnoser]
     public unsafe class ClusterMigrate
     {
+        /// <summary>
+        /// Cluster parameters
+        /// </summary>
+        [ParamsSource(nameof(ClusterParamsProvider))]
+        public ClusterParams Params { get; set; }
+
+        /// <summary>
+        /// Cluster parameters provider
+        /// </summary>
+        public IEnumerable<ClusterParams> ClusterParamsProvider()
+        {
+            yield return new(false);
+        }
+
         ClusterContext cc;
 
         [GlobalSetup]
