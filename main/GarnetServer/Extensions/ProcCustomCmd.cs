@@ -16,7 +16,8 @@ namespace Garnet
             var cmdOutput = new SpanByteAndMemory(null);
 
             // id from registration of custom raw string cmd
-            garnetApi.CustomCommand(0, key, new ArgSlice(input.ptr + offset, input.length - offset), ref cmdOutput);
+            //garnetApi.CustomCommand(0, key, new ArgSlice(input.ptr + offset, input.length - offset), ref cmdOutput);
+            InvokeCustomRawStringCommand(garnetApi, "SETIFPM", key, new ArgSlice(input.ptr + offset, input.length - offset));
 
             return true;
         }

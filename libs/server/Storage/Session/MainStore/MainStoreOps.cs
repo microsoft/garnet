@@ -1135,8 +1135,8 @@ namespace Garnet.server
             byte* pcurr = pbCmdInput;
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
-            (*(RespInputHeader*)(pcurr)).cmd = (RespCommand)(id + CustomCommandManager.StartOffset);
-            (*(RespInputHeader*)(pcurr)).flags = 0;
+            (*(RespInputHeader*)pcurr).cmd = (RespCommand)(id + CustomCommandManager.StartOffset);
+            (*(RespInputHeader*)pcurr).flags = 0;
             pcurr += RespInputHeader.Size;
             Buffer.MemoryCopy(input.ptr, pcurr, input.Length, input.Length);
 

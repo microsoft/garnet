@@ -170,7 +170,7 @@ namespace Garnet.server
             if (id >= MaxRegistrations)
                 throw new Exception("Out of registration space");
 
-            customProcedureMap[id] = new CustomProcedureWrapper(name, (byte)id, customProcedure);
+            customProcedureMap[id] = new CustomProcedureWrapper(name, (byte)id, customProcedure, this);
             if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
             return id;
