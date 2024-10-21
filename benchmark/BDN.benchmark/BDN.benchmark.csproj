@@ -20,11 +20,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\playground\Embedded.perftest\EmbeddedRespServer.cs" Link="EmbeddedRespServer.cs" />
-    <Compile Include="..\..\playground\Embedded.perftest\DummyNetworkSender.cs" Link="DummyNetworkSender.cs" />
-    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="MyDictObject.cs" />
-    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictSet.cs" Link="MyDictSet.cs" />
-    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictGet.cs" Link="MyDictGet.cs" />
+    <Compile Include="..\..\playground\Embedded.perftest\EmbeddedRespServer.cs" Link="Utils\EmbeddedRespServer.cs" />
+    <Compile Include="..\..\playground\Embedded.perftest\DummyNetworkSender.cs" Link="Utils\DummyNetworkSender.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="CustomProcs\MyDictObject.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictSet.cs" Link="CustomProcs\MyDictSet.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictGet.cs" Link="CustomProcs\MyDictGet.cs" />
 	</ItemGroup>
 
 </Project>

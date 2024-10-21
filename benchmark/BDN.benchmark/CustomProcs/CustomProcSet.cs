@@ -5,9 +5,12 @@ using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
 
-namespace BDN.benchmark
+namespace BDN.benchmark.CustomProcs
 {
-    sealed class CustomProcSetBench : CustomTransactionProcedure
+    /// <summary>
+    /// Custom procedure to set values
+    /// </summary>
+    sealed class CustomProcSet : CustomTransactionProcedure
     {
         /// <summary>
         /// Parameters including command

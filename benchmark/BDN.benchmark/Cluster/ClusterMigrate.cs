@@ -8,10 +8,14 @@ using Garnet.common;
 
 namespace BDN.benchmark.Cluster
 {
+    /// <summary>
+    /// Cluster migrate benchmark
+    /// </summary>
     [MemoryDiagnoser]
-    public unsafe class RespClusterMigrateBench
+    public unsafe class ClusterMigrate
     {
         ClusterContext cc;
+
         [GlobalSetup]
         public void GlobalSetup()
         {
@@ -44,7 +48,7 @@ namespace BDN.benchmark.Cluster
                 cc.Consume(req, gossipReq.Length);
 
             // Set slot to migrating state
-            var slot = HashSlotUtils.HashSlot(cc.keyTag.ToArray());
+            var slot = HashSlotUtils.HashSlot(ClusterContext.keyTag.ToArray());
             SetSlot(slot, "MIGRATING", config.LocalNodeId);
         }
 
@@ -58,12 +62,12 @@ namespace BDN.benchmark.Cluster
             var setSlotReq = new Request(reqBytes);
             var curr = setSlotReq.ptr;
             var end = curr + setSlotReq.buffer.Length;
-            RespWriteUtils.WriteArrayLength(5, ref curr, end);
-            RespWriteUtils.WriteBulkString("CLUSTER"u8, ref curr, end);
-            RespWriteUtils.WriteBulkString("SETSLOT"u8, ref curr, end);
-            RespWriteUtils.WriteIntegerAsBulkString(slot, ref curr, end);
-            RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(state), ref curr, end);
-            RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(nodeId), ref curr, end);
+            _ = RespWriteUtils.WriteArrayLength(5, ref curr, end);
+            _ = RespWriteUtils.WriteBulkString("CLUSTER"u8, ref curr, end);
+            _ = RespWriteUtils.WriteBulkString("SETSLOT"u8, ref curr, end);
+            _ = RespWriteUtils.WriteIntegerAsBulkString(slot, ref curr, end);
+            _ = RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(state), ref curr, end);
+            _ = RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(nodeId), ref curr, end);
             cc.Consume(setSlotReq.ptr, setSlotReq.buffer.Length);
         }
 

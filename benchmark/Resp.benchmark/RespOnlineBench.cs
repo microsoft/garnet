@@ -541,7 +541,7 @@ namespace Resp.benchmark
                         RespWriteUtils.WriteAsciiBulkString(sskey, ref zremCurr, zremEnd);
                         RespWriteUtils.WriteIntegerAsBulkString(1, ref zremCurr, zremEnd);
                         RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref zremCurr, zremEnd);
-                        client.Send(zremBuffer, (int)(zremCurr - zremEnd), 1);
+                        client.Send(zremBuffer, (int)(zremCurr - zremBuffer), 1);
                         client.CompletePendingRequests();
                         break;
                     case OpType.ZCARD:

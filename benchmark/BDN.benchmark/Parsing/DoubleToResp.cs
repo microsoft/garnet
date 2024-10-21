@@ -6,10 +6,13 @@ using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
 using Garnet.common;
 
-namespace BDN.benchmark.Resp
+namespace BDN.benchmark.Parsing
 {
+    /// <summary>
+    /// Benchmark for DoubleToResp
+    /// </summary>
     [MemoryDiagnoser]
-    public unsafe class RespDoubleWriteBenchmarks
+    public unsafe class DoubleToResp
     {
         // Big enough buffer for the benchmarks
         private readonly byte[] _buffer = new byte[512];
