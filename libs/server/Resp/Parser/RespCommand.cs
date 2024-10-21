@@ -448,7 +448,7 @@ namespace Garnet.server
         /// <summary>
         /// Last valid command (i.e. RespCommand with the largest value excluding INVALID).
         /// </summary>
-        public static RespCommand LastValidCommand = Enum.GetValues<RespCommand>().Where(cmd => cmd != RespCommand.INVALID).Max();
+        public static RespCommand LastValidCommand { get; } = Enum.GetValues<RespCommand>().Where(cmd => cmd != RespCommand.INVALID).Max();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsReadOnly(this RespCommand cmd)
