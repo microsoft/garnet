@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Runtime.InteropServices;
 using System.Text;
 using BDN.benchmark.CustomProcs;
 using Embedded.perftest;
