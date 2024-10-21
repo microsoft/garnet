@@ -1,0 +1,17 @@
+{
+    "configuration": "Release",
+    "framework": "net8.0",
+    "filter": "BDN.benchmark.Operations.BasicOperations.*",
+
+    "expectedInlinePing_ACL_AllocatedValue_linux": 0,
+    "expectedInlinePing_AOF_AllocatedValue_linux": 0,
+    "expectedInlinePing_None_AllocatedValue_linux": 0,
+
+    "expectedInlinePing_ACL_AllocatedValue_win": 0,
+    "expectedInlinePing_AOF_AllocatedValue_win": 0,
+    "expectedInlinePing_None_AllocatedValue_win": 0,
+
+    "acceptableAllocatedRange": 10,    
+    "acceptableError": ".1",
+    "acceptableStdDev": ".1"
+}
