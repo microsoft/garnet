@@ -8,10 +8,14 @@ using Garnet.common;
 
 namespace BDN.benchmark.Cluster
 {
+    /// <summary>
+    /// Cluster migrate benchmark
+    /// </summary>
     [MemoryDiagnoser]
     public unsafe class ClusterMigrate
     {
         ClusterContext cc;
+
         [GlobalSetup]
         public void GlobalSetup()
         {

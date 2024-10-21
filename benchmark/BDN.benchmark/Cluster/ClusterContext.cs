@@ -27,12 +27,12 @@ namespace BDN.benchmark.Cluster
             server.Dispose();
         }
 
-        public void SetupSingleInstance(bool enableCluster = true)
+        public void SetupSingleInstance(bool disableSlotVerification = false)
         {
             var opt = new GarnetServerOptions
             {
                 QuietMode = true,
-                EnableCluster = enableCluster,
+                EnableCluster = !disableSlotVerification,
                 Port = port,
                 CleanClusterConfig = true,
             };

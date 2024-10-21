@@ -27,9 +27,15 @@ namespace BDN.benchmark.Operations
         internal EmbeddedRespServer server;
         internal RespServerSession session;
 
+        /// <summary>
+        /// Parameters
+        /// </summary>
         [ParamsSource(nameof(OperationParamsProvider))]
         public OperationParams Params { get; set; }
 
+        /// <summary>
+        /// Operation parameters provider
+        /// </summary>
         public IEnumerable<OperationParams> OperationParamsProvider()
         {
             yield return new(false, false);

@@ -5,6 +5,9 @@ using BenchmarkDotNet.Attributes;
 
 namespace BDN.benchmark.Operations
 {
+    /// <summary>
+    /// Benchmark for RawStringOperations
+    /// </summary>
     [MemoryDiagnoser]
     public unsafe class RawStringOperations : OperationsBase
     {

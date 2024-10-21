@@ -5,6 +5,9 @@ using BenchmarkDotNet.Attributes;
 
 namespace BDN.benchmark.Geo
 {
+    /// <summary>
+    /// Benchmark for GeoHash
+    /// </summary>
     [MemoryDiagnoser]
     public class GeoHash
     {

@@ -7,6 +7,9 @@ using Tsavorite.core;
 
 namespace BDN.benchmark.CustomProcs
 {
+    /// <summary>
+    /// Custom procedure to set values
+    /// </summary>
     sealed class CustomProcSet : CustomTransactionProcedure
     {
         /// <summary>

@@ -5,6 +5,9 @@ using System.Runtime.CompilerServices;
 
 namespace BDN.benchmark.Cluster
 {
+    /// <summary>
+    /// Request struct
+    /// </summary>
     unsafe struct Request
     {
         public byte[] buffer;

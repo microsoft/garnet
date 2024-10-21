@@ -1,15 +1,16 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Runtime.CompilerServices;
 using BDN.benchmark.CustomProcs;
 using BenchmarkDotNet.Attributes;
-using Embedded.perftest;
 using Garnet;
 using Garnet.server;
 
 namespace BDN.benchmark.Operations
 {
+    /// <summary>
+    /// Benchmark for ObjectOperations
+    /// </summary>
     [MemoryDiagnoser]
     public unsafe class ObjectOperations : OperationsBase
     {

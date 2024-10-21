@@ -5,17 +5,34 @@ using BenchmarkDotNet.Attributes;
 
 namespace BDN.benchmark.Cluster
 {
+    /// <summary>
+    /// Cluster operations benchmark
+    /// </summary>
     [MemoryDiagnoser]
     public unsafe class ClusterOperations
     {
-        protected bool enableCluster = true;
+        /// <summary>
+        /// Cluster parameters
+        /// </summary>
+        [ParamsSource(nameof(ClusterParamsProvider))]
+        public ClusterParams Params { get; set; }
+
+        /// <summary>
+        /// Cluster parameters provider
+        /// </summary>
+        public IEnumerable<ClusterParams> ClusterParamsProvider()
+        {
+            yield return new(false);
+            yield return new(true);
+        }
+
         ClusterContext cc;
 
         [GlobalSetup]
         public virtual void GlobalSetup()
         {
             cc = new ClusterContext();
-            cc.SetupSingleInstance(enableCluster);
+            cc.SetupSingleInstance(Params.disableSlotVerification);
             cc.AddSlotRange([(0, 16383)]);
             cc.CreateGetSet();
             cc.CreateMGetMSet();

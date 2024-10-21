@@ -8,6 +8,9 @@ using Garnet.common;
 
 namespace BDN.benchmark.Parsing
 {
+    /// <summary>
+    /// Benchmark for DoubleToResp
+    /// </summary>
     [MemoryDiagnoser]
     public unsafe class DoubleToResp
     {

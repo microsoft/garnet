@@ -6,6 +6,9 @@ using Garnet.server;
 
 namespace BDN.benchmark.Lua
 {
+    /// <summary>
+    /// Benchmark for Lua
+    /// </summary>
     [MemoryDiagnoser]
     public unsafe class Lua
     {

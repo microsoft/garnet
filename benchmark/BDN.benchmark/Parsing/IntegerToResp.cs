@@ -7,6 +7,9 @@ using Garnet.common;
 
 namespace BDN.benchmark.Parsing
 {
+    /// <summary>
+    /// Benchmark for IntegerToResp
+    /// </summary>
     [MemoryDiagnoser]
     public unsafe class IntegerToResp
     {
