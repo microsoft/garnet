@@ -19,11 +19,11 @@ namespace Garnet.server
                 return false;
 
             var cmd = input.header.cmd;
-            if ((byte)cmd >= CustomCommandManager.StartOffset)
+            if ((ushort)cmd >= CustomCommandManager.StartOffset)
             {
                 var valueLength = value.LengthWithoutMetadata;
                 (IMemoryOwner<byte> Memory, int Length) output = (dst.Memory, 0);
-                var ret = functionsState.customCommands[(byte)cmd - CustomCommandManager.StartOffset].functions
+                var ret = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions
                     .Reader(key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref output, ref readInfo);
                 Debug.Assert(valueLength <= value.LengthWithoutMetadata);
                 dst.Memory = output.Memory;
@@ -50,11 +50,11 @@ namespace Garnet.server
             }
 
             var cmd = input.header.cmd;
-            if ((byte)cmd >= CustomCommandManager.StartOffset)
+            if ((ushort)cmd >= CustomCommandManager.StartOffset)
             {
                 var valueLength = value.LengthWithoutMetadata;
                 (IMemoryOwner<byte> Memory, int Length) output = (dst.Memory, 0);
-                var ret = functionsState.customCommands[(byte)cmd - CustomCommandManager.StartOffset].functions
+                var ret = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions
                     .Reader(key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref output, ref readInfo);
                 Debug.Assert(valueLength <= value.LengthWithoutMetadata);
                 dst.Memory = output.Memory;

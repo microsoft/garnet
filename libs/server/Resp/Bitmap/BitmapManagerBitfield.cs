@@ -9,7 +9,7 @@ namespace Garnet.server
     public unsafe partial class BitmapManager
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static byte GetBitFieldSecondaryOp(byte* input) => (*(BitFieldCmdArgs*)(input)).secondaryOpCode;
+        private static RespCommand GetBitFieldSecondaryOp(byte* input) => (*(BitFieldCmdArgs*)(input)).secondaryCommand;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static byte GetBitFieldType(byte* input) => (*(BitFieldCmdArgs*)(input)).typeInfo;
@@ -459,13 +459,13 @@ namespace Garnet.server
         {
             var bitCount = (byte)(args.typeInfo & 0x7F);
 
-            switch (args.secondaryOpCode)
+            switch (args.secondaryCommand)
             {
-                case (byte)RespCommand.SET:
+                case RespCommand.SET:
                     return SetBitfieldValue(value, valLen, args.offset, bitCount, args.typeInfo, args.value, args.overflowType);
-                case (byte)RespCommand.INCRBY:
+                case RespCommand.INCRBY:
                     return IncrByBitfieldValue(value, valLen, args.offset, bitCount, args.typeInfo, args.value, args.overflowType);
-                case (byte)RespCommand.GET:
+                case RespCommand.GET:
                     return (GetBitfieldValue(value, valLen, args.offset, bitCount, args.typeInfo), false);
                 default:
                     throw new GarnetException("BITFIELD secondary op not supported");

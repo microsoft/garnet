@@ -24,6 +24,6 @@ namespace Garnet.server
             this.functions = functions;
         }
 
-        internal RespCommand GetRespCommand() => (RespCommand)(id + CustomCommandManager.StartOffset);
+        internal GarnetObjectType GetObjectType() => (GarnetObjectType)(id + CustomCommandManager.TypeIdStartOffset);
     }
 }

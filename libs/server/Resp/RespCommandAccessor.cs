@@ -11,6 +11,6 @@ namespace Garnet.server
         /// <summary>
         /// MIGRATE
         /// </summary>
-        public static byte MIGRATE => (byte)RespCommand.MIGRATE;
+        public static ushort MIGRATE => (ushort)RespCommand.MIGRATE;
     }
 }

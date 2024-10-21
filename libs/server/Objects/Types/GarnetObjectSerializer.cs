@@ -58,8 +58,8 @@ namespace Garnet.server
 
         private IGarnetObject CustomDeserialize(byte type, BinaryReader binaryReader)
         {
-            if (type < CustomCommandManager.StartOffset) return null;
-            return customCommands[type - CustomCommandManager.StartOffset].factory.Deserialize(type, binaryReader);
+            if (type < CustomCommandManager.TypeIdStartOffset) return null;
+            return customCommands[type - CustomCommandManager.TypeIdStartOffset].factory.Deserialize(type, binaryReader);
         }
 
         /// <inheritdoc />

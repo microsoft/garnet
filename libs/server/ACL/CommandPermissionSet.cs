@@ -167,10 +167,9 @@ namespace Garnet.server.ACL
         /// </summary>
         private static ushort GetCommandListLength()
         {
-            int commandCount = (int)Enum.GetValues<RespCommand>().Where(static cmd => cmd != RespCommand.NONE && cmd != RespCommand.INVALID).Max();
-
-            int neededBits = commandCount;
-            int neededULongs = neededBits / 64;
+            // # of bits needed to represent all valid commands
+            var neededBits = (ushort)RespCommandExtensions.LastValidCommand + 1;
+            var neededULongs = neededBits / 64;
 
             if ((neededBits % 64) != 0)
             {
