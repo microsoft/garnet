@@ -56,7 +56,7 @@ namespace BDN.benchmark.Cluster
             }
         }
 
-        public void CreateGetSet(int keySize = 8, int valueSize = 32, int batchSize = 128)
+        public void CreateGetSet(int keySize = 8, int valueSize = 32, int batchSize = 100)
         {
             var pairs = new (byte[], byte[])[batchSize];
             for (var i = 0; i < batchSize; i++)
@@ -93,7 +93,7 @@ namespace BDN.benchmark.Cluster
             singleGetSet = [getReq, setReq];
         }
 
-        public void CreateMGetMSet(int keySize = 8, int valueSize = 32, int batchSize = 128)
+        public void CreateMGetMSet(int keySize = 8, int valueSize = 32, int batchSize = 100)
         {
             var pairs = new (byte[], byte[])[batchSize];
             for (var i = 0; i < batchSize; i++)
@@ -134,7 +134,7 @@ namespace BDN.benchmark.Cluster
             singleMGetMSet = [mGetReq, mSetReq];
         }
 
-        public void CreateCPBSET(int keySize = 8, int batchSize = 128)
+        public void CreateCPBSET(int keySize = 8, int batchSize = 100)
         {
             var keys = new byte[8][];
             for (var i = 0; i < 8; i++)
