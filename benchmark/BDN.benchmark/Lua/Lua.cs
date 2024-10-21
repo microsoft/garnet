@@ -4,10 +4,13 @@
 using BenchmarkDotNet.Attributes;
 using Garnet.server;
 
-namespace BDN.benchmark.Resp
+namespace BDN.benchmark.Lua
 {
+    /// <summary>
+    /// Benchmark for Lua
+    /// </summary>
     [MemoryDiagnoser]
-    public unsafe class RespLuaRunnerStress
+    public unsafe class Lua
     {
         LuaRunner r1, r2, r3, r4;
         readonly string[] keys = ["key1"];
@@ -35,19 +38,19 @@ namespace BDN.benchmark.Resp
         }
 
         [Benchmark]
-        public void BasicLua1()
+        public void Lua1()
             => r1.Run();
 
         [Benchmark]
-        public void BasicLua2()
+        public void Lua2()
             => r2.Run();
 
         [Benchmark]
-        public void BasicLua3()
+        public void Lua3()
             => r3.Run(keys, null);
 
         [Benchmark]
-        public void BasicLua4()
+        public void Lua4()
             => r4.Run(keys, null);
     }
 }

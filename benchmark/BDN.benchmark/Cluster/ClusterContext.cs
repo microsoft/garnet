@@ -1,35 +1,23 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
+using BDN.benchmark.CustomProcs;
 using Embedded.perftest;
 using Garnet.common;
 using Garnet.server;
 
 namespace BDN.benchmark.Cluster
 {
-    public unsafe struct Request
-    {
-        public byte[] buffer;
-        public byte* ptr;
-
-        public Request(int size)
-        {
-            buffer = GC.AllocateArray<byte>(size, pinned: true);
-            ptr = (byte*)Unsafe.AsPointer(ref buffer[0]);
-        }
-    }
-
-    public unsafe class ClusterContext
+    unsafe class ClusterContext
     {
         EmbeddedRespServer server;
         RespServerSession session;
-        BenchUtils benchUtils = new();
+        readonly BenchUtils benchUtils = new();
+        readonly int port = 7000;
 
-        private readonly int Port = 7000;
-
-        public ReadOnlySpan<byte> keyTag => "{0}"u8;
+        public static ReadOnlySpan<byte> keyTag => "{0}"u8;
         public Request[] singleGetSet;
         public Request[] singleMGetMSet;
         public Request singleCPBSET;
@@ -40,18 +28,20 @@ namespace BDN.benchmark.Cluster
             server.Dispose();
         }
 
-        public void SetupSingleInstance(bool enableCluster = true)
+        public void SetupSingleInstance(bool disableSlotVerification = false)
         {
             var opt = new GarnetServerOptions
             {
                 QuietMode = true,
-                EnableCluster = enableCluster,
-                Port = Port,
+                EnableCluster = !disableSlotVerification,
+                Port = port,
                 CleanClusterConfig = true,
             };
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                opt.CheckpointDir = "/tmp";
             server = new EmbeddedRespServer(opt);
             session = server.GetRespSession();
-            server.Register.NewTransactionProc(CustomProcSetBench.CommandName, () => new CustomProcSetBench(), new RespCommandsInfo { Arity = CustomProcSetBench.Arity });
+            _ = server.Register.NewTransactionProc(CustomProcSet.CommandName, () => new CustomProcSet(), new RespCommandsInfo { Arity = CustomProcSet.Arity });
         }
 
         public void AddSlotRange(List<(int, int)> slotRanges)
@@ -66,7 +56,7 @@ namespace BDN.benchmark.Cluster
             }
         }
 
-        public void CreateGetSet(int keySize = 8, int valueSize = 32, int batchSize = 128)
+        public void CreateGetSet(int keySize = 8, int valueSize = 32, int batchSize = 100)
         {
             var pairs = new (byte[], byte[])[batchSize];
             for (var i = 0; i < batchSize; i++)
@@ -78,7 +68,7 @@ namespace BDN.benchmark.Cluster
                 benchUtils.RandomBytes(ref pairs[i].Item2);
             }
 
-            var setByteCount = batchSize * ("*2\r\n$3\r\nSET\r\n"u8.Length + (1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2) + (1 + NumUtils.NumDigits(valueSize) + 2 + valueSize + 2));
+            var setByteCount = batchSize * ("*2\r\n$3\r\nSET\r\n"u8.Length + 1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2 + 1 + NumUtils.NumDigits(valueSize) + 2 + valueSize + 2);
             var setReq = new Request(setByteCount);
             var curr = setReq.ptr;
             var end = curr + setReq.buffer.Length;
@@ -103,7 +93,7 @@ namespace BDN.benchmark.Cluster
             singleGetSet = [getReq, setReq];
         }
 
-        public void CreateMGetMSet(int keySize = 8, int valueSize = 32, int batchSize = 128)
+        public void CreateMGetMSet(int keySize = 8, int valueSize = 32, int batchSize = 100)
         {
             var pairs = new (byte[], byte[])[batchSize];
             for (var i = 0; i < batchSize; i++)
@@ -127,14 +117,14 @@ namespace BDN.benchmark.Cluster
             for (var i = 0; i < batchSize; i++)
                 _ = RespWriteUtils.WriteBulkString(pairs[i].Item1, ref curr, end);
 
-            var mSetHeaderSize = 1 + NumUtils.NumDigits(1 + batchSize * 2) + 2 + "$4\r\nMSET\r\n"u8.Length;
+            var mSetHeaderSize = 1 + NumUtils.NumDigits(1 + (batchSize * 2)) + 2 + "$4\r\nMSET\r\n"u8.Length;
             var setRespSize = 1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2 + 1 + NumUtils.NumDigits(valueSize) + 2 + valueSize + 2;
             var mSetByteCount = mSetHeaderSize + (batchSize * setRespSize);
             var mSetReq = new Request(mSetByteCount);
 
             curr = mSetReq.ptr;
             end = curr + mSetReq.buffer.Length;
-            _ = RespWriteUtils.WriteArrayLength(1 + batchSize * 2, ref curr, end);
+            _ = RespWriteUtils.WriteArrayLength(1 + (batchSize * 2), ref curr, end);
             _ = RespWriteUtils.WriteBulkString("MSET"u8, ref curr, end);
             for (var i = 0; i < batchSize; i++)
             {
@@ -144,7 +134,7 @@ namespace BDN.benchmark.Cluster
             singleMGetMSet = [mGetReq, mSetReq];
         }
 
-        public void CreateCPBSET(int keySize = 8, int valueSize = 32, int batchSize = 128)
+        public void CreateCPBSET(int keySize = 8, int batchSize = 100)
         {
             var keys = new byte[8][];
             for (var i = 0; i < 8; i++)
