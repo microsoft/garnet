@@ -417,7 +417,7 @@ namespace Garnet.server
             => storageSession.scratchBufferManager.ResetScratchBuffer(offset);
         #endregion
 
-        public unsafe GarnetStatus CustomCommand(byte id, ArgSlice key, ArgSlice input, ref SpanByteAndMemory output)
-            => storageSession.CustomCommand(id, key, input, ref output, ref context);
+        public unsafe GarnetStatus CustomCommand(RespCommand cmd, ArgSlice key, ArgSlice[] args, CommandType cmdType, out ArgSlice output)
+            => storageSession.CustomCommand(cmd, key, args, cmdType, out output, ref context);
     }
 }
