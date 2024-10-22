@@ -563,12 +563,6 @@ namespace Garnet.server
         public bool ResetScratchBuffer(int offset)
             => garnetApi.ResetScratchBuffer(offset);
 
-        public GarnetStatus CustomCommand(RespCommand cmd, ArgSlice key, ArgSlice[] input, CommandType cmdType, out ArgSlice output)
-        {
-            garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.CustomCommand(cmd, key, input, cmdType, out output);
-        }
-
         #endregion
     }
 }

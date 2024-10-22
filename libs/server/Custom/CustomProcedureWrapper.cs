@@ -12,52 +12,6 @@ namespace Garnet.server
     /// </summary>
     public abstract class CustomProcedure : CustomFunctions
     {
-        internal ScratchBufferManager scratchBufferManager;
-
-        //unsafe object CustomOperation<TGarnetApi>(TGarnetApi api, string cmd, params object[] args)
-        //    where TGarnetApi : IGarnetApi
-        //unsafe object CustomOperation<TGarnetApi>(TGarnetApi api, string cmd, params object[] args)
-        //    where TGarnetApi : IGarnetApi
-        //{
-        //switch (cmd)
-        //{
-        //    // We special-case a few performance-sensitive operations to directly invoke via the storage API
-        //    case "SET" when args.Length == 2:
-        //    case "set" when args.Length == 2:
-        //        {
-        //            if (!respServerSession.CheckACLPermissions(RespCommand.SET))
-        //                return Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOAUTH);
-        //            var key = scratchBufferManager.CreateArgSlice(Convert.ToString(args[0]));
-        //            var value = scratchBufferManager.CreateArgSlice(Convert.ToString(args[1]));
-        //            _ = api.SET(key, value);
-        //            return "OK";
-        //        }
-        //    case "GET":
-        //    case "get":
-        //        {
-        //            if (!respServerSession.CheckACLPermissions(RespCommand.GET))
-        //                throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOAUTH));
-        //            var key = scratchBufferManager.CreateArgSlice(Convert.ToString(args[0]));
-        //            var status = api.GET(key, out var value);
-        //            if (status == GarnetStatus.OK)
-        //                return value.ToString();
-        //            return null;
-        //        }
-        //    // As fallback, we use RespServerSession with a RESP-formatted input. This could be optimized
-        //    // in future to provide parse state directly.
-        //    default:
-        //        {
-        //var request = scratchBufferManager.FormatCommandAsResp(cmd, args, null);
-        //_ = respServerSession.TryConsumeMessages(request.ptr, request.length);
-        //var response = scratchBufferNetworkSender.GetResponse();
-        //var result = ProcessResponse(response.ptr, response.length);
-        //scratchBufferNetworkSender.Reset();
-        //return result;
-        //        }
-        //}
-        //}
-
-
         /// <summary>
         /// Custom command implementation
         /// </summary>

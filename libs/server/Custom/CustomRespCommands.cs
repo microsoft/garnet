@@ -17,7 +17,7 @@ namespace Garnet.server
     {
         private bool TryTransactionProc(byte id, CustomTransactionProcedure proc, int startIdx = 0)
         {
-            // Define _output
+            // Define output
             var output = new MemoryResult<byte>(null, 0);
 
             // Run procedure
@@ -28,7 +28,7 @@ namespace Garnet.server
             var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx);
             if (txnManager.RunTransactionProc(id, ref procInput, proc, ref output))
             {
-                // Write _output to wire
+                // Write output to wire
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
@@ -37,7 +37,7 @@ namespace Garnet.server
             }
             else
             {
-                // Write _output to wire
+                // Write output to wire
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
