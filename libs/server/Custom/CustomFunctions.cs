@@ -210,16 +210,19 @@ namespace Garnet.server
             return GetNextArg(ref procInput.parseState, ref idx);
         }
 
-        protected void ExecuteCustomRawStringCommand<TGarnetApi>(TGarnetApi garnetApi, string cmd, ArgSlice key, ArgSlice[] input, out ArgSlice output)
+        /// <summary>
+        /// Execute custom raw string or object command
+        /// </summary>
+        /// <param name="garnetApi"></param>
+        /// <param name="cmd">Command to execute</param>
+        /// <param name="key">Key argument</param>
+        /// <param name="input">Array of arguments to command</param>
+        /// <param name="output">Output from command</param>
+        /// <returns>True if command found, else false</returns>
+        protected bool ExecuteCustomCommand<TGarnetApi>(TGarnetApi garnetApi, string cmd, ArgSlice key, ArgSlice[] input, out ArgSlice output)
             where TGarnetApi : IGarnetApi
         {
-            respServerSession.InvokeCustomRawStringCommand(ref garnetApi, cmd, key, input, out output);
-        }
-
-        protected void ExecuteCustomObjectCommand<TGarnetApi>(TGarnetApi garnetApi, string cmd, ArgSlice key, ArgSlice[] input, out ArgSlice output)
-            where TGarnetApi : IGarnetApi
-        {
-            respServerSession.InvokeCustomObjectCommand(ref garnetApi, cmd, key, input, out output);
+            return respServerSession.InvokeCustomCommand(ref garnetApi, cmd, key, input, out output);
         }
     }
 }

@@ -120,6 +120,26 @@ namespace Garnet.test
         }
     }
 
+    public class InvalidCommandProc : CustomProcedure
+    {
+        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        {
+            var offset = 0;
+            var key = GetNextArg(ref procInput, ref offset);
+
+            if (ExecuteCustomCommand(garnetApi, "INVALIDCMD", key, null, out var _output))
+            {
+                WriteError(ref output, "ERR ExecuteCustomCommand should have failed");
+            }
+            else
+            {
+                WriteSimpleString(ref output, "OK");
+            }
+
+            return true;
+        }
+    }
+
     [TestFixture]
     public class RespCustomCommandTests
     {
@@ -1016,14 +1036,14 @@ namespace Garnet.test
             var newValue2 = "foovalue2";
 
             // This conditional set should pass (prefix matches)
-            var result = db.Execute("SETIFPM", key, newValue1, "foo");
+            var result = db.Execute("PROCCMD", key, newValue1, "foo");
             ClassicAssert.AreEqual("OK", (string)result);
 
             var retValue = db.StringGet(key);
             ClassicAssert.AreEqual(newValue1, retValue.ToString());
 
             // This conditional set should fail (prefix does not match)
-            result = db.Execute("SETIFPM", key, newValue2, "bar");
+            result = db.Execute("PROCCMD", key, newValue2, "bar");
             ClassicAssert.AreEqual("OK", (string)result);
 
             retValue = db.StringGet(key);
@@ -1055,6 +1075,18 @@ namespace Garnet.test
 
             var retValue = db.StringGet(mainKey);
             ClassicAssert.AreEqual(mainValue, (string)retValue);
+        }
+
+        [Test]
+        public void CustomProcedureInvokingInvalidCommandTest()
+        {
+            server.Register.NewProcedure("PROCINVALIDCMD", () => new InvalidCommandProc());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = db.Execute("PROCINVALIDCMD", "key");
+            ClassicAssert.AreEqual("OK", (string)result);
         }
     }
 }

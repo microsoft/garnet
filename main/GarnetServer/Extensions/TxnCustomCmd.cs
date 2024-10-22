@@ -41,7 +41,7 @@ namespace Garnet
             args[0] = myDictField;
             args[1] = myDictValue;
 
-            ExecuteCustomObjectCommand(api, "MYDICTSET", myDictKey, args, out var _output);
+            ExecuteCustomCommand(api, "MYDICTSET", myDictKey, args, out var _output);
 
             WriteSimpleString(ref output, "OK");
         }
