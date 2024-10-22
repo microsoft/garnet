@@ -39,7 +39,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
-        test: [ 'Resp.RespParseStress', 'Resp.RespTsavoriteStress', 'Cluster.RespClusterMigrateBench', 'Cluster.RespClusterBench', 'Resp.RespLuaStress', 'Resp.RespLuaRunnerStress' ]   
+        test: [ 'BasicOperations', 'ObjectOperations', 'ClusterMigrate', 'ClusterOperations', 'Lua' ]   
     steps:
       - name: Check out code
         uses: actions/checkout@v4

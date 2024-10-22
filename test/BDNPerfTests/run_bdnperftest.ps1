@@ -6,20 +6,20 @@
 
     Script to test for performance regressions in Allocated Memory using BDN Benchmark tool.  There are configuration files (in /ConfigFiles dir) associated with each test that contains name and expected values of the BDN benchmark. Any of these can be sent as the parameter to the file.
     
-        CI_BDN_Config_Resp.RespParseStress.json
+        CI_CONFIG_BDN_Benchmark_BasicOperations.json
 
     NOTE: The expected values are specific for the CI Machine. If you run these on your machine, you will need to change the expected values.
     NOTE: The acceptablerange* parameters in the config file is how far +/- X% the found value can be from the expected value and still say it is pass. Defaulted to 10% 
     
 .EXAMPLE
     ./run_bdnperftest.ps1 
-    ./run_bdnperftest.ps1 CI_BDN_Config_Resp.RespParseStress.json
+    ./run_bdnperftest.ps1 CI_CONFIG_BDN_Benchmark_BasicOperations.json
 #>
 
 
 # Send the config file for the benchmark. Defaults to a simple one
 param (
-  [string]$configFile = "CI_BDN_Config_Resp.RespParseStress.json"
+  [string]$configFile = "CI_CONFIG_BDN_Benchmark_BasicOperations.json"
 )
 
 $OFS = "`r`n"
@@ -99,8 +99,8 @@ if ($configFile -notlike "*.json") {
 }
 
 # This is special case that allows passing test without specifying CI_CONFIG_BDN_ at the beginning - need for perf test
-if ($configFile -notlike "CI_CONFIG_BDN_*") {
-    $configFile = "CI_CONFIG_BDN_" + $configFile  
+if ($configFile -notlike "CI_CONFIG_BDN_Benchmark_*") {
+    $configFile = "CI_CONFIG_BDN_Benchmark_" + $configFile  
 }
 
 # Read the test config file and convert the JSON to a PowerShell object
