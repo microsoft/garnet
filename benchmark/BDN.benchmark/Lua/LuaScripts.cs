@@ -10,8 +10,22 @@ namespace BDN.benchmark.Lua
     /// Benchmark for Lua
     /// </summary>
     [MemoryDiagnoser]
-    public unsafe class Lua
+    public unsafe class LuaScripts
     {
+        /// <summary>
+        /// Lua parameters
+        /// </summary>
+        [ParamsSource(nameof(LuaParamsProvider))]
+        public LuaParams Params { get; set; }
+
+        /// <summary>
+        /// Lua parameters provider
+        /// </summary>
+        public IEnumerable<LuaParams> LuaParamsProvider()
+        {
+            yield return new();
+        }
+
         LuaRunner r1, r2, r3, r4;
         readonly string[] keys = ["key1"];
 
@@ -38,19 +52,19 @@ namespace BDN.benchmark.Lua
         }
 
         [Benchmark]
-        public void Lua1()
+        public void Script1()
             => r1.Run();
 
         [Benchmark]
-        public void Lua2()
+        public void Script2()
             => r2.Run();
 
         [Benchmark]
-        public void Lua3()
+        public void Script3()
             => r3.Run(keys, null);
 
         [Benchmark]
-        public void Lua4()
+        public void Script4()
             => r4.Run(keys, null);
     }
 }
