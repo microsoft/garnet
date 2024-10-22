@@ -20,9 +20,6 @@ namespace Garnet
             {
                 args[i] = GetNextArg(ref procInput, ref offset);
             }
-            // id from registration of custom raw string cmd
-            //garnetApi.CustomCommand(0, key, new ArgSlice(input.ptr + offset, input.length - offset), ref cmdOutput);
-            //InvokeCustomRawStringCommand(garnetApi, "SETIFPM", key, args);
 
             ExecuteCustomRawStringCommand(garnetApi, "SETIFPM", key, args, out var _output);
             return true;

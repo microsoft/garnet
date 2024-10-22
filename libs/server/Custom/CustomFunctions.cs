@@ -19,8 +19,6 @@ namespace Garnet.server
         /// </summary>
         protected static MemoryPool<byte> MemoryPool => MemoryPool<byte>.Shared;
 
-        //public CustomCommandManager customCommandManager;
-
         internal RespServerSession respServerSession;
 
         /// <summary>

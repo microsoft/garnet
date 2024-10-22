@@ -21,10 +21,10 @@ namespace Garnet.server
         public const int Size = 12;
 
         [FieldOffset(0)]
-        public byte* ptr;
+        internal byte* ptr;
 
         [FieldOffset(8)]
-        public int length;
+        internal int length;
 
         /// <summary>
         /// Create new ArgSlice from given pointer and length
