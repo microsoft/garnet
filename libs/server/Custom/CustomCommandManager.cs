@@ -164,7 +164,7 @@ namespace Garnet.server
         /// <param name="commandDocs"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        internal int Register(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
+        internal int Register(string name, Func<CustomProcedure> customProcedure, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
         {
             int id = Interlocked.Increment(ref CustomProcedureId) - 1;
             if (id >= MaxRegistrations)

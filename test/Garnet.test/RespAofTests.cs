@@ -539,7 +539,7 @@ namespace Garnet.test
 
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
-            server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
+            server.Register.NewProcedure("SETMAINANDOBJECT", () => new SetStringAndList());
             server.Start();
 
             var strKey = "StrKey";
@@ -557,7 +557,7 @@ namespace Garnet.test
             server.Store.CommitAOF(true);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
-            server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
+            server.Register.NewProcedure("SETMAINANDOBJECT", () => new SetStringAndList());
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
