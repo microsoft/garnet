@@ -34,25 +34,24 @@ $OFS = "`r`n"
 function AnalyzeResult {
     param ($foundResultValue, $expectedResultValue, $acceptablePercentRange, $warnonly)
 
-    # Calculate the lower and upper bounds of the expected value
+    # Calculate the upper bounds of the expected value
     [double] $Tolerance = $acceptablePercentRange / 100
-    [double] $LowerBound = $expectedResultValue * (1 - $Tolerance)
     [double] $UpperBound = $expectedResultValue * (1 + $Tolerance)
     [double] $dblfoundResultValue = $foundResultValue
 
     # Check if the actual value is within the bounds
-    if ($dblfoundResultValue -ge $LowerBound -and $dblfoundResultValue -le $UpperBound) {
-        Write-Host "**             ** PASS! **  Acceptable Allocated Value result ($dblfoundResultValue) is in the acceptable range +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue " 
+    if ($dblfoundResultValue -le $UpperBound) {
+        Write-Host "**             ** PASS! **  The Allocated Value result ($dblfoundResultValue) is under the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%.)"  
         Write-Host "** "
         return $true # the values are close enough
     }
     else {
         if ($warnonly) {
-            Write-Host "**   << PERF REGRESSION WARNING! >>  The BDN benchmark Allocated Value result ($dblfoundResultValue) is OUT OF RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue" 
+            Write-Host "**   << PERF REGRESSION WARNING! >>  The BDN benchmark Allocated Value result ($dblfoundResultValue) is above the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%.)" 
             Write-Host "** "
         }
         else {
-            Write-Host "**   << PERF REGRESSION FAIL! >>  The  BDN benchmark Allocated Value ($dblfoundResultValue) is OUT OF ACCEPTABLE RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue"
+            Write-Host "**   << PERF REGRESSION FAIL! >> The BDN benchmark Allocated Value result ($dblfoundResultValue) is above the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%.)" 
             Write-Host "** "
         }
         return $false # the values are too different
@@ -99,9 +98,9 @@ if ($configFile -notlike "*.json") {
     $configFile += ".json"
 }
 
-# This is special case that allows passing test without specifying CI_BDN_Confi_ at the beginning - need for perf test
-if ($configFile -notlike "CI_BDN_Config_*") {
-    $configFile = "CI_BDN_Config_" + $configFile  
+# This is special case that allows passing test without specifying CI_CONFIG_BDN_ at the beginning - need for perf test
+if ($configFile -notlike "CI_CONFIG_BDN_*") {
+    $configFile = "CI_CONFIG_BDN_" + $configFile  
 }
 
 # Read the test config file and convert the JSON to a PowerShell object
@@ -137,15 +136,10 @@ if ($IsLinux) {
     $expectedHSetDelAllocatedValue = $object.expectedHSetDelAllocatedValue_linux
     $expectedMyDictSetGetAllocatedValue = $object.expectedMyDictSetGetAllocatedValue_linux
     
-    $expectedBasicLuaStress1AllocatedValue = $object.expectedBasicLuaStress1AllocatedValue_linux
-    $expectedBasicLuaStress2AllocatedValue = $object.expectedBasicLuaStress2AllocatedValue_linux
-    $expectedBasicLuaStress3AllocatedValue = $object.expectedBasicLuaStress3AllocatedValue_linux
-    $expectedBasicLuaStress4AllocatedValue = $object.expectedBasicLuaStress4AllocatedValue_linux
-
-    $expectedBasicLuaRunner1AllocatedValue = $object.expectedBasicLuaRunner1AllocatedValue_linux
-    $expectedBasicLuaRunner2AllocatedValue = $object.expectedBasicLuaRunner2AllocatedValue_linux
-    $expectedBasicLuaRunner3AllocatedValue = $object.expectedBasicLuaRunner3AllocatedValue_linux
-    $expectedBasicLuaRunner4AllocatedValue = $object.expectedBasicLuaRunner4AllocatedValue_linux
+    $expectedLua1AllocatedValue = $object.expectedLua1AllocatedValue_linux
+    $expectedLua2AllocatedValue = $object.expectedLua2AllocatedValue_linux
+    $expectedLua3AllocatedValue = $object.expectedLua3AllocatedValue_linux
+    $expectedLua4AllocatedValue = $object.expectedLua4AllocatedValue_linux
 }
 else {
     # Windows expected values
@@ -155,15 +149,10 @@ else {
     $expectedHSetDelAllocatedValue = $object.expectedHSetDelAllocatedValue_win
     $expectedMyDictSetGetAllocatedValue = $object.expectedMyDictSetGetAllocatedValue_win
 
-    $expectedBasicLuaStress1AllocatedValue = $object.expectedBasicLuaStress1AllocatedValue_win
-    $expectedBasicLuaStress2AllocatedValue = $object.expectedBasicLuaStress2AllocatedValue_win
-    $expectedBasicLuaStress3AllocatedValue = $object.expectedBasicLuaStress3AllocatedValue_win
-    $expectedBasicLuaStress4AllocatedValue = $object.expectedBasicLuaStress4AllocatedValue_win
-
-    $expectedBasicLuaRunner1AllocatedValue = $object.expectedBasicLuaRunner1AllocatedValue_win
-    $expectedBasicLuaRunner2AllocatedValue = $object.expectedBasicLuaRunner2AllocatedValue_win
-    $expectedBasicLuaRunner3AllocatedValue = $object.expectedBasicLuaRunner3AllocatedValue_win
-    $expectedBasicLuaRunner4AllocatedValue = $object.expectedBasicLuaRunner4AllocatedValue_win
+    $expectedLua1AllocatedValue = $object.expectedLua1AllocatedValue_win
+    $expectedLua2AllocatedValue = $object.expectedLua2AllocatedValue_win
+    $expectedLua3AllocatedValue = $object.expectedLua3AllocatedValue_win
+    $expectedLua4AllocatedValue = $object.expectedLua4AllocatedValue_win
 }
 
 # percent allowed variance when comparing expected vs actual found value - same for linux and windows. 
@@ -262,67 +251,34 @@ Get-Content $resultsFile | ForEach-Object {
                 $testSuiteResult = $false
             }
         }
-        "*| BasicLuaStress1*" {
-            Write-Host "** BasicLuaStress1 Allocated Value test"
-            $foundBasicLuaStress1AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundBasicLuaStress1AllocatedValue $expectedBasicLuaStress1AllocatedValue $acceptableAllocatedRange $true
+        "*| Lua1*" {
+            Write-Host "** Lua1 Allocated Value test"
+            $foundLua1AllocatedValue = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundLua1AllocatedValue $expectedLua1AllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
-        "*| BasicLuaStress2*" {
-            Write-Host "** BasicLuaStress2 Allocated Value test"
-            $foundBasicLuaStress2AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundBasicLuaStress2AllocatedValue $expectedBasicLuaStress2AllocatedValue $acceptableAllocatedRange $true
+        "*| Lua2*" {
+            Write-Host "** Lua2 Allocated Value test"
+            $foundLua2AllocatedValue = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundLua2AllocatedValue $expectedLua2AllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
-        "*| BasicLuaStress3*" {
-            Write-Host "** BasicLuaStress3 Allocated Value test"
-            $foundBasicLuaStress3AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundBasicLuaStress3AllocatedValue $expectedBasicLuaStress3AllocatedValue $acceptableAllocatedRange $true
+        "*| Lua3*" {
+            Write-Host "** Lua3 Allocated Value test"
+            $foundLua3AllocatedValue = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundLua3AllocatedValue $expectedLua3AllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
-        "*| BasicLuaStress4*" {
-            Write-Host "** BasicLuaStress4 Allocated Value test"
-            $foundBasicLuaStress4AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundBasicLuaStress4AllocatedValue $expectedBasicLuaStress4AllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
-        }
-        "*| BasicLuaRunner1*" {
-            Write-Host "** BasicLuaRunner1 Allocated Value test"
-            $foundBasicLuaRunner1AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundBasicLuaRunner1AllocatedValue $expectedBasicLuaRunner1AllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
-        }
-        "*| BasicLuaRunner2*" {
-            Write-Host "** BasicLuaRunner2 Allocated Value test"
-            $foundBasicLuaRunner2AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundBasicLuaRunner2AllocatedValue $expectedBasicLuaRunner2AllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
-        }
-        
-        "*| BasicLuaRunner3*" {
-            Write-Host "** BasicLuaRunner3 Allocated Value test"
-            $foundBasicLuaRunner3AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundBasicLuaRunner3AllocatedValue $expectedBasicLuaRunner3AllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
-        }
-        "*| BasicLuaRunner4*" {
-            Write-Host "** BasicLuaRunner4 Allocated Value test"
-            $foundBasicLuaRunner4AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundBasicLuaRunner4AllocatedValue $expectedBasicLuaRunner4AllocatedValue $acceptableAllocatedRange $true
+        "*| Lua4*" {
+            Write-Host "** Lua4 Allocated Value test"
+            $foundLua4AllocatedValue = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundLua4AllocatedValue $expectedLua4AllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
