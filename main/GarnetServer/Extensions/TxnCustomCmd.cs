@@ -9,25 +9,39 @@ namespace Garnet
 {
     class TxnCustomCmd : CustomTransactionProcedure
     {
-        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output) => throw new System.NotImplementedException();
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput) => false;
-
-        public override void Finalize<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             var offset = 0;
-            ArgSlice key = GetNextArg(ref procInput, ref offset);
 
-            var cmdOutput = new SpanByteAndMemory(null);
+            var mainStoreKey = GetNextArg(ref procInput, ref offset);
+            _ = GetNextArg(ref procInput, ref offset); // mainStoreValue
 
-            ArgSlice[] args = new ArgSlice[procInput.parseState.Count - 1];
-            for (int i = 0; i < procInput.parseState.Count - 1; i++)
-            {
-                args[i] = GetNextArg(ref procInput, ref offset);
-            }
+            AddKey(mainStoreKey, LockType.Exclusive, false);
 
-            //ExecuteCustomRawStringCommand(api, "SETIFPM", key, args, out var _output);
+            var myDictKey = GetNextArg(ref procInput, ref offset);
+            AddKey(myDictKey, LockType.Exclusive, true);
 
-            ExecuteCustomObjectCommand(api, "MYDICTSET", key, args, out var _output);
+            return true;
+        }
+
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        {
+            var offset = 0;
+
+            var mainStoreKey = GetNextArg(ref procInput, ref offset);
+            var mainStoreValue = GetNextArg(ref procInput, ref offset);
+
+            api.SET(mainStoreKey, mainStoreValue);
+
+            var myDictKey = GetNextArg(ref procInput, ref offset);
+            var myDictField = GetNextArg(ref procInput, ref offset);
+            var myDictValue = GetNextArg(ref procInput, ref offset);
+
+            var args = new ArgSlice[2];
+            args[0] = myDictField;
+            args[1] = myDictValue;
+
+            ExecuteCustomObjectCommand(api, "MYDICTSET", myDictKey, args, out var _output);
 
             WriteSimpleString(ref output, "OK");
         }

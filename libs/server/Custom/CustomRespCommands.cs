@@ -85,8 +85,11 @@ namespace Garnet.server
         public bool InvokeCustomRawStringCommand<TGarnetApi>(ref TGarnetApi storageApi, string cmd, ArgSlice key, ArgSlice[] args, out ArgSlice output)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            // TODO: check if cmd exists
-            storeWrapper.customCommandManager.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out CustomRawStringCommand customCommand);
+            if (!storeWrapper.customCommandManager.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out CustomRawStringCommand customCommand))
+            {
+                output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_ERR_GENERIC_UNK_CMD);
+                return false;
+            }
 
             var sbKey = key.SpanByte;
 
@@ -191,8 +194,11 @@ namespace Garnet.server
             where TGarnetApi : IGarnetAdvancedApi
         {
             output = default;
-            // TODO: check if cmd exists
-            storeWrapper.customCommandManager.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out CustomObjectCommand customObjCommand);
+            if (!storeWrapper.customCommandManager.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out CustomObjectCommand customObjCommand))
+            {
+                output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_ERR_GENERIC_UNK_CMD);
+                return false;
+            }
 
             var keyBytes = key.ToArray();
 
