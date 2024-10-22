@@ -636,7 +636,7 @@ namespace Garnet.test
         [Test]
         public void CustomCommandRegistrationTest()
         {
-            server.Register.NewProcedure("SUM", new Sum());
+            server.Register.NewProcedure("SUM", () => new Sum());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -653,7 +653,7 @@ namespace Garnet.test
         [Test]
         public void CustomProcedureFreeBufferTest()
         {
-            server.Register.NewProcedure("LARGEGET", new LargeGet());
+            server.Register.NewProcedure("LARGEGET", () => new LargeGet());
             var key = "key";
             var hashKey = "hashKey";
             var hashField = "field";
@@ -701,7 +701,7 @@ namespace Garnet.test
         [Test]
         public void CustomProcedureOutOfOrderFreeBufferTest()
         {
-            server.Register.NewProcedure("OUTOFORDERFREE", new OutOfOrderFreeBuffer());
+            server.Register.NewProcedure("OUTOFORDERFREE", () => new OutOfOrderFreeBuffer());
             var key = "key";
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

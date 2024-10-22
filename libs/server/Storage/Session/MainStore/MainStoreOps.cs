@@ -1128,6 +1128,7 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             var sbKey = key.SpanByte;
+            value = default;
 
             var sessionParseState = new SessionParseState();
             sessionParseState.InitializeWithArguments(args);
@@ -1135,51 +1136,51 @@ namespace Garnet.server
             var rawStringInput = new RawStringInput(cmd, ref sessionParseState);
 
             var _output = new SpanByteAndMemory { SpanByte = scratchBufferManager.ViewRemainingArgSlice().SpanByte };
+            return GarnetStatus.OK;
+            //GarnetStatus status;
+            //if (type == CommandType.ReadModifyWrite)
+            //{
+            //    status = RMW_MainStore(ref sbKey, ref rawStringInput, ref _output, ref context);
+            //    //Debug.Assert(!output.IsSpanByte);
 
-            GarnetStatus status;
-            if (type == CommandType.ReadModifyWrite)
-            {
-                status = RMW_MainStore(ref sbKey, ref rawStringInput, ref _output, ref context);
-                //Debug.Assert(!output.IsSpanByte);
+            //    if (output.Memory != null)
+            //        SendAndReset(output.Memory, output.Length);
+            //    else
+            //        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+            //            SendAndReset();
+            //}
+            //else
+            //{
+            //    status = Read_MainStore(ref sbKey, ref rawStringInput, ref _output, ref context);
+            //    //Debug.Assert(!_output.IsSpanByte); // why?
 
-                if (output.Memory != null)
-                    SendAndReset(output.Memory, output.Length);
-                else
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
-            }
-            else
-            {
-                status = Read_MainStore(ref sbKey, ref rawStringInput, ref _output, ref context);
-                //Debug.Assert(!_output.IsSpanByte); // why?
-
-                if (status == GarnetStatus.OK)
-                    if (!_output.IsSpanByte)
-                    {
-                        value = scratchBufferManager.FormatScratch(0, _output.AsReadOnlySpan());
-                        _output.Memory.Dispose();
-                    }
-                    else
-                    {
-                        value = scratchBufferManager.CreateArgSlice(_output.Length);
-                    }
-            }
+            //    if (status == GarnetStatus.OK)
+            //        if (!_output.IsSpanByte)
+            //        {
+            //            value = scratchBufferManager.FormatScratch(0, _output.AsReadOnlySpan());
+            //            _output.Memory.Dispose();
+            //        }
+            //        else
+            //        {
+            //            value = scratchBufferManager.CreateArgSlice(_output.Length);
+            //        }
+            //}
 
 
-            if (ret == GarnetStatus.OK)
-            {
-                if (!_output.IsSpanByte)
-                {
-                    value = scratchBufferManager.FormatScratch(0, _output.AsReadOnlySpan());
-                    _output.Memory.Dispose();
-                }
-                else
-                {
-                    value = scratchBufferManager.CreateArgSlice(_output.Length);
-                }
-            }
+            //if (ret == GarnetStatus.OK)
+            //{
+            //    if (!_output.IsSpanByte)
+            //    {
+            //        value = scratchBufferManager.FormatScratch(0, _output.AsReadOnlySpan());
+            //        _output.Memory.Dispose();
+            //    }
+            //    else
+            //    {
+            //        value = scratchBufferManager.CreateArgSlice(_output.Length);
+            //    }
+            //}
 
-            return RMW_MainStore(ref sbKey, ref rawStringInput, ref output, ref context);
+            //return RMW_MainStore(ref sbKey, ref rawStringInput, ref output, ref context);
         }
 
         public GarnetStatus GetKeyType<TContext, TObjectContext>(ArgSlice key, out string keyType, ref TContext context, ref TObjectContext objectContext)

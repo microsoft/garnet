@@ -755,7 +755,7 @@ namespace Garnet.server
                 // Perform the operation
                 TryTransactionProc(currentCustomTransaction.id,
                     customCommandManagerSession
-                        .GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager)
+                        .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager, scratchBufferManager)
                         .Item1);
                 currentCustomTransaction = null;
                 return true;
@@ -769,7 +769,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                TryCustomProcedure(currentCustomProcedure.CustomProcedureImpl);
+                TryCustomProcedure(customCommandManagerSession.GetCustomProcedure(currentCustomProcedure.Id, this));
 
                 currentCustomProcedure = null;
                 return true;

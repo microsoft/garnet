@@ -5,7 +5,6 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Text;
 using Garnet.common;
 
 namespace Garnet.server
@@ -20,7 +19,9 @@ namespace Garnet.server
         /// </summary>
         protected static MemoryPool<byte> MemoryPool => MemoryPool<byte>.Shared;
 
-        public CustomCommandManager customCommandManager;
+        //public CustomCommandManager customCommandManager;
+
+        internal RespServerSession respServerSession;
 
         /// <summary>
         /// Create output as simple string, from given string
@@ -211,14 +212,16 @@ namespace Garnet.server
             return GetNextArg(ref procInput.parseState, ref idx);
         }
 
-        protected void InvokeCustomRawStringCommand<TGarnetApi>(TGarnetApi garnetApi, string cmd, ArgSlice key, ArgSlice[] input, out ArgSlice output)
+        protected void ExecuteCustomRawStringCommand<TGarnetApi>(TGarnetApi garnetApi, string cmd, ArgSlice key, ArgSlice[] input, out ArgSlice output)
             where TGarnetApi : IGarnetApi
         {
-            if (customCommandManager.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out CustomRawStringCommand customCommand))
-            {
-                //garnetApi.CustomCommand(customCommand.GetRespCommand(), key, input, customCommand.type, out output);
+            respServerSession.InvokeCustomRawStringCommand(ref garnetApi, cmd, key, input, out output);
+        }
 
-            }
+        protected void ExecuteCustomObjectCommand<TGarnetApi>(TGarnetApi garnetApi, string cmd, ArgSlice key, ArgSlice[] input, out ArgSlice output)
+            where TGarnetApi : IGarnetApi
+        {
+            respServerSession.InvokeCustomObjectCommand(ref garnetApi, cmd, key, input, out output);
         }
     }
 }
