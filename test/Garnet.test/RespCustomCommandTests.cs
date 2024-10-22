@@ -998,5 +998,63 @@ namespace Garnet.test
             result = db.Execute("RATELIMIT", "key3", 1000, 5);
             ClassicAssert.AreEqual("ALLOWED", result.ToString());
         }
+
+        [Test]
+        public void CustomProcInvokingCustomCmdTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewProcedure("PROCCMD", () => new ProcCustomCmd());
+
+            var key = "mainKey";
+            var value = "foovalue0";
+            db.StringSet(key, value);
+
+            var newValue1 = "foovalue1";
+            var newValue2 = "foovalue2";
+
+            // This conditional set should pass (prefix matches)
+            var result = db.Execute("SETIFPM", key, newValue1, "foo");
+            ClassicAssert.AreEqual("OK", (string)result);
+
+            var retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newValue1, retValue.ToString());
+
+            // This conditional set should fail (prefix does not match)
+            result = db.Execute("SETIFPM", key, newValue2, "bar");
+            ClassicAssert.AreEqual("OK", (string)result);
+
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newValue1, retValue.ToString());
+        }
+
+        [Test]
+        public void CustomTransactionInvokingCustomCmdTest()
+        {
+            var factory = new MyDictFactory();
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
+            server.Register.NewTransactionProc("TXNCMD", () => new TxnCustomCmd());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var mainKey = "mainKey";
+            var mainValue = "foovalue0";
+            var dictKey = "dictKey";
+            var dictField = "dictField";
+            var dictValue = "dictValue";
+
+            var result = db.Execute("TXNCMD", mainKey, mainValue, dictKey, dictField, dictValue);
+            ClassicAssert.AreEqual("OK", (string)result);
+
+            result = db.Execute("MYDICTGET", dictKey, dictField);
+            ClassicAssert.AreEqual(dictValue, (string)result);
+
+            var retValue = db.StringGet(mainKey);
+            ClassicAssert.AreEqual(mainValue, (string)retValue);
+        }
     }
 }
