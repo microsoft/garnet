@@ -17,7 +17,7 @@ namespace Garnet
             args[0] = GetNextArg(ref procInput, ref offset); // value to set
             args[1] = GetNextArg(ref procInput, ref offset); // prefix to match
 
-            ExecuteCustomRawStringCommand(garnetApi, "SETIFPM", key, args, out var _output);
+            ExecuteCustomCommand(garnetApi, "SETIFPM", key, args, out var _output);
             return true;
         }
     }
