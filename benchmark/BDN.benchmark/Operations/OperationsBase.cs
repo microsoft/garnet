@@ -15,19 +15,6 @@ namespace BDN.benchmark.Operations
     public abstract unsafe class OperationsBase
     {
         /// <summary>
-        /// Batch size per method invocation
-        /// With a batchSize of 100, we have a convenient conversion of latency to throughput:
-        ///   5 us = 20 Mops/sec
-        ///  10 us = 10 Mops/sec
-        ///  20 us =  5 Mops/sec
-        ///  25 us =  4 Mops/sec
-        /// 100 us =  1 Mops/sec
-        /// </summary>
-        const int batchSize = 100;
-        internal EmbeddedRespServer server;
-        internal RespServerSession session;
-
-        /// <summary>
         /// Parameters
         /// </summary>
         [ParamsSource(nameof(OperationParamsProvider))]
@@ -42,6 +29,19 @@ namespace BDN.benchmark.Operations
             yield return new(true, false);
             yield return new(false, true);
         }
+
+        /// <summary>
+        /// Batch size per method invocation
+        /// With a batchSize of 100, we have a convenient conversion of latency to throughput:
+        ///   5 us = 20 Mops/sec
+        ///  10 us = 10 Mops/sec
+        ///  20 us =  5 Mops/sec
+        ///  25 us =  4 Mops/sec
+        /// 100 us =  1 Mops/sec
+        /// </summary>
+        const int batchSize = 100;
+        internal EmbeddedRespServer server;
+        internal RespServerSession session;
 
         /// <summary>
         /// Setup
@@ -69,7 +69,7 @@ namespace BDN.benchmark.Operations
                 if (Params.useACLs)
                 {
                     aclFile = Path.GetTempFileName();
-                    File.WriteAllText(aclFile, @"user default on nopass -@all +ping +set +get +setex +incr +decr +incrby +decrby");
+                    File.WriteAllText(aclFile, @"user default on nopass -@all +ping +set +get +setex +incr +decr +incrby +decrby +zadd +zrem +lpush +lpop +sadd +srem +hset +hdel +@custom");
                     opts.AuthSettings = new AclAuthenticationPasswordSettings(aclFile);
                 }
                 server = new EmbeddedRespServer(opts);
