@@ -46,7 +46,7 @@ namespace Garnet.server
                         return true;
 
                     default:
-                        if ((byte)input.header.type < CustomCommandManager.StartOffset)
+                        if ((byte)input.header.type < CustomCommandManager.TypeIdStartOffset)
                             return value.Operate(ref input, ref dst.spanByteAndMemory, out _, out _);
 
                         if (IncorrectObjectType(ref input, value, ref dst.spanByteAndMemory))

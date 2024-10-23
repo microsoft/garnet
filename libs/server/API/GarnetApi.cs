@@ -333,11 +333,11 @@ namespace Garnet.server
             => storageSession.StringBitPosition(ref key, ref input, ref output, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus StringBitField(ref SpanByte key, ref RawStringInput input, byte secondaryCommand, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitField(ref SpanByte key, ref RawStringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output)
             => storageSession.StringBitField(ref key, ref input, secondaryCommand, ref output, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref RawStringInput input, byte secondaryCommand, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref RawStringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output)
             => storageSession.StringBitFieldReadOnly(ref key, ref input, secondaryCommand, ref output, ref context);
 
         /// <inheritdoc />
