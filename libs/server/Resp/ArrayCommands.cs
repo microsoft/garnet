@@ -184,9 +184,8 @@ namespace Garnet.server
             for (var c = 0; c < parseState.Count; c += 2)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
-                input.parseStateFirstArgIdx = c + 1;
-                input.parseStateLastArgIdx = input.parseStateFirstArgIdx;
-
+                
+                input.parseState.Slice(c + 1, 1);
                 var status = storageApi.SET_Conditional(ref key, ref input);
 
                 // Status tells us whether an old image was found during RMW or not

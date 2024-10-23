@@ -14,7 +14,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool TryTransactionProc(byte id, CustomTransactionProcedure proc, int parseStateFirstArgIdx = 0, int parseStateLastArgIdx = -1)
+        private bool TryTransactionProc(byte id, CustomTransactionProcedure proc, int startIdx = 0)
         {
             // Define output
             var output = new MemoryResult<byte>(null, 0);
@@ -24,7 +24,7 @@ namespace Garnet.server
 
             latencyMetrics?.Start(LatencyMetricsType.TX_PROC_LAT);
 
-            var procInput = new CustomProcedureInput(ref parseState, parseStateFirstArgIdx, parseStateLastArgIdx);
+            var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx);
             if (txnManager.RunTransactionProc(id, ref procInput, proc, ref output))
             {
                 // Write output to wire
@@ -56,13 +56,13 @@ namespace Garnet.server
 
         }
 
-        private void TryCustomProcedure(CustomProcedure proc, int parseStateFirstArgIdx = 0, int parseStateLastArgIdx = -1)
+        private void TryCustomProcedure(CustomProcedure proc)
         {
             Debug.Assert(proc != null);
 
             var output = new MemoryResult<byte>(null, 0);
 
-            var procInput = new CustomProcedureInput(ref parseState, parseStateFirstArgIdx, parseStateLastArgIdx);
+            var procInput = new CustomProcedureInput(ref parseState);
             if (proc.Execute(basicGarnetApi, ref procInput, ref output))
             {
                 if (output.MemoryOwner != null)
@@ -90,7 +90,7 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             var inputArg = expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + expirationTicks : expirationTicks;
-            var input = new RawStringInput(cmd, ref parseState, 1, -1, inputArg);
+            var input = new RawStringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
             var output = new SpanByteAndMemory(null);
             GarnetStatus status;
@@ -140,7 +140,7 @@ namespace Garnet.server
             // Prepare input
 
             var header = new RespInputHeader(cmd) { SubId = subid };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx:1);
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 

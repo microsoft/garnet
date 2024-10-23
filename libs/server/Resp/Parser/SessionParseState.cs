@@ -22,19 +22,24 @@ namespace Garnet.server
         const int MinParams = 5; // 5 * 20 = 60; around one cache line of 64 bytes
 
         /// <summary>
-        /// Count of arguments for the command
+        /// Count of accessible arguments for the command
         /// </summary>
         public int Count;
 
         /// <summary>
-        /// Pointer to buffer
+        /// Pointer to accessible buffer
         /// </summary>
         ArgSlice* bufferPtr;
 
         /// <summary>
-        /// Arguments buffer
+        /// Count of arguments in the original buffer
         /// </summary>
-        ArgSlice[] buffer;
+        int rootCount;
+
+        /// <summary>
+        /// Arguments original buffer
+        /// </summary>
+        ArgSlice[] rootBuffer;
 
         /// <summary>
         /// Get a Span of the parsed parameters in the form an ArgSlice
@@ -47,8 +52,9 @@ namespace Garnet.server
         public void Initialize()
         {
             Count = 0;
-            buffer = GC.AllocateArray<ArgSlice>(MinParams, true);
-            bufferPtr = (ArgSlice*)Unsafe.AsPointer(ref buffer[0]);
+            rootCount = 0;
+            rootBuffer = GC.AllocateArray<ArgSlice>(MinParams, true);
+            bufferPtr = (ArgSlice*)Unsafe.AsPointer(ref rootBuffer[0]);
         }
 
         /// <summary>
@@ -58,13 +64,18 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Initialize(int count)
         {
-            this.Count = count;
+            Count = count;
+            rootCount = count;
 
-            if (buffer != null && (count <= MinParams || count <= buffer.Length))
+            if (rootBuffer != null && (count <= MinParams || count <= rootBuffer.Length))
+            {
+                // Ensure that bufferPtr is re-winded to point back at the start of the root buffer
+                bufferPtr = (ArgSlice*)Unsafe.AsPointer(ref rootBuffer[0]);
                 return;
+            }
 
-            buffer = GC.AllocateArray<ArgSlice>(count <= MinParams ? MinParams : count, true);
-            bufferPtr = (ArgSlice*)Unsafe.AsPointer(ref buffer[0]);
+            rootBuffer = GC.AllocateArray<ArgSlice>(count <= MinParams ? MinParams : count, true);
+            bufferPtr = (ArgSlice*)Unsafe.AsPointer(ref rootBuffer[0]);
         }
 
         /// <summary>
@@ -76,7 +87,7 @@ namespace Garnet.server
         {
             Initialize(1);
 
-            buffer[0] = arg;
+            *bufferPtr = arg;
         }
 
         /// <summary>
@@ -89,8 +100,8 @@ namespace Garnet.server
         {
             Initialize(2);
 
-            buffer[0] = arg1;
-            buffer[1] = arg2;
+            *bufferPtr = arg1;
+            *(bufferPtr + 1) = arg2;
         }
 
         /// <summary>
@@ -104,9 +115,9 @@ namespace Garnet.server
         {
             Initialize(3);
 
-            buffer[0] = arg1;
-            buffer[1] = arg2;
-            buffer[2] = arg3;
+            *bufferPtr = arg1;
+            *(bufferPtr + 1) = arg2;
+            *(bufferPtr + 2) = arg3;
         }
 
         /// <summary>
@@ -121,10 +132,10 @@ namespace Garnet.server
         {
             Initialize(4);
 
-            buffer[0] = arg1;
-            buffer[1] = arg2;
-            buffer[2] = arg3;
-            buffer[3] = arg4;
+            *bufferPtr = arg1;
+            *(bufferPtr + 1) = arg2;
+            *(bufferPtr + 2) = arg3;
+            *(bufferPtr + 3) = arg4;
         }
 
         /// <summary>
@@ -140,11 +151,11 @@ namespace Garnet.server
         {
             Initialize(5);
 
-            buffer[0] = arg1;
-            buffer[1] = arg2;
-            buffer[2] = arg3;
-            buffer[3] = arg4;
-            buffer[4] = arg5;
+            *bufferPtr = arg1;
+            *(bufferPtr + 1) = arg2;
+            *(bufferPtr + 2) = arg3;
+            *(bufferPtr + 3) = arg4;
+            *(bufferPtr + 4) = arg5;
         }
 
         /// <summary>
@@ -158,8 +169,24 @@ namespace Garnet.server
 
             for (var i = 0; i < args.Length; i++)
             {
-                buffer[i] = args[i];
+                *(bufferPtr + i) = args[i];
             }
+        }
+
+        /// <summary>
+        /// Limit access to the argument buffer to start at a specified index
+        /// and end after a specified number of arguments.
+        /// </summary>
+        /// <param name="idxOffset">Offset value to the underlying buffer</param>
+        /// <param name="count">Argument count (default: -1 for all remaining arguments)</param>
+        public void Slice(int idxOffset, int count = -1)
+        {
+            count = count == -1 ? rootCount - idxOffset : count;
+
+            Debug.Assert(idxOffset + count - 1 < rootCount);
+
+            bufferPtr = (ArgSlice*)Unsafe.AsPointer(ref rootBuffer[idxOffset]);
+            Count = count;
         }
 
         /// <summary>
@@ -170,7 +197,7 @@ namespace Garnet.server
         public void SetArgument(int i, ArgSlice arg)
         {
             Debug.Assert(i < Count);
-            buffer[i] = arg;
+            *(bufferPtr + i) = arg;
         }
 
         /// <summary>
@@ -183,31 +210,21 @@ namespace Garnet.server
             Debug.Assert(i + args.Length - 1 < Count);
             for (var j = 0; j < args.Length; j++)
             {
-                buffer[i + j] = args[j];
+                *(bufferPtr + i + j) = args[j];
             }
         }
 
         /// <summary>
-        /// Get serialized length of parse state when arguments are only
-        /// serialized starting at a specified index
+        /// Get serialized length of parse state
         /// </summary>
-        /// <param name="firstIdx">First index from which arguments are serialized</param>
-        /// <param name="lastIdx">Last index of arguments to serialize</param>
         /// <returns>The serialized length</returns>
-        public int GetSerializedLength(int firstIdx, int lastIdx)
+        public int GetSerializedLength()
         {
             var serializedLength = sizeof(int);
 
-            var argCount = Count == 0 ? 0 : (lastIdx == -1 ? Count : lastIdx + 1) - firstIdx;
-
-            if (argCount > 0)
+            for (var i = 0; i < Count; i++)
             {
-                Debug.Assert(firstIdx + argCount <= Count);
-
-                for (var i = 0; i < argCount; i++)
-                {
-                    serializedLength += buffer[firstIdx + i].SpanByte.TotalSize;
-                }
+                serializedLength += (*(bufferPtr + i)).SpanByte.TotalSize;
             }
 
             return serializedLength;
@@ -218,32 +235,22 @@ namespace Garnet.server
         /// when arguments are only serialized starting at a specified index
         /// </summary>
         /// <param name="dest">The memory buffer to serialize into (of size at least SerializedLength(firstIdx) bytes)</param>
-        /// <param name="firstIdx">First index from which arguments are serialized</param>
-        /// <param name="lastIdx">Last index of arguments to serialize</param>
         /// <param name="length">Length of buffer to serialize into.</param>
         /// <returns>Total serialized bytes</returns>
-        public int CopyTo(byte* dest, int firstIdx, int lastIdx, int length)
+        public int CopyTo(byte* dest,int length)
         {
-            Debug.Assert(length >= this.GetSerializedLength(firstIdx, lastIdx));
-
             var curr = dest;
 
             // Serialize argument count
-            var argCount = Count == 0 ? 0 : (lastIdx == -1 ? Count : lastIdx + 1) - firstIdx;
-            *(int*)curr = argCount;
+            *(int*)curr = Count;
             curr += sizeof(int);
 
             // Serialize arguments
-            if (argCount > 0)
+            for (var i = 0; i < Count; i++)
             {
-                Debug.Assert(firstIdx + argCount <= Count);
-
-                for (var i = 0; i < argCount; i++)
-                {
-                    var sbParam = buffer[firstIdx + i].SpanByte;
-                    sbParam.CopyTo(curr);
-                    curr += sbParam.TotalSize;
-                }
+                var sbParam = (*(bufferPtr + i)).SpanByte;
+                sbParam.CopyTo(curr);
+                curr += sbParam.TotalSize;
             }
 
             return (int)(dest - curr);
@@ -266,7 +273,7 @@ namespace Garnet.server
             for (var i = 0; i < argCount; i++)
             {
                 ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
-                buffer[i] = new ArgSlice(ref sbArgument);
+                *(bufferPtr + i) = new ArgSlice(ref sbArgument);
                 curr += sbArgument.TotalSize;
             }
 

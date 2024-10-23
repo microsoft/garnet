@@ -45,7 +45,8 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = hop };
-            var input = new ObjectInput(header, ref parseState, 1);
+            
+            var input = new ObjectInput(header, ref parseState, startIdx:1);
 
             var status = storageApi.HashSet(keyBytes, ref input, out var output);
 
@@ -90,7 +91,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGET };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx:1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -175,9 +176,12 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
+            var argCount = parseState.Count - 1;
+
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HMGET };
-            var input = new ObjectInput(header, ref parseState, 1);
+            
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -191,7 +195,7 @@ namespace Garnet.server
                     break;
                 case GarnetStatus.NOTFOUND:
                     // Write an empty array of count - 1 elements with null values.
-                    while (!RespWriteUtils.WriteArrayWithNullElements(parseState.Count - 1, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteArrayWithNullElements(argCount, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:
@@ -354,7 +358,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HSTRLEN };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = storageApi.HashStrLength(keyBytes, ref input, out var output);
 
@@ -397,7 +401,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HDEL };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = storageApi.HashDelete(keyBytes, ref input, out var output);
 
@@ -438,7 +442,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXISTS };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = storageApi.HashExists(keyBytes, ref input, out var output);
 
@@ -548,7 +552,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = op };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };

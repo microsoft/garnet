@@ -23,7 +23,7 @@ namespace Garnet.server
 
             parseState.Initialize(1);
 
-            var input = new RawStringInput(RespCommand.PFADD, ref parseState, 0, -1, 1);
+            var input = new RawStringInput(RespCommand.PFADD, ref parseState);
 
             var output = stackalloc byte[1];
             byte pfaddUpdated = 0;
@@ -94,7 +94,7 @@ namespace Garnet.server
             error = false;
             count = default;
 
-            if (input.parseState.Count - input.parseStateFirstArgIdx == 0)
+            if (input.parseState.Count == 0)
                 return GarnetStatus.OK;
 
             var createTransaction = false;
@@ -103,12 +103,11 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                var currTokenIdx = input.parseStateFirstArgIdx;
-                var dstKey = input.parseState.GetArgSliceByRef(currTokenIdx++);
+                var dstKey = input.parseState.GetArgSliceByRef(0);
                 txnManager.SaveKeyEntryToLock(dstKey, false, LockType.Exclusive);
-                while (currTokenIdx < input.parseState.Count)
+                for (var i = 1; i < input.parseState.Count; i++)
                 {
-                    var currSrcKey = input.parseState.GetArgSliceByRef(currTokenIdx++);
+                    var currSrcKey = input.parseState.GetArgSliceByRef(i);
                     txnManager.SaveKeyEntryToLock(currSrcKey, false, LockType.Shared);
                 }
                 txnManager.Run(true);
@@ -128,13 +127,11 @@ namespace Garnet.server
                 var srcMergeBuffer = new SpanByteAndMemory(dstReadBuffer, hllBufferSize);
                 var isFirst = false;
 
-                var currTokenIdx = input.parseStateFirstArgIdx;
-
-                while (currTokenIdx < input.parseState.Count)
+                for (var i = 0; i < input.parseState.Count; i++)
                 {
                     var currInput = new RawStringInput(RespCommand.PFCOUNT);
 
-                    var srcKey = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
+                    var srcKey = input.parseState.GetArgSliceByRef(i).SpanByte;
 
                     var status = GET(ref srcKey, ref currInput, ref srcMergeBuffer, ref currLockableContext);
                     // Handle case merging source key does not exist
@@ -156,7 +153,7 @@ namespace Garnet.server
                     if (!isFirst)
                     {
                         isFirst = true;
-                        if (currTokenIdx == input.parseState.Count)
+                        if (i == input.parseState.Count - 1)
                             count = HyperLogLog.DefaultHLL.Count(srcMergeBuffer.SpanByte.ToPointer());
                         else
                             Buffer.MemoryCopy(srcHLL, dstHLL, sbSrcHLL.Length, sbSrcHLL.Length);
@@ -165,7 +162,7 @@ namespace Garnet.server
 
                     HyperLogLog.DefaultHLL.TryMerge(srcHLL, dstHLL, sbDstHLL.Length);
 
-                    if (currTokenIdx == input.parseState.Count)
+                    if (i == input.parseState.Count - 1)
                     {
                         count = HyperLogLog.DefaultHLL.Count(dstHLL);
                     }
@@ -190,7 +187,7 @@ namespace Garnet.server
         {
             error = false;
 
-            if (input.parseState.Count - input.parseStateFirstArgIdx == 0)
+            if (input.parseState.Count == 0)
                 return GarnetStatus.OK;
 
             var createTransaction = false;
@@ -199,12 +196,11 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                var currTokenIdx = input.parseStateFirstArgIdx;
-                var dstKey = input.parseState.GetArgSliceByRef(currTokenIdx++);
+                var dstKey = input.parseState.GetArgSliceByRef(0);
                 txnManager.SaveKeyEntryToLock(dstKey, false, LockType.Exclusive);
-                while (currTokenIdx < input.parseState.Count)
+                for (var i = 1; i < input.parseState.Count; i++)
                 {
-                    var currSrcKey = input.parseState.GetArgSliceByRef(currTokenIdx++);
+                    var currSrcKey = input.parseState.GetArgSliceByRef(i);
                     txnManager.SaveKeyEntryToLock(currSrcKey, false, LockType.Shared);
                 }
                 txnManager.Run(true);
@@ -217,17 +213,16 @@ namespace Garnet.server
                 sectorAlignedMemoryHll1 ??= new SectorAlignedMemory(hllBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
                 var readBuffer = sectorAlignedMemoryHll1.GetValidPointer();
 
-                var currTokenIdx = input.parseStateFirstArgIdx;
-                var dstKey = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
+                var dstKey = input.parseState.GetArgSliceByRef(0).SpanByte;
 
-                while (currTokenIdx < input.parseState.Count)
+                for (var i = 1; i < input.parseState.Count; i++)
                 {
                     #region readSrcHLL
 
                     var currInput = new RawStringInput(RespCommand.PFMERGE);
 
                     var mergeBuffer = new SpanByteAndMemory(readBuffer, hllBufferSize);
-                    var srcKey = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
+                    var srcKey = input.parseState.GetArgSliceByRef(i).SpanByte;
 
                     var status = GET(ref srcKey, ref currInput, ref mergeBuffer, ref currLockableContext);
                     // Handle case merging source key does not exist
@@ -239,6 +234,7 @@ namespace Garnet.server
                         error = true;
                         break;
                     }
+
                     #endregion
 
                     #region mergeToDst

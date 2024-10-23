@@ -35,7 +35,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = storageApi.SetAdd(keyBytes, ref input, out var output);
 
@@ -261,7 +261,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = storageApi.SetRemove(keyBytes, ref input, out var output);
 
@@ -400,9 +400,11 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
+            var argCount = parseState.Count - 1;
+
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = isSingle ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -423,11 +425,10 @@ namespace Garnet.server
                     }
                     else
                     {
-                        var count = parseState.Count - 1; // Remove key
-                        while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteArrayLength(argCount, ref dcurr, dend))
                             SendAndReset();
 
-                        for (var i = 0; i < count; i++)
+                        for (var i = 0; i < argCount; i++)
                         {
                             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                                 SendAndReset();

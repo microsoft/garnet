@@ -735,7 +735,7 @@ namespace Garnet.server
             {
                 type = GarnetObjectType.Set,
                 SetOp = SetOperation.SMISMEMBER,
-            }, ref parseState, 0);
+            }, ref parseState);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
