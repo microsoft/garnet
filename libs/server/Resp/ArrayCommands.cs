@@ -184,7 +184,7 @@ namespace Garnet.server
             for (var c = 0; c < parseState.Count; c += 2)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
-                
+
                 input.parseState.Slice(c + 1, 1);
                 var status = storageApi.SET_Conditional(ref key, ref input);
 

@@ -140,7 +140,7 @@ namespace Garnet.server
             // Prepare input
 
             var header = new RespInputHeader(cmd) { SubId = subid };
-            var input = new ObjectInput(header, ref parseState, startIdx:1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 

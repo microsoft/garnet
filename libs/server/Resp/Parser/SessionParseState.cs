@@ -237,7 +237,7 @@ namespace Garnet.server
         /// <param name="dest">The memory buffer to serialize into (of size at least SerializedLength(firstIdx) bytes)</param>
         /// <param name="length">Length of buffer to serialize into.</param>
         /// <returns>Total serialized bytes</returns>
-        public int CopyTo(byte* dest,int length)
+        public int CopyTo(byte* dest, int length)
         {
             var curr = dest;
 
