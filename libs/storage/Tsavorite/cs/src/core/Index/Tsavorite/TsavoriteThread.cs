@@ -11,10 +11,15 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
+        /// <summary>
+        /// In a stack context with a possible existing transient lock, unlock the transient lock, refresh, and relock.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ExecutionContext<TInput, TOutput, TContext> executionCtx)
+        internal void InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref HashEntryInfo hei, ExecutionContext<TInput, TOutput, TContext> executionCtx)
             where TKeyLocker : struct, ISessionLocker
         {
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
+
             // Unlock for retry
             var lockState = stackCtx.hei.TransientLockState;
             switch (lockState)
@@ -48,6 +53,16 @@ namespace Tsavorite.core
                         break;
                 }
             } while (internalStatus == OperationStatus.RETRY_LATER);
+        }
+
+        /// <summary>
+        /// In a stack context with no possible existing transient lock, just do the refresh
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void InternalRefresh<TInput, TOutput, TContext>(ExecutionContext<TInput, TOutput, TContext> executionCtx)
+        {
+            Kernel.Epoch.ProtectAndDrain();
+            DoThreadStateMachineStep(executionCtx);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -118,7 +133,6 @@ namespace Tsavorite.core
         }
 
         internal bool InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
-                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
                 TSessionFunctionsWrapper sessionFunctions, bool wait = false,
                 CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs = null)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -135,7 +149,7 @@ namespace Tsavorite.core
                     return true;
 
                 // This refresh is outside the context of any individual key operation, so do no locking.
-                InternalRefresh<TInput, TOutput, TContext, NoKeyLocker>(ref stackCtx, sessionFunctions.ExecutionCtx);
+                InternalRefresh(sessionFunctions.ExecutionCtx);
 
                 if (!wait) 
                     return false;
@@ -149,6 +163,7 @@ namespace Tsavorite.core
         internal void InternalCompletePendingRequests<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions,
                 CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
         {
             _ = hlogBase.TryComplete();
 

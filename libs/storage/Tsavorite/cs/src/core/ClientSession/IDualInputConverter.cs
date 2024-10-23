@@ -5,7 +5,7 @@ namespace Tsavorite.core
 {
     /// <summary>
     /// Converts Key1 to Key2, Input1 to Input2, and creates TOutput2 for a 
-    /// <see cref="DualContextPair{TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2, TDualInputConverter}"/>
+    /// <see cref="DualContext{TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2, TDualInputConverter}"/>
     /// that does not find the key in the first store so must do operations on the second.
     /// </summary>
     public interface IDualInputConverter<TKey1, TInput1, TKey2, TInput2, TOutput2>
@@ -23,7 +23,7 @@ namespace Tsavorite.core
     {
         public void ConvertForRead(ref TKey1 key1, ref TInput1 input1, out TKey2 key2, out TInput2 input2, out TOutput2 output2)
         {
-            key2 = (TKey2)key1;
+            ConvertKey(ref key1, out key2);
             input2 = (TInput2)input1;
             output2 = new();
         }

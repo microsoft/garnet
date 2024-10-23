@@ -27,16 +27,17 @@ namespace Tsavorite.core
         /// Async operations (e.g., ReadAsync) need to be completed individually
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask CompletePendingAsync<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+        internal async ValueTask CompletePendingAsync<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions,
                                       CancellationToken token, CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
         {
             while (true)
             {
                 sessionFunctions.UnsafeResumeThread();
                 try
                 {
-                    InternalCompletePendingRequests(sessionFunctions, completedOutputs);
+                    InternalCompletePendingRequests<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, completedOutputs);
                 }
                 finally
                 {
@@ -47,7 +48,7 @@ namespace Tsavorite.core
 
                 if (sessionFunctions.ExecutionCtx.HasNoPendingRequests) return;
 
-                InternalRefresh(sessionFunctions.ExecutionCtx);
+                InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(sessionFunctions.ExecutionCtx);
 
                 Thread.Yield();
             }

@@ -15,7 +15,7 @@ namespace Tsavorite.core
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
-                ref TKey key, ref TInput input, out TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
+                ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
                 TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKernelSession : IKernelSession
@@ -34,7 +34,7 @@ namespace Tsavorite.core
             try
             {
                 return ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
-                        ref hei, ref key, ref input, out output, ref readOptions, out recordMetadata, context, sessionFunctions);
+                        ref hei, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, sessionFunctions);
             }
             finally
             {
@@ -44,7 +44,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
-                ref HashEntryInfo hei, ref TKey key, ref TInput input, out TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
+                ref HashEntryInfo hei, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
                 TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKeyLocker : struct, ISessionLocker
@@ -55,8 +55,8 @@ namespace Tsavorite.core
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref stackCtx, ref key, ref input, out output, context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
+                internalStatus = InternalRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref stackCtx, ref key, ref input, ref output, context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref hei, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
             recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
@@ -64,7 +64,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
-                long address, ref TInput input, out TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
+                long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
                 TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKernelSession : IKernelSession
@@ -75,12 +75,12 @@ namespace Tsavorite.core
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions, ref readOptions, noKey: true);
             TKey key = default;
             return ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
-                    address, ref key, ref input, out output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions, ref kernelSession);
+                    address, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions, ref kernelSession);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
-                long address, ref TKey key, ref TInput input, out TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, 
+                long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, 
                 TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKernelSession : IKernelSession
@@ -90,12 +90,12 @@ namespace Tsavorite.core
             // Called by Single Tsavorite instance configurations (this API is called only for specific store instances)
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions, ref readOptions, noKey: false);
             return ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
-                    address, ref key, ref input, out output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions, ref kernelSession);
+                    address, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions, ref kernelSession);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
-                long address, ref TKey key, ref TInput input, out TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
+                long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
                 TContext context, ref PendingContext<TInput, TOutput, TContext> pcontext, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKernelSession : IKernelSession
@@ -117,7 +117,7 @@ namespace Tsavorite.core
             {
                 OperationStatus internalStatus;
                 do
-                    internalStatus = InternalReadAtAddress<TKernelSession, TKeyLocker>(ref stackCtx, address, ref key, ref input, out output, ref readOptions, context, ref pcontext, sessionFunctions, ref kernelSession);
+                    internalStatus = InternalReadAtAddress<TKernelSession, TKeyLocker>(ref stackCtx, address, ref key, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions, ref kernelSession);
                 while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
                 recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
@@ -132,7 +132,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
                 ref TKey key, long keyHash, ref TInput input, ref TValue value, 
-                out TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
+                ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKernelSession : IKernelSession
             where TKeyLocker : struct, ISessionLocker
@@ -150,7 +150,7 @@ namespace Tsavorite.core
             try
             {
                 return ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
-                        ref hei, ref key, ref input, ref value, out output, out recordMetadata, context, sessionFunctions);
+                        ref hei, ref key, ref input, ref value, ref output, out recordMetadata, context, sessionFunctions);
             }
             finally
             {
@@ -161,7 +161,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
                 ref HashEntryInfo hei, ref TKey key, ref TInput input, ref TValue value,
-                out TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+                ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKeyLocker : struct, ISessionLocker
         {
@@ -171,8 +171,8 @@ namespace Tsavorite.core
 
             OperationStatus internalStatus;
             do
-                internalStatus = InternalUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref stackCtx, ref key, ref input, ref value, out output, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
+                internalStatus = InternalUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref stackCtx, ref key, ref input, ref value, ref output, ref context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref hei, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
             recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
@@ -181,7 +181,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
                 ref TKey key, long keyHash, ref TInput input, 
-                out TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
+                ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKernelSession : IKernelSession
             where TKeyLocker : struct, ISessionLocker
@@ -199,7 +199,7 @@ namespace Tsavorite.core
             try
             {
                 return ContextRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
-                        ref hei, ref key, ref input, out output, out recordMetadata, context, sessionFunctions);
+                        ref hei, ref key, ref input, ref output, out recordMetadata, context, sessionFunctions);
             }
             finally
             {
@@ -210,7 +210,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
                 ref HashEntryInfo hei, ref TKey key, ref TInput input,
-                out TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+                ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKeyLocker : struct, ISessionLocker
         {
@@ -220,8 +220,8 @@ namespace Tsavorite.core
 
             OperationStatus internalStatus;
             do
-                internalStatus = InternalRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref stackCtx, ref key, ref input, out output, context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
+                internalStatus = InternalRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref stackCtx, ref key, ref input, ref output, context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref hei, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
             recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
@@ -263,7 +263,7 @@ namespace Tsavorite.core
             OperationStatus internalStatus;
             do
                 internalStatus = InternalDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref stackCtx, ref key, context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
+            while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref hei, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
             return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
         }

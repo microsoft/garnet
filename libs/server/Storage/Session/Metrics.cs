@@ -2,10 +2,11 @@
 // Licensed under the MIT license.
 
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
-    sealed partial class StorageSession
+    sealed partial class StorageSession : IPendingMetrics
     {
         public GarnetLatencyMetricsSession latencyMetrics => LatencyMetrics;
         readonly GarnetSessionMetrics sessionMetrics;

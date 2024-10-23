@@ -26,7 +26,7 @@ namespace Tsavorite.core
     /// <remarks>
     /// This struct contains no data fields; SessionFunctionsWrapper redirects with its ClientSession.
     /// </remarks>
-    internal struct TransientSessionLocker : ISessionLocker
+    public struct TransientSessionLocker : ISessionLocker
     {
         public static bool IsTransactional => false;
 
@@ -82,7 +82,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Lockable sessions are manual locking and thus must have already locked the record prior to an operation on it, so assert that.
     /// </summary>
-    internal struct TransactionalSessionLocker : ISessionLocker
+    public struct TransactionalSessionLocker : ISessionLocker
     {
         public static bool IsTransactional => true;
 

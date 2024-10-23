@@ -9,119 +9,76 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
-    using MainStoreDualContext = DualContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
-        /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-        /* MainStoreAllocator */ SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>;
-    using ObjectStoreDualContext = DualContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-        /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-        /* ObjectStoreAllocator */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>;
-
     sealed partial class StorageSession : IDisposable
     {
-        private ushort MainStorePartitionId = 0;
-        private ushort ObjectStorePartitionId = 1;
+        private const ushort MainStoreId = 0;
+        private const ushort ObjectStoreId = 1;
 
         /// <summary>
         /// Returns the remaining time to live of a key that has a timeout.
         /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key">The key to get the remaining time to live in the store.</param>
         /// <param name="storeType">The store to operate on</param>
         /// <param name="output">Span to allocate the output of the operation</param>
-        /// <param name="context">Basic Context of the store</param>
-        /// <param name="objectContext">Object Context of the store</param>
         /// <param name="milliseconds">when true the command to execute is PTTL.</param>
         /// <returns></returns>
-        public unsafe GarnetStatus TTL<TContext, TObjectContext>(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output, ref TContext context, ref TObjectContext objectContext, bool milliseconds = false)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public unsafe GarnetStatus TTL<TKeyLocker, TEpochGuard>(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output, bool milliseconds = false)
+            where TKeyLocker: struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            Debug.Assert(typeof(TContext) == typeof(MainStoreDualContext), "Expected Dual Context");
-            Debug.Assert(typeof(TObjectContext) == typeof(ObjectStoreDualContext), "Expected Dual ObjectContext");
-            int inputSize = sizeof(int) + RespInputHeader.Size;
-            byte* pbCmdInput = stackalloc byte[inputSize];
+            // Try to find the key; if the tag is not found, we have nothing to fetch.
+            var status = dualContext.EnterKernelForRead<TKeyLocker, TEpochGuard>(GetMainStoreKeyHashCode64(ref key), MainStoreId, out var hei);
+            if (!status.IsCompletedSuccessfully)
+            {
+                output = default;
+                return GarnetStatus.NOTFOUND;
+            }
 
-            byte* pcurr = pbCmdInput;
+            try
+            {
+                return InternalTTL<TKeyLocker>(ref hei, ref key, storeType, ref output, milliseconds);
+            }
+            finally
+            {
+                dualContext.ExitKernelForRead<TKeyLocker, TEpochGuard>(ref hei);
+            }
+        }
+
+        private unsafe GarnetStatus InternalTTL<TKeyLocker>(ref HashEntryInfo hei, ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output, bool milliseconds = false)
+            where TKeyLocker : struct, ISessionLocker
+        {
+            var inputSize = sizeof(int) + RespInputHeader.Size;
+            var pbCmdInput = stackalloc byte[inputSize];
+
+            var pcurr = pbCmdInput;
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
             (*(RespInputHeader*)pcurr).cmd = milliseconds ? RespCommand.PTTL : RespCommand.TTL;
             (*(RespInputHeader*)pcurr).flags = 0;
 
-            var locker = new DualClientLocker();
-            var epochThread = new SafeEpochGuard<KernelSession>();
-            HashEntryInfo hei = default;
+            ref var input1 = ref Unsafe.AsRef<SpanByte>(pbCmdInput);
 
-            try
+            // Because we may bring in hei from outside due to RENAME, we do both stores separately here rather than introducing more complexity in DualContext.
+            if (storeType is StoreType.Main or StoreType.All)
             {
-                // TODO: Lock or unlock based on IsInTransaction; propagate to retry loop
-                Status status = Kernel.EnterForRead(ref kernelSession, locker, epochThread, GetMainStoreKeyHashCode64(ref key), MainStorePartitionId, out hei);
-                if (!status.IsCompletedSuccessfully)
-                    return GarnetStatus.NOTFOUND;
-
-                if (storeType == StoreType.Main || storeType == StoreType.All)
+                ReadOptions readOptions = default;
+                var status = MainContext.Read<TKeyLocker>(ref hei, ref key, ref input1, ref output, ref readOptions, recordMetadata: out _, userContext: default);
+                if (status.Found)
+                    return GarnetStatus.OK;
+            }
+            if (storeType is StoreType.Object or StoreType.All)
+            {
+                ReadOptions readOptions = default;
+                new GarnetDualInputConverter().ConvertForRead(ref key, ref input1, out var key2, out var input2, out var objOutput);
+                var status = ObjectContext.Read<TKeyLocker>(ref hei, ref key2, ref input2, ref objOutput, ref readOptions, recordMetadata: out _, userContext: default);
+                if (status.Found)
                 {
-                    status = context.Read(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref output);
-
-                    if (status.IsPending)
-                    {
-                        // TODO: Propagate epochThread to retry loop
-                        epochThread.EndUnsafe(ref kernelSession);
-                        StartPendingMetrics();
-                        CompletePendingForSession(ref status, ref output, ref context);
-                        StopPendingMetrics();
-                        epochThread.BeginUnsafe(ref kernelSession);
-                    }
-
-                    if (status.Found)
-                        return GarnetStatus.OK;
-                }
-
-                if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
-                {
-                    var objInput = new ObjectInput
-                    {
-                        header = new RespInputHeader
-                        {
-                            cmd = milliseconds ? RespCommand.PTTL : RespCommand.TTL,
-                            type = milliseconds ? GarnetObjectType.PTtl : GarnetObjectType.Ttl,
-                        },
-                    };
-
-                    var keyBA = key.ToByteArray();
-
-                    Debug.Assert(hei.HashCodeEquals(GetObjectStoreKeyHashCode64(ref keyBA)), "Main and Object hash codes are not the same");
-                    status = Kernel.EnterForReadDual2(ObjectStorePartitionId, ref hei);
-                    if (!status.IsCompletedSuccessfully)
-                        return GarnetStatus.NOTFOUND;
-
-                    var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
-                    status = objectContext.Read(ref keyBA, ref objInput, ref objO);
-
-                    if (status.IsPending)
-                    { 
-                        epochThread.EndUnsafe(ref kernelSession);
-                        CompletePendingForObjectStoreSession(ref status, ref objO, ref objectContext);
-                        epochThread.BeginUnsafe(ref kernelSession);
-                    }
-
-                    if (status.Found)
-                    {
-                        output = objO.spanByteAndMemory;
-                        return GarnetStatus.OK;
-                    }
+                    output = objOutput.spanByteAndMemory;
+                    return GarnetStatus.OK;
                 }
             }
-            finally
-            {
-                Kernel.ExitForRead(ref kernelSession, locker, epochThread, ref hei);
-            }
+
+            output = default;
             return GarnetStatus.NOTFOUND;
         }
 
@@ -202,9 +159,10 @@ namespace Garnet.server
             return RENAME(oldKeySlice, newKeySlice, storeType, true, out result);
         }
 
-        private unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, bool isNX, out int result)
+        private unsafe GarnetStatus RENAME<TEpochGuard>(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, bool isNX, out int result)
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            GarnetStatus returnStatus = GarnetStatus.NOTFOUND;
+            var returnStatus = GarnetStatus.NOTFOUND;
             result = -1;
 
             // If same name check return early.
@@ -214,171 +172,186 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
-            bool createTransaction = false;
+            var createTransaction = false;
             if (txnManager.state != TxnState.Running)
             {
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(oldKeySlice, false, LockType.Exclusive);
-                txnManager.SaveKeyEntryToLock(newKeySlice, false, LockType.Exclusive);
-                txnManager.Run(true);
+                txnManager.SaveKeyEntryToLock(oldKeySlice, isObject: false, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(newKeySlice, isObject: false, LockType.Exclusive);
+                _ = txnManager.Run(true);
             }
 
             var context = txnManager.LockableContext;
             var objectContext = txnManager.ObjectStoreLockableContext;
-            SpanByte oldKey = oldKeySlice.SpanByte;
+            var oldKey = oldKeySlice.SpanByte;
 
-            if (storeType == StoreType.Main || storeType == StoreType.All)
+            // Try to find the oldKey; if the old tag is not found, we cannot do the RENAME. The TransactionalSessionLocker will not try to lock.
+            var kernelStatus = dualContext.EnterKernelForRead<TransactionalSessionLocker, TEpochGuard>(GetMainStoreKeyHashCode64(ref oldKey), MainStoreId, out var hei);
+            if (!kernelStatus.IsCompletedSuccessfully)
+                return GarnetStatus.NOTFOUND;
+
+            try
             {
-                try
+                if (storeType is StoreType.Main or StoreType.All)
                 {
-                    SpanByte input = default;
-                    var o = new SpanByteAndMemory();
-                    var status = GET(ref oldKey, ref input, ref o, ref context);
-
-                    if (status == GarnetStatus.OK)
+                    try
                     {
-                        Debug.Assert(!o.IsSpanByte);
-                        var memoryHandle = o.Memory.Memory.Pin();
-                        var ptrVal = (byte*)memoryHandle.Pointer;
+                        SpanByte input = default;
+                        var output = new SpanByteAndMemory();
+                        var status = GET<TransactionalSessionLocker, TEpochGuard>(ref hei, ref oldKey, ref input, ref output);
 
-                        RespReadUtils.ReadUnsignedLengthHeader(out var headerLength, ref ptrVal, ptrVal + o.Length);
-
-                        // Find expiration time of the old key
-                        var expireSpan = new SpanByteAndMemory();
-                        var ttlStatus = TTL(ref oldKey, storeType, ref expireSpan, ref context, ref objectContext, true);
-
-                        if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
+                        if (status == GarnetStatus.OK)
                         {
-                            using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
-                            var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
-                            RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
+                            Debug.Assert(!output.IsSpanByte);
+                            var memoryHandle = output.Memory.Memory.Pin();
+                            var ptrVal = (byte*)memoryHandle.Pointer;
 
-                            // If the key has an expiration, set the new key with the expiration
-                            if (expireTimeMs > 0)
+                            _ = RespReadUtils.ReadUnsignedLengthHeader(out var headerLength, ref ptrVal, ptrVal + output.Length);
+
+                            // Find expiration time of the old key
+                            var expireSpan = new SpanByteAndMemory();
+                            var ttlStatus = InternalTTL<TransactionalSessionLocker>(ref hei, ref oldKey, storeType, ref expireSpan, milliseconds:true);
+
+                            if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
                             {
-                                if (isNX)
-                                {
-                                    // Move payload forward to make space for RespInputHeader and Metadata
-                                    var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size + sizeof(long), new ArgSlice(ptrVal, headerLength));
-                                    var setValueSpan = setValue.SpanByte;
-                                    var setValuePtr = setValueSpan.ToPointerWithMetadata();
-                                    setValueSpan.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
-                                    ((RespInputHeader*)(setValuePtr + sizeof(long)))->cmd = RespCommand.SETEXNX;
-                                    ((RespInputHeader*)(setValuePtr + sizeof(long)))->flags = 0;
-                                    var newKey = newKeySlice.SpanByte;
-                                    var setStatus = SET_Conditional(ref newKey, ref setValueSpan, ref context);
+                                using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
+                                var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
+                                _ = RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out _);
 
-                                    // For SET NX `NOTFOUND` means the operation succeeded
-                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                // If the key has an expiration, set the new key with the expiration
+                                if (expireTimeMs > 0)
+                                {
+                                    if (isNX)
+                                    {
+                                        // Move payload forward to make space for RespInputHeader and Metadata
+                                        var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size + sizeof(long), new ArgSlice(ptrVal, headerLength));
+                                        var setValueSpan = setValue.SpanByte;
+                                        var setValuePtr = setValueSpan.ToPointerWithMetadata();
+                                        setValueSpan.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
+                                        ((RespInputHeader*)(setValuePtr + sizeof(long)))->cmd = RespCommand.SETEXNX;
+                                        ((RespInputHeader*)(setValuePtr + sizeof(long)))->flags = 0;
+                                        var newKey = newKeySlice.SpanByte;
+                                        var setStatus = SET_Conditional(ref hei, ref newKey, ref setValueSpan, ref context);
+
+                                        // For SET NX `NOTFOUND` means the operation succeeded
+                                        result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                        returnStatus = GarnetStatus.OK;
+                                    }
+                                    else
+                                    {
+                                        SETEX(ref hei, newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs), ref context);
+                                    }
+                                }
+                                else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
+                                {
+                                    if (isNX)
+                                    {
+                                        // Move payload forward to make space for RespInputHeader
+                                        var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size, new ArgSlice(ptrVal, headerLength));
+                                        var setValueSpan = setValue.SpanByte;
+                                        var setValuePtr = setValueSpan.ToPointerWithMetadata();
+                                        ((RespInputHeader*)setValuePtr)->cmd = RespCommand.SETEXNX;
+                                        ((RespInputHeader*)setValuePtr)->flags = 0;
+                                        var newKey = newKeySlice.SpanByte;
+                                        var setStatus = SET_Conditional(ref hei, ref newKey, ref setValueSpan, ref context);
+
+                                        // For SET NX `NOTFOUND` means the operation succeeded
+                                        result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                        returnStatus = GarnetStatus.OK;
+                                    }
+                                    else
+                                    {
+                                        SpanByte newKey = newKeySlice.SpanByte;
+                                        var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
+                                        SET(ref hei, ref newKey, ref value, ref context);
+                                    }
+                                }
+
+                                expireSpan.Memory.Dispose();
+                                memoryHandle.Dispose();
+                                output.Memory.Dispose();
+
+                                // Delete the old key only when SET NX succeeded
+                                if (isNX && result == 1)
+                                {
+                                    DELETE(ref hei, ref oldKey, StoreType.Main, ref context, ref objectContext);
+                                }
+                                else if (!isNX)
+                                {
+                                    // Delete the old key
+                                    DELETE(ref hei, ref oldKey, StoreType.Main, ref context, ref objectContext);
+
                                     returnStatus = GarnetStatus.OK;
                                 }
-                                else
-                                {
-                                    SETEX(newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs), ref context);
-                                }
-                            }
-                            else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
-                            {
-                                if (isNX)
-                                {
-                                    // Move payload forward to make space for RespInputHeader
-                                    var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size, new ArgSlice(ptrVal, headerLength));
-                                    var setValueSpan = setValue.SpanByte;
-                                    var setValuePtr = setValueSpan.ToPointerWithMetadata();
-                                    ((RespInputHeader*)setValuePtr)->cmd = RespCommand.SETEXNX;
-                                    ((RespInputHeader*)setValuePtr)->flags = 0;
-                                    var newKey = newKeySlice.SpanByte;
-                                    var setStatus = SET_Conditional(ref newKey, ref setValueSpan, ref context);
-
-                                    // For SET NX `NOTFOUND` means the operation succeeded
-                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
-                                    returnStatus = GarnetStatus.OK;
-                                }
-                                else
-                                {
-                                    SpanByte newKey = newKeySlice.SpanByte;
-                                    var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
-                                    SET(ref newKey, ref value, ref context);
-                                }
-                            }
-
-                            expireSpan.Memory.Dispose();
-                            memoryHandle.Dispose();
-                            o.Memory.Dispose();
-
-                            // Delete the old key only when SET NX succeeded
-                            if (isNX && result == 1)
-                            {
-                                DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
-                            }
-                            else if (!isNX)
-                            {
-                                // Delete the old key
-                                DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
-
-                                returnStatus = GarnetStatus.OK;
                             }
                         }
                     }
+                    finally
+                    {
+                        if (createTransaction)
+                        {
+                            txnManager.Commit(true);
+                            createTransaction = false;
+                        }
+                    }
                 }
-                finally
+
+                if ((storeType == StoreType.Object || storeType == StoreType.All) && dualContext.IsDual)
                 {
-                    if (createTransaction)
-                        txnManager.Commit(true);
+                    createTransaction = false;
+                    if (txnManager.state != TxnState.Running)
+                    {
+                        createTransaction = true;
+                        txnManager.SaveKeyEntryToLock(oldKeySlice, isObject: true, LockType.Exclusive);
+                        txnManager.SaveKeyEntryToLock(newKeySlice, isObject: true, LockType.Exclusive);
+                        _ = txnManager.Run(true);
+                    }
+
+                    try
+                    {
+                        byte[] oldKeyArray = oldKeySlice.ToArray();
+                        var status = GET(ref hei, oldKeyArray, out var value, ref objectContext);
+
+                        if (status == GarnetStatus.OK)
+                        {
+                            var valObj = value.garnetObject;
+                            byte[] newKeyArray = newKeySlice.ToArray();
+
+                            returnStatus = GarnetStatus.OK;
+                            var canSetAndDelete = true;
+                            if (isNX)
+                            {
+                                // Not using EXISTS method to avoid new allocation of Array for key
+                                var getNewStatus = GET(ref hei, newKeyArray, out _, ref objectContext);
+                                canSetAndDelete = getNewStatus == GarnetStatus.NOTFOUND;
+                            }
+
+                            if (canSetAndDelete)
+                            {
+                                // valObj already has expiration time, so no need to write expiration logic here
+                                SET(ref hei, newKeyArray, valObj, ref objectContext);
+
+                                // Delete the old key
+                                DELETE(ref hei, oldKeyArray, StoreType.Object, ref context, ref objectContext);
+
+                                result = 1;
+                            }
+                            else
+                            {
+                                result = 0;
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        if (createTransaction)
+                            txnManager.Commit(true);
+                    }
                 }
             }
-
-            if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
+            finally
             {
-                createTransaction = false;
-                if (txnManager.state != TxnState.Running)
-                {
-                    txnManager.SaveKeyEntryToLock(oldKeySlice, true, LockType.Exclusive);
-                    txnManager.SaveKeyEntryToLock(newKeySlice, true, LockType.Exclusive);
-                    txnManager.Run(true);
-                    createTransaction = true;
-                }
-
-                try
-                {
-                    byte[] oldKeyArray = oldKeySlice.ToArray();
-                    var status = GET(oldKeyArray, out var value, ref objectContext);
-
-                    if (status == GarnetStatus.OK)
-                    {
-                        var valObj = value.garnetObject;
-                        byte[] newKeyArray = newKeySlice.ToArray();
-
-                        returnStatus = GarnetStatus.OK;
-                        var canSetAndDelete = true;
-                        if (isNX)
-                        {
-                            // Not using EXISTS method to avoid new allocation of Array for key
-                            var getNewStatus = GET(newKeyArray, out _, ref objectContext);
-                            canSetAndDelete = getNewStatus == GarnetStatus.NOTFOUND;
-                        }
-
-                        if (canSetAndDelete)
-                        {
-                            // valObj already has expiration time, so no need to write expiration logic here
-                            SET(newKeyArray, valObj, ref objectContext);
-
-                            // Delete the old key
-                            DELETE(oldKeyArray, StoreType.Object, ref context, ref objectContext);
-
-                            result = 1;
-                        }
-                        else
-                        {
-                            result = 0;
-                        }
-                    }
-                }
-                finally
-                {
-                    if (createTransaction)
-                        txnManager.Commit(true);
-                }
+                dualContext.ExitKernelForRead<TransactionalSessionLocker, TEpochGuard>(ref hei);
             }
             return returnStatus;
         }

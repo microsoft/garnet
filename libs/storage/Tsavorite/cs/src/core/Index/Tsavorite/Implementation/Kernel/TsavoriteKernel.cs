@@ -74,7 +74,7 @@ namespace Tsavorite.core
 
             while (!TKeyLocker.TryLockTransientShared(this, ref hei))
             {
-                kernelSession.Refresh();
+                kernelSession.Refresh(ref hei);
                 _ = Thread.Yield();
             }
             return new(StatusCode.Found);
@@ -108,7 +108,7 @@ namespace Tsavorite.core
             where TKeyLocker : ISessionLocker
             where TEpochGuard : IEpochGuard<TKernelSession>
         {
-            TKeyLocker.UnlockTransientShared(this, ref hei, isRetry:false);
+            TKeyLocker.UnlockTransientShared(this, ref hei);
             if (Epoch.ThisInstanceProtected())
                 TEpochGuard.EndUnsafe(ref kernelSession);
         }
@@ -141,7 +141,7 @@ namespace Tsavorite.core
 
             while (!TKeyLocker.TryLockTransientExclusive(this, ref hei))
             {
-                kernelSession.Refresh();
+                kernelSession.Refresh(ref hei);
                 _ = Thread.Yield();
             }
             return new(StatusCode.Found);
@@ -175,7 +175,7 @@ namespace Tsavorite.core
             where TKeyLocker : ISessionLocker
             where TEpochGuard : IEpochGuard<TKernelSession>
         {
-            TKeyLocker.UnlockTransientShared(this, ref hei, isRetry: false);
+            TKeyLocker.UnlockTransientShared(this, ref hei);
             TEpochGuard.EndUnsafe(ref kernelSession);
         }
 

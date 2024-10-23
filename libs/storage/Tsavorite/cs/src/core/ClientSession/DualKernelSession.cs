@@ -20,8 +20,8 @@ namespace Tsavorite.core
         internal readonly ClientSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1> clientSession1;
         internal readonly ClientSession<TKey2, TValue2, TInput2, TOutput2, TContext, TSessionFunctions2, TStoreFunctions2, TAllocator2> clientSession2;
 
-        internal readonly DualContext<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1> dualContext1;
-        internal readonly DualContext<TKey2, TValue2, TInput2, TOutput2, TContext, TSessionFunctions2, TStoreFunctions2, TAllocator2> dualContext2;
+        internal readonly DualItemContext<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1> itemContext1;
+        internal readonly DualItemContext<TKey2, TValue2, TInput2, TOutput2, TContext, TSessionFunctions2, TStoreFunctions2, TAllocator2> itemContext2;
 
         /// <inheritdoc/>
         public ulong SharedTxnLockCount { get; set; }   // TODO do these still need to be public?
@@ -39,10 +39,10 @@ namespace Tsavorite.core
                                  ClientSession<TKey2, TValue2, TInput2, TOutput2, TContext, TSessionFunctions2, TStoreFunctions2, TAllocator2> clientSession2) : this()
         {
             this.clientSession1 = clientSession1;
-            dualContext1 = clientSession1.DualContext;
+            itemContext1 = clientSession1.DualContext;
 
             this.clientSession2 = clientSession2;
-            dualContext2 = clientSession2 is null ? default : clientSession2.DualContext;
+            itemContext2 = clientSession2 is null ? default : clientSession2.DualContext;
         }
 
         /// <inheritdoc/>
@@ -89,13 +89,14 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Refresh()
+        public void Refresh<TKeyLocker>(ref HashEntryInfo hei)
+            where TKeyLocker : struct, ISessionLocker
         {
             Kernel.Epoch.ProtectAndDrain();
 
             // These must use session to be aware of per-session SystemState.
-            clientSession1.Refresh();
-            clientSession2?.Refresh();
+            clientSession1.Refresh<TKeyLocker>(ref hei);
+            clientSession2?.Refresh<TKeyLocker>(ref hei);
         }
 
         /// <inheritdoc/>

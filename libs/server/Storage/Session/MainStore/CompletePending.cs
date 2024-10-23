@@ -6,21 +6,17 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
     sealed partial class StorageSession
     {
-        /// <summary>
-        /// Handles the complete pending status for Session Store
-        /// </summary>
-        /// <param name="status"></param>
-        /// <param name="output"></param>
-        /// <param name="context"></param>
-        static void CompletePendingForSession<TContext>(ref Status status, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        void CompletePending<TKeyLocker, TEpochGuard>(out Status status, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            // Main store
+            TEpochGuard.EndUnsafe(ref dualContext.KernelSession);
+            StartPendingMetrics();
+
+            _ = MainContext.CompletePendingWithOutputs<TKeyLocker>(out var completedOutputs, wait: true);
             var more = completedOutputs.Next();
             Debug.Assert(more);
             status = completedOutputs.Current.Status;
@@ -28,6 +24,9 @@ namespace Garnet.server
             more = completedOutputs.Next();
             Debug.Assert(!more);
             completedOutputs.Dispose();
+
+            StopPendingMetrics();
+            TEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
         }
     }
 }

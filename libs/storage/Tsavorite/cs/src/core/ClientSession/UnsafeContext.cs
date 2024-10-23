@@ -352,11 +352,6 @@ namespace Tsavorite.core
             => kernelSession.ClientSession.UnsafeResetModified(sessionFunctions, ref key);
 
         /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsModified(TKey key)
-            => kernelSession.ClientSession.UnsafeIsModified(sessionFunctions, ref key);
-
-        /// <inheritdoc/>
         public void Refresh()
         {
             Debug.Assert(kernelSession.ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());

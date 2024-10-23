@@ -5,23 +5,21 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    internal readonly struct SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TSessionLocker, TStoreFunctions, TAllocator>
+    internal readonly struct SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-        where TSessionLocker : struct, ISessionLocker
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         private readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> _clientSession;
-        internal readonly TSessionLocker _sessionLocker;  // Has no mutable data members
 
-        public SessionFunctionsWrapper(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession, TSessionLocker sessionLocker)
+        public SessionFunctionsWrapper(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession, bool isDual)
         {
             _clientSession = clientSession;
-            _sessionLocker = sessionLocker;
+            this.IsDual = isDual;
         }
 
-        public bool IsDual => _sessionLocker.DualRole != DualRole.None;
+        public readonly bool IsDual { get; init; }
 
         public TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> Store => _clientSession.Store;
         public HashBucketLockTable LockTable => _clientSession.Store.LockTable;
@@ -119,7 +117,7 @@ namespace Tsavorite.core
             if (rmwInfo.Action == RMWAction.ExpireAndResume)
             {
                 // This inserts the tombstone if appropriate
-                return _clientSession.Store.ReinitializeExpiredRecord<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TSessionLocker, TStoreFunctions, TAllocator>>(
+                return _clientSession.Store.ReinitializeExpiredRecord<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>(
                                                     ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, rmwInfo.Address, this, isIpu: true, out status);
             }
 
@@ -171,22 +169,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void ConvertOutputToHeap(ref TInput input, ref TOutput output) => _clientSession.functions.ConvertOutputToHeap(ref input, ref output);
         #endregion Utilities
-
-        #region Transient locking
-        public bool IsManualLocking => _sessionLocker.IsTransactional;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei) => _sessionLocker.TryLockTransientExclusive(kernel, ref hei);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei) => _sessionLocker.TryLockTransientShared(kernel, ref hei);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei, bool isRetry) => _sessionLocker.UnlockTransientExclusive(kernel, ref hei, isRetry);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei, bool isRetry) => _sessionLocker.UnlockTransientShared(kernel, ref hei, isRetry);
-        #endregion Transient locking
 
         #region Internal utilities
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

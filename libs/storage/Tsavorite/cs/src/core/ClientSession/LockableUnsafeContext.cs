@@ -367,15 +367,11 @@ namespace Tsavorite.core
             => kernelSession.ClientSession.UnsafeResetModified(sessionFunctions, ref key);
 
         /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsModified(TKey key)
-            => kernelSession.ClientSession.UnsafeIsModified(sessionFunctions, ref key);
-
-        /// <inheritdoc/>
-        public void Refresh()
+        public void Refresh<TKeyLocker>(ref HashEntryInfo hei)
+            where TKeyLocker: struct, ISessionLocker
         {
             Debug.Assert(kernelSession.ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            kernelSession.ClientSession.Store.InternalRefresh(sessionFunctions.ExecutionCtx);
+            kernelSession.ClientSession.Store.InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref hei, sessionFunctions.ExecutionCtx);
         }
 
         #endregion ITsavoriteContext

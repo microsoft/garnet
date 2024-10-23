@@ -402,11 +402,6 @@ namespace Tsavorite.core
             => kernelSession.ClientSession.ResetModified(sessionFunctions, ref key);
 
         /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsModified(TKey key)
-            => kernelSession.ClientSession.IsModified(sessionFunctions, ref key);
-
-        /// <inheritdoc/>
         public void Refresh() => kernelSession.Refresh();
 
         #endregion ITsavoriteContext

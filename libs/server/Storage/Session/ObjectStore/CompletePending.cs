@@ -6,27 +6,27 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
     sealed partial class StorageSession
     {
-        /// <summary>
-        /// Handles the complete pending for Object Store session
-        /// </summary>
-        /// <param name="status"></param>
-        /// <param name="output"></param>
-        /// <param name="objectContext"></param>
-        static void CompletePendingForObjectStoreSession<TContext>(ref Status status, ref GarnetObjectStoreOutput output, ref TContext objectContext)
-            where TContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        void CompletePending<TKeyLocker, TEpochGuard>(out Status status, out GarnetObjectStoreOutput output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            objectContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            // Object store
+            TEpochGuard.EndUnsafe(ref dualContext.KernelSession);
+            StartPendingMetrics();
+
+            _ = ObjectContext.CompletePendingWithOutputs<TKeyLocker>(out var completedOutputs, wait: true);
             var more = completedOutputs.Next();
             Debug.Assert(more);
             status = completedOutputs.Current.Status;
             output = completedOutputs.Current.Output;
-            Debug.Assert(!completedOutputs.Next());
+            more = completedOutputs.Next();
+            Debug.Assert(!more);
             completedOutputs.Dispose();
+
+            StopPendingMetrics();
+            TEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
         }
     }
 }

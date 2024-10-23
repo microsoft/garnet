@@ -14,18 +14,14 @@ namespace Garnet.server
 
     sealed partial class StorageSession : IDisposable
     {
-        public GarnetStatus GET<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public GarnetStatus GET<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            long ctx = default;
-            var status = context.Read(ref key, ref input, ref output, ctx);
+            var status = dualContext.Read<TKeyLocker, TEpochGuard>(ref key, ref input, out output, userContext: default);
 
             if (status.IsPending)
-            {
-                StartPendingMetrics();
-                CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
-            }
+                CompletePending<TKeyLocker, TEpochGuard>(out status, ref output);
 
             if (status.Found)
             {
@@ -38,6 +34,28 @@ namespace Garnet.server
                 return GarnetStatus.NOTFOUND;
             }
         }
+
+        public GarnetStatus GET<TKeyLocker, TEpochGuard>(ref HashEntryInfo hei, ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+        {
+            ReadOptions readOptions = default;
+            var status = MainContext.Read<TKeyLocker>(ref hei, ref key, ref input, out output, ref readOptions, recordMetadata: out _, userContext: default);
+            if (status.IsPending)
+                CompletePending<TKeyLocker, TEpochGuard>(out status, ref output);
+
+            if (status.Found)
+            {
+                incr_session_found();
+                return GarnetStatus.OK;
+            }
+            else
+            {
+                incr_session_notfound();
+                return GarnetStatus.NOTFOUND;
+            }
+        }
+
 
         public unsafe GarnetStatus ReadWithUnsafeContext<TContext>(ArgSlice key, ref SpanByte input, ref SpanByteAndMemory output, long localHeadAddress, out bool epochChanged, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
@@ -226,6 +244,33 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref o, ref context);
+                StopPendingMetrics();
+            }
+
+            if (status.NotFound)
+            {
+                incr_session_notfound();
+                return GarnetStatus.NOTFOUND;
+            }
+            else
+            {
+                incr_session_found();
+                return GarnetStatus.OK;
+            }
+        }
+
+        public unsafe GarnetStatus SET_Conditional<TKeyLocker>(ref HashEntryInfo hei, ref SpanByte key, ref SpanByte input)
+            where TKeyLocker : struct, ISessionLocker
+        {
+            byte* pbOutput = stackalloc byte[8];
+            var output = new SpanByteAndMemory(pbOutput, 8);
+
+            var status = MainContext.RMW<TKeyLocker>(ref hei, ref key, ref input, out output, recordMetadata: out _, userContext: default);
+
+            if (status.IsPending)
+            {
+                StartPendingMetrics();
+                CompletePendingForSession(ref status, ref output, ref context);
                 StopPendingMetrics();
             }
 

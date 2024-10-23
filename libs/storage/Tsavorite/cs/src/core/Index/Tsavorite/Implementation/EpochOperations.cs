@@ -13,7 +13,7 @@ namespace Tsavorite.core
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SynchronizeEpoch<TInput, TOutput, TContext, TKeyLocker>(
-                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
+                ref HashEntryInfo hei,
                 ExecutionContext<TInput, TOutput, TContext> executionCtx,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext)
             where TKeyLocker : struct, ISessionLocker
@@ -21,7 +21,7 @@ namespace Tsavorite.core
             var version = executionCtx.version;
             Debug.Assert(executionCtx.version == version, $"sessionCtx.version ({executionCtx.version}) should == version ({version})");
             Debug.Assert(executionCtx.phase == Phase.PREPARE, $"sessionCtx.phase ({executionCtx.phase}) should == Phase.PREPARE");
-            InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, executionCtx);
+            InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref hei, executionCtx);
             Debug.Assert(executionCtx.version > version, $"sessionCtx.version ({executionCtx.version}) should be > version ({version})");
         }
 
@@ -39,7 +39,7 @@ namespace Tsavorite.core
             {
                 Debug.Assert(address < hlogBase.HeadAddress, "expected address < hlog.HeadAddress");
                 Kernel.Epoch.ProtectAndDrain();
-                Thread.Yield();
+                _ = Thread.Yield();
             }
         }
 
@@ -62,7 +62,7 @@ namespace Tsavorite.core
             while (true)
             {
                 Kernel.Epoch.ProtectAndDrain();
-                Thread.Yield();
+                _ = Thread.Yield();
 
                 // Unlike HeadAddress, ClosedUntilAddress is a high-water mark; a record that is == to ClosedUntilAddress has *not* been closed yet.
                 if (logicalAddress < log.ClosedUntilAddress)

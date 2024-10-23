@@ -23,24 +23,17 @@ namespace Garnet.server
         readonly long HeadAddress;
 
         /// <summary>
-        /// Session Contexts for main store
+        /// Dual Session Contexts for main store
         /// </summary>
-        internal ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> session;
-        public BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
-        public LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
-        public DualContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> dualContext;
+        internal DualContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator,
+                                 byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator, GarnetDualInputConverter> dualContext;
+
+        private DualItemContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> MainContext => dualContext.ItemContext1;
+        private DualItemContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> ObjectContext => dualContext.ItemContext2;
 
         SectorAlignedMemory sectorAlignedMemoryHll;
         readonly int hllBufferSize = HyperLogLog.DefaultHLL.DenseBytes;
         readonly int sectorAlignedMemoryPoolAlignment = 32;
-
-        /// <summary>
-        /// Session Contexts for object store
-        /// </summary>
-        internal ClientSession<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreSession;
-        public BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
-        public LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext;
-        public DualContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreDualContext;
 
         public readonly ScratchBufferManager scratchBufferManager;
         public readonly FunctionsState functionsState;
@@ -50,11 +43,8 @@ namespace Garnet.server
         private readonly CollectionItemBroker itemBroker;
 
         internal TsavoriteKernel Kernel => txnManager.TsavoriteKernel;
-        private KernelSession kernelSession;
-        internal ref KernelSession KernelSession => ref kernelSession;
 
-        public int SessionID => basicContext.Session.ID;
-        public int ObjectStoreSessionID => objectStoreBasicContext.Session.ID;
+        public int SessionID => dualContext.Session.ID;
 
         public readonly int ObjectScanCountLimit;
 
@@ -72,23 +62,9 @@ namespace Garnet.server
 
             functionsState = storeWrapper.CreateFunctionsState();
 
-            kernelSession = new(this);
-
             var functions = new MainSessionFunctions(functionsState);
-            session = storeWrapper.store.NewSession<SpanByte, SpanByteAndMemory, long, MainSessionFunctions>(functions);
-
             var objstorefunctions = new ObjectSessionFunctions(functionsState);
-            objectStoreSession = storeWrapper.objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
-
-            basicContext = session.BasicContext;
-            lockableContext = session.LockableContext;
-            dualContext = session.DualContext;
-            if (objectStoreSession != null)
-            {
-                objectStoreBasicContext = objectStoreSession.BasicContext;
-                objectStoreLockableContext = objectStoreSession.LockableContext;
-                objectStoreDualContext = objectStoreSession.DualContext;
-            }
+            dualContext = new(storeWrapper.store, functions, storeWrapper.objectStore, objstorefunctions, new GarnetDualInputConverter(), pendingMetrics: this);
 
             HeadAddress = storeWrapper.store.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
@@ -100,8 +76,7 @@ namespace Garnet.server
         public void Dispose()
         {
             sectorAlignedMemoryBitmap?.Dispose();
-            basicContext.Session.Dispose();
-            objectStoreBasicContext.Session?.Dispose();
+            dualContext.Dispose();
             sectorAlignedMemoryHll?.Dispose();
         }
     }

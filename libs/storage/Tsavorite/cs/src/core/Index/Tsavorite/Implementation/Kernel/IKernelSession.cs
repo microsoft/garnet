@@ -19,8 +19,8 @@ namespace Tsavorite.core
 
         void CheckTransactionIsNotStarted();
 
-        /// <summary>Internal refresh the store(s).</summary>
-        void Refresh();
+        /// <summary>Internal refresh the store(s) when a lock may be held.</summary>
+        void Refresh<TKeyLocker>(ref HashEntryInfo hei) where TKeyLocker : struct, ISessionLocker;
 
         /// <summary>Internally handle a retry in the store(s).</summary>
         void HandleImmediateNonPendingRetryStatus(bool refresh);
