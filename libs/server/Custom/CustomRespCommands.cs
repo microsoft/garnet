@@ -275,11 +275,11 @@ private bool InvokeCustomObjectCommand<TGarnetApi>(ref TGarnetApi storageApi, Cu
 
     var keyBytes = key.ToArray();
 
-    // Prepare input
-    var header = new RespInputHeader(customObjCommand.GetObjectType()) { SubId = customObjCommand.subid };
-    var sessionParseState = new SessionParseState();
-    sessionParseState.InitializeWithArguments(args);
-    var input = new ObjectInput(header, ref sessionParseState);
+            // Prepare input
+            var header = new RespInputHeader(customObjCommand.GetObjectType()) { SubId = customObjCommand.subid };
+            var sessionParseState = new SessionParseState();
+            sessionParseState.InitializeWithArguments(args);
+            var input = new ObjectInput(header, ref sessionParseState);
 
     var _output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
     GarnetStatus status;
