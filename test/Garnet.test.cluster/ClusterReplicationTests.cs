@@ -983,10 +983,6 @@ namespace Garnet.test.cluster
             // Re-assign slots to replica manually since failover option was not            
             _ = context.clusterTestUtils.AddDelSlotsRange(newPrimaryIndex, [(0, 16383)], addslot: false, context.logger);
             _ = context.clusterTestUtils.AddDelSlotsRange(replicaIndex, [(0, 16383)], addslot: false, context.logger);
-<<<<<<< HEAD
-=======
-
->>>>>>> 5a03f273 (cleanup and update replication test)
             _ = context.clusterTestUtils.AddDelSlotsRange(newPrimaryIndex, [(0, 16383)], addslot: true, context.logger);
             context.clusterTestUtils.BumpEpoch(newPrimaryIndex, logger: context.logger);
 

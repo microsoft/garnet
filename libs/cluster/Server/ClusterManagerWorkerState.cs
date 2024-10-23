@@ -49,7 +49,7 @@ namespace Garnet.cluster
         {
             try
             {
-                PauseConfigMerge();
+                SuspendConfigMerge();
                 errorMessage = default;
                 while (true)
                 {
@@ -98,7 +98,7 @@ namespace Garnet.cluster
         {
             try
             {
-                PauseConfigMerge();
+                SuspendConfigMerge();
                 var resp = CmdStrings.RESP_OK;
                 while (true)
                 {
