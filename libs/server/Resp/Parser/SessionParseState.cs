@@ -52,7 +52,7 @@ namespace Garnet.server
         /// </summary>
         public SessionParseState()
         {
-            
+
         }
 
         private SessionParseState(ref ArgSlice[] rootBuffer, int rootCount, ref ArgSlice* bufferPtr, int count) : this()
@@ -62,7 +62,7 @@ namespace Garnet.server
             this.bufferPtr = bufferPtr;
             this.Count = count;
         }
-        
+
         /// <summary>
         /// Initialize the parse state at the start of a session
         /// </summary>
