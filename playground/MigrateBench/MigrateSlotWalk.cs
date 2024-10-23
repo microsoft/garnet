@@ -25,12 +25,7 @@ namespace MigrateBench
         public MigrateSlotWalk(Options opts, ILogger logger = null)
         {
             this.opts = opts;
-
             var endpoints = opts.Endpoints.ToArray();
-
-            if (endpoints.Length != 3)
-                throw new Exception("Exactly 3 nodes are needed for this scenario");
-
             nodes = new Node[endpoints.Length];
             for (var i = 0; i < nodes.Length; i++)
             {
@@ -39,7 +34,6 @@ namespace MigrateBench
                 nodes[i].port = endpoint[1];
                 nodes[i].gc = new GarnetClientSession(nodes[i].address, int.Parse(nodes[i].port), new NetworkBufferSettings(1 << 22));
             }
-
             this.logger = logger;
         }
 
@@ -102,8 +96,8 @@ namespace MigrateBench
                         // n0 MIGRATING slot                    
                         resp = nodes[_src].gc.ExecuteAsync(migrating).GetAwaiter().GetResult();
 
+                        // Send data if any to the target node
                         getkeysinslot[3] = nodes[_src].gc.ExecuteAsync(countkeysinslot).GetAwaiter().GetResult();
-
                         if (int.Parse(getkeysinslot[3]) > 0)
                         {
                             var keys = nodes[_src].gc.ExecuteForArrayAsync(getkeysinslot).GetAwaiter().GetResult();

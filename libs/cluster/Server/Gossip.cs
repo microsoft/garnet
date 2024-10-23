@@ -73,12 +73,12 @@ namespace Garnet.cluster
         /// Called when FORGET op executes and waits until ongoing merge operations complete before executing FORGET
         /// Multiple FORGET ops can execute at the same time.
         /// </summary>
-        void PauseConfigMerge() => activeMergeLock.WriteLock();
+        public void SuspendConfigMerge() => activeMergeLock.WriteLock();
 
         /// <summary>
         /// Resume config merge
         /// </summary>
-        void ResumeConfigMerge() => activeMergeLock.WriteUnlock();
+        public void ResumeConfigMerge() => activeMergeLock.WriteUnlock();
 
         /// <summary>
         /// Initiate meet and main gossip tasks
@@ -99,11 +99,11 @@ namespace Garnet.cluster
         /// <summary>
         /// Merge incoming config to evolve local version
         /// </summary>
-        public bool TryMerge(ClusterConfig senderConfig)
+        public bool TryMerge(ClusterConfig senderConfig, bool acquireLock = true)
         {
             try
             {
-                activeMergeLock.ReadLock();
+                if (acquireLock) activeMergeLock.ReadLock();
                 if (workerBanList.ContainsKey(senderConfig.LocalNodeId))
                 {
                     logger?.LogTrace("Cannot merge node <{nodeid}> because still in ban list", senderConfig.LocalNodeId);
@@ -124,7 +124,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                activeMergeLock.ReadUnlock();
+                if (acquireLock) activeMergeLock.ReadUnlock();
             }
         }
 
@@ -140,9 +140,10 @@ namespace Garnet.cluster
         /// This task will immediately communicate with the new node and try to merge the retrieve configuration to its own.
         /// If node to meet was previous in the ban list then it will not be added to the cluster.
         /// </summary>
-        /// <param name="address"></param>
-        /// <param name="port"></param>
-        void TryMeet(string address, int port)
+        /// <param name="address">Address of node to issue meet to</param>
+        /// <param name="port"> Port of node to issue meet to</param>
+        /// <param name="acquireLock">Whether to acquire lock for merging. Default true</param>
+        public void TryMeet(string address, int port, bool acquireLock = true)
         {
             GarnetServerNode gsn = null;
             var conf = CurrentConfig;
@@ -176,7 +177,7 @@ namespace Garnet.cluster
 
                     logger?.LogInformation("MEET {nodeId} {address} {port}", nodeId, address, port);
                     // Merge without a check because node is trusted as meet was issued by admin
-                    _ = TryMerge(other);
+                    _ = TryMerge(other, acquireLock);
 
                     gossipStats.UpdateMeetRequestsSucceed();
 
