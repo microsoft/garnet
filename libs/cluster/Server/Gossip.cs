@@ -99,14 +99,14 @@ namespace Garnet.cluster
         /// <summary>
         /// Merge incoming config to evolve local version
         /// </summary>
-        public bool TryMerge(ClusterConfig other)
+        public bool TryMerge(ClusterConfig senderConfig)
         {
             try
             {
                 activeMergeLock.ReadLock();
-                if (workerBanList.ContainsKey(other.LocalNodeId))
+                if (workerBanList.ContainsKey(senderConfig.LocalNodeId))
                 {
-                    logger?.LogTrace("Cannot merge node <{nodeid}> because still in ban list", other.LocalNodeId);
+                    logger?.LogTrace("Cannot merge node <{nodeid}> because still in ban list", senderConfig.LocalNodeId);
                     return false;
                 }
 
@@ -114,7 +114,7 @@ namespace Garnet.cluster
                 {
                     var current = currentConfig;
                     var currentCopy = current.Copy();
-                    var next = currentCopy.Merge(other, workerBanList).HandleConfigEpochCollision(other);
+                    var next = currentCopy.Merge(senderConfig, workerBanList, logger).HandleConfigEpochCollision(senderConfig, logger);
                     if (currentCopy == next) return false;
                     if (Interlocked.CompareExchange(ref currentConfig, next, current) == current)
                         break;

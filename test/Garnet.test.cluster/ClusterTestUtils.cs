@@ -577,6 +577,13 @@ namespace Garnet.test.cluster
 
         public static void BackOff(TimeSpan timeSpan = default) => Thread.Sleep(timeSpan == default ? backoff : timeSpan);
 
+        public static void BackOff(CancellationToken cancellationToken, TimeSpan timeSpan = default, string msg = null)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                ClassicAssert.Fail(msg ?? "Cancellation Requested");
+            Task.Delay(timeSpan == default ? backoff : timeSpan, cancellationToken);
+        }
+
         public void Connect(ILogger logger = null)
         {
             InitMultiplexer(GetRedisConfig(endpoints), textWriter, logger: logger);
