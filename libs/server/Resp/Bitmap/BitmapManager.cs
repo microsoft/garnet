@@ -24,56 +24,53 @@ namespace Garnet.server
         /// <summary>
         /// Check to see if offset contained by value size
         /// </summary>
-        /// <param name="input"></param>
         /// <param name="vlen"></param>
+        /// <param name="offset"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsLargeEnough(byte* input, int vlen)
+        public static bool IsLargeEnough(int vlen, long offset)
         {
-            long offset = *(long*)input;
             return LengthInBytes(offset) <= vlen;
         }
 
         /// <summary>
         /// Get minimum length from offset in CmdInput
         /// </summary>
-        /// <param name="input"></param>
+        /// <param name="offset"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int Length(byte* input)
+        public static int Length(long offset)
         {
-            long offset = *(long*)(input);
             return LengthInBytes(offset);
         }
 
         /// <summary>
         /// Get bitmap allocation size
         /// </summary>
-        /// <param name="input"></param>
         /// <param name="valueLen"></param>
+        /// <param name="offset"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int NewBlockAllocLength(byte* input, int valueLen)
+        public static int NewBlockAllocLength(int valueLen, long offset)
         {
-            int lengthInBytes = Length(input);
+            int lengthInBytes = Length(offset);
             return valueLen > lengthInBytes ? valueLen : lengthInBytes;
         }
 
         /// <summary>
         /// Update bitmap value from input
         /// </summary>
-        /// <param name="input"></param>
-        /// <param name="value"></param>        
-        public static byte UpdateBitmap(byte* input, byte* value)
+        /// <param name="value"></param>
+        /// <param name="offset"></param>
+        /// <param name="set"></param>        
+        public static byte UpdateBitmap(byte* value, long offset, byte set)
         {
             byte oldVal = 0;
-            long offset = *(long*)(input);
-            byte set = *(byte*)(input + sizeof(long));
 
-            int byteIndex = Index(offset);
-            int bitIndex = 7 - (int)(offset & 7);
+            var byteIndex = Index(offset);
+            var bitIndex = 7 - (int)(offset & 7);
 
-            byte byteVal = *(value + byteIndex);
+            var byteVal = *(value + byteIndex);
             oldVal = (byte)(((1 << bitIndex) & byteVal) >> bitIndex);
 
             byteVal = (byte)((byteVal & ~(1 << bitIndex)) | (set << bitIndex));
@@ -82,23 +79,22 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get bit value from value ptr at offset specified at input ptr.
+        /// Get bit value from value ptr at offset specified at offset.
         /// </summary>
-        /// <param name="input"></param>
+        /// <param name="offset"></param>
         /// <param name="value"></param>
         /// <param name="valLen"></param>        
-        public static byte GetBit(byte* input, byte* value, int valLen)
+        public static byte GetBit(long offset, byte* value, int valLen)
         {
-            long offset = *(long*)(input);
-            int byteIndex = Index(offset);
+            var byteIndex = Index(offset);
             byte oldVal = 0;
 
             if (byteIndex >= valLen) // if offset outside allocated value size, return always zero            
                 oldVal = 0;
             else
             {
-                int bitIndex = 7 - (int)(offset & 7);
-                byte byteVal = *(value + byteIndex);
+                var bitIndex = 7 - (int)(offset & 7);
+                var byteVal = *(value + byteIndex);
                 oldVal = (byte)(((1 << bitIndex) & byteVal) >> bitIndex);
             }
             return oldVal;

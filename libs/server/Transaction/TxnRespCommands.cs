@@ -113,7 +113,7 @@ namespace Garnet.server
             bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
 
             // Watch not allowed during TXN
-            bool isWatch = commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCH_MS || commandInfo.Command == RespCommand.WATCH_OS;
+            bool isWatch = commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCHMS || commandInfo.Command == RespCommand.WATCHOS;
 
             if (invalidNumArgs || isWatch)
             {
@@ -261,16 +261,6 @@ namespace Garnet.server
                 return true;
             }
 
-            var sbFirstParam = parseState.GetArgSliceByRef(0).SpanByte;
-            var start = sbFirstParam.ToPointer() + sbFirstParam.Length + 2;
-
-            var end = start;
-            if (count > 1)
-            {
-                var sbLastParam = parseState.GetArgSliceByRef(count - 1).SpanByte;
-                end = sbLastParam.ToPointer() + sbLastParam.Length + 2;
-            }
-
             CustomTransactionProcedure proc;
             int arity;
 
@@ -297,7 +287,7 @@ namespace Garnet.server
                     SendAndReset();
             }
             else
-                TryTransactionProc((byte)txId, start, end, proc);
+                TryTransactionProc((byte)txId, proc, 1);
 
             return true;
         }

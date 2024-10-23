@@ -293,7 +293,7 @@ Returns the length of the list stored at key. If key does not exist, it is inter
 
 ---
 
-### LMOVE {#lmove}
+### LMOVE
 
 #### Syntax
 
@@ -304,6 +304,18 @@ Returns the length of the list stored at key. If key does not exist, it is inter
 Atomically returns and removes the first/last element (head/tail depending on the wherefrom argument) of the list stored at **source**, and pushes the element at the first/last element (head/tail depending on the whereto argument) of the list stored at **destination**.
 
 This command comes in place of the now deprecated RPOPLPUSH. Doing LMOVE RIGHT LEFT is equivalent.
+
+---
+
+### LMPOP
+
+#### Syntax
+
+```bash
+    LMPOP numkeys key [key ...] <LEFT | RIGHT> [COUNT count]
+```
+
+Pops one or more elements from the first non-empty list key from the list of provided key names.
 
 ---
 
@@ -511,6 +523,18 @@ Returns all the members of the set value stored at **key**.
 
 ---
 
+### SMOVE
+
+#### Syntax
+
+```bash
+    SMOVE source destination member
+```
+
+Move member from the set at source to the set at destination. This operation is atomic. In every given moment the element will appear to be a member of source or destination for other clients.
+
+---
+
 ### SPOP
 
 #### Syntax
@@ -532,6 +556,22 @@ Removes and returns one or more random members from the set value stored at **ke
 ```
 
 Returns if **member** is a member of the set stored at **key**.
+
+---
+
+### SMISMEMBER
+
+#### Syntax
+
+```bash
+    SMISMEMBER key member [member ...]
+```
+
+Returns whether each **member** is a member of the set stored at **key**.
+
+#### Resp Reply
+
+Array reply: a list representing the membership of the given elements, in the same order as they are requested.
 
 ---
 

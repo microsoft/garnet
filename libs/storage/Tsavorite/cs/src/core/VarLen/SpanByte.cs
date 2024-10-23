@@ -347,10 +347,10 @@ namespace Tsavorite.core
         /// Does not change length of destination.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyTo(ref SpanByte dst)
+        public void CopyTo(ref SpanByte dst, long metadata = 0)
         {
             dst.UnmarkExtraMetadata();
-            dst.ExtraMetadata = ExtraMetadata;
+            dst.ExtraMetadata = metadata == 0 ? ExtraMetadata : metadata;
             AsReadOnlySpan().CopyTo(dst.AsSpan());
         }
 
@@ -358,26 +358,32 @@ namespace Tsavorite.core
         /// Try to copy to given pre-allocated <see cref="SpanByte"/>, checking if space permits at destination <see cref="SpanByte"/>
         /// </summary>
         /// <param name="dst">The target of the copy</param>
+        /// <param name="metadata">Optional metadata to add to the destination</param>
         /// <param name="fullDestSize">The size available at the destination (e.g. dst.TotalSize or the log-space Value allocation size)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySafeCopyTo(ref SpanByte dst, int fullDestSize)
+        public bool TrySafeCopyTo(ref SpanByte dst, int fullDestSize, long metadata = 0)
         {
-            if (fullDestSize < TotalSize)
+            // Need to account for extra metadata if current value does not have any.
+            var addMetadata = metadata > 0 && MetadataSize == 0;
+
+            var newTotalSize = addMetadata ? TotalSize + sizeof(long) : TotalSize;
+            if (fullDestSize < newTotalSize)
                 return false;
 
-            if (dst.Length < Length)
+            var newLength = addMetadata ? Length + sizeof(long) : Length;
+            if (dst.Length < newLength)
             {
                 // dst is shorter than src, but we have already verified there is enough extra value space to grow dst to store src.
-                dst.Length = Length;
-                CopyTo(ref dst);
+                dst.Length = newLength;
+                CopyTo(ref dst, metadata);
             }
             else
             {
                 // dst length is equal or longer than src. We can adjust the length header on the serialized log, if we wish (here, we do).
                 // This method will also zero out the extra space to retain log scan correctness.
-                dst.ShrinkSerializedLength(Length);
-                CopyTo(ref dst);
-                dst.Length = Length;
+                dst.ShrinkSerializedLength(newLength);
+                CopyTo(ref dst, metadata);
+                dst.Length = newLength;
             }
             return true;
         }

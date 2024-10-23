@@ -19,30 +19,30 @@ namespace Garnet
         /// <summary>
         /// No transactional phase, skip Prepare
         /// </summary>
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
             => false;
 
         /// <summary>
         /// Main will not be called because Prepare returns false
         /// </summary>
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
             => throw new InvalidOperationException();
 
         /// <summary>
         /// Perform the MSETPX operation
         /// </summary>
-        public override void Finalize<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Finalize<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             int offset = 0;
 
             // Read expiry
-            var expiryMs = GetNextArg(input, ref offset);
+            var expiryMs = GetNextArg(ref procInput, ref offset);
 
             // Read and set key-value pairs with expiry
             ArgSlice key, value;
-            while ((key = GetNextArg(input, ref offset)).Length > 0)
+            while ((key = GetNextArg(ref procInput, ref offset)).Length > 0)
             {
-                value = GetNextArg(input, ref offset);
+                value = GetNextArg(ref procInput, ref offset);
                 api.SETEX(key, value, expiryMs);
             }
             WriteSimpleString(ref output, "OK");

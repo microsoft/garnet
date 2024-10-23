@@ -425,15 +425,15 @@
     "SubCommands": null
   },
   {
-    "Command": "WATCH",
-    "Name": "WATCH",
+    "Command": "WATCHMS",
+    "Name": "WATCHMS",
     "IsInternal": false,
     "Arity": -2,
     "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
     "FirstKey": 1,
     "LastKey": -1,
     "Step": 1,
-    "AclCategories": "Fast, Transaction",
+    "AclCategories": "Fast, Read, Transaction",
     "Tips": null,
     "KeySpecifications": [
       {
@@ -451,36 +451,36 @@
         "Flags": "RO"
       }
     ],
-    "SubCommands": [
+    "SubCommands": null
+  },
+  {
+    "Command": "WATCHOS",
+    "Name": "WATCHOS",
+    "IsInternal": false,
+    "Arity": -2,
+    "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Transaction",
+    "Tips": null,
+    "KeySpecifications": [
       {
-        "Command": "WATCH_MS",
-        "Name": "WATCH|MS",
-        "IsInternal": false,
-        "Arity": -3,
-        "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
-        "FirstKey": 2,
-        "LastKey": -2,
-        "Step": 1,
-        "AclCategories": "Fast, Transaction, Garnet",
-        "Tips": null,
-        "KeySpecifications": null,
-        "SubCommands": null
-      },
-      {
-        "Command": "WATCH_OS",
-        "Name": "WATCH|OS",
-        "IsInternal": false,
-        "Arity": -3,
-        "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
-        "FirstKey": 2,
-        "LastKey": -2,
-        "Step": 1,
-        "AclCategories": "Fast, Transaction, Garnet",
-        "Tips": null,
-        "KeySpecifications": null,
-        "SubCommands": null
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
       }
-    ]
+    ],
+    "SubCommands": null
   },
   {
     "Command": "ASYNC",
