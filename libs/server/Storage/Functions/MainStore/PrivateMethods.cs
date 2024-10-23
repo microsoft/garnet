@@ -711,12 +711,12 @@ namespace Garnet.server
         BitFieldCmdArgs GetBitFieldArguments(ref RawStringInput input)
         {
             var currTokenIdx = 0;
-            var opCode = (byte)input.parseState.GetEnum<RespCommand>(currTokenIdx++, true);
+            var cmd = input.parseState.GetEnum<RespCommand>(currTokenIdx++, true);
             var encodingArg = input.parseState.GetString(currTokenIdx++);
             var offsetArg = input.parseState.GetString(currTokenIdx++);
 
             long value = default;
-            if (opCode == (byte)RespCommand.SET || opCode == (byte)RespCommand.INCRBY)
+            if (cmd == RespCommand.SET || cmd == RespCommand.INCRBY)
             {
                 value = input.parseState.GetLong(currTokenIdx++);
             }
@@ -736,7 +736,7 @@ namespace Garnet.server
             // Calculate number offset from bitCount if offsetArg starts with #
             var offset = offsetArg[0] == '#' ? long.Parse(offsetArg.AsSpan(1)) * bitCount : long.Parse(offsetArg);
 
-            return new BitFieldCmdArgs(opCode, typeInfo, offset, value, overflowType);
+            return new BitFieldCmdArgs(cmd, typeInfo, offset, value, overflowType);
         }
     }
 }

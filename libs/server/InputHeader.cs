@@ -38,7 +38,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of header
         /// </summary>
-        public const int Size = 2;
+        public const int Size = 3;
         internal const byte FlagMask = (byte)RespInputFlags.SetGet - 1;
 
         [FieldOffset(0)]
@@ -47,7 +47,7 @@ namespace Garnet.server
         [FieldOffset(0)]
         internal GarnetObjectType type;
 
-        [FieldOffset(1)]
+        [FieldOffset(2)]
         internal RespInputFlags flags;
 
         /// <summary>
@@ -77,7 +77,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="flags">Flags</param>
-        public void SetHeader(byte cmd, byte flags)
+        public void SetHeader(ushort cmd, byte flags)
         {
             this.cmd = (RespCommand)cmd;
             this.flags = (RespInputFlags)flags;
@@ -322,7 +322,7 @@ namespace Garnet.server
         /// <param name="cmd">Command</param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public RawStringInput(byte cmd, byte flags = 0, long arg1 = 0) :
+        public RawStringInput(ushort cmd, byte flags = 0, long arg1 = 0) :
             this((RespCommand)cmd, (RespInputFlags)flags, arg1)
 
         {

@@ -132,14 +132,14 @@ namespace Garnet.server
         /// <summary>
         /// Custom object command
         /// </summary>
-        private bool TryCustomObjectCommand<TGarnetApi>(RespCommand cmd, byte subid, CommandType type, ref TGarnetApi storageApi)
+        private bool TryCustomObjectCommand<TGarnetApi>(GarnetObjectType objType, byte subid, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
             var keyBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
             // Prepare input
 
-            var header = new RespInputHeader(cmd) { SubId = subid };
+            var header = new RespInputHeader(objType) { SubId = subid };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };

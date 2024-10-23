@@ -473,7 +473,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref RawStringInput input, byte secondaryCommand, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref RawStringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output)
         {
             garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
             return garnetApi.StringBitFieldReadOnly(ref key, ref input, secondaryCommand, ref output);

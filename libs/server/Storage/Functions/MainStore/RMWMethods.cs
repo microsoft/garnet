@@ -30,11 +30,11 @@ namespace Garnet.server
                 case RespCommand.GETEX:
                     return false;
                 default:
-                    if ((byte)input.header.cmd >= CustomCommandManager.StartOffset)
+                    if ((ushort)input.header.cmd >= CustomCommandManager.StartOffset)
                     {
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
                         var ret = functionsState
-                            .customCommands[(byte)input.header.cmd - CustomCommandManager.StartOffset].functions
+                            .customCommands[(ushort)input.header.cmd - CustomCommandManager.StartOffset].functions
                             .NeedInitialUpdate(key.AsReadOnlySpan(), ref input, ref outp);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
@@ -178,9 +178,9 @@ namespace Garnet.server
                 default:
                     value.UnmarkExtraMetadata();
 
-                    if ((byte)input.header.cmd >= CustomCommandManager.StartOffset)
+                    if ((ushort)input.header.cmd >= CustomCommandManager.StartOffset)
                     {
-                        var functions = functionsState.customCommands[(byte)input.header.cmd - CustomCommandManager.StartOffset].functions;
+                        var functions = functionsState.customCommands[(ushort)input.header.cmd - CustomCommandManager.StartOffset].functions;
                         // compute metadata size for result
                         var expiration = input.arg1;
                         metadataSize = expiration switch
@@ -505,7 +505,7 @@ namespace Garnet.server
                     return false;
 
                 default:
-                    var cmd = (byte)input.header.cmd;
+                    var cmd = (ushort)input.header.cmd;
                     if (cmd >= CustomCommandManager.StartOffset)
                     {
                         var functions = functionsState.customCommands[cmd - CustomCommandManager.StartOffset].functions;
@@ -574,10 +574,10 @@ namespace Garnet.server
                     }
                     return false;
                 default:
-                    if ((byte)input.header.cmd >= CustomCommandManager.StartOffset)
+                    if ((ushort)input.header.cmd >= CustomCommandManager.StartOffset)
                     {
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        var ret = functionsState.customCommands[(byte)input.header.cmd - CustomCommandManager.StartOffset].functions
+                        var ret = functionsState.customCommands[(ushort)input.header.cmd - CustomCommandManager.StartOffset].functions
                             .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(), ref outp);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
@@ -809,7 +809,7 @@ namespace Garnet.server
                     break;
 
                 default:
-                    if ((byte)input.header.cmd >= CustomCommandManager.StartOffset)
+                    if ((ushort)input.header.cmd >= CustomCommandManager.StartOffset)
                     {
                         var functions = functionsState.customCommands[(byte)input.header.cmd - CustomCommandManager.StartOffset].functions;
                         var expiration = input.arg1;
