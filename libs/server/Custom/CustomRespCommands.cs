@@ -276,7 +276,7 @@ namespace Garnet.server
             var keyBytes = key.ToArray();
 
             // Prepare input
-            var header = new RespInputHeader(customObjCommand.GetRespCommand()) { SubId = customObjCommand.subid };
+            var header = new RespInputHeader(customObjCommand.GetObjectType()) { SubId = customObjCommand.subid };
             var sessionParseState = new SessionParseState();
             sessionParseState.InitializeWithArguments(args);
             var input = new ObjectInput(header, ref sessionParseState);
