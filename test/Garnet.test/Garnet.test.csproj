@@ -26,7 +26,6 @@
     <Compile Include="..\..\playground\Embedded.perftest\DummyNetworkSender.cs" Link="DummyNetworkSender.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\Sum.cs" Link="Sum.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\SetStringAndList.cs" Link="SetStringAndList.cs" />
-    <Compile Include="..\..\main\GarnetServer\Extensions\RateLimiterTxn.cs" Link="RateLimiterTxn.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -76,5 +75,9 @@
     <None Update="redis.conf">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Extensions\" />
   </ItemGroup>
 </Project>
