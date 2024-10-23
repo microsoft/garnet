@@ -808,7 +808,7 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomObjectCommand(currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid,
+            TryCustomObjectCommand(currentCustomObjectCommand.GetObjectType(), currentCustomObjectCommand.subid,
                 currentCustomObjectCommand.type, ref storageApi);
             currentCustomObjectCommand = null;
             return true;
