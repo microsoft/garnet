@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -14,7 +15,7 @@ namespace Garnet.server
     /// <summary>
     /// Basic RESP command enum
     /// </summary>
-    public enum RespCommand : byte
+    public enum RespCommand : ushort
     {
         NONE = 0x00,
 
@@ -59,6 +60,7 @@ namespace Garnet.server
         SINTER,
         SISMEMBER,
         SMEMBERS,
+        SMISMEMBER,
         SRANDMEMBER,
         SSCAN,
         STRLEN,
@@ -306,7 +308,10 @@ namespace Garnet.server
         HELLO,
         QUIT, // Note: Update IsNoAuth if adding new no-auth commands after this
 
-        INVALID = 0xFF,
+        // Max value of this enum (not including INVALID) will determine the size of RespCommand.AofIndependentBitLookup and CommandPermissionSet._commandList,
+        // so avoid manually setting high values unless necessary
+
+        INVALID = 0xFFFF,
     }
 
     /// <summary>
@@ -361,15 +366,19 @@ namespace Garnet.server
             RespCommand.MULTI,
         ];
 
-        // long is 64 bits, 4 longs accomodate 256 resp commands which is more than enough to provide a lookup for each resp command
-        private static readonly ulong[] AofIndepenedentBitLookup = [0, 0, 0, 0];
+        private static readonly ulong[] AofIndependentBitLookup;
 
         private const int sizeOfLong = 64;
 
         // The static ctor maybe expensive but it is only ever run once, and doesn't interfere with common path
         static RespCommandExtensions()
         {
-            foreach (RespCommand cmd in Enum.GetValues(typeof(RespCommand)))
+            // # of bits needed to represent all valid commands
+            var maxBitsNeeded = (ushort)LastValidCommand + 1;
+            var lookupTableSize = (maxBitsNeeded / 64) + (maxBitsNeeded % 64 == 0 ? 0 : 1);
+            AofIndependentBitLookup = new ulong[lookupTableSize];
+
+            foreach (var cmd in Enum.GetValues<RespCommand>())
             {
                 if (Array.IndexOf(AofIndependentCommands, cmd) == -1)
                     continue;
@@ -379,7 +388,7 @@ namespace Garnet.server
                 // set the respCommand's bit to indicate
                 int bitIdxOffset = (int)cmd % sizeOfLong;
                 ulong bitmask = 1UL << bitIdxOffset;
-                AofIndepenedentBitLookup[bitIdxToUse] |= bitmask;
+                AofIndependentBitLookup[bitIdxToUse] |= bitmask;
             }
         }
 
@@ -389,11 +398,13 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsAofIndependent(this RespCommand cmd)
         {
+            if (cmd > LastValidCommand) return false;
+
             // check if cmd maps to a bit vec that was set back when static ctor was run
             int bitIdxToUse = (int)cmd / sizeOfLong;
             int bitIdxOffset = (int)cmd % sizeOfLong;
             ulong bitmask = 1UL << bitIdxOffset;
-            return (AofIndepenedentBitLookup[bitIdxToUse] & bitmask) != 0;
+            return (AofIndependentBitLookup[bitIdxToUse] & bitmask) != 0;
         }
 
         /// <summary>
@@ -438,6 +449,11 @@ namespace Garnet.server
         internal const RespCommand LastWriteCommand = RespCommand.BITOP_NOT;
 
         internal const RespCommand LastDataCommand = RespCommand.EVALSHA;
+
+        /// <summary>
+        /// Last valid command (i.e. RespCommand with the largest value excluding INVALID).
+        /// </summary>
+        public static RespCommand LastValidCommand { get; } = Enum.GetValues<RespCommand>().Where(cmd => cmd != RespCommand.INVALID).Max();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsReadOnly(this RespCommand cmd)
@@ -1336,9 +1352,13 @@ namespace Garnet.server
                                 {
                                     return RespCommand.SDIFFSTORE;
                                 }
-                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nEXPI"u8) && *(uint*)(ptr + 9) == MemoryMarshal.Read<uint>("RETIME\r\n"u8))
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nEXPI"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
                                 {
                                     return RespCommand.EXPIRETIME;
+                                }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nSMIS"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("MEMBER\r\n"u8))
+                                {
+                                    return RespCommand.SMISMEMBER;
                                 }
                                 break;
 
@@ -1367,7 +1387,7 @@ namespace Garnet.server
                                 {
                                     return RespCommand.SINTERSTORE;
                                 }
-                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nPEXPI"u8) && *(uint*)(ptr + 10) == MemoryMarshal.Read<uint>("RETIME\r\n"u8))
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nPEXPI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
                                 {
                                     return RespCommand.PEXPIRETIME;
                                 }

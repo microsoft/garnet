@@ -5214,6 +5214,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task SMIsMemberACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SMISMEMBER",
+                [DoSMultiIsMemberAsync]
+            );
+
+            static async Task DoSMultiIsMemberAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("SMISMEMBER", ["foo", "5"]);
+                ClassicAssert.IsNotNull(val);
+            }
+        }
+
+        [Test]
         public async Task SubscribeACLsAsync()
         {
             // SUBSCRIBE is sufficient weird that all we care to test is forbidding it
