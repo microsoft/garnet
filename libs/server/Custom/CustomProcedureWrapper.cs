@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Garnet.common;
 
 namespace Garnet.server
@@ -26,20 +27,22 @@ namespace Garnet.server
         public readonly string NameStr;
         public readonly byte[] Name;
         public readonly byte Id;
-        public readonly CustomProcedure CustomProcedureImpl;
+        public readonly Func<CustomProcedure> CustomProcedure;
 
-        internal CustomProcedureWrapper(string name, byte id, CustomProcedure customScriptProc)
+        internal CustomProcedureWrapper(string name, byte id, Func<CustomProcedure> customProcedure, CustomCommandManager customCommandManager)
         {
             if (string.IsNullOrEmpty(name))
                 throw new ArgumentNullException(nameof(name));
 
-            if (customScriptProc == null)
-                throw new ArgumentNullException(nameof(customScriptProc));
+            if (customProcedure == null)
+                throw new ArgumentNullException(nameof(customProcedure));
+
+            Debug.Assert(customCommandManager != null);
 
             NameStr = name.ToUpperInvariant();
             Name = System.Text.Encoding.ASCII.GetBytes(NameStr);
             Id = id;
-            CustomProcedureImpl = customScriptProc;
+            CustomProcedure = customProcedure;
         }
     }
 }

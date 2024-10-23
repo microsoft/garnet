@@ -38,7 +38,7 @@ namespace Garnet.test.Resp.ACL
             server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), respCustomCommandsInfo["SETWPIFPGT"]);
             server.Register.NewCommand("MYDICTGET", CommandType.Read, new MyDictFactory(), new MyDictGet(), respCustomCommandsInfo["MYDICTGET"]);
             server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = 4 });
-            server.Register.NewProcedure("SUM", new Sum());
+            server.Register.NewProcedure("SUM", () => new Sum());
 
             server.Start();
         }

@@ -86,7 +86,7 @@ namespace Garnet.server
         /// <param name="commandInfo"></param>
         /// <param name="commandDocs"></param>
         /// <returns></returns>
-        public int NewProcedure(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
+        public int NewProcedure(string name, Func<CustomProcedure> customProcedure, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
             => provider.StoreWrapper.customCommandManager.Register(name, customProcedure, commandInfo, commandDocs);
     }
 }
