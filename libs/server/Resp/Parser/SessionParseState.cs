@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.ComponentModel.Design.Serialization;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -47,6 +48,22 @@ namespace Garnet.server
         public ReadOnlySpan<ArgSlice> Parameters => new(bufferPtr, Count);
 
         /// <summary>
+        /// Create a new instance of SessionParseState
+        /// </summary>
+        public SessionParseState()
+        {
+            
+        }
+
+        private SessionParseState(ref ArgSlice[] rootBuffer, int rootCount, ref ArgSlice* bufferPtr, int count) : this()
+        {
+            this.rootBuffer = rootBuffer;
+            this.rootCount = rootCount;
+            this.bufferPtr = bufferPtr;
+            this.Count = count;
+        }
+        
+        /// <summary>
         /// Initialize the parse state at the start of a session
         /// </summary>
         public void Initialize()
@@ -68,11 +85,7 @@ namespace Garnet.server
             rootCount = count;
 
             if (rootBuffer != null && (count <= MinParams || count <= rootBuffer.Length))
-            {
-                // Ensure that bufferPtr is re-winded to point back at the start of the root buffer
-                bufferPtr = (ArgSlice*)Unsafe.AsPointer(ref rootBuffer[0]);
                 return;
-            }
 
             rootBuffer = GC.AllocateArray<ArgSlice>(count <= MinParams ? MinParams : count, true);
             bufferPtr = (ArgSlice*)Unsafe.AsPointer(ref rootBuffer[0]);
@@ -179,14 +192,14 @@ namespace Garnet.server
         /// </summary>
         /// <param name="idxOffset">Offset value to the underlying buffer</param>
         /// <param name="count">Argument count (default: -1 for all remaining arguments)</param>
-        public void Slice(int idxOffset, int count = -1)
+        public SessionParseState Slice(int idxOffset, int count = -1)
         {
             count = count == -1 ? rootCount - idxOffset : count;
 
             Debug.Assert(idxOffset + count - 1 < rootCount);
 
-            bufferPtr = (ArgSlice*)Unsafe.AsPointer(ref rootBuffer[idxOffset]);
-            Count = count;
+            var offsetBuffer = bufferPtr + idxOffset;
+            return new SessionParseState(ref rootBuffer, rootCount, ref offsetBuffer, count);
         }
 
         /// <summary>

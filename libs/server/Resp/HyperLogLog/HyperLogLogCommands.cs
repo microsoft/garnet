@@ -24,7 +24,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD));
             }
 
-            var input = new RawStringInput(RespCommand.PFADD, ref parseState);
+            var input = new RawStringInput(RespCommand.PFADD);
 
             var output = stackalloc byte[1];
             byte pfaddUpdated = 0;
@@ -32,7 +32,7 @@ namespace Garnet.server
 
             for (var i = 1; i < parseState.Count; i++)
             {
-                input.parseState.Slice(i, 1);
+                input.parseState = parseState.Slice(i, 1);
                 var o = new SpanByteAndMemory(output, 1);
                 storageApi.HyperLogLogAdd(ref key, ref input, ref o);
 

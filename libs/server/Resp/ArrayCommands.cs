@@ -179,13 +179,13 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var anyValuesSet = false;
-            var input = new RawStringInput(RespCommand.SETEXNX, ref parseState);
+            var input = new RawStringInput(RespCommand.SETEXNX);
 
             for (var c = 0; c < parseState.Count; c += 2)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
 
-                input.parseState.Slice(c + 1, 1);
+                input.parseState = parseState.Slice(c + 1, 1);
                 var status = storageApi.SET_Conditional(ref key, ref input);
 
                 // Status tells us whether an old image was found during RMW or not

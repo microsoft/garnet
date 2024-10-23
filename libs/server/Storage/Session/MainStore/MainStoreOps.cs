@@ -847,9 +847,7 @@ namespace Garnet.server
 
                 var header = new RespInputHeader(type);
 
-                // Rewind parse state to original position
-                input.parseState.Slice(0);
-                var objInput = new ObjectInput(header, ref input.parseState, startIdx: 1, arg1: (int)input.arg1, arg2: expiryAt ? 1 : 0);
+                var objInput = new ObjectInput(header, ref input.parseState, arg1: (int)input.arg1, arg2: expiryAt ? 1 : 0);
 
                 // Retry on object store
                 var objOutput = new GarnetObjectStoreOutput { spanByteAndMemory = output };

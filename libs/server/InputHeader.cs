@@ -220,8 +220,7 @@ namespace Garnet.server
         public ObjectInput(RespInputHeader header, ref SessionParseState parseState, int startIdx = 0, int argCount = -1, int arg1 = 0, int arg2 = 0)
             : this(header, arg1, arg2)
         {
-            this.parseState = parseState;
-            this.parseState.Slice(startIdx, argCount);
+            this.parseState = parseState.Slice(startIdx, argCount);
         }
 
         /// <inheritdoc />
@@ -339,8 +338,7 @@ namespace Garnet.server
         /// <param name="flags">Flags</param>
         public RawStringInput(RespCommand cmd, ref SessionParseState parseState, int startIdx = 0, int argCount = -1, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
         {
-            this.parseState = parseState;
-            this.parseState.Slice(startIdx, argCount);
+            this.parseState = parseState.Slice(startIdx, argCount);
         }
 
         /// <inheritdoc />
@@ -413,8 +411,7 @@ namespace Garnet.server
         /// <param name="argCount">Command argument count in parse state (default: -1 for all arguments available starting at startIdx)</param>
         public CustomProcedureInput(ref SessionParseState parseState, int startIdx = 0, int argCount = -1)
         {
-            this.parseState = parseState;
-            this.parseState.Slice(startIdx, argCount);
+            this.parseState = parseState.Slice(startIdx, argCount);
         }
 
         /// <inheritdoc />
