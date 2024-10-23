@@ -400,8 +400,6 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var argCount = parseState.Count - 1;
-
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = isSingle ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
@@ -425,10 +423,11 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteArrayLength(argCount, ref dcurr, dend))
+                        var count = parseState.Count - 1; // Remove key
+                        while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
                             SendAndReset();
 
-                        for (var i = 0; i < argCount; i++)
+                        for (var i = 0; i < count; i++)
                         {
                             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                                 SendAndReset();

@@ -56,13 +56,13 @@ namespace Garnet.server
 
         }
 
-        private void TryCustomProcedure(CustomProcedure proc)
+        private void TryCustomProcedure(CustomProcedure proc, int startIdx = 0)
         {
             Debug.Assert(proc != null);
 
             var output = new MemoryResult<byte>(null, 0);
 
-            var procInput = new CustomProcedureInput(ref parseState);
+            var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx);
             if (proc.Execute(basicGarnetApi, ref procInput, ref output))
             {
                 if (output.MemoryOwner != null)

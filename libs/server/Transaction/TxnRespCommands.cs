@@ -287,9 +287,7 @@ namespace Garnet.server
                     SendAndReset();
             }
             else
-            {
                 TryTransactionProc((byte)txId, proc, 1);
-            }
 
             return true;
         }

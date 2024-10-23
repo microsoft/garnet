@@ -30,8 +30,7 @@ namespace Garnet.server
             byte pfaddUpdated = 0;
             var key = parseState.GetArgSliceByRef(0).SpanByte;
 
-            var argCount = parseState.Count;
-            for (var i = 1; i < argCount; i++)
+            for (var i = 1; i < parseState.Count; i++)
             {
                 input.parseState.Slice(i, 1);
                 var o = new SpanByteAndMemory(output, 1);
