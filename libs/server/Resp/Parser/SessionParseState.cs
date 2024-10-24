@@ -187,15 +187,26 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Limit access to the argument buffer to start at a specified index.
+        /// </summary>
+        /// <param name="idxOffset">Offset value to the underlying buffer</param>
+        public SessionParseState Slice(int idxOffset)
+        {
+            Debug.Assert(idxOffset < rootCount);
+
+            var count = rootCount - idxOffset;
+            var offsetBuffer = bufferPtr + idxOffset;
+            return new SessionParseState(ref rootBuffer, rootCount, ref offsetBuffer, count);
+        }
+
+        /// <summary>
         /// Limit access to the argument buffer to start at a specified index
         /// and end after a specified number of arguments.
         /// </summary>
         /// <param name="idxOffset">Offset value to the underlying buffer</param>
-        /// <param name="count">Argument count (default: -1 for all remaining arguments)</param>
-        public SessionParseState Slice(int idxOffset, int count = -1)
+        /// <param name="count">Argument count</param>
+        public SessionParseState Slice(int idxOffset, int count)
         {
-            count = count == -1 ? rootCount - idxOffset : count;
-
             Debug.Assert(idxOffset + count - 1 < rootCount);
 
             var offsetBuffer = bufferPtr + idxOffset;

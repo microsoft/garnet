@@ -57,6 +57,16 @@ namespace Garnet.test
         }
 
         [Test]
+        public void PingMultiTokenMessageTest()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var expectedResponse = "$14\r\n\"HELLO WORLD!\"\r\n";
+            var response = lightClientRequest.SendCommand("PING \"HELLO WORLD!\"");
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
         public void PingErrorMessageTest()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
@@ -520,6 +530,16 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var expectedResponse = "HELLO";
             var actualValue = db.Execute("ECHO", "HELLO").ToString();
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void SeEchoWithMultiTokenMessageTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var expectedResponse = "\"HELLO WORLD!\"";
+            var actualValue = db.Execute("ECHO", "\"HELLO WORLD!\"").ToString();
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
