@@ -539,7 +539,7 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="pairs"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus SortedSetDifference(ArgSlice[] keys, out Dictionary<byte[], double> pairs)
+        public unsafe GarnetStatus SortedSetDifference(ReadOnlySpan<ArgSlice> keys, out Dictionary<byte[], double> pairs)
         {
             pairs = default;
 
@@ -602,6 +602,69 @@ namespace Garnet.server
             }
 
             return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// Computes the difference between the first and all successive sorted sets and store resulting pairs in the destination key.
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="destinationKey"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        public unsafe GarnetStatus SortedSetDifferenceStore(ReadOnlySpan<ArgSlice> keys, ArgSlice destinationKey, out int count)
+        {
+            count = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                var status = SortedSetDifference(keys, out var result);
+
+                if (status != GarnetStatus.OK)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                count = result is null ? 0 : result.Count;
+
+                if (count > 0)
+                {
+                    SortedSetObject newSetObject = new();
+                    foreach (var (element, score) in result)
+                    {
+                        newSetObject.Add(element, score);
+                    }
+                    _ = SET(destinationKey.ToArray(), newSetObject, ref setObjectStoreLockableContext);
+                }
+                else
+                {
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                        ref lockableContext, ref setObjectStoreLockableContext);
+                }
+
+                return status;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
         }
 
         /// <summary>
