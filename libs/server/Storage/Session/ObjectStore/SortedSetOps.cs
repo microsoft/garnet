@@ -644,7 +644,7 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="pairs"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus SortedSetDifference(ArgSlice[] keys, out Dictionary<byte[], double> pairs)
+        public unsafe GarnetStatus SortedSetDifference(Span<ArgSlice> keys, out Dictionary<byte[], double> pairs)
         {
             pairs = default;
 
@@ -709,7 +709,7 @@ namespace Garnet.server
         /// <param name="destinationKey"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus SortedSetDifferenceStore(ArgSlice[] keys, ArgSlice destinationKey, out int count)
+        public unsafe GarnetStatus SortedSetDifferenceStore(Span<ArgSlice> keys, ArgSlice destinationKey, out int count)
         {
             count = default;
 

@@ -940,7 +940,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var keys = new[] { new RedisKey("user1:obj1"), new RedisKey("user1:obj2") };
-            var destionationKey = new RedisKey("user1:objA");
+            var destinationKey = new RedisKey("user1:objA");
             var key1Values = new[] { new RedisValue("Hello"), new RedisValue("World") };
             var key2Values = new[] { new RedisValue("Hola"), new RedisValue("Mundo") };
             var values = new[] { key1Values, key2Values };
@@ -991,7 +991,7 @@ namespace Garnet.test
             // ZDIFF
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetCombine(SetOperation.Difference, keys));
             // ZDIFFSTORE
-            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetCombineAndStore(SetOperation.Difference, destionationKey, keys));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetCombineAndStore(SetOperation.Difference, destinationKey, keys));
             // ZSCAN
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetScan(keys[1], new RedisValue("*")).FirstOrDefault());
             //ZMSCORE
@@ -999,13 +999,15 @@ namespace Garnet.test
         }
 
         [Test]
-        public void CheckSortedSetDifferenceStoreSE()
+        [TestCase(false)]
+        [TestCase(true)]
+        public void CheckSortedSetDifferenceStoreSE(bool isDestinationKeyExisting)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             var keys = new[] { new RedisKey("user1:obj1"), new RedisKey("user1:obj2") };
-            var destionationKey = new RedisKey("user1:objA");
+            var destinationKey = new RedisKey("user1:objA");
             var key1Values = new[] { new SortedSetEntry("Hello", 1), new SortedSetEntry("World", 2) };
             var key2Values = new[] { new SortedSetEntry("Hello", 5), new SortedSetEntry("Mundo", 7) };
             var expectedValue = new SortedSetEntry("World", 2);
@@ -1013,12 +1015,16 @@ namespace Garnet.test
             // Set up sorted sets
             db.SortedSetAdd(keys[0], key1Values);
             db.SortedSetAdd(keys[1], key2Values);
-            db.SortedSetAdd(destionationKey, key1Values); // Set up destination key to overwrite if exists
 
-            var actualCount = db.SortedSetCombineAndStore(SetOperation.Difference, destionationKey, keys);
+            if (isDestinationKeyExisting)
+            {
+                db.SortedSetAdd(destinationKey, key1Values); // Set up destination key to overwrite if exists
+            }
+
+            var actualCount = db.SortedSetCombineAndStore(SetOperation.Difference, destinationKey, keys);
             ClassicAssert.AreEqual(1, actualCount);
 
-            var actualMembers = db.SortedSetRangeByScoreWithScores(destionationKey);
+            var actualMembers = db.SortedSetRangeByScoreWithScores(destinationKey);
             ClassicAssert.AreEqual(1, actualMembers.Length);
             ClassicAssert.AreEqual(expectedValue.Element.ToString(), actualMembers[0].Element.ToString());
             ClassicAssert.AreEqual(expectedValue.Score, actualMembers[0].Score);
@@ -1031,15 +1037,15 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var keys = new[] { new RedisKey("user1:obj1"), new RedisKey("user1:obj2") };
-            var destionationKey = new RedisKey("user1:objA");
+            var destinationKey = new RedisKey("user1:objA");
 
             // Set up sorted sets
-            db.SortedSetAdd(destionationKey, "Dummy", 10); // Set up destination key to overwrite if exists
+            db.SortedSetAdd(destinationKey, "Dummy", 10); // Set up destination key to overwrite if exists
 
-            var actualCount = db.SortedSetCombineAndStore(SetOperation.Difference, destionationKey, keys);
+            var actualCount = db.SortedSetCombineAndStore(SetOperation.Difference, destinationKey, keys);
             ClassicAssert.AreEqual(0, actualCount);
 
-            var actualMembers = db.SortedSetRangeByScoreWithScores(destionationKey);
+            var actualMembers = db.SortedSetRangeByScoreWithScores(destinationKey);
             ClassicAssert.AreEqual(0, actualMembers.Length);
         }
 

@@ -468,7 +468,7 @@ namespace Garnet.server
         /// <param name="destinationKey"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetDifferenceStore(ArgSlice[] keys, ArgSlice destinationKey, out int count);
+        GarnetStatus SortedSetDifferenceStore(Span<ArgSlice> keys, ArgSlice destinationKey, out int count);
 
         /// <summary>
         /// Adds geospatial items (longitude, latitude, name) to the specified key.

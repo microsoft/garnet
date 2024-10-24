@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using Tsavorite.core;
 
@@ -130,7 +131,7 @@ namespace Garnet.server
             => storageSession.SortedSetDifference(keys, out pairs);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetDifferenceStore(ArgSlice[] keys, ArgSlice destinationKey, out int count)
+        public GarnetStatus SortedSetDifferenceStore(Span<ArgSlice> keys, ArgSlice destinationKey, out int count)
             => storageSession.SortedSetDifferenceStore(keys, destinationKey, out count);
 
         /// <inheritdoc />

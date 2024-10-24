@@ -846,7 +846,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("ZDIFF");
             }
 
-            //number of keys
+            // Number of keys
             if (!parseState.TryGetInt(0, out var nKeys))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -943,10 +943,10 @@ namespace Garnet.server
         {
             if (parseState.Count < 3)
             {
-                return AbortWithWrongNumberOfArguments("ZDIFFSTORE");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZDIFFSTORE));
             }
 
-            //number of keys
+            // Number of keys
             if (!parseState.TryGetInt(1, out var nKeys))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -962,12 +962,7 @@ namespace Garnet.server
             }
 
             var destination = parseState.GetArgSliceByRef(0);
-            var keys = new ArgSlice[nKeys];
-
-            for (var i = 2; i < nKeys + 2; i++)
-            {
-                keys[i - 2] = parseState.GetArgSliceByRef(i);
-            }
+            var keys = parseState.Parameters.Slice(2, nKeys);
 
             var status = storageApi.SortedSetDifferenceStore(keys, destination, out var count);
 
