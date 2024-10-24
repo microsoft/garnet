@@ -922,8 +922,6 @@ namespace Garnet.test.cluster
             context.kvPairs = [];
             context.kvPairsObj = [];
 
-            _ = context.clusterTestUtils.ClusterMyId(oldPrimaryIndex, context.logger);
-
             // Populate Primary
             if (disableObjects)
             {
@@ -985,6 +983,10 @@ namespace Garnet.test.cluster
             // Re-assign slots to replica manually since failover option was not            
             _ = context.clusterTestUtils.AddDelSlotsRange(newPrimaryIndex, [(0, 16383)], addslot: false, context.logger);
             _ = context.clusterTestUtils.AddDelSlotsRange(replicaIndex, [(0, 16383)], addslot: false, context.logger);
+<<<<<<< HEAD
+=======
+
+>>>>>>> 5a03f273 (cleanup and update replication test)
             _ = context.clusterTestUtils.AddDelSlotsRange(newPrimaryIndex, [(0, 16383)], addslot: true, context.logger);
             context.clusterTestUtils.BumpEpoch(newPrimaryIndex, logger: context.logger);
 
@@ -1010,7 +1012,13 @@ namespace Garnet.test.cluster
                 _ = Thread.Yield();
             }
 
-            _ = context.clusterTestUtils.ReplicaOf(replicaIndex, newPrimaryIndex, logger: context.logger);
+            var resp = context.clusterTestUtils.ReplicaOf(replicaIndex, newPrimaryIndex, failEx: false, logger: context.logger);
+            // Retry to avoid lock error
+            while (string.IsNullOrEmpty(resp) || !resp.Equals("OK"))
+            {
+                ClusterTestUtils.BackOff(cancellationToken: TestContext.CurrentContext.CancellationToken);
+                resp = context.clusterTestUtils.ReplicaOf(replicaIndex, newPrimaryIndex, failEx: false, logger: context.logger);
+            }
             context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
             context.clusterTestUtils.WaitForReplicaAofSync(newPrimaryIndex, replicaIndex, context.logger);
 
