@@ -912,10 +912,8 @@ namespace Garnet.test.cluster
             var keyLength = 8;
             var kvpairCount = 16;
             var addCount = 5;
-            context.kvPairs = new();
-            context.kvPairsObj = new Dictionary<string, List<int>>();
-
-            _ = context.clusterTestUtils.ClusterMyId(oldPrimaryIndex, context.logger);
+            context.kvPairs = [];
+            context.kvPairsObj = [];
 
             // Populate Primary
             if (disableObjects)
@@ -940,12 +938,12 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicaAofSync(oldPrimaryIndex, replicaIndex, context.logger);
 
             // Make this replica of no-one
-            _ = context.clusterTestUtils.ReplicaOf(1, logger: context.logger);
+            _ = context.clusterTestUtils.ReplicaOf(newPrimaryIndex, logger: context.logger);
 
             // Populate primary to diverge from replica 1 history
             // Use temporary dictionary to populate values lost to replica 1
-            Dictionary<string, int> kvPairs2 = new();
-            Dictionary<string, List<int>> kvPairsObj2 = new Dictionary<string, List<int>>();
+            Dictionary<string, int> kvPairs2 = [];
+            Dictionary<string, List<int>> kvPairsObj2 = [];
             if (disableObjects)
             {
                 if (!performRMW) context.PopulatePrimary(ref kvPairs2, keyLength, kvpairCount, primaryIndex: oldPrimaryIndex);
@@ -972,14 +970,14 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicaAofSync(oldPrimaryIndex, replicaIndex, context.logger);
 
             // Dispose primary
-            context.nodes[0].Dispose(false);
-            context.nodes[0] = null;
+            context.nodes[oldPrimaryIndex].Dispose(false);
+            context.nodes[oldPrimaryIndex] = null;
 
             // Re-assign slots to replica manually since failover option was not            
-            _ = context.clusterTestUtils.AddDelSlotsRange(newPrimaryIndex, new List<(int, int)>() { (0, 16383) }, addslot: false, context.logger);
-            _ = context.clusterTestUtils.AddDelSlotsRange(replicaIndex, new List<(int, int)>() { (0, 16383) }, addslot: false, context.logger);
+            _ = context.clusterTestUtils.AddDelSlotsRange(newPrimaryIndex, [(0, 16383)], addslot: false, context.logger);
+            _ = context.clusterTestUtils.AddDelSlotsRange(replicaIndex, [(0, 16383)], addslot: false, context.logger);
 
-            _ = context.clusterTestUtils.AddDelSlotsRange(newPrimaryIndex, new List<(int, int)>() { (0, 16383) }, addslot: true, context.logger);
+            _ = context.clusterTestUtils.AddDelSlotsRange(newPrimaryIndex, [(0, 16383)], addslot: true, context.logger);
             context.clusterTestUtils.BumpEpoch(newPrimaryIndex, logger: context.logger);
 
             // New primary diverges to its own history by new random seed
@@ -1003,7 +1001,13 @@ namespace Garnet.test.cluster
                 _ = Thread.Yield();
             }
 
-            _ = context.clusterTestUtils.ReplicaOf(replicaIndex, newPrimaryIndex, logger: context.logger);
+            var resp = context.clusterTestUtils.ReplicaOf(replicaIndex, newPrimaryIndex, failEx: false, logger: context.logger);
+            // Retry to avoid lock error
+            while (string.IsNullOrEmpty(resp) || !resp.Equals("OK"))
+            {
+                ClusterTestUtils.BackOff(cancellationToken: TestContext.CurrentContext.CancellationToken);
+                resp = context.clusterTestUtils.ReplicaOf(replicaIndex, newPrimaryIndex, failEx: false, logger: context.logger);
+            }
             context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
             context.clusterTestUtils.WaitForReplicaAofSync(newPrimaryIndex, replicaIndex, context.logger);
 
