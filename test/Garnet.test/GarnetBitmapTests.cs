@@ -165,11 +165,6 @@ namespace Garnet.test
         public void BitmapSetGetBitTest_LTM(bool preSet)
         {
             int bitmapBytes = 512;
-            server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
-                lowMemory: true,
-                MemorySize: (bitmapBytes << 2).ToString(),
-                PageSize: (bitmapBytes << 1).ToString());
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -674,6 +669,28 @@ namespace Garnet.test
                 long pos = db.StringBitPosition(sKey, true);
                 long expectedPos = bitmapList[key];
                 ClassicAssert.AreEqual(expectedPos, pos);
+            }
+        }
+
+        [Test]
+        [Category("BITPOS")]
+        public void BitmapBitPosTest_BoundaryConditions()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const int bitmapSize = 24;
+            byte[] bitmap = new byte[bitmapSize];
+
+            string key = "mybitmap";
+            ClassicAssert.IsTrue(db.StringSet(key, bitmap));
+
+            // first unset bit, should increment
+            for (int i = 0; i < bitmapSize; i ++)
+            {
+                // first unset bit
+                ClassicAssert.AreEqual(i, db.StringBitPosition(key, false));
+                ClassicAssert.IsFalse(db.StringSetBit(key, i, true));
             }
         }
 

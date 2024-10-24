@@ -435,7 +435,9 @@ namespace Garnet.server
                     // Check if input contains a valid number
                     if (!IsValidDouble(length, inputPtr + RespInputHeader.Size, output.SpanByte.AsSpan(), out var incrByFloat))
                         return true;
-                    return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, incrByFloat);
+                    if (!TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, incrByFloat, etagIgnoredOffset))
+                        return false;
+                    break;
 
                 case RespCommand.SETBIT:
                     byte* i = inputPtr + RespInputHeader.Size;
@@ -868,7 +870,7 @@ namespace Garnet.server
                         oldValue.CopyTo(ref newValue);
                         break;
                     }
-                    TryCopyUpdateNumber(ref oldValue, ref newValue, ref output, input: incrByFloat);
+                    TryCopyUpdateNumber(ref oldValue, ref newValue, ref output, input: incrByFloat, etagIgnoredOffset);
                     break;
 
                 case RespCommand.SETBIT:

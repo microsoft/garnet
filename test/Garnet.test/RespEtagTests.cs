@@ -1,6 +1,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -865,6 +866,41 @@ namespace Garnet.test
             ClassicAssert.IsTrue(exception);
         }
 
+        [Test]
+        [TestCase(0, 12.6)]
+        [TestCase(12.6, 0)]
+        [TestCase(10, 10)]
+        [TestCase(910151, 0.23659)]
+        [TestCase(663.12336412, 12342.3)]
+        [TestCase(10, -110)]
+        [TestCase(110, -110.234)]
+        [TestCase(-2110.95255555, -110.234)]
+        [TestCase(-2110.95255555, 100000.526654512219412)]
+        [TestCase(double.MaxValue, double.MinValue)]
+        public void SimpleIncrementByFloatForEtagSetData(double initialValue, double incrByValue)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key1";
+            db.Execute("SETWITHETAG", key, initialValue);
+
+            var expectedResult = initialValue + incrByValue;
+
+            var actualResultStr = (string)db.Execute("INCRBYFLOAT", [key, incrByValue]);
+            var actualResultRawStr = db.StringGet(key);
+
+            var actualResult = double.Parse(actualResultStr, CultureInfo.InvariantCulture);
+            var actualResultRaw = double.Parse(actualResultRawStr, CultureInfo.InvariantCulture);
+
+            Assert.That(actualResult, Is.EqualTo(expectedResult).Within(1.0 / Math.Pow(10, 15)));
+            Assert.That(actualResult, Is.EqualTo(actualResultRaw).Within(1.0 / Math.Pow(10, 15)));
+        
+            RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", key);
+            long etag = (long)res[0];
+            double value = double.Parse(res[1].ToString(), CultureInfo.InvariantCulture);
+            Assert.That(value, Is.EqualTo(actualResultRaw).Within(1.0 / Math.Pow(10, 15)));
+            ClassicAssert.AreEqual(1, etag);
+        }
 
         [Test]
         public void SingleDeleteForEtagSetData()
@@ -1911,6 +1947,12 @@ namespace Garnet.test
                 long firstSetBitPosition = db.StringBitPosition(key, true);
                 ClassicAssert.AreEqual(0, firstSetBitPosition); // As we are setting bits in order, first set bit should be 0
 
+                // find the first unset bit
+                long firstUnsetBitPos = db.StringBitPosition(key, false);
+                long firstUnsetBitPosExpected = i == 63 ? -1 : i + 1;
+                ClassicAssert.AreEqual(firstUnsetBitPosExpected, firstUnsetBitPos); // As we are setting bits in order, first unset bit should be 1 ahead
+
+
                 // with each bit set that we do, we are increasing the etag as well by 1
                 etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [key]))[0].ToString());
                 ClassicAssert.AreEqual(expectedBitCount, etagToCheck);
@@ -1931,6 +1973,11 @@ namespace Garnet.test
 
                 setbits = db.StringBitCount(key);
                 ClassicAssert.AreEqual(expectedBitCount, setbits);
+
+                // find the first set bit
+                long firstSetBit = db.StringBitPosition(key, true);
+                long expectedSetBit = i == 0 ? -1 : 0;
+                ClassicAssert.AreEqual(expectedSetBit, firstSetBit);
 
                 // Use BitPosition to find the first unset bit
                 long firstUnsetBitPosition = db.StringBitPosition(key, false);

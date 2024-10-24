@@ -529,7 +529,7 @@ namespace Garnet.server
                 return true;
             }
 
-            return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo, valueOffset, valueOffset);
+            return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo, valueOffset);
         }
 
         static void CopyUpdateNumber(long next, ref SpanByte newValue, ref SpanByteAndMemory output, int etagIgnoredOffset)
@@ -618,37 +618,6 @@ namespace Garnet.server
 
             // Move to tail of the log and update
             CopyUpdateNumber(val, ref newValue, ref output, etagIgnoredOffset);
-        }
-
-        /// <summary>
-        /// Copy update from old value to new value while also validating whether oldValue is a numerical value.
-        /// </summary>
-        /// <param name="oldValue">Old value copying from</param>
-        /// <param name="newValue">New value copying to</param>
-        /// <param name="output">Output value</param>
-        /// <param name="input">Parsed input value</param>
-        static void TryCopyUpdateNumber(ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, double input)
-        {
-            newValue.ExtraMetadata = oldValue.ExtraMetadata;
-
-            // Check if value contains a valid number
-            if (!IsValidDouble(oldValue.LengthWithoutMetadata, oldValue.ToPointer(), output.SpanByte.AsSpan(), out var val))
-            {
-                // Move to tail of the log even when oldValue is alphanumeric
-                // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
-                oldValue.CopyTo(ref newValue);
-                return;
-            }
-
-            val += input;
-            if (!double.IsFinite(val))
-            {
-                output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
-                return;
-            }
-
-            // Move to tail of the log and update
-            CopyUpdateNumber(val, ref newValue, ref output);
         }
 
         /// <summary>

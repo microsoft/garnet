@@ -141,7 +141,7 @@ namespace Garnet.server
         /// Find pos of set/clear bit in a sequence of bytes.
         /// </summary>
         /// <param name="value">Pointer to start of bitmap.</param>
-        /// <param name="bSetVal"></param>
+        /// <param name="bSetVal">The bit value to search for (0 for cleared bit or 1 for set bit).</param>
         /// <param name="startOffset">Starting offset into bitmap.</param>
         /// <param name="endOffset">End offset into bitmap.</param>
         /// <returns></returns>
@@ -149,27 +149,28 @@ namespace Garnet.server
         {
             // Mask set to look for 0 or 1 depending on clear/set flag
             bool bflag = (bSetVal == 0);
-            long mask = bflag ? -1 : 0;
+            long mask = bflag ? -1 : 0; // Mask for all 1's (-1 for 0 search) or all 0's (0 for 1 search)
             long len = (endOffset - startOffset) + 1;
-            long remainder = len & 7;
+            long remainder = len & 7; // Check if length is divisible by 8
             byte* curr = value + startOffset;
-            byte* end = curr + (len - remainder);
+            byte* end = curr + (len - remainder); // Process up to the aligned part of the bitmap
 
-            // Search for first word not matching mask.
+            // Search for first word not matching the mask.
             while (curr < end)
             {
                 long v = *(long*)(curr);
                 if (v != mask) break;
-                curr += 8;
+                curr += 8; // Move by 64-bit chunks
             }
 
-            long pos = (((long)(curr - value)) << 3);
+            // Calculate bit position from start of bitmap
+            long pos = (((long)(curr - value)) << 3); // Convert byte position to bit position
 
             long payload = 0;
-            // Adjust end so we can retrieve word
+            // Adjust end to account for remainder
             end = end + remainder;
 
-            // Build payload at least one byte to examine
+            // Build payload from remaining bytes
             if (curr < end) payload |= (long)curr[0] << 56;
             if (curr + 1 < end) payload |= (long)curr[1] << 48;
             if (curr + 2 < end) payload |= (long)curr[2] << 40;
@@ -179,13 +180,24 @@ namespace Garnet.server
             if (curr + 6 < end) payload |= (long)curr[6] << 8;
             if (curr + 7 < end) payload |= (long)curr[7];
 
-            // Transform to count leading zeros
-            payload = (bSetVal == 0) ? ~payload : payload;
+            // Transform payload for bit search
+            payload = (bflag) ? ~payload : payload;
 
+            // Handle edge cases where the bitmap is all 0's or all 1's
             if (payload == mask)
-                return -1;
+            {
+                if (!bflag)
+                {
+                    return -1;    
+                }
+            }
 
+            // Otherwise, count leading zeros to find the position of the first 1 or 0
             pos += (long)Lzcnt.X64.LeadingZeroCount((ulong)payload);
+
+            // if we are exceeding it, return -1
+            if (pos >= len * 8)
+             return -1;
 
             return pos;
         }
