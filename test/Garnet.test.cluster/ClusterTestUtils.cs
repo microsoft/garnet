@@ -577,6 +577,13 @@ namespace Garnet.test.cluster
 
         public static void BackOff(TimeSpan timeSpan = default) => Thread.Sleep(timeSpan == default ? backoff : timeSpan);
 
+        public static void BackOff(CancellationToken cancellationToken, TimeSpan timeSpan = default, string msg = null)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                ClassicAssert.Fail(msg ?? "Cancellation Requested");
+            Task.Delay(timeSpan == default ? backoff : timeSpan, cancellationToken);
+        }
+
         public void Connect(ILogger logger = null)
         {
             InitMultiplexer(GetRedisConfig(endpoints), textWriter, logger: logger);
@@ -1938,7 +1945,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; ClusterForget");
+                logger?.LogError(ex, "An error has occurred; ClusterForget");
                 Assert.Fail(ex.Message);
                 return ex.Message;
             }
@@ -1964,7 +1971,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; ClusterReset");
+                logger?.LogError(ex, "An error has occurred; ClusterReset");
                 Assert.Fail(ex.Message);
                 return ex.Message;
             }
@@ -1988,7 +1995,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; ClusterKeySlot");
+                logger?.LogError(ex, "An error has occurred; ClusterKeySlot");
                 Assert.Fail();
                 return -1;
             }
@@ -2006,7 +2013,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; FlushAllDatabases");
+                logger?.LogError(ex, "An error has occurred; FlushAllDatabases");
                 Assert.Fail();
             }
         }
@@ -2023,7 +2030,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; ClusterNodes");
+                logger?.LogError(ex, "An error has occurred; ClusterNodes");
                 Assert.Fail();
                 return null;
             }

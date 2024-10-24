@@ -325,7 +325,7 @@ namespace Garnet.cluster
                 cEntry = clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory();
 
                 // Break early if main-memory-replication on and do not wait for OnDemandCheckpoint
-                // We do this to avoid waiting indefinetely for a checkpoint that will never be taken
+                // We do this to avoid waiting indefinitely for a checkpoint that will never be taken
                 if (clusterProvider.serverOptions.MainMemoryReplication && !clusterProvider.serverOptions.OnDemandCheckpoint)
                 {
                     logger?.LogWarning("MainMemoryReplication: OnDemandCheckpoint is turned off, skipping valid checkpoint acquisition.");
