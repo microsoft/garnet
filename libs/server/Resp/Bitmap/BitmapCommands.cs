@@ -65,43 +65,43 @@ namespace Garnet.server
         /// BITFIELD command
         /// </summary>
         [FieldOffset(0)]
-        public byte secondaryOpCode;
+        public RespCommand secondaryCommand;
 
         /// <summary>
         /// encoding info
         /// </summary>
-        [FieldOffset(1)]
+        [FieldOffset(sizeof(RespCommand))]
         public byte typeInfo;
 
         /// <summary>
         /// offset
         /// </summary>
-        [FieldOffset(2)]
+        [FieldOffset(sizeof(RespCommand) + sizeof(byte))]
         public long offset;
 
         /// <summary>
         /// value
         /// </summary>
-        [FieldOffset(10)]
+        [FieldOffset(sizeof(RespCommand) + sizeof(byte) + sizeof(long))]
         public long value;
 
         /// <summary>
         /// BitFieldOverflow enum 
         /// </summary>
-        [FieldOffset(18)]
+        [FieldOffset(sizeof(RespCommand) + sizeof(byte) + (2 * sizeof(long)))]
         public byte overflowType;
 
         /// <summary>
         /// add a command to execute in bitfield
         /// </summary>
-        /// <param name="secondaryOpCode"></param>
+        /// <param name="secondaryCommand"></param>
         /// <param name="typeInfo"></param>
         /// <param name="offset"></param>
         /// <param name="value"></param>
         /// <param name="overflowType"></param>
-        public BitFieldCmdArgs(byte secondaryOpCode, byte typeInfo, long offset, long value, byte overflowType)
+        public BitFieldCmdArgs(RespCommand secondaryCommand, byte typeInfo, long offset, long value, byte overflowType)
         {
-            this.secondaryOpCode = secondaryOpCode;
+            this.secondaryCommand = secondaryCommand;
             this.typeInfo = typeInfo;
             this.offset = offset;
             this.value = value;
@@ -488,7 +488,7 @@ namespace Garnet.server
 
             for (var i = 0; i < secondaryCommandArgs.Count; i++)
             {
-                var opCode = (byte)secondaryCommandArgs[i].Item1;
+                var opCode = secondaryCommandArgs[i].Item1;
                 var opArgs = secondaryCommandArgs[i].Item2;
                 parseState.Initialize(opArgs.Length + (isOverflowTypeSet ? 1 : 0));
 
@@ -508,7 +508,7 @@ namespace Garnet.server
                 var status = storageApi.StringBitField(ref sbKey, ref input, opCode,
                     ref output);
 
-                if (status == GarnetStatus.NOTFOUND && opCode == (byte)RespCommand.GET)
+                if (status == GarnetStatus.NOTFOUND && opCode == RespCommand.GET)
                 {
                     while (!RespWriteUtils.WriteArrayItem(0, ref dcurr, dend))
                         SendAndReset();
