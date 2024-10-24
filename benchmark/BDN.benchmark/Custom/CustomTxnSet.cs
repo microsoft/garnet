@@ -10,7 +10,7 @@ namespace BDN.benchmark.CustomProcs
     /// <summary>
     /// Custom procedure to set values
     /// </summary>
-    sealed class CustomProcSet : CustomTransactionProcedure
+    sealed class CustomTxnSet : CustomTransactionProcedure
     {
         /// <summary>
         /// Parameters including command
@@ -20,7 +20,7 @@ namespace BDN.benchmark.CustomProcs
         /// <summary>
         /// Command name
         /// </summary>
-        public const string CommandName = "CPBSET";
+        public const string CommandName = "CTXNSET";
 
         ArgSlice setA;
         ArgSlice setB;
@@ -33,7 +33,7 @@ namespace BDN.benchmark.CustomProcs
         ArgSlice valueD;
 
         /// <summary>
-        ///  CPBSET key1 key2 key3 key4 value1 value2 value3 value4
+        ///  CTXNSET key1 key2 key3 key4 value1 value2 value3 value4
         /// </summary>
         /// <typeparam name="TGarnetReadApi"></typeparam>
         /// <param name="api"></param>
