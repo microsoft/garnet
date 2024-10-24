@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
-using System.Reflection.PortableExecutable;
 using Garnet.common;
 using Tsavorite.core;
 
