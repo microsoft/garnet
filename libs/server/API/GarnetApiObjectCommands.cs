@@ -131,7 +131,7 @@ namespace Garnet.server
             => storageSession.SortedSetDifference(keys, out pairs);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetDifferenceStore(Span<ArgSlice> keys, ArgSlice destinationKey, out int count)
+        public GarnetStatus SortedSetDifferenceStore(ReadOnlySpan<ArgSlice> keys, ArgSlice destinationKey, out int count)
             => storageSession.SortedSetDifferenceStore(keys, destinationKey, out count);
 
         /// <inheritdoc />
@@ -305,6 +305,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SetIsMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.SetIsMember(key, ref input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SetIsMember(ArgSlice key, ArgSlice[] members, out int[] result)
+            => storageSession.SetIsMember(key, members, out result, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetPop(ArgSlice key, out ArgSlice member)

@@ -383,7 +383,7 @@ namespace Garnet.test
                 RespCommand.MULTI,
             ];
 
-            foreach (RespCommand cmd in Enum.GetValues(typeof(RespCommand)))
+            foreach (var cmd in Enum.GetValues<RespCommand>().Where(cmd => cmd != RespCommand.INVALID))
             {
                 var expectedAofIndependence = Array.IndexOf(aofIndpendentCmds, cmd) != -1;
                 ClassicAssert.AreEqual(expectedAofIndependence, cmd.IsAofIndependent());

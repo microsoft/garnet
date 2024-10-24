@@ -999,6 +999,43 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanDoZDiff()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key1 = new RedisKey("key1");
+            var key2 = new RedisKey("key2");
+            var key1Values = new[] { new SortedSetEntry("Hello", 1), new SortedSetEntry("World", 2) };
+            var key2Values = new[] { new SortedSetEntry("Hello", 5), new SortedSetEntry("Mundo", 7) };
+            var expectedValue = new SortedSetEntry("World", 2);
+
+            db.SortedSetAdd(key1, key1Values);
+            db.SortedSetAdd(key2, key2Values);
+
+            var diff = db.SortedSetCombine(SetOperation.Difference, [key1, key2]);
+            ClassicAssert.AreEqual(1, diff.Length);
+            ClassicAssert.AreEqual(expectedValue.Element.ToString(), diff[0].ToString());
+
+            var diffWithScore = db.SortedSetCombineWithScores(SetOperation.Difference, [key1, key2]);
+            ClassicAssert.AreEqual(1, diffWithScore.Length);
+            ClassicAssert.AreEqual(expectedValue.Element.ToString(), diffWithScore[0].Element.ToString());
+            ClassicAssert.AreEqual(expectedValue.Score, diffWithScore[0].Score);
+
+            // With only one key, it should return the same elements
+            diffWithScore = db.SortedSetCombineWithScores(SetOperation.Difference, [key1]);
+            ClassicAssert.AreEqual(2, diffWithScore.Length);
+            ClassicAssert.AreEqual(key1Values[0].Element.ToString(), diffWithScore[0].Element.ToString());
+            ClassicAssert.AreEqual(key1Values[0].Score, diffWithScore[0].Score);
+            ClassicAssert.AreEqual(key1Values[1].Element.ToString(), diffWithScore[1].Element.ToString());
+            ClassicAssert.AreEqual(key1Values[1].Score, diffWithScore[1].Score);
+
+            // With no value key, it should return an empty array
+            diffWithScore = db.SortedSetCombineWithScores(SetOperation.Difference, [new RedisKey("key3")]);
+            ClassicAssert.AreEqual(0, diffWithScore.Length);
+        }
+
+        [Test]
         [TestCase(false)]
         [TestCase(true)]
         public void CheckSortedSetDifferenceStoreSE(bool isDestinationKeyExisting)

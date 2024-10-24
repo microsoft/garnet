@@ -664,7 +664,8 @@ namespace Garnet.server
                 // Set Commands
                 RespCommand.SADD => SetAdd(ref storageApi),
                 RespCommand.SMEMBERS => SetMembers(ref storageApi),
-                RespCommand.SISMEMBER => SetIsMember(ref storageApi),
+                RespCommand.SISMEMBER => SetIsMember(cmd, ref storageApi),
+                RespCommand.SMISMEMBER => SetIsMember(cmd, ref storageApi),
                 RespCommand.SREM => SetRemove(ref storageApi),
                 RespCommand.SCARD => SetLength(ref storageApi),
                 RespCommand.SPOP => SetPop(ref storageApi),
@@ -807,7 +808,7 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomObjectCommand(currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid,
+            TryCustomObjectCommand(currentCustomObjectCommand.GetObjectType(), currentCustomObjectCommand.subid,
                 currentCustomObjectCommand.type, ref storageApi);
             currentCustomObjectCommand = null;
             return true;

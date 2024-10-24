@@ -539,7 +539,7 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="pairs"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus SortedSetDifference(Span<ArgSlice> keys, out Dictionary<byte[], double> pairs)
+        public unsafe GarnetStatus SortedSetDifference(ReadOnlySpan<ArgSlice> keys, out Dictionary<byte[], double> pairs)
         {
             pairs = default;
 
@@ -568,6 +568,13 @@ namespace Garnet.server
                     {
                         return GarnetStatus.WRONGTYPE;
                     }
+
+                    if (keys.Length == 1)
+                    {
+                        pairs = firstSortedSet.Dictionary;
+                        return GarnetStatus.OK;
+                    }
+
                     // read the rest of the keys
                     for (var item = 1; item < keys.Length; item++)
                     {
@@ -604,7 +611,7 @@ namespace Garnet.server
         /// <param name="destinationKey"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus SortedSetDifferenceStore(Span<ArgSlice> keys, ArgSlice destinationKey, out int count)
+        public unsafe GarnetStatus SortedSetDifferenceStore(ReadOnlySpan<ArgSlice> keys, ArgSlice destinationKey, out int count)
         {
             count = default;
 

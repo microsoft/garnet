@@ -480,7 +480,7 @@ namespace Garnet.server
         /// <param name="destinationKey"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetDifferenceStore(Span<ArgSlice> keys, ArgSlice destinationKey, out int count);
+        GarnetStatus SortedSetDifferenceStore(ReadOnlySpan<ArgSlice> keys, ArgSlice destinationKey, out int count);
 
         /// <summary>
         /// Adds geospatial items (longitude, latitude, name) to the specified key.
@@ -996,7 +996,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="secondaryCommand"></param>
         /// <returns></returns>
-        GarnetStatus StringBitField(ref SpanByte key, ref RawStringInput input, byte secondaryCommand, ref SpanByteAndMemory output);
+        GarnetStatus StringBitField(ref SpanByte key, ref RawStringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Performs arbitrary bitfield integer operations on strings.
@@ -1368,6 +1368,14 @@ namespace Garnet.server
         GarnetStatus SetIsMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
+        /// Returns whether each member is a member of the set stored at key.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="members"></param>
+        /// <returns></returns>
+        GarnetStatus SetIsMember(ArgSlice key, ArgSlice[] members, out int[] result);
+
+        /// <summary>
         /// Iterates over the members of the Set with the given key using a cursor,
         /// a match pattern and count parameters.
         /// </summary>
@@ -1623,7 +1631,7 @@ namespace Garnet.server
         /// <param name="secondaryCommand"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref RawStringInput input, byte secondaryCommand, ref SpanByteAndMemory output);
+        GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref RawStringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output);
 
         #endregion
 
