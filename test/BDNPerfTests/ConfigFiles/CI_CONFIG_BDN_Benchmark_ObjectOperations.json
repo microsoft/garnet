@@ -3,11 +3,11 @@
     "framework": "net8.0",
     "filter": "BDN.benchmark.Operations.ObjectOperations.*",
 
-    "expectedZAddRem_ACL_AllocatedValue_linux": 0,
-    "expectedLPushPop_ACL_AllocatedValue_linux": 0,
-    "expectedSAddRem_ACL_AllocatedValue_linux": 0,
-    "expectedHSetDel_ACL_AllocatedValue_linux": 0,
-    "expectedMyDictSetGet_ACL_AllocatedValue_linux": 0,
+    "expectedZAddRem_ACL_AllocatedValue_linux": 18400,
+    "expectedLPushPop_ACL_AllocatedValue_linux": 14400,
+    "expectedSAddRem_ACL_AllocatedValue_linux": 12800,
+    "expectedHSetDel_ACL_AllocatedValue_linux": 43201,
+    "expectedMyDictSetGet_ACL_AllocatedValue_linux": 24000,
     "expectedCustomProcSet_ACL_AllocatedValue_linux": 0,
 
     "expectedZAddRem_AOF_AllocatedValue_linux": 18400,
@@ -25,11 +25,11 @@
     "expectedCustomProcSet_None_AllocatedValue_linux": 0,
 
 
-    "expectedZAddRem_ACL_AllocatedValue_win": 0,
-    "expectedLPushPop_ACL_AllocatedValue_win": 0,
-    "expectedSAddRem_ACL_AllocatedValue_win": 0,
-    "expectedHSetDel_ACL_AllocatedValue_win": 0,
-    "expectedMyDictSetGet_ACL_AllocatedValue_win": 0,
+    "expectedZAddRem_ACL_AllocatedValue_win": 18400,
+    "expectedLPushPop_ACL_AllocatedValue_win": 14400,
+    "expectedSAddRem_ACL_AllocatedValue_win": 12800,
+    "expectedHSetDel_ACL_AllocatedValue_win": 43201,
+    "expectedMyDictSetGet_ACL_AllocatedValue_win": 24000,
     "expectedCustomProcSet_ACL_AllocatedValue_win": 0,
 
     "expectedZAddRem_AOF_AllocatedValue_win": 18400,
