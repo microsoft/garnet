@@ -40,4 +40,4 @@ These are the helper methods for developing custom transactions.
     The `GetFirseArg` method is used to retrieve the argument from the input at offset 0.
 
 Registering the custom raw-string function is done on the server-side by calling the `NewCommand(string name, int numParams, CommandType type, CustomRawStringFunctions customFunctions, long expirationTicks = 0)` method on the Garnet server object's `RegisterAPI` object with its name, number of parameters, the CommandType (Read / ReadModifyWrite), an instance of the custom raw-string function class, and optionally the number of ticks for expiration.\
-It is possible to register the custom raw-string function from the client-side as well (as an admin command, given that the code already resides on the server) by using the `REGISTER` command (see [Custom Commands](../dev/custom-commands.md)). 
+It is possible to register the custom raw-string function from the client-side as well (as an admin command, given that the code already resides on the server) by using the `REGISTERCS` command (see [Custom Commands](../dev/custom-commands.md)). 

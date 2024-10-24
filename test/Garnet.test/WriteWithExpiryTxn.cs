@@ -16,19 +16,19 @@ namespace Garnet
     /// </summary>
     sealed class WriteWithExpiryTxn : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             int offset = 0;
-            AddKey(GetNextArg(input, ref offset), LockType.Exclusive, false);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, false);
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             int offset = 0;
-            var key = GetNextArg(input, ref offset);
-            var value = GetNextArg(input, ref offset);
-            var expiryMs = GetNextArg(input, ref offset);
+            var key = GetNextArg(ref procInput, ref offset);
+            var value = GetNextArg(ref procInput, ref offset);
+            var expiryMs = GetNextArg(ref procInput, ref offset);
 
             api.SETEX(key, value, expiryMs);
             WriteSimpleString(ref output, "SUCCESS");
