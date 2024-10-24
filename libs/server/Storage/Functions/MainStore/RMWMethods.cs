@@ -811,7 +811,7 @@ namespace Garnet.server
                 default:
                     if ((ushort)input.header.cmd >= CustomCommandManager.StartOffset)
                     {
-                        var functions = functionsState.customCommands[(byte)input.header.cmd - CustomCommandManager.StartOffset].functions;
+                        var functions = functionsState.customCommands[(ushort)input.header.cmd - CustomCommandManager.StartOffset].functions;
                         var expiration = input.arg1;
                         if (expiration == 0)
                         {
