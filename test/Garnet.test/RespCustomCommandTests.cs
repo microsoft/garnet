@@ -962,5 +962,41 @@ namespace Garnet.test
             }
             ClassicAssert.IsNull(resp);
         }
+
+        [Test]
+        public void RateLimiterTest()
+        {
+            server.Register.NewTransactionProc("RATELIMIT", () => new RateLimiterTxn(), new RespCommandsInfo { Arity = 4 });
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Basic allowed entries within limit
+            var result = db.Execute("RATELIMIT", "key1", 1000, 5);
+            ClassicAssert.AreEqual("ALLOWED", result.ToString());
+
+            result = db.Execute("RATELIMIT", "key1", 1000, 5);
+            ClassicAssert.AreEqual("ALLOWED", result.ToString());
+
+            // Throttled test
+            for (var i = 0; i < 5; i++)
+            {
+                result = db.Execute("RATELIMIT", "key2", 10000, 5);
+                ClassicAssert.AreEqual("ALLOWED", result.ToString());
+            }
+
+            result = db.Execute("RATELIMIT", "key2", 1000, 5);
+            ClassicAssert.AreEqual("THROTTLED", result.ToString());
+
+            // Test sliding window expiration
+            for (var i = 0; i < 5; i++)
+            {
+                result = db.Execute("RATELIMIT", "key3", 1000, 5);
+                ClassicAssert.AreEqual("ALLOWED", result.ToString());
+            }
+            Thread.Sleep(TimeSpan.FromSeconds(1));
+            result = db.Execute("RATELIMIT", "key3", 1000, 5);
+            ClassicAssert.AreEqual("ALLOWED", result.ToString());
+        }
     }
 }
