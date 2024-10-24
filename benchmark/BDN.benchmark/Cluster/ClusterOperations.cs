@@ -36,14 +36,14 @@ namespace BDN.benchmark.Cluster
             cc.AddSlotRange([(0, 16383)]);
             cc.CreateGetSet();
             cc.CreateMGetMSet();
-            cc.CreateCPBSET();
+            cc.CreateCTXNSET();
 
             // Warmup/Prepopulate stage
             cc.Consume(cc.singleGetSet[1].ptr, cc.singleGetSet[1].buffer.Length);
             // Warmup/Prepopulate stage
             cc.Consume(cc.singleMGetMSet[1].ptr, cc.singleMGetMSet[1].buffer.Length);
             // Warmup/Prepopulate stage
-            cc.Consume(cc.singleCPBSET.ptr, cc.singleCPBSET.buffer.Length);
+            cc.Consume(cc.singleCTXNSET.ptr, cc.singleCTXNSET.buffer.Length);
         }
 
         [GlobalCleanup]
@@ -77,9 +77,9 @@ namespace BDN.benchmark.Cluster
         }
 
         [Benchmark]
-        public void CPBSET()
+        public void CTXNSET()
         {
-            cc.Consume(cc.singleCPBSET.ptr, cc.singleCPBSET.buffer.Length);
+            cc.Consume(cc.singleCTXNSET.ptr, cc.singleCTXNSET.buffer.Length);
         }
     }
 }
