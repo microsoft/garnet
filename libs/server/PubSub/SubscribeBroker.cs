@@ -533,7 +533,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteArrayLength(numOfChannels * 2, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                var currChannelIdx = input.parseStateStartIdx;
+                var currChannelIdx = input.parseStateFirstArgIdx;
                 while (currChannelIdx < numOfChannels)
                 {
                     var channelArg = input.parseState.GetArgSliceByRef(currChannelIdx);
