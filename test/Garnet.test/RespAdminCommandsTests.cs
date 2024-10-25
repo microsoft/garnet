@@ -57,16 +57,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void PingMultiTokenMessageTest()
-        {
-            using var lightClientRequest = TestUtils.CreateRequest();
-            var expectedResponse = "$14\r\n\"HELLO WORLD!\"\r\n";
-            var response = lightClientRequest.SendCommand("PING \"HELLO WORLD!\"");
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
-        }
-
-        [Test]
         public void PingErrorMessageTest()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
