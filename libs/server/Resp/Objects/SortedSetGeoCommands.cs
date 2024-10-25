@@ -143,47 +143,5 @@ namespace Garnet.server
 
             return true;
         }
-
-        /// <summary>
-        /// GEOSEARCHSTORE: Store the the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
-        /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="storageApi"></param>
-        /// <returns></returns>
-        private unsafe bool GeoSearchStore<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
-        {
-            if (parseState.Count < 4)
-            {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GEOSEARCHSTORE));
-            }
-
-            var destinationKey = parseState.GetArgSliceByRef(0);
-            var sourceKey = parseState.GetArgSliceByRef(1);
-
-            var input = new ObjectInput(new RespInputHeader
-            {
-                type = GarnetObjectType.SortedSet,
-            }, ref parseState, 2);
-
-            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.GeoSearchStore(sourceKey, destinationKey, ref input, ref output);
-
-            switch (status)
-            {
-                case GarnetStatus.OK:
-                    if (!output.IsSpanByte)
-                        SendAndReset(output.Memory, output.Length);
-                    else
-                        dcurr += output.Length;
-                    break;
-                case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-            }
-
-            return true;
-        }
     }
 }
