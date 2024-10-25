@@ -580,6 +580,9 @@ namespace Garnet.server
                 RespCommand.PSUBSCRIBE => NetworkPSUBSCRIBE(),
                 RespCommand.UNSUBSCRIBE => NetworkUNSUBSCRIBE(),
                 RespCommand.PUNSUBSCRIBE => NetworkPUNSUBSCRIBE(),
+                RespCommand.PUBSUB_CHANNELS => NetworkPUBSUB_CHANNELS(),
+                RespCommand.PUBSUB_NUMSUB => NetworkPUBSUB_NUMSUB(),
+                RespCommand.PUBSUB_NUMPAT => NetworkPUBSUB_NUMPAT(),
                 // Custom Object Commands
                 RespCommand.COSCAN => ObjectScan(GarnetObjectType.All, ref storageApi),
                 // Sorted Set commands
