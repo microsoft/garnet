@@ -235,21 +235,6 @@ namespace Garnet.server
             this.parseState = parseState.Slice(startIdx);
         }
 
-        /// <summary>
-        /// Create a new instance of ObjectInput
-        /// </summary>
-        /// <param name="header">Input header</param>
-        /// <param name="parseState">Parse state</param>
-        /// <param name="startIdx">First command argument index in parse state</param>
-        /// <param name="argCount">Command argument count in parse state</param>
-        /// <param name="arg1">First general-purpose argument</param>
-        /// <param name="arg2">Second general-purpose argument</param>
-        public ObjectInput(RespInputHeader header, ref SessionParseState parseState, int startIdx, int argCount, int arg1 = 0, int arg2 = 0)
-            : this(header, arg1, arg2)
-        {
-            this.parseState = parseState.Slice(startIdx, argCount);
-        }
-
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + (2 * sizeof(int)) // arg1 + arg2
@@ -379,20 +364,6 @@ namespace Garnet.server
             this.parseState = parseState.Slice(startIdx);
         }
 
-        /// <summary>
-        /// Create a new instance of RawStringInput
-        /// </summary>
-        /// <param name="cmd">Command</param>
-        /// <param name="parseState">Parse state</param>
-        /// <param name="startIdx">First command argument index in parse state</param>
-        /// <param name="argCount">Command argument count in parse state</param>
-        /// <param name="arg1">General-purpose argument</param>
-        /// <param name="flags">Flags</param>
-        public RawStringInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, int argCount, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
-        {
-            this.parseState = parseState.Slice(startIdx, argCount);
-        }
-
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
@@ -472,17 +443,6 @@ namespace Garnet.server
         public CustomProcedureInput(ref SessionParseState parseState, int startIdx)
         {
             this.parseState = parseState.Slice(startIdx);
-        }
-
-        /// <summary>
-        /// Create a new instance of RawStringInput
-        /// </summary>
-        /// <param name="parseState">Parse state</param>
-        /// <param name="startIdx">First command argument index in parse state</param>
-        /// <param name="argCount">Command argument count in parse state</param>
-        public CustomProcedureInput(ref SessionParseState parseState, int startIdx, int argCount)
-        {
-            this.parseState = parseState.Slice(startIdx, argCount);
         }
 
         /// <inheritdoc />
