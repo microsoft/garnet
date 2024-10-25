@@ -1011,7 +1011,7 @@ namespace Garnet.server
 
             WriteDirectLarge(message);
 
-            while(!RespWriteUtils.WriteNewLine(ref dcurr, dend))
+            while (!RespWriteUtils.WriteNewLine(ref dcurr, dend))
                 SendAndReset();
         }
 

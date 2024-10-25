@@ -459,7 +459,6 @@ namespace Garnet.server
         /// Create a new instance of RawStringInput
         /// </summary>
         /// <param name="parseState">Parse state</param>
-        /// <param name="startIdx">First command argument index in parse state</param>
         public CustomProcedureInput(ref SessionParseState parseState)
         {
             this.parseState = parseState;
