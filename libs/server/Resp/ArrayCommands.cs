@@ -451,7 +451,8 @@ namespace Garnet.server
                 return NetworkPING();
             }
 
-            WriteDirectLarge(new ReadOnlySpan<byte>(recvBufferPtr + readHead, endReadHead - readHead));
+            var message = parseState.GetArgSliceByRef(0);
+            WriteDirectLargeRespString(message);
             return true;
         }
     }

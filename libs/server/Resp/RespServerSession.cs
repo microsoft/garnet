@@ -1004,6 +1004,17 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe void WriteDirectLargeRespString(ArgSlice message)
+        {
+            var headerLength = NumUtils.NumDigits(message.Length) + 3; // `$` + message length digits + `\r\n`
+            var respMessagePtr = message.ptr - headerLength;
+            var respMessageLength = headerLength + message.Length + 2; // header length + message length + `\r\n`
+            var respMessage = new ReadOnlySpan<byte>(respMessagePtr, respMessageLength);
+
+            WriteDirectLarge(respMessage);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteDirectLarge(ReadOnlySpan<byte> src)
         {
             // Repeat while we have bytes left to write

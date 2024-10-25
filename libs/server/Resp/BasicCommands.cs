@@ -1156,7 +1156,8 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ECHO));
             }
 
-            WriteDirectLarge(new ReadOnlySpan<byte>(recvBufferPtr + readHead, endReadHead - readHead));
+            var message = parseState.GetArgSliceByRef(0);
+            WriteDirectLargeRespString(message);
             return true;
         }
 
