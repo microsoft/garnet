@@ -192,7 +192,7 @@ namespace Garnet.server
         /// <param name="idxOffset">Offset value to the underlying buffer</param>
         public SessionParseState Slice(int idxOffset)
         {
-            Debug.Assert(idxOffset < rootCount);
+            Debug.Assert(idxOffset - 1 < rootCount);
 
             var count = rootCount - idxOffset;
             var offsetBuffer = bufferPtr + idxOffset;
