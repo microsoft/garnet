@@ -18,6 +18,14 @@ namespace BDN.benchmark.CustomProcs
         /// </summary>
         public const string CommandName = "CPROCSET";
 
+        /// <summary>
+        /// CPROCSET key1 key2 key3 key4 value1 value2 value3 value4
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="api"></param>
+        /// <param name="procInput"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
         public override bool Execute<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             var offset = 0;

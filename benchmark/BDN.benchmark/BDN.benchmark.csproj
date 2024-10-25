@@ -25,7 +25,7 @@
     <Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="Custom\MyDictObject.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\MyDictSet.cs" Link="Custom\MyDictSet.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\MyDictGet.cs" Link="Custom\MyDictGet.cs" />
-		<Compile Include="..\..\main\GarnetServer\Extensions\SetIfPM.cs" Link="Custom\SetIfPM.cs" />
-	</ItemGroup>
+    <Compile Include="..\..\main\GarnetServer\Extensions\SetIfPM.cs" Link="Custom\SetIfPM.cs" />
+  </ItemGroup>
 
 </Project>
