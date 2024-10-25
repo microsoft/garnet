@@ -1156,7 +1156,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ECHO));
             }
 
-            var message = parseState.GetArgSliceByRef(0);
+            var message = parseState.GetArgSliceByRef(0).ReadOnlySpan;
             WriteDirectLargeRespString(message);
             return true;
         }

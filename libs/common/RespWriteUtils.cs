@@ -292,6 +292,22 @@ namespace Garnet.common
         /// <summary>
         /// Write bulk string
         /// </summary>
+        public static bool WriteBulkStringLength(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
+        {
+            var itemDigits = NumUtils.NumDigits(item.Length);
+            var totalLen = 1 + itemDigits + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'$';
+            NumUtils.IntToBytes(item.Length, itemDigits, ref curr);
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
+        /// Write bulk string
+        /// </summary>
         public static bool WriteBulkString(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
         {
             var itemDigits = NumUtils.NumDigits(item.Length);
@@ -345,6 +361,19 @@ namespace Garnet.common
             WriteNewline(ref curr);
             var bytesWritten = Encoding.UTF8.GetBytes(chars, new Span<byte>(curr, encodedByteCount));
             curr += bytesWritten;
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
+        /// Write new line
+        /// </summary>
+        public static bool WriteNewLine(ref byte* curr, byte* end)
+        {
+            var totalLen = 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
             WriteNewline(ref curr);
             return true;
         }
