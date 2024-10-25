@@ -211,6 +211,7 @@ namespace Garnet.server
         public const string GenericParamShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
         public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
         public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
+        public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";
 
         /// <summary>
         /// Response errors while scripting

@@ -380,7 +380,7 @@ namespace Garnet.server
 
             if (subscribeBroker is null)
             {
-                while (!RespWriteUtils.WriteError("ERR PUBSUB CHANNELS is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB CHANNELS"), ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -410,7 +410,7 @@ namespace Garnet.server
 
             if (subscribeBroker is null)
             {
-                while (!RespWriteUtils.WriteError("ERR PUBSUB NUMPAT is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB NUMPAT"), ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -427,7 +427,7 @@ namespace Garnet.server
         {
             if (subscribeBroker is null)
             {
-                while (!RespWriteUtils.WriteError("ERR PUBSUB NUMSUB is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB NUMSUB"), ref dcurr, dend))
                     SendAndReset();
                 return true;
             }

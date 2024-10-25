@@ -439,7 +439,7 @@ namespace Garnet.server
 
                     foreach (var key in subscriptions.Keys)
                     {
-                        while (!RespWriteUtils.WriteSimpleString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
+                        while (!RespWriteUtils.WriteBulkString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     return;
@@ -458,9 +458,9 @@ namespace Garnet.server
                 {
                     fixed (byte* keyPtr = key)
                     {
-                        var refKeyPtr = keyPtr;
+                        var endKeyPtr = keyPtr;
                         var _patternPtr = patternPtr;
-                        if (keySerializer.Match(ref keySerializer.ReadKeyByRef(ref refKeyPtr), true, ref keySerializer.ReadKeyByRef(ref _patternPtr), true))
+                        if (keySerializer.Match(ref keySerializer.ReadKeyByRef(ref endKeyPtr), true, ref keySerializer.ReadKeyByRef(ref _patternPtr), true))
                         {
                             while (!RespWriteUtils.WriteSimpleString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -541,21 +541,14 @@ namespace Garnet.server
                     var channelPtr = channelSpan.ToPointer() - sizeof(int);  // Memory would have been already pinned
                     *(int*)channelPtr = channelSpan.Length;
 
-                    while (!RespWriteUtils.WriteSimpleString(channelArg.ReadOnlySpan, ref curr, end))
+                    while (!RespWriteUtils.WriteBulkString(channelArg.ReadOnlySpan, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     var channel = new Span<byte>(channelPtr, channelSpan.Length + sizeof(int)).ToArray();
 
-                    if (subscriptions.TryGetValue(channel, out var subscriptionDict))
-                    {
-                        while (!RespWriteUtils.WriteInteger(subscriptionDict.Count, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-                    else
-                    {
-                        while (!RespWriteUtils.WriteInteger(0, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
+                    subscriptions.TryGetValue(channel, out var subscriptionDict);
+                    while (!RespWriteUtils.WriteInteger(subscriptionDict is null ? 0 : subscriptionDict.Count, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     currChannelIdx++;
                 }
