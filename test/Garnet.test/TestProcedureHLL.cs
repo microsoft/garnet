@@ -21,7 +21,7 @@ namespace Garnet
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             var offset = 0;
-            var hll = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
+            var hll = GetNextArg(ref procInput.parseState, ref offset);
 
             if (hll.Length == 0)
                 return false;
@@ -36,7 +36,7 @@ namespace Garnet
             var elements = new string[7];
             var result = true;
 
-            var hll = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
+            var hll = GetNextArg(ref procInput.parseState, ref offset);
 
             if (hll.Length == 0)
                 result = false;
@@ -45,7 +45,7 @@ namespace Garnet
             {
                 for (var i = 0; i < elements.Length; i++)
                 {
-                    elements[i] = Encoding.ASCII.GetString(GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset).ToArray());
+                    elements[i] = Encoding.ASCII.GetString(GetNextArg(ref procInput.parseState, ref offset).ToArray());
                 }
                 api.HyperLogLogAdd(hll, elements, out var resultPfAdd);
                 result = resultPfAdd;

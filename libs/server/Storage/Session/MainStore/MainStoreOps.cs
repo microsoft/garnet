@@ -846,8 +846,8 @@ namespace Garnet.server
                 var expiryAt = respCommand == RespCommand.PEXPIREAT || respCommand == RespCommand.EXPIREAT;
 
                 var header = new RespInputHeader(type);
-                var objInput = new ObjectInput(header, ref input.parseState, input.parseStateFirstArgIdx,
-                    input.parseStateLastArgIdx, (int)input.arg1, expiryAt ? 1 : 0);
+
+                var objInput = new ObjectInput(header, ref input.parseState, arg1: (int)input.arg1, arg2: expiryAt ? 1 : 0);
 
                 // Retry on object store
                 var objOutput = new GarnetObjectStoreOutput { spanByteAndMemory = output };
@@ -946,7 +946,7 @@ namespace Garnet.server
                 // Build parse state
                 parseState.InitializeWithArgument(expirySlice);
 
-                var input = new RawStringInput(respCommand, ref parseState, 0, -1, (byte)expireOption);
+                var input = new RawStringInput(respCommand, ref parseState, arg1: (byte)expireOption);
 
                 var _key = key.SpanByte;
                 var status = context.RMW(ref _key, ref input, ref output);
@@ -969,7 +969,7 @@ namespace Garnet.server
                 var expiryAt = respCommand == RespCommand.PEXPIREAT || respCommand == RespCommand.EXPIREAT;
 
                 var header = new RespInputHeader(type);
-                var objInput = new ObjectInput(header, ref parseState, 0, -1, (byte)expireOption, expiryAt ? 1 : 0);
+                var objInput = new ObjectInput(header, ref parseState, arg1: (byte)expireOption, arg2: expiryAt ? 1 : 0);
 
                 // Retry on object store
                 var objOutput = new GarnetObjectStoreOutput { spanByteAndMemory = output };

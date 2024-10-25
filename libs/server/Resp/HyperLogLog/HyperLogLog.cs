@@ -325,7 +325,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int SparseInitialLength(ref RawStringInput input)
         {
-            var count = (int)input.arg1;
+            var count = input.parseState.Count;
             return SparseInitialLength(count);
         }
 
@@ -371,7 +371,7 @@ namespace Garnet.server
         /// </summary>        
         public int UpdateGrow(ref RawStringInput input, byte* value)
         {
-            var count = (int)input.arg1;
+            var count = input.parseState.Count;
 
             if (IsSparse(value))
             {
@@ -529,7 +529,7 @@ namespace Garnet.server
         /// <returns></returns>           
         public bool Update(ref RawStringInput input, byte* value, int valueLen, ref bool updated)
         {
-            var count = (int)input.arg1;
+            var count = input.parseState.Count;
 
             if (IsDense(value)) // If blob layout is dense
             {
@@ -602,14 +602,11 @@ namespace Garnet.server
         private bool IterateUpdate(ref RawStringInput input, byte* value, bool dense)
         {
             var updated = false;
-            var currTokenIdx = input.parseStateFirstArgIdx;
-            var elementCount = (int)input.arg1;
-            while (currTokenIdx < input.parseState.Count && elementCount > 0)
+            for (var i = 0; i < input.parseState.Count; i++)
             {
-                var currElement = input.parseState.GetArgSliceByRef(currTokenIdx++);
+                var currElement = input.parseState.GetArgSliceByRef(i);
                 var hashValue = (long)HashUtils.MurmurHash2x64A(currElement.ptr, currElement.Length);
                 updated |= (dense ? UpdateDense(value, hashValue) : UpdateSparse(value, hashValue));
-                elementCount--;
             }
             return updated;
         }
