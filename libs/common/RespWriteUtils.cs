@@ -290,7 +290,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write bulk string
+        /// Write length header of bulk string
         /// </summary>
         public static bool WriteBulkStringLength(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
         {

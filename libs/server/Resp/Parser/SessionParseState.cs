@@ -46,14 +46,6 @@ namespace Garnet.server
         /// </summary>
         public ReadOnlySpan<ArgSlice> Parameters => new(bufferPtr, Count);
 
-        /// <summary>
-        /// Create a new instance of SessionParseState
-        /// </summary>
-        public SessionParseState()
-        {
-
-        }
-
         private SessionParseState(ref ArgSlice[] rootBuffer, int rootCount, ref ArgSlice* bufferPtr, int count) : this()
         {
             this.rootBuffer = rootBuffer;

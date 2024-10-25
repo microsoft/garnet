@@ -727,7 +727,6 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var parseState = new SessionParseState();
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
