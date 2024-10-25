@@ -187,6 +187,21 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Initialize the parse state with a given set of arguments
+        /// </summary>
+        /// <param name="args">Set of arguments to initialize buffer with</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeWithArguments(Span<ArgSlice> args)
+        {
+            Initialize(args.Length);
+
+            for (var i = 0; i < args.Length; i++)
+            {
+                *(bufferPtr + i) = args[i];
+            }
+        }
+
+        /// <summary>
         /// Limit access to the argument buffer to start at a specified index.
         /// </summary>
         /// <param name="idxOffset">Offset value to the underlying buffer</param>
