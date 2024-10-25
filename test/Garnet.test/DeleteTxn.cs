@@ -19,14 +19,14 @@ namespace Garnet
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             var offset = 0;
-            AddKey(GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset), LockType.Exclusive, false);
+            AddKey(GetNextArg(ref procInput.parseState, ref offset), LockType.Exclusive, false);
             return true;
         }
 
         public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             var offset = 0;
-            var key = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
+            var key = GetNextArg(ref procInput.parseState, ref offset);
             api.DELETE(key, StoreType.Main);
             WriteSimpleString(ref output, "SUCCESS");
         }

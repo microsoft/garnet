@@ -73,7 +73,7 @@ namespace Garnet.server
             switch (cmd)
             {
                 case RespCommand.SETBIT:
-                    var bOffset = input.parseState.GetLong(input.parseStateFirstArgIdx);
+                    var bOffset = input.parseState.GetLong(0);
                     return sizeof(int) + BitmapManager.Length(bOffset);
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
@@ -81,15 +81,15 @@ namespace Garnet.server
                 case RespCommand.PFADD:
                     return sizeof(int) + HyperLogLog.DefaultHLL.SparseInitialLength(ref input);
                 case RespCommand.PFMERGE:
-                    var length = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).SpanByte.Length;
+                    var length = input.parseState.GetArgSliceByRef(0).SpanByte.Length;
                     return sizeof(int) + length;
                 case RespCommand.SETRANGE:
-                    var offset = input.parseState.GetInt(input.parseStateFirstArgIdx);
-                    var newValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx + 1).ReadOnlySpan;
+                    var offset = input.parseState.GetInt(0);
+                    var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
                     return sizeof(int) + newValue.Length + offset;
 
                 case RespCommand.APPEND:
-                    var valueLength = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).Length;
+                    var valueLength = input.parseState.GetArgSliceByRef(0).Length;
                     return sizeof(int) + valueLength;
 
                 case RespCommand.INCR:
@@ -111,7 +111,7 @@ namespace Garnet.server
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
 
                 case RespCommand.INCRBYFLOAT:
-                    if (!input.parseState.TryGetDouble(input.parseStateFirstArgIdx, out var incrByFloat))
+                    if (!input.parseState.TryGetDouble(0, out var incrByFloat))
                         return sizeof(int);
 
                     ndigits = NumUtils.NumOfCharInDouble(incrByFloat, out var _, out var _, out var _);
@@ -132,7 +132,7 @@ namespace Garnet.server
                         return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
                     }
 
-                    return sizeof(int) + input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).ReadOnlySpan.Length +
+                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length +
                         (input.arg1 == 0 ? 0 : sizeof(long));
             }
         }
@@ -172,7 +172,7 @@ namespace Garnet.server
                         return sizeof(int) + ndigits + t.MetadataSize;
                     case RespCommand.INCRBYFLOAT:
                         // We don't need to TryGetDouble here because InPlaceUpdater will raise an error before we reach this point
-                        var incrByFloat = input.parseState.GetDouble(input.parseStateFirstArgIdx);
+                        var incrByFloat = input.parseState.GetDouble(0);
 
                         NumUtils.TryBytesToDouble(t.AsSpan(), out var currVal);
                         var nextVal = currVal + incrByFloat;
@@ -181,7 +181,7 @@ namespace Garnet.server
 
                         return sizeof(int) + ndigits + t.MetadataSize;
                     case RespCommand.SETBIT:
-                        var bOffset = input.parseState.GetLong(input.parseStateFirstArgIdx);
+                        var bOffset = input.parseState.GetLong(0);
                         return sizeof(int) + BitmapManager.NewBlockAllocLength(t.Length, bOffset);
                     case RespCommand.BITFIELD:
                         var bitFieldArgs = GetBitFieldArguments(ref input);
@@ -194,14 +194,14 @@ namespace Garnet.server
 
                     case RespCommand.PFMERGE:
                         length = sizeof(int);
-                        var srcHLL = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).SpanByte.ToPointer();
+                        var srcHLL = input.parseState.GetArgSliceByRef(0).SpanByte.ToPointer();
                         var dstHLL = t.ToPointer();
                         length += HyperLogLog.DefaultHLL.MergeGrow(srcHLL, dstHLL);
                         return length + t.MetadataSize;
 
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
-                        var setValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx);
+                        var setValue = input.parseState.GetArgSliceByRef(0);
                         return sizeof(int) + t.MetadataSize + setValue.Length;
 
                     case RespCommand.SET:
@@ -217,8 +217,8 @@ namespace Garnet.server
                         return sizeof(int) + t.Length + sizeof(long);
 
                     case RespCommand.SETRANGE:
-                        var offset = input.parseState.GetInt(input.parseStateFirstArgIdx);
-                        var newValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx + 1).ReadOnlySpan;
+                        var offset = input.parseState.GetInt(0);
+                        var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
                         if (newValue.Length + offset > t.LengthWithoutMetadata)
                             return sizeof(int) + newValue.Length + offset + t.MetadataSize;
@@ -232,7 +232,7 @@ namespace Garnet.server
                         return sizeof(int) + t.LengthWithoutMetadata + (input.arg1 > 0 ? sizeof(long) : 0);
 
                     case RespCommand.APPEND:
-                        var valueLength = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).Length;
+                        var valueLength = input.parseState.GetArgSliceByRef(0).Length;
                         return sizeof(int) + t.Length + valueLength;
 
                     default:
@@ -252,7 +252,7 @@ namespace Garnet.server
                 }
             }
 
-            return sizeof(int) + input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).Length +
+            return sizeof(int) + input.parseState.GetArgSliceByRef(0).Length +
                 (input.arg1 == 0 ? 0 : sizeof(long));
         }
 

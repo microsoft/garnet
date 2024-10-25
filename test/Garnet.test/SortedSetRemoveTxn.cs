@@ -19,7 +19,7 @@ namespace Garnet
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             var offset = 0;
-            var subscriptionContainerKey = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
+            var subscriptionContainerKey = GetNextArg(ref procInput.parseState, ref offset);
 
             AddKey(subscriptionContainerKey, LockType.Exclusive, true);
             return true;
@@ -28,8 +28,8 @@ namespace Garnet
         public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             var offset = 0;
-            var subscriptionContainerKey = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
-            var subscriptionContainerEntry = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
+            var subscriptionContainerKey = GetNextArg(ref procInput.parseState, ref offset);
+            var subscriptionContainerEntry = GetNextArg(ref procInput.parseState, ref offset);
 
             api.SortedSetRemove(subscriptionContainerKey, subscriptionContainerEntry, out _);
 

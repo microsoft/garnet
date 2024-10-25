@@ -523,6 +523,16 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
+        [Test]
+        public void SeEchoWithMultiTokenMessageTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var expectedResponse = "\"HELLO WORLD!\"";
+            var actualValue = db.Execute("ECHO", "\"HELLO WORLD!\"").ToString();
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
 
         [Test]
         public void SeTimeCommandTest()

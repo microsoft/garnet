@@ -22,7 +22,7 @@ namespace Garnet
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             var offset = 0;
-            var setA = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
+            var setA = GetNextArg(ref procInput.parseState, ref offset);
 
             if (setA.Length == 0)
                 return false;
@@ -43,15 +43,15 @@ namespace Garnet
             var pairs = new (ArgSlice field, ArgSlice value)[6];
             var fields = new ArgSlice[pairs.Length];
 
-            var myHash = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
+            var myHash = GetNextArg(ref procInput.parseState, ref offset);
 
             if (myHash.Length == 0)
                 return false;
 
             for (var i = 0; i < pairs.Length; i++)
             {
-                pairs[i].field = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
-                pairs[i].value = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
+                pairs[i].field = GetNextArg(ref procInput.parseState, ref offset);
+                pairs[i].value = GetNextArg(ref procInput.parseState, ref offset);
                 fields[i] = pairs[i].field;
             }
 
@@ -111,7 +111,7 @@ namespace Garnet
                 return false;
 
             // HDEL
-            var elementRemove = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
+            var elementRemove = GetNextArg(ref procInput.parseState, ref offset);
             status = api.HashDelete(myHash, elementRemove, out count);
             if (status != GarnetStatus.OK || count != 1)
                 return false;

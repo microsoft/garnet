@@ -486,12 +486,12 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus HyperLogLogLength(ref RawStringInput input, out long count, out bool error)
         {
-            var currTokenIdx = input.parseStateFirstArgIdx;
-            while (currTokenIdx < input.parseState.Count)
+            for (var i = 0; i < input.parseState.Count; i++)
             {
-                var key = input.parseState.GetArgSliceByRef(currTokenIdx++);
+                var key = input.parseState.GetArgSliceByRef(i);
                 garnetApi.WATCH(key, StoreType.Main);
             }
+
             return garnetApi.HyperLogLogLength(ref input, out count, out error);
         }
 
