@@ -1277,44 +1277,6 @@
     ]
   },
   {
-    "Command": "GEOSEARCHSTORE",
-    "Name": "GEOSEARCHSTORE",
-    "Arity": -8,
-    "Flags": "DenyOom, Write",
-    "FirstKey": 1,
-    "LastKey": 2,
-    "Step": 1,
-    "AclCategories": "Geo, Slow, Write",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "OW, Update"
-      },
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 2
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RO, Access"
-      }
-    ]
-  },
-  {
     "Command": "GET",
     "Name": "GET",
     "Arity": 2,

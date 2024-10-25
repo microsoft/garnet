@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.ComponentModel.Design.Serialization;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -177,21 +176,6 @@ namespace Garnet.server
         /// <param name="args">Set of arguments to initialize buffer with</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitializeWithArguments(ArgSlice[] args)
-        {
-            Initialize(args.Length);
-
-            for (var i = 0; i < args.Length; i++)
-            {
-                *(bufferPtr + i) = args[i];
-            }
-        }
-
-        /// <summary>
-        /// Initialize the parse state with a given set of arguments
-        /// </summary>
-        /// <param name="args">Set of arguments to initialize buffer with</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeWithArguments(Span<ArgSlice> args)
         {
             Initialize(args.Length);
 

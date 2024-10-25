@@ -145,10 +145,6 @@ namespace Garnet.server
         public GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.GeoCommands(key, ref input, ref outputFooter, ref objectContext);
 
-        /// <inheritdoc />
-        public GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref ObjectInput input, ref SpanByteAndMemory output)
-            => storageSession.GeoSearchStore(key, destinationKey, ref input, ref output, ref objectContext);
-
         #endregion
 
         #region List Methods
