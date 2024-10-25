@@ -1005,6 +1005,18 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteDirectLargeRespString(ReadOnlySpan<byte> message)
+        {
+            while (!RespWriteUtils.WriteBulkStringLength(message, ref dcurr, dend))
+                SendAndReset();
+
+            WriteDirectLarge(message);
+
+            while (!RespWriteUtils.WriteNewLine(ref dcurr, dend))
+                SendAndReset();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteDirectLarge(ReadOnlySpan<byte> src)
         {
             // Repeat while we have bytes left to write

@@ -28,12 +28,10 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currTokenIdx = input.parseStateFirstArgIdx;
-
             ObjectOutputHeader _output = default;
             try
             {
-                var key = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
+                var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
                 if (hash.TryGetValue(key, out var hashValue))
                 {
@@ -67,19 +65,15 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var count = input.parseState.Count;
-            var currTokenIdx = input.parseStateFirstArgIdx;
-
             ObjectOutputHeader _output = default;
             try
             {
-                var expectedTokenCount = count - input.parseStateFirstArgIdx;
-                while (!RespWriteUtils.WriteArrayLength(expectedTokenCount, ref curr, end))
+                while (!RespWriteUtils.WriteArrayLength(input.parseState.Count, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                while (currTokenIdx < count)
+                for (var i = 0; i < input.parseState.Count; i++)
                 {
-                    var key = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
+                    var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
                     if (hash.TryGetValue(key, out var hashValue))
                     {
@@ -153,9 +147,9 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            for (var currTokenIdx = input.parseStateFirstArgIdx; currTokenIdx < input.parseState.Count; currTokenIdx++)
+            for (var i = 0; i < input.parseState.Count; i++)
             {
-                var key = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
+                var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
                 if (hash.Remove(key, out var hashValue))
                 {
@@ -175,7 +169,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var key = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).SpanByte.ToByteArray();
+            var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
             _output->result1 = hash.TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
         }
 
@@ -184,7 +178,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var field = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).SpanByte.ToByteArray();
+            var field = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
             _output->result1 = hash.ContainsKey(field) ? 1 : 0;
         }
 
@@ -263,10 +257,10 @@ namespace Garnet.server
             *_output = default;
 
             var hop = input.header.HashOp;
-            for (var currIdx = input.parseStateFirstArgIdx; currIdx < input.parseState.Count; currIdx += 2)
+            for (var i = 0; i < input.parseState.Count; i += 2)
             {
-                var key = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
-                var value = input.parseState.GetArgSliceByRef(currIdx + 1).SpanByte.ToByteArray();
+                var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.ToByteArray();
 
                 if (!hash.TryGetValue(key, out var hashValue))
                 {
@@ -341,15 +335,13 @@ namespace Garnet.server
 
             ObjectOutputHeader _output = default;
 
-            var currTokenIdx = input.parseStateFirstArgIdx;
-
             // This value is used to indicate partial command execution
             _output.result1 = int.MinValue;
 
             try
             {
-                var key = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
-                var incrSlice = input.parseState.GetArgSliceByRef(currTokenIdx);
+                var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+                var incrSlice = input.parseState.GetArgSliceByRef(1);
 
                 var valueExists = hash.TryGetValue(key, out var value);
                 if (op == HashOperation.HINCRBY)
