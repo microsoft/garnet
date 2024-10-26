@@ -891,7 +891,7 @@ namespace Garnet.common
 
             ptr++;
 
-            return ReadAsSapn(out result, ref ptr, end);
+            return ReadAsSpan(out result, ref ptr, end);
         }
 
         /// <summary>
@@ -921,7 +921,7 @@ namespace Garnet.common
 
             ptr++;
 
-            return ReadAsSapn(out result, ref ptr, end);
+            return ReadAsSpan(out result, ref ptr, end);
         }
 
         /// <summary>
@@ -1082,7 +1082,7 @@ namespace Garnet.common
         /// <summary>
         /// Read ASCII string as span without header until string terminator ('\r\n').
         /// </summary>
-        public static bool ReadAsSapn(out ReadOnlySpan<byte> result, ref byte* ptr, byte* end)
+        public static bool ReadAsSpan(out ReadOnlySpan<byte> result, ref byte* ptr, byte* end)
         {
             result = null;
 
