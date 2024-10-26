@@ -165,7 +165,7 @@ namespace Garnet.server
             var input = new ObjectInput(new RespInputHeader
             {
                 type = GarnetObjectType.SortedSet,
-            }, ref parseState, 2);
+            }, ref parseState, startIdx: 2);
 
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.GeoSearchStore(sourceKey, destinationKey, ref input, ref output);

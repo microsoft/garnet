@@ -77,9 +77,9 @@ namespace Garnet.server
             try
             {
                 var isStoreDist = false;
-                Span<ArgSlice> geoSearchParseState = stackalloc ArgSlice[input.parseState.Count - input.parseStateFirstArgIdx + 1];
+                Span<ArgSlice> geoSearchParseState = stackalloc ArgSlice[input.parseState.Count + 1]; // Current MaxSize of this stactalloc will be 144 bytes ( 12 (Max Args) x 12 (sizeof ArgSlice) )
                 var currArgIdx = 0;
-                var i = input.parseStateFirstArgIdx;
+                var i = 0;
                 while (i < input.parseState.Count)
                 {
                     if (!isStoreDist && input.parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
@@ -104,7 +104,7 @@ namespace Garnet.server
                 {
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = SortedSetOperation.GEOSEARCH,
-                }, ref parseState, 0);
+                }, ref parseState);
 
                 SpanByteAndMemory searchOutMem = default;
                 var searchOut = new GarnetObjectStoreOutput { spanByteAndMemory = searchOutMem };
@@ -175,7 +175,7 @@ namespace Garnet.server
                     {
                         type = GarnetObjectType.SortedSet,
                         SortedSetOp = SortedSetOperation.ZADD,
-                    }, ref zParseState, 0);
+                    }, ref zParseState);
 
                     var zAddOutput = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
                     RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);

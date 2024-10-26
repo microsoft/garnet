@@ -215,7 +215,7 @@ namespace Garnet.server
 
             for (var i = 0; i < args.Length; i++)
             {
-                buffer[i] = args[i];
+                *(bufferPtr + i) = args[i];
             }
         }
 
