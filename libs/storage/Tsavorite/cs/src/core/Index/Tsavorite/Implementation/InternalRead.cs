@@ -240,23 +240,24 @@ namespace Tsavorite.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
-                                    ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long readAtAddress, ref TKey key, ref TInput input, ref TOutput output,
+                                    ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref TKey key, ref TInput input, ref TOutput output,
                                     ref ReadOptions readOptions, TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKeyLocker : struct, ISessionLocker
         {
             Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "Epoch should be protected in InternalReadAtAddress");
-            Debug.Assert(TKeyLocker.IsTransactional || stackCtx.hei.HasTransientSLock, "Should have an XLock in InternalReadAtAddress");
+            Debug.Assert(TKeyLocker.IsTransactional || stackCtx.hei.HasTransientSLock, "Should have an SLock in InternalReadAtAddress");
 
-            if (readAtAddress < hlogBase.BeginAddress)
-                return OperationStatus.NOTFOUND;
+            // We've already checked the address as part of locking, as we needed to obtain the key to find the hash bucket.
 
             pendingContext.IsReadAtAddress = true;
+            var readAtAddress = stackCtx.recSrc.LogicalAddress;     // hold onto this as we may reset stackCtx below
 
             // We do things in a different order here than in InternalRead, in part to handle NoKey (especially with Revivification).
             if (readAtAddress < hlogBase.HeadAddress)
             {
-                // Do not trace back in the pending callback if it is a key mismatch.
+                // Do not trace back in the pending callback if it is a key mismatch. If !pendingContext.NoKey, we have already verified the key as part of bucket locking.
+                // TODO: Return some kind of error if a key mismatch on pending return.
                 pendingContext.NoKey = true;
 
                 CreatePendingReadContext(ref key, ref input, output, userContext, ref pendingContext, sessionFunctions, readAtAddress);
@@ -265,24 +266,6 @@ namespace Tsavorite.core
 
             // We're in-memory, so it is safe to get the address now.
             var physicalAddress = hlog.GetPhysicalAddress(readAtAddress);
-
-            TKey defaultKey = default;
-            if (readOptions.KeyHash.HasValue)
-                pendingContext.keyHash = readOptions.KeyHash.Value;
-            else if (!pendingContext.NoKey)
-                pendingContext.keyHash = storeFunctions.GetKeyHashCode64(ref key);
-            else
-            {
-                // We have NoKey and an in-memory address so we must get the record to get the key to get the hashcode check for index growth,
-                // possibly lock the bucket, etc.
-                pendingContext.keyHash = storeFunctions.GetKeyHashCode64(ref hlog.GetKey(physicalAddress));
-
-#pragma warning disable CS9085 // "This ref-assigns a value that has a narrower escape scope than the target", but we don't return the reference.
-                // Note: With bucket-based locking the key is not used for Transient locks (only the key's hashcode is used). A key-based locking system
-                // would require this to be the actual key. We do *not* set this to the record key in case that is reclaimed by revivification.
-                key = ref defaultKey;
-#pragma warning restore CS9085
-            }
 
             if (sessionFunctions.ExecutionCtx.phase == Phase.IN_PROGRESS_GROW && !sessionFunctions.IsDual)  // TODO move to Kernel.EnterFor*
                 SplitBuckets(stackCtx.hei.hash);

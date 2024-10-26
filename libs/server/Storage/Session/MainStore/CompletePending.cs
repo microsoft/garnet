@@ -8,12 +8,13 @@ namespace Garnet.server
 {
     sealed partial class StorageSession
     {
-        void CompletePending<TKeyLocker, TEpochGuard>(out Status status, ref SpanByteAndMemory output)
+        void CompletePending<TKeyLocker>(out Status status, ref SpanByteAndMemory output)
             where TKeyLocker : struct, ISessionLocker
-            where TEpochGuard : struct, IGarnetEpochGuard
         {
             // Main store
-            TEpochGuard.EndUnsafe(ref dualContext.KernelSession);
+            var suspended = Kernel.Epoch.ThisInstanceProtected();
+            if (suspended)
+                dualContext.KernelSession.EndUnsafe();
             StartPendingMetrics();
 
             _ = MainContext.CompletePendingWithOutputs<TKeyLocker>(out var completedOutputs, wait: true);
@@ -26,7 +27,8 @@ namespace Garnet.server
             completedOutputs.Dispose();
 
             StopPendingMetrics();
-            TEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
+            if (suspended)
+                dualContext.KernelSession.BeginUnsafe();
         }
     }
 }

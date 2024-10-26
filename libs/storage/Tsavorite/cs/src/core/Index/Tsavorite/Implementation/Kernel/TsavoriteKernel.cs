@@ -62,10 +62,10 @@ namespace Tsavorite.core
             where TEpochGuard : IEpochGuard<TKernelSession>
         {
             TEpochGuard.BeginUnsafe(ref kernelSession);
-            hei = new(keyHash, partitionId);
 
             // CheckHashTableGrowth(); TODO
 
+            hei = new(keyHash, partitionId);
             if (!hashTable.FindTag(ref hei))
             {
                 TEpochGuard.EndUnsafe(ref kernelSession);
@@ -129,9 +129,10 @@ namespace Tsavorite.core
             where TEpochGuard : IEpochGuard<TKernelSession>
         {
             TEpochGuard.BeginUnsafe(ref kernelSession);
-            hei = new(keyHash, partitionId);
 
             // CheckHashTableGrowth();
+
+            hei = new(keyHash, partitionId);
 
             // We may do FindTag rather than FindOrCreateTag here because we don't want to create the slot if the tag is not found.
             if (createIfNotFoundBeginAddress > 0)

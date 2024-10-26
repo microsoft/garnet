@@ -3,6 +3,7 @@
 
 using System;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace Tsavorite.core
 {
@@ -62,9 +63,72 @@ namespace Tsavorite.core
             return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
         }
 
+        internal Status EnterKernelForReadAtAddress<TKernelSession, TKeyLocker, TEpochGuard>(
+                ref TKernelSession kernelSession, ushort partitionId, long address, ref TKey expectedKey, long keyHash, bool isNoKey, out HashEntryInfo hei)
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : IEpochGuard<TKernelSession>
+        {
+            // The procedure for ReadAtAddress is complicated by the NoKey option (read at an address without knowing its key), because we must lock the bucket
+            // for mutable records. When we do not have the key and the record is above ReadOnlyAddress, we must loop on:
+            //    obtain the record at that address
+            //    calculate its key hashcode
+            //    lock the key's bucket
+            //    calculate its key hashcode again
+            //    if they match, we're done and keep the lock, else unlock and loop again
+            // This is necessary due to revivification.
+
+            hei = default;
+            if (address < hlogBase.BeginAddress)
+                return new(StatusCode.NotFound);
+
+            // Not in memory, so ReadAtAddress() will issue pending IO.
+            if (address < hlogBase.HeadAddress)
+                return new(StatusCode.Found);
+
+            // TODO move all EnterKernelReadAtAddress inside the try{} bc lock timeout can throw
+            TEpochGuard.BeginUnsafe(ref kernelSession);
+
+            // CheckHashTableGrowth(); TODO
+
+            // In mutable memory, so get the key, lock, verify the record was not deleted and re-keyed (i.e. revivification), and return.
+            while (true)
+            {
+                var physicalAddress = hlog.GetPhysicalAddress(address);
+                ref var recordKey = ref hlog.GetKey(physicalAddress);
+
+                // If reviv freelist is active and we have an expected key, verify it.
+                var checkKey = !isNoKey && RevivificationManager.UseFreeRecordPool;
+                if (checkKey && !storeFunctions.KeysEqual(ref expectedKey, ref recordKey))
+                    return new(StatusCode.NotFound);
+
+                hei = new(GetKeyHash(recordKey), partitionId);
+                if (!Kernel.hashTable.FindTag(ref hei))
+                {
+                    TEpochGuard.EndUnsafe(ref kernelSession);
+                    return new(StatusCode.NotFound);
+                }
+
+                while (!TKeyLocker.TryLockTransientShared(Kernel, ref hei))
+                {
+                    kernelSession.Refresh<TKeyLocker>(ref hei);
+                    _ = Thread.Yield();
+                }
+
+                var keyHash2 = GetKeyHash(ref hlog.GetKey(physicalAddress));
+                if (hei.hash != keyHash2 || (checkKey && !storeFunctions.KeysEqual(ref expectedKey, ref recordKey)))
+                {
+                    // Key is not as expected; unlock and return false
+                    TKeyLocker.UnlockTransientShared(Kernel, ref hei);
+                    return new(StatusCode.NotFound);
+                }
+                return new(StatusCode.Found);
+            }
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
-                long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
+                long address, ref TKey key, bool isNoKey, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
                 TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKernelSession : IKernelSession
@@ -72,61 +136,41 @@ namespace Tsavorite.core
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             // Called by Single Tsavorite instance configurations (this API is called only for specific store instances)
-            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions, ref readOptions, noKey: true);
-            TKey key = default;
-            return ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
-                    address, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions, ref kernelSession);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
-                long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, 
-                TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKernelSession : IKernelSession
-            where TKeyLocker : struct, ISessionLocker
-            where TEpochGuard : struct, IEpochGuard<TKernelSession>
-        {
-            // Called by Single Tsavorite instance configurations (this API is called only for specific store instances)
-            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions, ref readOptions, noKey: false);
-            return ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
-                    address, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions, ref kernelSession);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(
-                long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
-                TContext context, ref PendingContext<TInput, TOutput, TContext> pcontext, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKernelSession : IKernelSession
-            where TKeyLocker : struct, ISessionLocker
-            where TEpochGuard : struct, IEpochGuard<TKernelSession>
-        {
-            // Called by Single Tsavorite instance configurations (this API is called only for specific store instances), so we must do Kernel entry, lock, etc. here
-            var keyHash = readOptions.KeyHash ?? storeFunctions.GetKeyHashCode64(ref key);
-            var status = Kernel.EnterForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, keyHash, partitionId, out var hei);
+            var status = EnterKernelForReadAtAddress<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, PartitionId, address, ref key, readOptions.KeyHash ?? GetKeyHash(ref key), isNoKey, out var hei);
             if (status.NotFound)
             {
                 output = default;
                 recordMetadata = default;
                 return status;
             }
-            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
 
             try
             {
-                OperationStatus internalStatus;
-                do
-                    internalStatus = InternalReadAtAddress<TKernelSession, TKeyLocker>(ref stackCtx, address, ref key, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions, ref kernelSession);
-                while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
-
-                recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
-                return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
+                return ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref hei, ref key, isNoKey, ref input, ref output, ref readOptions, out recordMetadata, context, sessionFunctions);
             }
             finally
             {
                 Kernel.ExitForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, ref hei);
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
+                ref HashEntryInfo hei, ref TKey key, bool isNoKey, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
+                TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
+        {
+            // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
+            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions, ref readOptions, noKey: true);
+            OperationStatus internalStatus;
+            do
+                internalStatus = InternalReadAtAddress<TKeyLocker>(ref stackCtx, ref key, isNoKey, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx.hei, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
+
+            recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

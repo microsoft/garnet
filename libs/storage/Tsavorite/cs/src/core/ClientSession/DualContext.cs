@@ -2,8 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
@@ -42,6 +44,8 @@ namespace Tsavorite.core
 
         /// <summary>The Tsavorite kernel</summary>
         public TsavoriteKernel Kernel => KernelSession.clientSession1.Store.Kernel;
+        internal TsavoriteKV<TKey1, TValue1, TStoreFunctions1, TAllocator1> Store1 => KernelSession.clientSession1.Store;
+        internal TsavoriteKV<TKey2, TValue2, TStoreFunctions2, TAllocator2> Store2 => KernelSession.clientSession2.Store;
 
         /// <summary>Whether this dual session has a second store</summary>
         public bool IsDual => KernelSession.clientSession2 is not null;
@@ -361,7 +365,7 @@ namespace Tsavorite.core
                 {
                     // First partition tag was not found so the bucket was not locked. Try to find and lock for the second partition.
                     status = EnterKernelForRead<TKeyLocker, TEpochGuard>(keyHash, PartitionId2, out hei);
-                    if (status.NotFound)    // Tag was not found for either partition.
+                    if (status.NotFound)    // Tag was not found for either store's partition bit.
                         return (status, StoreId2);
                     inputConverter.ConvertForRead(ref key1, ref input1, out key2, out input2, out output2);
                 }
@@ -380,11 +384,22 @@ namespace Tsavorite.core
 
         #region ReadAtAddress
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status ReadAtAddress<TKeyLocker, TEpochGuard>(ref TKey2 key, bool isNoKey, ref TInput2 input, ref TOutput2 output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status ReadAtAddress<TKeyLocker, TEpochGuard>(long address, ref TInput1 input, ref TOutput1 output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
-            var status = EnterKernelForRead<TKeyLocker, TEpochGuard>(readOptions.KeyHash ?? GetKeyHash(ref key), PartitionId2, out var hei);
+            TKey1 key = default;
+            return ReadAtAddress<TKeyLocker, TEpochGuard>(address, ref key, isNoKey: true, ref input, ref output, ref readOptions, out recordMetadata, userContext);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status ReadAtAddress<TKeyLocker, TEpochGuard>(long address, ref TKey1 key, bool isNoKey, ref TInput1 input, ref TOutput1 output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
+        {
+            var status = Store1.EnterKernelForReadAtAddress
+                    <DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>,
+                    TKeyLocker, TEpochGuard>(ref KernelSession, PartitionId1, address, ref key, readOptions.KeyHash ?? GetKeyHash(ref key), isNoKey, out var hei);
             if (!status.Found)
             {
                 output = default;
@@ -394,24 +409,46 @@ namespace Tsavorite.core
 
             try
             {
-                return ItemContext2.Read<TKeyLocker>(ref hei, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
+                return ItemContext1.ReadAtAddress<TKeyLocker>(ref hei, ref key, isNoKey, ref input, ref output, ref readOptions, out recordMetadata, userContext);
             }
             finally
             {
                 ExitKernelForRead<TKeyLocker, TEpochGuard>(ref hei);
             }
         }
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status ReadAtAddress<TKeyLocker>(ref HashEntryInfo hei, long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
-                TContext userContext)
-            where TKeyLocker : struct, ISessionLocker
-        {
-            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
 
-            // TODO: Need DualContextPair.ReadAtAddress with/without key
-            return clientSession.Store.ContextReadAtAddress<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
-                    address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status ReadAtAddress<TKeyLocker, TEpochGuard>(long address, ref TInput2 input, ref TOutput2 output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
+        {
+            TKey2 key = default;
+            return ReadAtAddress<TKeyLocker, TEpochGuard>(address, ref key, isNoKey: true, ref input, ref output, ref readOptions, out recordMetadata, userContext);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status ReadAtAddress<TKeyLocker, TEpochGuard>(long address, ref TKey2 key, bool isNoKey, ref TInput2 input, ref TOutput2 output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
+        {
+            var status = Store2.EnterKernelForReadAtAddress
+                    <DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>,
+                    TKeyLocker, TEpochGuard>(ref KernelSession, PartitionId2, address, ref key, readOptions.KeyHash ?? GetKeyHash(ref key), isNoKey, out var hei);
+            if (!status.Found)
+            {
+                output = default;
+                recordMetadata = default;
+                return status;
+            }
+
+            try
+            {
+                return ItemContext2.ReadAtAddress<TKeyLocker>(ref hei, ref key, isNoKey, ref input, ref output, ref readOptions, out recordMetadata, userContext);
+            }
+            finally
+            {
+                ExitKernelForRead<TKeyLocker, TEpochGuard>(ref hei);
+            }
         }
         #endregion
 
@@ -709,9 +746,7 @@ namespace Tsavorite.core
         // TODO Delete both--we don't go to disk, so we will just delete it in both stores blindly
         #endregion Delete both stores
 
-        // TODO ReadAtAddress
         // TODO ResetModified clarification (how will it know which store--it is blind now for Both), no IsModified?
-        // TODO propagate <TKeyLocker> through XxxInternal, CompletePending, etc.
         // TODO RENAME
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

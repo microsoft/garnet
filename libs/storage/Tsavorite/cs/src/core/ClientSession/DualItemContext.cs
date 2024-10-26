@@ -92,7 +92,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status ReadAtAddress<TKeyLocker>(ref HashEntryInfo hei, long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
+        public Status ReadAtAddress<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, bool isNoKey, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
                 TContext userContext)
             where TKeyLocker : struct, ISessionLocker
         {
@@ -100,7 +100,7 @@ namespace Tsavorite.core
 
             // TODO: Need DualContextPair.ReadAtAddress with/without key
             return clientSession.Store.ContextReadAtAddress<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
-                    address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+                    ref hei, ref key, isNoKey, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>

@@ -18,10 +18,10 @@ namespace Garnet.server
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
-            var status = dualContext.Read<TKeyLocker, TEpochGuard>(ref key, ref input, out output, userContext: default);
+            var status = dualContext.Read<TKeyLocker, TEpochGuard>(ref key, ref input, ref output, userContext: default);
 
             if (status.IsPending)
-                CompletePending<TKeyLocker, TEpochGuard>(out status, ref output);
+                CompletePending<TKeyLocker>(out status, ref output);
 
             if (status.Found)
             {
@@ -40,9 +40,9 @@ namespace Garnet.server
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             ReadOptions readOptions = default;
-            var status = MainContext.Read<TKeyLocker>(ref hei, ref key, ref input, out output, ref readOptions, recordMetadata: out _, userContext: default);
+            var status = MainContext.Read<TKeyLocker>(ref hei, ref key, ref input, ref output, ref readOptions, recordMetadata: out _, userContext: default);
             if (status.IsPending)
-                CompletePending<TKeyLocker, TEpochGuard>(out status, ref output);
+                CompletePending<TKeyLocker>(out status, ref output);
 
             if (status.Found)
             {
@@ -232,82 +232,55 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public unsafe GarnetStatus SET_Conditional<TContext>(ref SpanByte key, ref SpanByte input, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-        {
-            byte* pbOutput = stackalloc byte[8];
-            var o = new SpanByteAndMemory(pbOutput, 8);
-
-            var status = context.RMW(ref key, ref input, ref o);
-
-            if (status.IsPending)
-            {
-                StartPendingMetrics();
-                CompletePendingForSession(ref status, ref o, ref context);
-                StopPendingMetrics();
-            }
-
-            if (status.NotFound)
-            {
-                incr_session_notfound();
-                return GarnetStatus.NOTFOUND;
-            }
-            else
-            {
-                incr_session_found();
-                return GarnetStatus.OK;
-            }
-        }
-
-        public unsafe GarnetStatus SET_Conditional<TKeyLocker>(ref HashEntryInfo hei, ref SpanByte key, ref SpanByte input)
+        public unsafe GarnetStatus SET_Conditional<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input)
             where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             byte* pbOutput = stackalloc byte[8];
             var output = new SpanByteAndMemory(pbOutput, 8);
-
-            var status = MainContext.RMW<TKeyLocker>(ref hei, ref key, ref input, out output, recordMetadata: out _, userContext: default);
-
-            if (status.IsPending)
-            {
-                StartPendingMetrics();
-                CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
-            }
-
-            if (status.NotFound)
-            {
-                incr_session_notfound();
-                return GarnetStatus.NOTFOUND;
-            }
-            else
-            {
-                incr_session_found();
-                return GarnetStatus.OK;
-            }
+            return SET_Conditional<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
         }
 
-        public unsafe GarnetStatus SET_Conditional<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus SET_Conditional<TKeyLocker, TEpochGuard>(ref HashEntryInfo hei, ref SpanByte key, ref SpanByte input)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            var status = context.RMW(ref key, ref input, ref output);
+            byte* pbOutput = stackalloc byte[8];
+            var output = new SpanByteAndMemory(pbOutput, 8);
+            return SET_Conditional<TKeyLocker>(ref hei, ref key, ref input, ref output);
+        }
 
+        public unsafe GarnetStatus SET_Conditional<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+        {
+            var status = dualContext.RMW<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
             if (status.IsPending)
-            {
-                StartPendingMetrics();
-                CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
-            }
+                CompletePending<TKeyLocker>(out status, ref output);
 
             if (status.NotFound)
             {
                 incr_session_notfound();
                 return GarnetStatus.NOTFOUND;
             }
-            else
+            incr_session_found();
+            return GarnetStatus.OK;
+        }
+
+        public unsafe GarnetStatus SET_Conditional<TKeyLocker>(ref HashEntryInfo hei, ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+        {
+            var status = MainContext.RMW<TKeyLocker>(ref hei, ref key, ref input, ref output, recordMetadata: out _, userContext: default);
+            if (status.IsPending)
+                CompletePending<TKeyLocker>(out status, ref output);
+
+            if (status.NotFound)
             {
-                incr_session_found();
-                return GarnetStatus.OK;
+                incr_session_notfound();
+                return GarnetStatus.NOTFOUND;
             }
+            incr_session_found();
+            return GarnetStatus.OK;
         }
 
         public GarnetStatus SET<TContext>(ArgSlice key, ArgSlice value, ref TContext context)

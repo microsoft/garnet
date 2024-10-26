@@ -17,7 +17,7 @@ namespace Garnet.server
         {
             var status = dualContext.Read<TKeyLocker, TEpochGuard>(key, ref output, default);
             if (status.IsPending)
-                CompletePending<TKeyLocker, TEpochGuard>(ref status, ref output);
+                CompletePending<TKeyLocker>(ref status, ref output);
 
             if (status.Found)
             {
@@ -36,7 +36,7 @@ namespace Garnet.server
             ReadOptions readOptions = default;
             var status = ObjectContext.Read<TKeyLocker>(ref hei, ref key, ref input, ref output, ref readOptions, recordMetadata: out _, userContext: default);
             if (status.IsPending)
-                CompletePending<TKeyLocker, TEpochGuard>(out status, out output);
+                CompletePending<TKeyLocker>(out status, out output);
 
             if (status.Found)
             {

@@ -231,7 +231,7 @@ namespace Garnet.server
                                         ((RespInputHeader*)(setValuePtr + sizeof(long)))->cmd = RespCommand.SETEXNX;
                                         ((RespInputHeader*)(setValuePtr + sizeof(long)))->flags = 0;
                                         var newKey = newKeySlice.SpanByte;
-                                        var setStatus = SET_Conditional(ref hei, ref newKey, ref setValueSpan, ref context);
+                                        var setStatus = SET_Conditional<TransactionalSessionLocker>(ref hei, ref newKey, ref setValueSpan, ref context);
 
                                         // For SET NX `NOTFOUND` means the operation succeeded
                                         result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
