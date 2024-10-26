@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Threading;
+using System.Threading.Channels;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -37,27 +38,17 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var sub = subRedis.GetSubscriber();
             var db = redis.GetDatabase(0);
+            string value = "published message";
 
             ManualResetEvent evt = new(false);
 
-            sub.Subscribe(RedisChannel.Literal("messages"), (channel, message) =>
+            SubscribeAndPublish(sub, db, RedisChannel.Literal("messages"), RedisChannel.Literal("messages"), value, onSubscribe: (channel, message) =>
             {
                 ClassicAssert.AreEqual("messages", (string)channel);
-                ClassicAssert.AreEqual("published message", (string)message);
+                ClassicAssert.AreEqual(value, (string)message);
                 evt.Set();
             });
 
-            // Repeat to work-around bug in StackExchange.Redis subscribe behavior
-            // where it returns before the SUBSCRIBE call is processed.
-            int repeat = 5;
-            while (true)
-            {
-                db.Publish(RedisChannel.Pattern("messages"), "published message");
-                var ret = evt.WaitOne(TimeSpan.FromSeconds(1));
-                if (ret) break;
-                repeat--;
-                ClassicAssert.IsTrue(repeat != 0, "Timeout waiting for subsciption receive");
-            }
             sub.Unsubscribe(RedisChannel.Literal("messages"));
         }
 
@@ -77,7 +68,7 @@ namespace Garnet.test
 
             ManualResetEvent evt = new(false);
 
-            sub.Subscribe(channel, (receivedChannel, message) =>
+            SubscribeAndPublish(sub, db, channel, RedisChannel.Pattern(actual), value, (receivedChannel, message) =>
             {
                 ClassicAssert.AreEqual(glob, (string)channel);
                 ClassicAssert.AreEqual(actual, (string)receivedChannel);
@@ -85,17 +76,6 @@ namespace Garnet.test
                 evt.Set();
             });
 
-            // Repeat to work-around bug in StackExchange.Redis subscribe behavior
-            // where it returns before the SUBSCRIBE call is processed.
-            int repeat = 5;
-            while (true)
-            {
-                db.Publish(RedisChannel.Pattern(actual), value);
-                var ret = evt.WaitOne(TimeSpan.FromSeconds(1));
-                if (ret) break;
-                repeat--;
-                ClassicAssert.IsTrue(repeat != 0, "Timeout waiting for subsciption receive");
-            }
             sub.Unsubscribe(channel);
         }
 
@@ -108,41 +88,11 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var server = redis.GetServers()[0];
 
-            ManualResetEvent evt = new(false);
-            var isMessagesASubed = false;
-            var isMessagesBSubed = false;
             var channelA = "messagesAtest";
             var channelB = "messagesB";
 
-            sub.Subscribe(RedisChannel.Literal(channelA), (channel, message) =>
-            {
-                isMessagesASubed = true;
-                if (isMessagesBSubed)
-                    evt.Set();
-            });
-
-            sub.Subscribe(RedisChannel.Literal(channelB), (channel, message) =>
-            {
-                isMessagesBSubed = true;
-                if (isMessagesASubed)
-                    evt.Set();
-            });
-
-            // Doing publish to make sure the channel is subscribed
-            // Repeat to work-around bug in StackExchange.Redis subscribe behavior
-            // where it returns before the SUBSCRIBE call is processed.
-            int repeat = 5;
-            while (true)
-            {
-                if (!isMessagesASubed)
-                    db.Publish(RedisChannel.Pattern(channelA), "published message");
-                if (!isMessagesBSubed)
-                    db.Publish(RedisChannel.Pattern(channelB), "published message");
-                var ret = evt.WaitOne(TimeSpan.FromSeconds(1));
-                if (ret) break;
-                repeat--;
-                ClassicAssert.IsTrue(repeat != 0, "Timeout waiting for subsciption receive");
-            }
+            SubscribeAndPublish(sub, db, RedisChannel.Literal(channelA), RedisChannel.Pattern(channelA));
+            SubscribeAndPublish(sub, db, RedisChannel.Literal(channelB), RedisChannel.Pattern(channelB));
 
             var result = server.SubscriptionChannels();
             string[] expectedResult = [channelA, channelB];
@@ -184,39 +134,8 @@ namespace Garnet.test
             var result = server.SubscriptionPatternCount();
             ClassicAssert.AreEqual(0, result);
 
-            var isMessagesASubed = false;
-            var isMessagesBSubed = false;
-
-            ManualResetEvent evt = new(false);
-
-            sub.Subscribe(channel, (receivedChannel, message) =>
-            {
-                isMessagesASubed = true;
-                if (isMessagesASubed && isMessagesBSubed)
-                    evt.Set();
-            });
-
-            sub.Subscribe(channelB, (receivedChannel, message) =>
-            {
-                isMessagesBSubed = true;
-                if (isMessagesASubed && isMessagesBSubed)
-                    evt.Set();
-            });
-
-            // Repeat to work-around bug in StackExchange.Redis subscribe behavior
-            // where it returns before the SUBSCRIBE call is processed.
-            int repeat = 5;
-            while (true)
-            {
-                if (!isMessagesASubed)
-                    db.Publish(RedisChannel.Literal(actual), value);
-                if (!isMessagesBSubed)
-                    db.Publish(RedisChannel.Literal(actualB), value);
-                var ret = evt.WaitOne(TimeSpan.FromSeconds(1));
-                if (ret) break;
-                repeat--;
-                ClassicAssert.IsTrue(repeat != 0, "Timeout waiting for subsciption receive");
-            }
+            SubscribeAndPublish(sub, db, channel, RedisChannel.Literal(actual), value);
+            SubscribeAndPublish(sub, db, channelB, RedisChannel.Literal(actualB), value);
 
             result = server.SubscriptionPatternCount();
             ClassicAssert.AreEqual(2, result);
@@ -234,10 +153,6 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var server = redis.GetServers()[0];
 
-            ManualResetEvent evt = new(false);
-            var isMessagesASubed = false;
-            var isMessagesBSubed = false;
-
             var multiChannelResult = server.Execute("PUBSUB", ["NUMSUB"]);
             ClassicAssert.AreEqual(0, multiChannelResult.Length);
 
@@ -248,35 +163,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual("messagesB", multiChannelResult[2].ToString());
             ClassicAssert.AreEqual("0", multiChannelResult[3].ToString());
 
-            sub.Subscribe(RedisChannel.Literal("messagesA"), (channel, message) =>
-            {
-                isMessagesASubed = true;
-                if (isMessagesASubed && isMessagesBSubed)
-                    evt.Set();
-            });
-
-            sub.Subscribe(RedisChannel.Literal("messagesB"), (channel, message) =>
-            {
-                isMessagesBSubed = true;
-                if (isMessagesASubed && isMessagesBSubed)
-                    evt.Set();
-            });
-
-            // Doing publish to make sure the channel is subscribed
-            // Repeat to work-around bug in StackExchange.Redis subscribe behavior
-            // where it returns before the SUBSCRIBE call is processed.
-            int repeat = 5;
-            while (true)
-            {
-                if (!isMessagesASubed)
-                    db.Publish(RedisChannel.Pattern("messagesA"), "published message");
-                if (!isMessagesBSubed)
-                    db.Publish(RedisChannel.Pattern("messagesB"), "published message");
-                var ret = evt.WaitOne(TimeSpan.FromSeconds(1));
-                if (ret) break;
-                repeat--;
-                ClassicAssert.IsTrue(repeat != 0, "Timeout waiting for subsciption receive");
-            }
+            SubscribeAndPublish(sub, db, RedisChannel.Literal("messagesA"));
+            SubscribeAndPublish(sub, db, RedisChannel.Literal("messagesB"));
 
             var result = server.SubscriptionSubscriberCount(RedisChannel.Literal("messagesA"));
             ClassicAssert.AreEqual(1, result);
@@ -290,6 +178,31 @@ namespace Garnet.test
 
             sub.Unsubscribe(RedisChannel.Literal("messagesA"));
             sub.Unsubscribe(RedisChannel.Literal("messagesB"));
+        }
+
+        private void SubscribeAndPublish(ISubscriber sub, IDatabase db, RedisChannel channel, RedisChannel? publishChannel = null, string message = null, Action<RedisChannel, RedisValue> onSubscribe = null)
+        {
+            message ??= "published message";
+            publishChannel ??= channel;
+            ManualResetEvent evt = new(false);
+            sub.Subscribe(channel, (receivedChannel, receivedMessage) =>
+            {
+                onSubscribe?.Invoke(receivedChannel, receivedMessage);
+                evt.Set();
+            });
+
+            // Doing publish to make sure the channel is subscribed
+            // Repeat to work-around bug in StackExchange.Redis subscribe behavior
+            // where it returns before the SUBSCRIBE call is processed.
+            int repeat = 5;
+            while (true)
+            {
+                db.Publish(publishChannel.Value, message);
+                var ret = evt.WaitOne(TimeSpan.FromSeconds(1));
+                if (ret) break;
+                repeat--;
+                ClassicAssert.IsTrue(repeat != 0, "Timeout waiting for subscription receive");
+            }
         }
     }
 }

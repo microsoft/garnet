@@ -387,8 +387,7 @@ namespace Garnet.server
 
             var input = new ObjectInput()
             {
-                parseState = parseState,
-                parseStateFirstArgIdx = 0
+                parseState = parseState
             };
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             subscribeBroker.Channels(ref input, ref output);
@@ -434,8 +433,7 @@ namespace Garnet.server
 
             var input = new ObjectInput
             {
-                parseState = parseState,
-                parseStateFirstArgIdx = 0
+                parseState = parseState
             };
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             subscribeBroker.NumSubscriptions(ref input, ref output);

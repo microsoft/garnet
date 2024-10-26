@@ -445,6 +445,8 @@ namespace Garnet.server
                     return;
                 }
 
+                // Below WriteArrayLength is primarily to move the start of the buffer to the max length that is required to write the array length. The actual length is written in the below line.
+                // This is done to avoid multiple two passes over the subscriptions or new array allocation if we use single pass over the subscriptions
                 var totalArrayHeaderLen = 0;
                 while (!RespWriteUtils.WriteArrayLength(subscriptions.Count, ref curr, end, out var _, out totalArrayHeaderLen))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -477,9 +479,12 @@ namespace Garnet.server
                     return;
                 }
 
+                // Below code is to write the actual array length in the buffer
+                // And move the array elements to the start of the new array length if new array length is less than the max array length that we orginally write in the above line
                 var newTotalArrayHeaderLen = 0;
                 var _ptr = ptr;
-                RespWriteUtils.WriteArrayLength(noOfFoundChannels, ref _ptr, end, out var _, out newTotalArrayHeaderLen); // ReallocateOutput is not needed here as there should be always be available space in the output buffer as we have already written the max array length
+                // ReallocateOutput is not needed here as there should be always be available space in the output buffer as we have already written the max array length
+                _ = RespWriteUtils.WriteArrayLength(noOfFoundChannels, ref _ptr, end, out var _, out newTotalArrayHeaderLen);
 
                 Debug.Assert(totalArrayHeaderLen >= newTotalArrayHeaderLen, "newTotalArrayHeaderLen can't be bigger than totalArrayHeaderLen as we have already written max array lenght in the buffer");
                 if (totalArrayHeaderLen != newTotalArrayHeaderLen)
@@ -533,7 +538,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteArrayLength(numOfChannels * 2, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                var currChannelIdx = input.parseStateFirstArgIdx;
+                var currChannelIdx = 0;
                 while (currChannelIdx < numOfChannels)
                 {
                     var channelArg = input.parseState.GetArgSliceByRef(currChannelIdx);
