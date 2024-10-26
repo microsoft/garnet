@@ -862,7 +862,7 @@ namespace Garnet.server
             var destination = parseState.GetArgSliceByRef(0);
             var keys = parseState.Parameters.Slice(2, nKeys);
 
-            var status = storageApi.SortedSetDifferenceStore(keys, destination, out var count);
+            var status = storageApi.SortedSetDifferenceStore(destination, keys, out var count);
 
             switch (status)
             {

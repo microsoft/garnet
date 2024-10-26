@@ -131,8 +131,8 @@ namespace Garnet.server
             => storageSession.SortedSetDifference(keys, out pairs);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetDifferenceStore(ReadOnlySpan<ArgSlice> keys, ArgSlice destinationKey, out int count)
-            => storageSession.SortedSetDifferenceStore(keys, destinationKey, out count);
+        public GarnetStatus SortedSetDifferenceStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, out int count)
+            => storageSession.SortedSetDifferenceStore(destinationKey, keys, out count);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
