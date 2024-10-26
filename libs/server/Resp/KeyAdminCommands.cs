@@ -233,7 +233,7 @@ namespace Garnet.server
                 }
             }
 
-            var input = new RawStringInput(command, ref parseState, 1, -1, (byte)expireOption);
+            var input = new RawStringInput(command, ref parseState, startIdx: 1, arg1: (byte)expireOption);
             var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 
             if (status == GarnetStatus.OK && timeoutSet)
@@ -318,7 +318,7 @@ namespace Garnet.server
                 }
             }
 
-            var input = new RawStringInput(command, ref parseState, 1, -1, (byte)expireOption);
+            var input = new RawStringInput(command, ref parseState, startIdx: 1, arg1: (byte)expireOption);
             var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 
             if (status == GarnetStatus.OK && timeoutSet)

@@ -110,7 +110,7 @@ namespace Garnet.server
             }
 
             var expiry = (tsExpiry.HasValue && tsExpiry.Value.Ticks > 0) ? DateTimeOffset.UtcNow.Ticks + tsExpiry.Value.Ticks : 0;
-            var input = new RawStringInput(RespCommand.GETEX, ref parseState, 1, -1, expiry);
+            var input = new RawStringInput(RespCommand.GETEX, ref parseState, startIdx: 1, arg1: expiry);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.GETEX(ref key, ref input, ref o);
@@ -334,7 +334,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new RawStringInput(RespCommand.SETRANGE, ref parseState, 1);
+            var input = new RawStringInput(RespCommand.SETRANGE, ref parseState, startIdx: 1);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
@@ -361,7 +361,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new RawStringInput(RespCommand.GETRANGE, ref parseState, 1);
+            var input = new RawStringInput(RespCommand.GETRANGE, ref parseState, startIdx: 1);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
@@ -680,7 +680,7 @@ namespace Garnet.server
                       ? TimeSpan.FromMilliseconds(expiry).Ticks
                       : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var input = new RawStringInput(cmd, ref parseState, 1, -1, inputArg);
+            var input = new RawStringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
             if (getValue)
                 input.header.SetSetGetFlag();
@@ -801,7 +801,7 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
-            var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, 1);
+            var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, startIdx: 1);
             storageApi.Increment(key, ref input, ref output);
 
             var errorFlag = output.Length == NumUtils.MaximumFormatDoubleLength + 1
@@ -834,7 +834,7 @@ namespace Garnet.server
         {
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
-            var input = new RawStringInput(RespCommand.APPEND, ref parseState, 1);
+            var input = new RawStringInput(RespCommand.APPEND, ref parseState, startIdx: 1);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = SpanByteAndMemory.FromPinnedSpan(outputBuffer);
@@ -1156,7 +1156,8 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ECHO));
             }
 
-            WriteDirectLarge(new ReadOnlySpan<byte>(recvBufferPtr + readHead, endReadHead - readHead));
+            var message = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            WriteDirectLargeRespString(message);
             return true;
         }
 
