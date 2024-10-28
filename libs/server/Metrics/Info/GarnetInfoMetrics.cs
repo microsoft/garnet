@@ -216,7 +216,12 @@ namespace Garnet.server
                     new("Log.HeadAddress", storeWrapper.store.Log.HeadAddress.ToString()),
                     new("Log.MemorySizeBytes", storeWrapper.store.Log.MemorySizeBytes.ToString()),
                     new("Log.SafeReadOnlyAddress", storeWrapper.store.Log.SafeReadOnlyAddress.ToString()),
-                    new("Log.TailAddress", storeWrapper.store.Log.TailAddress.ToString())
+                    new("Log.TailAddress", storeWrapper.store.Log.TailAddress.ToString()),
+                    new("ReadCache.BeginAddress", storeWrapper.store.ReadCache?.BeginAddress.ToString() ?? "N/A"),
+                    new("ReadCache.BufferSize", storeWrapper.store.ReadCache?.BufferSize.ToString() ?? "N/A"),
+                    new("ReadCache.EmptyPageCount", storeWrapper.store.ReadCache?.EmptyPageCount.ToString() ?? "N/A"),
+                    new("ReadCache.MemorySizeBytes", storeWrapper.store.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
+                    new("ReadCache.TailAddress", storeWrapper.store.ReadCache?.TailAddress.ToString() ?? "N/A"),
                 ];
         }
 
@@ -237,7 +242,12 @@ namespace Garnet.server
                     new("Log.HeadAddress", storeWrapper.objectStore.Log.HeadAddress.ToString()),
                     new("Log.MemorySizeBytes", storeWrapper.objectStore.Log.MemorySizeBytes.ToString()),
                     new("Log.SafeReadOnlyAddress", storeWrapper.objectStore.Log.SafeReadOnlyAddress.ToString()),
-                    new("Log.TailAddress", storeWrapper.objectStore.Log.TailAddress.ToString())
+                    new("Log.TailAddress", storeWrapper.objectStore.Log.TailAddress.ToString()),
+                    new("ReadCache.BeginAddress", storeWrapper.store.ReadCache?.BeginAddress.ToString() ?? "N/A"),
+                    new("ReadCache.BufferSize", storeWrapper.store.ReadCache?.BufferSize.ToString() ?? "N/A"),
+                    new("ReadCache.EmptyPageCount", storeWrapper.store.ReadCache?.EmptyPageCount.ToString() ?? "N/A"),
+                    new("ReadCache.MemorySizeBytes", storeWrapper.store.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
+                    new("ReadCache.TailAddress", storeWrapper.store.ReadCache?.TailAddress.ToString() ?? "N/A"),
                 ];
         }
 

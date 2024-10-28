@@ -369,7 +369,14 @@ namespace Garnet.server
         /// </summary>
         public bool ExtensionAllowUnsignedAssemblies;
 
+        /// <summary>List of modules to load</summary>
         public IEnumerable<string> LoadModuleCS;
+
+        public bool EnableReadCache = false;
+
+        public string ReadCacheMemorySize = "16g";
+
+        public string ReadCachePageSize = "32m";
 
         /// <summary>
         /// Constructor
@@ -439,6 +446,21 @@ namespace Garnet.server
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");
+
+            // Read cache related settings
+            if (EnableReadCache && !EnableStorageTier)
+            {
+                throw new Exception("Read cache requires storage tiering to be enabled");
+            }
+
+            if (EnableReadCache)
+            {
+                kvSettings.ReadCacheEnabled = true;
+                kvSettings.ReadCachePageSize = ParseSize(ReadCachePageSize);
+                kvSettings.ReadCacheMemorySize = ParseSize(ReadCacheMemorySize);
+                logger?.LogInformation("[Store] Read cache enabled with page size of {ReadCachePageSize} and memory size of {ReadCacheMemorySize}",
+                    PrettySize(kvSettings.ReadCachePageSize), PrettySize(kvSettings.ReadCacheMemorySize));
+            }
 
             if (EnableStorageTier)
             {
