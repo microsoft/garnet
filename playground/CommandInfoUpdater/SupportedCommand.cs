@@ -260,6 +260,7 @@ namespace CommandInfoUpdater
             new("ZCARD", RespCommand.ZCARD),
             new("ZCOUNT", RespCommand.ZCOUNT),
             new("ZDIFF", RespCommand.ZDIFF),
+            new("ZDIFFSTORE", RespCommand.ZDIFFSTORE),
             new("ZINCRBY", RespCommand.ZINCRBY),
             new("ZLEXCOUNT", RespCommand.ZLEXCOUNT),
             new("ZMSCORE", RespCommand.ZMSCORE),
