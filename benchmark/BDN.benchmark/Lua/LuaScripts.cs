@@ -12,7 +12,7 @@ namespace BDN.benchmark.Lua
     /// </summary>
     [MemoryDiagnoser]
     [HideColumns(Column.Gen0)]
-    public unsafe class Lua
+    public unsafe class LuaScripts
     {
         /// <summary>
         /// Lua parameters
