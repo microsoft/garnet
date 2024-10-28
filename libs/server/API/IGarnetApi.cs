@@ -474,6 +474,15 @@ namespace Garnet.server
         GarnetStatus SortedSetRemoveRangeByRank(ArgSlice key, int start, int stop, out int countRemoved);
 
         /// <summary>
+        /// Computes the difference between the first and all successive sorted sets and store resulting pairs in the output key.
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="destinationKey"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        GarnetStatus SortedSetDifferenceStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, out int count);
+
+        /// <summary>
         /// Adds geospatial items (longitude, latitude, name) to the specified key.
         /// </summary>
         /// <param name="key"></param>
@@ -987,7 +996,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="secondaryCommand"></param>
         /// <returns></returns>
-        GarnetStatus StringBitField(ref SpanByte key, ref RawStringInput input, byte secondaryCommand, ref SpanByteAndMemory output);
+        GarnetStatus StringBitField(ref SpanByte key, ref RawStringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Performs arbitrary bitfield integer operations on strings.
@@ -1622,7 +1631,7 @@ namespace Garnet.server
         /// <param name="secondaryCommand"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref RawStringInput input, byte secondaryCommand, ref SpanByteAndMemory output);
+        GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref RawStringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output);
 
         #endregion
 

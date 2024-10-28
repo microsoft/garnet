@@ -131,7 +131,7 @@ namespace Garnet.server
             try
             {
                 var options = SortedSetAddOption.None;
-                var currTokenIdx = input.parseStateFirstArgIdx;
+                var currTokenIdx = 0;
                 var parsedOptions = false;
 
                 while (currTokenIdx < input.parseState.Count)
@@ -233,9 +233,9 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            for (var currIdx = input.parseStateFirstArgIdx; currIdx < input.parseState.Count; currIdx++)
+            for (var i = 0; i < input.parseState.Count; i++)
             {
-                var value = input.parseState.GetArgSliceByRef(currIdx).ReadOnlySpan;
+                var value = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
                 var valueArray = value.ToArray();
 
                 if (!sortedSetDict.TryGetValue(valueArray, out var key))
@@ -266,8 +266,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateFirstArgIdx;
-            var member = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
+            var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
             ObjectOutputHeader outputHeader = default;
             try
@@ -310,12 +309,12 @@ namespace Garnet.server
 
             try
             {
-                while (!RespWriteUtils.WriteArrayLength(count - 1, ref curr, end))
+                while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                for (var currIdx = input.parseStateFirstArgIdx; currIdx < count; currIdx++)
+                for (var i = 0; i < count; i++)
                 {
-                    var member = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
+                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
                     if (!sortedSetDict.TryGetValue(member, out var score))
                     {
@@ -349,11 +348,9 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateFirstArgIdx;
-
             // Read min & max
-            var minParamSpan = input.parseState.GetArgSliceByRef(currIdx++).ReadOnlySpan;
-            var maxParamSpan = input.parseState.GetArgSliceByRef(currIdx).ReadOnlySpan;
+            var minParamSpan = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            var maxParamSpan = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
             ObjectOutputHeader outputHeader = default;
 
@@ -403,14 +400,12 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateFirstArgIdx;
-
             ObjectOutputHeader outputHeader = default;
 
             try
             {
                 // Try to read increment value
-                if (!input.parseState.TryGetDouble(currIdx++, out var incrValue))
+                if (!input.parseState.TryGetDouble(0, out var incrValue))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -418,7 +413,7 @@ namespace Garnet.server
                 }
 
                 // Read member
-                var member = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
+                var member = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
 
                 if (sortedSetDict.TryGetValue(member, out var score))
                 {
@@ -463,7 +458,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateFirstArgIdx;
+            var currIdx = 0;
 
             ObjectOutputHeader _output = default;
             try
@@ -680,14 +675,12 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateFirstArgIdx;
-
             ObjectOutputHeader outputHeader = default;
 
             try
             {
-                if (!input.parseState.TryGetInt(currIdx++, out var start) ||
-                    !input.parseState.TryGetInt(currIdx, out var stop))
+                if (!input.parseState.TryGetInt(0, out var start) ||
+                    !input.parseState.TryGetInt(1, out var stop))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -741,15 +734,13 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateFirstArgIdx;
-
             ObjectOutputHeader outputHeader = default;
 
             try
             {
                 // Read min and max
-                var minParamBytes = input.parseState.GetArgSliceByRef(currIdx++).ReadOnlySpan;
-                var maxParamBytes = input.parseState.GetArgSliceByRef(currIdx).ReadOnlySpan;
+                var minParamBytes = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                var maxParamBytes = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
                 if (!TryParseParameter(minParamBytes, out var minValue, out var minExclusive) ||
                     !TryParseParameter(maxParamBytes, out var maxValue, out var maxExclusive))
@@ -843,10 +834,8 @@ namespace Garnet.server
             // Using minValue for partial execution detection
             _output->result1 = int.MinValue;
 
-            var currIdx = input.parseStateFirstArgIdx;
-
-            var minParamBytes = input.parseState.GetArgSliceByRef(currIdx++).ReadOnlySpan;
-            var maxParamBytes = input.parseState.GetArgSliceByRef(currIdx).ReadOnlySpan;
+            var minParamBytes = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            var maxParamBytes = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
             var rem = GetElementsInRangeByLex(minParamBytes, maxParamBytes, false, false, op != SortedSetOperation.ZLEXCOUNT, out int errorCode);
 
@@ -872,13 +861,12 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currIdx = input.parseStateFirstArgIdx;
             var withScore = input.arg1 == 1;
 
             ObjectOutputHeader outputHeader = default;
             try
             {
-                var member = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
+                var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
                 if (!sortedSetDict.TryGetValue(member, out var score))
                 {

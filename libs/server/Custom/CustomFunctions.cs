@@ -183,30 +183,29 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get argument from input, at specified offset (starting from 0)
+        /// Get argument from parse state, at specified index (starting from 0)
         /// </summary>
         /// <param name="parseState">Current parse state</param>
-        /// <param name="parseStateFirstArgIdx"></param>
-        /// <param name="offset">Current offset into parse state</param>
+        /// <param name="idx">Current argument index in parse state</param>
         /// <returns>Argument as a span</returns>
-        protected static unsafe ArgSlice GetNextArg(ref SessionParseState parseState, int parseStateFirstArgIdx, ref int offset)
+        protected static unsafe ArgSlice GetNextArg(ref SessionParseState parseState, ref int idx)
         {
-            var arg = parseStateFirstArgIdx + offset < parseState.Count
-                ? parseState.GetArgSliceByRef(parseStateFirstArgIdx + offset)
+            var arg = idx < parseState.Count
+                ? parseState.GetArgSliceByRef(idx)
                 : default;
-            offset++;
+            idx++;
             return arg;
         }
 
         /// <summary>
-        /// Get argument from input, at specified offset (starting from 0)
+        /// Get argument from input, at specified index (starting from 0)
         /// </summary>
         /// <param name="procInput">Procedure input</param>
-        /// <param name="offset">Current offset into parse state</param>
+        /// <param name="idx">Current argument index in parse state</param>
         /// <returns>Argument as a span</returns>
-        protected static unsafe ArgSlice GetNextArg(ref CustomProcedureInput procInput, ref int offset)
+        protected static unsafe ArgSlice GetNextArg(ref CustomProcedureInput procInput, ref int idx)
         {
-            return GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
+            return GetNextArg(ref procInput.parseState, ref idx);
         }
     }
 }

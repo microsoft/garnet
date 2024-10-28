@@ -22,11 +22,11 @@ namespace Garnet
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             var offset = 0;
-            var bitmapA = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
-            GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
-            GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
-            var destinationKey = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
-            var bitmapB = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
+            var bitmapA = GetNextArg(ref procInput.parseState, ref offset);
+            GetNextArg(ref procInput.parseState, ref offset);
+            GetNextArg(ref procInput.parseState, ref offset);
+            var destinationKey = GetNextArg(ref procInput.parseState, ref offset);
+            var bitmapB = GetNextArg(ref procInput.parseState, ref offset);
 
             if (bitmapA.Length == 0)
                 return false;
@@ -49,11 +49,11 @@ namespace Garnet
             BitmapOperation[] bitwiseOps = [BitmapOperation.AND, BitmapOperation.OR, BitmapOperation.XOR];
 
             //get paramaters
-            var bitmapA = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
-            var offsetArgument = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
-            var bitValueArgument = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
-            var destinationKeyBitOp = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
-            var bitmapB = GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
+            var bitmapA = GetNextArg(ref procInput.parseState, ref offset);
+            var offsetArgument = GetNextArg(ref procInput.parseState, ref offset);
+            var bitValueArgument = GetNextArg(ref procInput.parseState, ref offset);
+            var destinationKeyBitOp = GetNextArg(ref procInput.parseState, ref offset);
+            var bitmapB = GetNextArg(ref procInput.parseState, ref offset);
 
             //simple set and get for bitmaps
             api.StringSetBit(bitmapA, offsetArgument, bitValueArgument.ToArray()[0] == '1', out _);
@@ -133,10 +133,10 @@ namespace Garnet
             api.SET(bitmapA, data);
             var listCommands = new List<BitFieldCmdArgs>();
 
-            var bitFieldArguments = new BitFieldCmdArgs((byte)RespCommand.GET, ((byte)BitFieldSign.UNSIGNED | 8), 0, 0, (byte)BitFieldOverflow.WRAP);
+            var bitFieldArguments = new BitFieldCmdArgs(RespCommand.GET, ((byte)BitFieldSign.UNSIGNED | 8), 0, 0, (byte)BitFieldOverflow.WRAP);
             listCommands.Add(bitFieldArguments);
 
-            bitFieldArguments = new BitFieldCmdArgs((byte)RespCommand.INCRBY, ((byte)BitFieldSign.UNSIGNED | 4), 4, 1, (byte)BitFieldOverflow.WRAP);
+            bitFieldArguments = new BitFieldCmdArgs(RespCommand.INCRBY, ((byte)BitFieldSign.UNSIGNED | 4), 4, 1, (byte)BitFieldOverflow.WRAP);
             listCommands.Add(bitFieldArguments);
 
             api.StringBitField(bitmapA, listCommands, out var resultBitField);

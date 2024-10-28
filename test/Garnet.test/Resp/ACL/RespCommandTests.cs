@@ -83,7 +83,7 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
             // TODO: See if these commands could be identified programmatically
-            IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE"];
+            IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE", "PUBSUB"];
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
 
             // Check tests against RespCommandsInfo
@@ -4461,6 +4461,51 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task PubSubChannelsACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "PUBSUB CHANNELS",
+                [DoPubSubChannelsAsync]
+            );
+
+            static async Task DoPubSubChannelsAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForStringArrayResultAsync("PUBSUB", ["CHANNELS"]);
+                CollectionAssert.IsEmpty(count);
+            }
+        }
+
+        [Test]
+        public async Task PubSubNumPatACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "PUBSUB NUMPAT",
+                [DoPubSubNumPatAsync]
+            );
+
+            static async Task DoPubSubNumPatAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForLongResultAsync("PUBSUB", ["NUMPAT"]);
+                ClassicAssert.AreEqual(0, count);
+            }
+        }
+
+        [Test]
+        public async Task PubSubNumSubACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "PUBSUB NUMSUB",
+                [DoPubSubNumSubAsync]
+            );
+
+            static async Task DoPubSubNumSubAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForStringArrayResultAsync("PUBSUB", ["NUMSUB"]);
+                CollectionAssert.IsEmpty(count);
+            }
+        }
+
+        [Test]
         public async Task ReadOnlyACLsAsync()
         {
             await CheckCommandsAsync(
@@ -5874,6 +5919,21 @@ namespace Garnet.test.Resp.ACL
             {
                 string[] val = await client.ExecuteForStringArrayResultAsync("ZDIFF", ["2", "foo", "bar"]);
                 ClassicAssert.AreEqual(0, val.Length);
+            }
+        }
+
+        [Test]
+        public async Task ZDiffStoreACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZDIFFSTORE",
+                [DoZDiffStoreAsync]
+            );
+
+            static async Task DoZDiffStoreAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("ZDIFFSTORE", ["keyZ", "2", "foo", "bar"]);
+                ClassicAssert.AreEqual(0, val);
             }
         }
 

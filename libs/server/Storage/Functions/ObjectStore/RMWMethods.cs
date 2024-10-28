@@ -26,7 +26,7 @@ namespace Garnet.server
                 case GarnetObjectType.Persist:
                     return false;
                 default:
-                    if ((byte)type < CustomCommandManager.StartOffset)
+                    if ((byte)type < CustomCommandManager.TypeIdStartOffset)
                         return GarnetObject.NeedToCreate(input.header);
                     else
                     {
@@ -44,7 +44,7 @@ namespace Garnet.server
         public bool InitialUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             var type = input.header.type;
-            if ((byte)type < CustomCommandManager.StartOffset)
+            if ((byte)type < CustomCommandManager.TypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
                 value.Operate(ref input, ref output.spanByteAndMemory, out _, out _);
@@ -55,7 +55,7 @@ namespace Garnet.server
                 Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.PExpire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
 
                 var customObjectCommand = GetCustomObjectCommand(ref input, type);
-                var objectId = (byte)((byte)type - CustomCommandManager.StartOffset);
+                var objectId = (byte)((byte)type - CustomCommandManager.TypeIdStartOffset);
                 value = functionsState.customObjectCommands[objectId].factory.Create((byte)type);
 
                 (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
@@ -108,7 +108,7 @@ namespace Garnet.server
             {
                 case GarnetObjectType.Expire:
                 case GarnetObjectType.PExpire:
-                    var expiryValue = input.parseState.GetLong(input.parseStateFirstArgIdx);
+                    var expiryValue = input.parseState.GetLong(0);
 
                     var optionType = (ExpireOption)input.arg1;
                     var expireAt = input.arg2 == 1;
@@ -140,7 +140,7 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     return true;
                 default:
-                    if ((byte)input.header.type < CustomCommandManager.StartOffset)
+                    if ((byte)input.header.type < CustomCommandManager.TypeIdStartOffset)
                     {
                         var operateSuccessful = value.Operate(ref input, ref output.spanByteAndMemory, out sizeChange,
                         out var removeKey);
@@ -198,7 +198,7 @@ namespace Garnet.server
             {
                 case GarnetObjectType.Expire:
                 case GarnetObjectType.PExpire:
-                    var expiryValue = input.parseState.GetLong(input.parseStateFirstArgIdx);
+                    var expiryValue = input.parseState.GetLong(0);
 
                     var optionType = (ExpireOption)input.arg1;
                     var expireAt = input.arg2 == 1;
@@ -232,7 +232,7 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     break;
                 default:
-                    if ((byte)input.header.type < CustomCommandManager.StartOffset)
+                    if ((byte)input.header.type < CustomCommandManager.TypeIdStartOffset)
                     {
                         value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
                         if (removeKey)
