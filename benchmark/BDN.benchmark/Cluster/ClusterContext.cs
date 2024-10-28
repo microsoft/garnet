@@ -20,7 +20,7 @@ namespace BDN.benchmark.Cluster
         public static ReadOnlySpan<byte> keyTag => "{0}"u8;
         public Request[] singleGetSet;
         public Request[] singleMGetMSet;
-        public Request singleCPBSET;
+        public Request singleCTXNSET;
 
         public void Dispose()
         {
@@ -41,7 +41,7 @@ namespace BDN.benchmark.Cluster
                 opt.CheckpointDir = "/tmp";
             server = new EmbeddedRespServer(opt);
             session = server.GetRespSession();
-            _ = server.Register.NewTransactionProc(CustomProcSet.CommandName, () => new CustomProcSet(), new RespCommandsInfo { Arity = CustomProcSet.Arity });
+            _ = server.Register.NewTransactionProc(CustomTxnSet.CommandName, () => new CustomTxnSet(), new RespCommandsInfo { Arity = CustomTxnSet.Arity });
         }
 
         public void AddSlotRange(List<(int, int)> slotRanges)
@@ -134,7 +134,7 @@ namespace BDN.benchmark.Cluster
             singleMGetMSet = [mGetReq, mSetReq];
         }
 
-        public void CreateCPBSET(int keySize = 8, int batchSize = 100)
+        public void CreateCTXNSET(int keySize = 8, int batchSize = 100)
         {
             var keys = new byte[8][];
             for (var i = 0; i < 8; i++)
@@ -145,22 +145,22 @@ namespace BDN.benchmark.Cluster
                 benchUtils.RandomBytes(ref keys[i], startOffset: keyTag.Length);
             }
 
-            var cpbsetByteCount = "*9\r\n$6\r\nCPBSET\r\n"u8.Length + (8 * (1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2));
-            var cpbsetReq = new Request(batchSize * cpbsetByteCount);
-            var curr = cpbsetReq.ptr;
-            var end = curr + cpbsetReq.buffer.Length;
+            var ctxnsetByteCount = "*9\r\n$7\r\nCTXNSET\r\n"u8.Length + (8 * (1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2));
+            var ctxnsetReq = new Request(batchSize * ctxnsetByteCount);
+            var curr = ctxnsetReq.ptr;
+            var end = curr + ctxnsetReq.buffer.Length;
 
             for (var i = 0; i < batchSize; i++)
             {
                 _ = RespWriteUtils.WriteArrayLength(9, ref curr, end);
-                _ = RespWriteUtils.WriteBulkString("CPBSET"u8, ref curr, end);
+                _ = RespWriteUtils.WriteBulkString("CTXNSET"u8, ref curr, end);
                 for (var j = 0; j < 8; j++)
                 {
                     _ = RespWriteUtils.WriteBulkString(keys[j], ref curr, end);
                 }
             }
 
-            singleCPBSET = cpbsetReq;
+            singleCTXNSET = ctxnsetReq;
         }
 
         public void Consume(byte* ptr, int length)

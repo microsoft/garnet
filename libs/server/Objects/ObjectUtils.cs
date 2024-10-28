@@ -51,8 +51,6 @@ namespace Garnet.server
         public static unsafe bool ReadScanInput(ref ObjectInput input, ref SpanByteAndMemory output,
             out int cursorInput, out byte* pattern, out int patternLength, out int countInInput, out bool isNoValue, out ReadOnlySpan<byte> error)
         {
-            var currTokenIdx = input.parseStateFirstArgIdx;
-
             // Cursor
             cursorInput = input.arg1;
 
@@ -67,6 +65,8 @@ namespace Garnet.server
 
             error = default;
             isNoValue = false;
+
+            var currTokenIdx = 0;
 
             while (currTokenIdx < input.parseState.Count)
             {

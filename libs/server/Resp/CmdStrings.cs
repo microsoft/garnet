@@ -104,6 +104,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> rank => "rank"u8;
         public static ReadOnlySpan<byte> MAXLEN => "MAXLEN"u8;
         public static ReadOnlySpan<byte> maxlen => "maxlen"u8;
+        public static ReadOnlySpan<byte> PUBSUB => "PUBSUB"u8;
+        public static ReadOnlySpan<byte> CHANNELS => "CHANNELS"u8;
+        public static ReadOnlySpan<byte> NUMPAT => "NUMPAT"u8;
+        public static ReadOnlySpan<byte> NUMSUB => "NUMSUB"u8;
 
         /// <summary>
         /// Response strings
@@ -207,6 +211,7 @@ namespace Garnet.server
         public const string GenericParamShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
         public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
         public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
+        public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";
 
         /// <summary>
         /// Response errors while scripting

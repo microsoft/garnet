@@ -940,6 +940,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var keys = new[] { new RedisKey("user1:obj1"), new RedisKey("user1:obj2") };
+            var destinationKey = new RedisKey("user1:objA");
             var key1Values = new[] { new RedisValue("Hello"), new RedisValue("World") };
             var key2Values = new[] { new RedisValue("Hola"), new RedisValue("Mundo") };
             var values = new[] { key1Values, key2Values };
@@ -989,10 +990,100 @@ namespace Garnet.test
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRandomMember(keys[1]));
             // ZDIFF
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetCombine(SetOperation.Difference, keys));
+            // ZDIFFSTORE
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetCombineAndStore(SetOperation.Difference, destinationKey, keys));
             // ZSCAN
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetScan(keys[1], new RedisValue("*")).FirstOrDefault());
             //ZMSCORE
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetScores(keys[1], values[1]));
+        }
+
+        [Test]
+        public void CanDoZDiff()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key1 = new RedisKey("key1");
+            var key2 = new RedisKey("key2");
+            var key1Values = new[] { new SortedSetEntry("Hello", 1), new SortedSetEntry("World", 2) };
+            var key2Values = new[] { new SortedSetEntry("Hello", 5), new SortedSetEntry("Mundo", 7) };
+            var expectedValue = new SortedSetEntry("World", 2);
+
+            db.SortedSetAdd(key1, key1Values);
+            db.SortedSetAdd(key2, key2Values);
+
+            var diff = db.SortedSetCombine(SetOperation.Difference, [key1, key2]);
+            ClassicAssert.AreEqual(1, diff.Length);
+            ClassicAssert.AreEqual(expectedValue.Element.ToString(), diff[0].ToString());
+
+            var diffWithScore = db.SortedSetCombineWithScores(SetOperation.Difference, [key1, key2]);
+            ClassicAssert.AreEqual(1, diffWithScore.Length);
+            ClassicAssert.AreEqual(expectedValue.Element.ToString(), diffWithScore[0].Element.ToString());
+            ClassicAssert.AreEqual(expectedValue.Score, diffWithScore[0].Score);
+
+            // With only one key, it should return the same elements
+            diffWithScore = db.SortedSetCombineWithScores(SetOperation.Difference, [key1]);
+            ClassicAssert.AreEqual(2, diffWithScore.Length);
+            ClassicAssert.AreEqual(key1Values[0].Element.ToString(), diffWithScore[0].Element.ToString());
+            ClassicAssert.AreEqual(key1Values[0].Score, diffWithScore[0].Score);
+            ClassicAssert.AreEqual(key1Values[1].Element.ToString(), diffWithScore[1].Element.ToString());
+            ClassicAssert.AreEqual(key1Values[1].Score, diffWithScore[1].Score);
+
+            // With no value key, it should return an empty array
+            diffWithScore = db.SortedSetCombineWithScores(SetOperation.Difference, [new RedisKey("key3")]);
+            ClassicAssert.AreEqual(0, diffWithScore.Length);
+        }
+
+        [Test]
+        [TestCase(false)]
+        [TestCase(true)]
+        public void CheckSortedSetDifferenceStoreSE(bool isDestinationKeyExisting)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var keys = new[] { new RedisKey("user1:obj1"), new RedisKey("user1:obj2") };
+            var destinationKey = new RedisKey("user1:objA");
+            var key1Values = new[] { new SortedSetEntry("Hello", 1), new SortedSetEntry("World", 2) };
+            var key2Values = new[] { new SortedSetEntry("Hello", 5), new SortedSetEntry("Mundo", 7) };
+            var expectedValue = new SortedSetEntry("World", 2);
+
+            // Set up sorted sets
+            db.SortedSetAdd(keys[0], key1Values);
+            db.SortedSetAdd(keys[1], key2Values);
+
+            if (isDestinationKeyExisting)
+            {
+                db.SortedSetAdd(destinationKey, key1Values); // Set up destination key to overwrite if exists
+            }
+
+            var actualCount = db.SortedSetCombineAndStore(SetOperation.Difference, destinationKey, keys);
+            ClassicAssert.AreEqual(1, actualCount);
+
+            var actualMembers = db.SortedSetRangeByScoreWithScores(destinationKey);
+            ClassicAssert.AreEqual(1, actualMembers.Length);
+            ClassicAssert.AreEqual(expectedValue.Element.ToString(), actualMembers[0].Element.ToString());
+            ClassicAssert.AreEqual(expectedValue.Score, actualMembers[0].Score);
+        }
+
+        [Test]
+        public void CheckSortedSetDifferenceStoreWithNoMatchSE()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var keys = new[] { new RedisKey("user1:obj1"), new RedisKey("user1:obj2") };
+            var destinationKey = new RedisKey("user1:objA");
+
+            // Set up sorted sets
+            db.SortedSetAdd(destinationKey, "Dummy", 10); // Set up destination key to overwrite if exists
+
+            var actualCount = db.SortedSetCombineAndStore(SetOperation.Difference, destinationKey, keys);
+            ClassicAssert.AreEqual(0, actualCount);
+
+            var actualMembers = db.SortedSetRangeByScoreWithScores(destinationKey);
+            ClassicAssert.AreEqual(0, actualMembers.Length);
         }
 
         #endregion
@@ -1987,6 +2078,28 @@ namespace Garnet.test
 
             zdiffResult = lightClientRequest.SendCommandChunks("ZDIFF 2 dadi seconddadi", bytesSent, 3);
             expectedResponse = "*2\r\n$6\r\ncinque\r\n$3\r\nsei\r\n";
+            actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
+        }
+
+        [Test]
+        [TestCase(10)]
+        [TestCase(30)]
+        [TestCase(100)]
+        public void CanUseZDiffSTORE(int bytesSent)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            //zdiff withscores
+            var zdiffResult = lightClientRequest.SendCommandChunks("ZDIFFSTORE desKey 2 dadi seconddadi", bytesSent);
+            var expectedResponse = ":0\r\n";
+            var actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            lightClientRequest.SendCommand("ZADD dadi 1 uno 2 due 3 tre 4 quattro 5 cinque 6 sei");
+            lightClientRequest.SendCommand("ZADD seconddadi 1 uno 2 due 3 tre 4 quattro");
+
+            zdiffResult = lightClientRequest.SendCommandChunks("ZDIFFSTORE desKey 2 dadi seconddadi", bytesSent);
+            expectedResponse = "1\r\n";
             actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
         }
 

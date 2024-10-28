@@ -515,7 +515,7 @@ namespace Garnet.server
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = sortedOperation };
             var inputArg = 2; // Default RESP server protocol version
-            var input = new ObjectInput(header, ref parseState, 0, -1, inputArg);
+            var input = new ObjectInput(header, ref parseState, arg1: inputArg);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
@@ -539,7 +539,7 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="pairs"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus SortedSetDifference(ArgSlice[] keys, out Dictionary<byte[], double> pairs)
+        public unsafe GarnetStatus SortedSetDifference(ReadOnlySpan<ArgSlice> keys, out Dictionary<byte[], double> pairs)
         {
             pairs = default;
 
@@ -561,40 +561,76 @@ namespace Garnet.server
 
             try
             {
-                var statusOp = GET(keys[0].ToArray(), out var firstObj, ref objectContext);
-                if (statusOp == GarnetStatus.OK)
-                {
-                    if (firstObj.garnetObject is not SortedSetObject firstSortedSet)
-                    {
-                        return GarnetStatus.WRONGTYPE;
-                    }
-                    // read the rest of the keys
-                    for (var item = 1; item < keys.Length; item++)
-                    {
-                        statusOp = GET(keys[item].ToArray(), out var nextObj, ref objectContext);
-                        if (statusOp != GarnetStatus.OK)
-                            continue;
-
-                        if (nextObj.garnetObject is not SortedSetObject nextSortedSet)
-                        {
-                            pairs = default;
-                            return GarnetStatus.WRONGTYPE;
-                        }
-
-                        if (pairs == default)
-                            pairs = SortedSetObject.CopyDiff(firstSortedSet.Dictionary, nextSortedSet.Dictionary);
-                        else
-                            SortedSetObject.InPlaceDiff(pairs, nextSortedSet.Dictionary);
-                    }
-                }
+                return SortedSetDifference(keys, ref objectContext, out pairs);
             }
             finally
             {
                 if (createTransaction)
                     txnManager.Commit(true);
             }
+        }
 
-            return GarnetStatus.OK;
+        /// <summary>
+        /// Computes the difference between the first and all successive sorted sets and store resulting pairs in the destination key.
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="destinationKey"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        public GarnetStatus SortedSetDifferenceStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, out int count)
+        {
+            count = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            var objectContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                var status = SortedSetDifference(keys, ref objectContext, out var pairs);
+
+                if (status != GarnetStatus.OK)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                count = pairs?.Count ?? 0;
+
+                if (count > 0)
+                {
+                    SortedSetObject newSetObject = new();
+                    foreach (var (element, score) in pairs)
+                    {
+                        newSetObject.Add(element, score);
+                    }
+                    _ = SET(destinationKey.ToArray(), newSetObject, ref objectContext);
+                }
+                else
+                {
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                        ref lockableContext, ref objectContext);
+                }
+
+                return status;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
         }
 
         /// <summary>
@@ -849,5 +885,47 @@ namespace Garnet.server
         public GarnetStatus SortedSetScan<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
+
+        private GarnetStatus SortedSetDifference<TObjectContext>(ReadOnlySpan<ArgSlice> keys, ref TObjectContext objectContext, out Dictionary<byte[], double> pairs)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            pairs = default;
+
+            var statusOp = GET(keys[0].ToArray(), out var firstObj, ref objectContext);
+            if (statusOp == GarnetStatus.OK)
+            {
+                if (firstObj.garnetObject is not SortedSetObject firstSortedSet)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                if (keys.Length == 1)
+                {
+                    pairs = firstSortedSet.Dictionary;
+                    return GarnetStatus.OK;
+                }
+
+                // read the rest of the keys
+                for (var item = 1; item < keys.Length; item++)
+                {
+                    statusOp = GET(keys[item].ToArray(), out var nextObj, ref objectContext);
+                    if (statusOp != GarnetStatus.OK)
+                        continue;
+
+                    if (nextObj.garnetObject is not SortedSetObject nextSortedSet)
+                    {
+                        pairs = default;
+                        return GarnetStatus.WRONGTYPE;
+                    }
+
+                    if (pairs == default)
+                        pairs = SortedSetObject.CopyDiff(firstSortedSet.Dictionary, nextSortedSet.Dictionary);
+                    else
+                        SortedSetObject.InPlaceDiff(pairs, nextSortedSet.Dictionary);
+                }
+            }
+
+            return GarnetStatus.OK;
+        }
     }
 }

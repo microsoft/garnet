@@ -37,6 +37,9 @@ namespace Garnet.server
 
         public void Return()
         {
+            if (metrics == null)
+                return;
+
             foreach (var cmd in defaultLatencyTypes)
             {
                 metrics[(int)cmd].Return();
@@ -46,7 +49,8 @@ namespace Garnet.server
 
         public void Merge(GarnetLatencyMetricsSession lm)
         {
-            if (lm.metrics == null) return;
+            // Metrics can be null if we are shutting down the server but there are still remaining resp server session being disposed. Early return to handle graceful exit during server disposal.
+            if (lm.metrics == null || metrics == null) return;
             int ver = lm.PriorVersion; // Use prior version for merge
             for (int i = 0; i < metrics.Length; i++)
                 if (lm.metrics[i].latency[ver].TotalCount > 0)
@@ -55,14 +59,19 @@ namespace Garnet.server
 
         public void Reset(LatencyMetricsType cmd)
         {
+            // Early return to handle graceful exit during server disposal.
+            if (metrics == null)
+                return;
+
             int idx = (int)cmd;
             metrics[idx].latency.Reset();
         }
 
         private List<MetricsItem> GetPercentiles(int idx)
         {
-            if (metrics[idx].latency.TotalCount == 0)
+            if (metrics == null || metrics[idx].latency.TotalCount == 0)
                 return new();
+
             var curr = metrics[idx].latency;
 
 
@@ -119,7 +128,9 @@ namespace Garnet.server
         public bool GetRespHistogram(int idx, out string response, LatencyMetricsType eventType)
         {
             response = "";
-            if (metrics[idx].latency.TotalCount == 0)
+
+            // Early return to handle graceful exit during server disposal.
+            if (metrics == null || metrics[idx].latency.TotalCount == 0)
                 return false;
 
             var p = GetPercentiles(idx);
@@ -150,20 +161,28 @@ namespace Garnet.server
         {
             int cmdCount = 0;
             string response = "";
-            foreach (var eventType in events)
+
+            if (metrics != null)
             {
-                int idx = (int)eventType;
-                if (GetRespHistogram(idx, out var cmdHistogram, eventType))
+                foreach (var eventType in events)
                 {
-                    response += cmdHistogram;
-                    cmdCount++;
+                    int idx = (int)eventType;
+                    if (GetRespHistogram(idx, out var cmdHistogram, eventType))
+                    {
+                        response += cmdHistogram;
+                        cmdCount++;
+                    }
                 }
             }
+
             return cmdCount == 0 ? "*0\r\n" : $"*{cmdCount * 2}\r\n" + response;
         }
 
         public MetricsItem[] GetLatencyMetrics(LatencyMetricsType latencyMetricsType)
         {
+            if (metrics == null)
+                return [];
+
             int idx = (int)latencyMetricsType;
             return GetPercentiles(idx)?.ToArray();
         }
