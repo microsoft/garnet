@@ -5311,6 +5311,36 @@
     ]
   },
   {
+    "Command": "ZDIFFSTORE",
+    "Name": "ZDIFFSTORE",
+    "Summary": "Stores the difference of multiple sorted sets in a key.",
+    "Group": "SortedSet",
+    "Complexity": "O(L \u002B (N-K)log(N)) worst case where L is the total number of elements in all the sets, N is the size of the first set, and K is the size of the result set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 1
+      }
+    ]
+  },
+  {
     "Command": "ZINCRBY",
     "Name": "ZINCRBY",
     "Summary": "Increments the score of a member in a sorted set.",
