@@ -393,7 +393,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out float incr))
+                    if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out double incr))
                     {
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
@@ -405,7 +405,7 @@ namespace Garnet.server
 
                     if (valueExists)
                     {
-                        if (!NumUtils.TryParse(value, out float result))
+                        if (!NumUtils.TryParse(value, out double result))
                         {
                             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT, ref curr,
                                        end))
