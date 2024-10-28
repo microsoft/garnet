@@ -179,6 +179,11 @@ namespace Garnet.server
 
         PING,
 
+        // Pub/Sub commands
+        PUBSUB,
+        PUBSUB_CHANNELS,
+        PUBSUB_NUMPAT,
+        PUBSUB_NUMSUB,
         PUBLISH,
         SUBSCRIBE,
         PSUBSCRIBE,
@@ -1965,6 +1970,35 @@ namespace Garnet.server
                 if (subCommand.SequenceEqual(CmdStrings.LOADCS))
                 {
                     return RespCommand.MODULE_LOADCS;
+                }
+            }
+            else if (command.SequenceEqual(CmdStrings.PUBSUB))
+            {
+                Span<byte> subCommand = GetCommand(out var gotSubCommand);
+                if (!gotSubCommand)
+                {
+                    success = false;
+                    return RespCommand.NONE;
+                }
+
+                count--;
+                AsciiUtils.ToUpperInPlace(subCommand);
+                if (subCommand.SequenceEqual(CmdStrings.CHANNELS))
+                {
+                    return RespCommand.PUBSUB_CHANNELS;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.NUMSUB))
+                {
+                    return RespCommand.PUBSUB_NUMSUB;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.NUMPAT))
+                {
+                    return RespCommand.PUBSUB_NUMPAT;
+                }
+                else
+                {
+                    success = false;
+                    return RespCommand.NONE;
                 }
             }
             else
