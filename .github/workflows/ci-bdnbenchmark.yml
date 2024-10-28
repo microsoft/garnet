@@ -99,5 +99,4 @@ jobs:
           gh-pages-branch: 'continuousbenchmark'
           benchmark-data-dir-path: 'website/static/charts'
           auto-push: true
-
-    
+          max-items-in-chart: 50
