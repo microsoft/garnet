@@ -29,6 +29,17 @@ using Tsavorite.devices;
 
 namespace Garnet.test
 {
+    public struct StoreAddressInfo
+    {
+        public long BeginAddress;
+        public long HeadAddress;
+        public long ReadOnlyAddress;
+        public long TailAddress;
+        public long MemorySize;
+        public long ReadCacheBeginAddress;
+        public long ReadCacheTailAddress;
+    }
+
     internal static class TestUtils
     {
         /// <summary>
@@ -200,6 +211,7 @@ namespace Garnet.test
             int indexResizeFrequencySecs = 60,
             IAuthenticationSettings authenticationSettings = null,
             bool enableLua = false,
+            bool enableReadCache = false,
             ILogger logger = null,
             IEnumerable<string> loadModulePaths = null)
         {
@@ -277,7 +289,8 @@ namespace Garnet.test
                 EnableScatterGatherGet = getSG,
                 IndexResizeFrequencySecs = indexResizeFrequencySecs,
                 ThreadPoolMinThreads = threadPoolMinThreads,
-                LoadModuleCS = loadModulePaths
+                LoadModuleCS = loadModulePaths,
+                EnableReadCache = enableReadCache,
             };
 
             if (!string.IsNullOrEmpty(objectStoreHeapMemorySize))
@@ -290,6 +303,11 @@ namespace Garnet.test
             {
                 opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "1024" : MemorySize;
                 opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
+                if (enableReadCache)
+                {
+                    opts.ReadCacheMemorySize = opts.MemorySize;
+                    opts.ReadCachePageSize = opts.PageSize;
+                }
             }
 
             if (useTestLogger)
@@ -834,6 +852,33 @@ namespace Garnet.test
             {
                 Assert.Fail(ex.Message);
             }
+        }
+
+        public static StoreAddressInfo GetStoreAddressInfo(IServer server, bool includeReadCache = false)
+        {
+            StoreAddressInfo result = default;
+            var info = server.Info("STORE");
+            foreach (var section in info)
+            {
+                foreach (var entry in section)
+                {
+                    if (entry.Key.Equals("Log.BeginAddress"))
+                        result.BeginAddress = long.Parse(entry.Value);
+                    else if (entry.Key.Equals("Log.HeadAddress"))
+                        result.HeadAddress = long.Parse(entry.Value);
+                    else if (entry.Key.Equals("Log.SafeReadOnlyAddress"))
+                        result.ReadOnlyAddress = long.Parse(entry.Value);
+                    else if (entry.Key.Equals("Log.TailAddress"))
+                        result.TailAddress = long.Parse(entry.Value);
+                    else if (entry.Key.Equals("Log.MemorySizeBytes"))
+                        result.MemorySize = long.Parse(entry.Value);
+                    else if (includeReadCache && entry.Key.Equals("ReadCache.BeginAddress"))
+                        result.ReadCacheBeginAddress = long.Parse(entry.Value);
+                    else if (includeReadCache && entry.Key.Equals("ReadCache.TailAddress"))
+                        result.ReadCacheTailAddress = long.Parse(entry.Value);
+                }
+            }
+            return result;
         }
     }
 }

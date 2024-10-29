@@ -282,7 +282,7 @@ namespace Garnet
             if (!opts.DisableObjects)
             {
                 objKvSettings = opts.GetObjectStoreSettings(this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"),
-                    out var objHeapMemorySize);
+                    out var objHeapMemorySize, out var objReadCacheHeapMemorySize);
 
                 // Run checkpoint on its own thread to control p99
                 objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
@@ -304,8 +304,8 @@ namespace Garnet
                         () => new GarnetObjectSerializer(customCommandManager))
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
-                if (objHeapMemorySize > 0)
-                    objectStoreSizeTracker = new CacheSizeTracker(objectStore, objKvSettings, objHeapMemorySize,
+                if (objHeapMemorySize > 0 || objReadCacheHeapMemorySize > 0)
+                    objectStoreSizeTracker = new CacheSizeTracker(objectStore, objKvSettings, objHeapMemorySize, objReadCacheHeapMemorySize,
                         this.loggerFactory);
             }
         }
