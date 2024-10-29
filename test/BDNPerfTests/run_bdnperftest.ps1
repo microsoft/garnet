@@ -4,22 +4,23 @@
 
 .DESCRIPTION
 
-    Script to test for performance regressions in Allocated Memory using BDN Benchmark tool.  There are configuration files (in /ConfigFiles dir) associated with each test that contains name and expected values of the BDN benchmark. Any of these can be sent as the parameter to the file.
+    Script to test for performance regressions in Allocated Memory using BDN Benchmark tool.  There are configuration files (in /ConfigFiles dir) associated with each test that contains name and expected values of the BDN benchmark. 
+    Any of these can be sent as the parameter to the file.
     
-        CI_CONFIG_BDN_Benchmark_BasicOperations.json
+        CI_CONFIG_BDN_Benchmark_Operations.BasicOperations.json
 
     NOTE: The expected values are specific for the CI Machine. If you run these on your machine, you will need to change the expected values.
     NOTE: The acceptablerange* parameters in the config file is how far +/- X% the found value can be from the expected value and still say it is pass. Defaulted to 10% 
     
 .EXAMPLE
     ./run_bdnperftest.ps1 
-    ./run_bdnperftest.ps1 CI_CONFIG_BDN_Benchmark_BasicOperations.json
+    ./run_bdnperftest.ps1 CI_CONFIG_BDN_Benchmark_Operations.BasicOperations.json
 #>
 
 
 # Send the config file for the benchmark. Defaults to a simple one
 param (
-  [string]$configFile = "CI_CONFIG_BDN_Benchmark_BasicOperations.json"
+  [string]$configFile = "CI_CONFIG_BDN_Benchmark_Operations.BasicOperations.json"
 )
 
 $OFS = "`r`n"
