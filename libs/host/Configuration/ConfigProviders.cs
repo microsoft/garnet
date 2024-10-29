@@ -7,10 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Garnet.common;
-using Garnet.host.Configuration;
 using Microsoft.Extensions.Logging;
-using JsonException = System.Text.Json.JsonException;
-using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace Garnet
 {

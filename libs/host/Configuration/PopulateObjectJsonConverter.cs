@@ -5,7 +5,7 @@ using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Garnet.host.Configuration
+namespace Garnet
 {
     /// <summary>
     /// Deserializes a JSON-serialized stream into an existing object
@@ -34,6 +34,7 @@ namespace Garnet.host.Configuration
 
             var jsonDocument = JsonDocument.ParseValue(ref reader);
 
+            // Only override properties that are specified in the source document
             foreach (var property in jsonDocument.RootElement.EnumerateObject())
             {
                 var propertyInfo = typeof(T).GetProperty(property.Name);
