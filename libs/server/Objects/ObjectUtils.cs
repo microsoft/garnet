@@ -49,10 +49,8 @@ namespace Garnet.server
         /// <param name="error"></param>
         /// <returns></returns>
         public static unsafe bool ReadScanInput(ref ObjectInput input, ref SpanByteAndMemory output,
-            out int cursorInput, out byte* pattern, out int patternLength, out int countInInput, out ReadOnlySpan<byte> error)
+            out int cursorInput, out byte* pattern, out int patternLength, out int countInInput, out bool isNoValue, out ReadOnlySpan<byte> error)
         {
-            var currTokenIdx = input.parseStateStartIdx;
-
             // Cursor
             cursorInput = input.arg1;
 
@@ -66,6 +64,9 @@ namespace Garnet.server
             countInInput = 10;
 
             error = default;
+            isNoValue = false;
+
+            var currTokenIdx = 0;
 
             while (currTokenIdx < input.parseState.Count)
             {
@@ -89,6 +90,10 @@ namespace Garnet.server
                     // Limiting number of items to send to the output
                     if (countInInput > limitCountInOutput)
                         countInInput = limitCountInOutput;
+                }
+                else if (sbParam.SequenceEqual(CmdStrings.NOVALUES) || sbParam.SequenceEqual(CmdStrings.novalues))
+                {
+                    isNoValue = true;
                 }
             }
 

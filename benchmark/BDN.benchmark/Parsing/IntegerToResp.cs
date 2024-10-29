@@ -5,9 +5,13 @@ using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
 using Garnet.common;
 
-namespace BDN.benchmark.Resp
+namespace BDN.benchmark.Parsing
 {
-    public unsafe class RespIntegerWriteBenchmarks
+    /// <summary>
+    /// Benchmark for IntegerToResp
+    /// </summary>
+    [MemoryDiagnoser]
+    public unsafe class IntegerToResp
     {
         // Big enough buffer for the benchmarks
         private readonly byte[] _buffer = new byte[32];

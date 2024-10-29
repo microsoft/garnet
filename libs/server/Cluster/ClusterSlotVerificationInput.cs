@@ -29,5 +29,10 @@ namespace Garnet.server
         /// The step, or increment, between the first key and the position of the next key
         /// </summary>
         public int step;
+
+        /// <summary>
+        /// Offset of key num if any
+        /// </summary>
+        public int keyNumOffset;
     }
 }

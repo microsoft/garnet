@@ -3,7 +3,6 @@
 
 //#define HLL_SINGLE_PFADD_ENABLED
 
-using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -25,40 +24,20 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD));
             }
 
-            // 4 byte length of input
-            // 1 byte RespCommand
-            // 1 byte RespInputFlags
-            // 4 byte count of value to insert
-            // 8 byte hash value
-            var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(int) + sizeof(long);
-            var pbCmdInput = stackalloc byte[inputSize];
+            var input = new RawStringInput(RespCommand.PFADD);
 
-            ///////////////
-            //Build Input//
-            ///////////////
-            var pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            //1. header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.PFADD;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-            pcurr += RespInputHeader.Size;
-            //2. cmd args
-            *(int*)pcurr = 1; pcurr += sizeof(int);
             var output = stackalloc byte[1];
-
             byte pfaddUpdated = 0;
             var key = parseState.GetArgSliceByRef(0).SpanByte;
+
             for (var i = 1; i < parseState.Count; i++)
             {
-                var currSlice = parseState.GetArgSliceByRef(i);
-                *(long*)pcurr = (long)HashUtils.MurmurHash2x64A(currSlice.ptr, currSlice.Length);
-
+                input.parseState = parseState.Slice(i, 1);
                 var o = new SpanByteAndMemory(output, 1);
-                storageApi.HyperLogLogAdd(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+                storageApi.HyperLogLogAdd(ref key, ref input, ref o);
 
-                //Invalid HLL Type
-                if (*output == (byte)0xFF)
+                // Invalid HLL Type
+                if (*output == 0xFF)
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
                         SendAndReset();
@@ -97,22 +76,9 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT));
             }
 
-            // 4 byte length of input
-            // 1 byte RespCommand
-            // 1 byte RespInputFlags
-            var inputSize = sizeof(int) + RespInputHeader.Size;
-            var pbCmdInput = stackalloc byte[inputSize];
+            var input = new RawStringInput(RespCommand.PFCOUNT, ref parseState);
 
-            /////////////////
-            ////Build Input//
-            /////////////////
-            var pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            (*(RespInputHeader*)pcurr).cmd = RespCommand.PFCOUNT;
-            (*(RespInputHeader*)pcurr).flags = 0;
-
-            var status = storageApi.HyperLogLogLength(parseState.Parameters, ref Unsafe.AsRef<SpanByte>(pbCmdInput), out long cardinality, out bool error);
+            storageApi.HyperLogLogLength(ref input, out var cardinality, out var error);
             if (error)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
@@ -139,7 +105,10 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE));
             }
 
-            var status = storageApi.HyperLogLogMerge(parseState.Parameters, out bool error);
+            var input = new RawStringInput(RespCommand.PFMERGE, ref parseState);
+
+            var status = storageApi.HyperLogLogMerge(ref input, out var error);
+
             // Invalid Type
             if (error)
             {
@@ -147,7 +116,8 @@ namespace Garnet.server
                     SendAndReset();
                 return true;
             }
-            else if (status == GarnetStatus.OK)
+
+            if (status == GarnetStatus.OK)
             {
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();

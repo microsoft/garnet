@@ -56,22 +56,9 @@ namespace Garnet.server
             {
                 var sbKey = SpanByte.FromPinnedPointer(keyPtr, key.Length);
 
-                var parseStateArgCount = input.parseState.Count - input.parseStateStartIdx;
-
-                var sbToSerialize = new SpanByte[2 + parseStateArgCount];
-                sbToSerialize[0] = sbKey;
-                for (var i = 0; i < parseStateArgCount; i++)
-                {
-                    sbToSerialize[i + 2] = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + i).SpanByte;
-                }
-
-                input.parseStateStartIdx = 0;
-                input.parseState.Count = parseStateArgCount;
-                sbToSerialize[1] = input.SpanByte;
-
                 functionsState.appendOnlyFile.Enqueue(
                     new AofHeader { opType = AofEntryType.ObjectStoreRMW, version = version, sessionID = sessionID },
-                    ref sbToSerialize, out _);
+                    ref sbKey, ref input, out _);
             }
         }
 
@@ -197,7 +184,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private CustomObjectFunctions GetCustomObjectCommand(ref ObjectInput input, GarnetObjectType type)
         {
-            var objectId = (byte)((byte)type - CustomCommandManager.StartOffset);
+            var objectId = (byte)((byte)type - CustomCommandManager.TypeIdStartOffset);
             var cmdId = input.header.SubId;
             var customObjectCommand = functionsState.customObjectCommands[objectId].commandMap[cmdId].functions;
             return customObjectCommand;

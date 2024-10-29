@@ -23,7 +23,7 @@ namespace Garnet.server
 
         #region GET
         /// <inheritdoc />
-        public GarnetStatus GET(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+        public GarnetStatus GET(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
         {
             garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
             return garnetApi.GET(ref key, ref input, ref output);
@@ -53,10 +53,10 @@ namespace Garnet.server
 
         #region GETRANGE
         /// <inheritdoc />
-        public GarnetStatus GETRANGE(ref SpanByte key, int sliceStart, int sliceLength, ref SpanByteAndMemory output)
+        public GarnetStatus GETRANGE(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
         {
             garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
-            return garnetApi.GETRANGE(ref key, sliceStart, sliceLength, ref output);
+            return garnetApi.GETRANGE(ref key, ref input, ref output);
         }
         #endregion
 
@@ -263,6 +263,13 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public GarnetStatus SetIsMember(ArgSlice key, ArgSlice[] members, out int[] result)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.SetIsMember(key, members, out result);
+        }
+
+        /// <inheritdoc />
         public GarnetStatus SetMembers(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
@@ -431,7 +438,7 @@ namespace Garnet.server
         #region Bitmap Methods
 
         /// <inheritdoc />
-        public GarnetStatus StringGetBit(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+        public GarnetStatus StringGetBit(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
         {
             garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
             return garnetApi.StringGetBit(ref key, ref input, ref output);
@@ -445,7 +452,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus StringBitCount(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitCount(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
         {
             garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
             return garnetApi.StringBitCount(ref key, ref input, ref output);
@@ -459,14 +466,14 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus StringBitPosition(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitPosition(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
         {
             garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
             return garnetApi.StringBitPosition(ref key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref RawStringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output)
         {
             garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
             return garnetApi.StringBitFieldReadOnly(ref key, ref input, secondaryCommand, ref output);
@@ -477,13 +484,15 @@ namespace Garnet.server
         #region HLL Methods
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error)
+        public GarnetStatus HyperLogLogLength(ref RawStringInput input, out long count, out bool error)
         {
-            foreach (var key in keys)
+            for (var i = 0; i < input.parseState.Count; i++)
             {
+                var key = input.parseState.GetArgSliceByRef(i);
                 garnetApi.WATCH(key, StoreType.Main);
             }
-            return garnetApi.HyperLogLogLength(keys, ref input, out count, out error);
+
+            return garnetApi.HyperLogLogLength(ref input, out count, out error);
         }
 
         /// <inheritdoc />
@@ -545,6 +554,14 @@ namespace Garnet.server
             garnetApi.WATCH(key, StoreType.All);
             return garnetApi.ObjectScan(key, ref input, ref outputFooter);
         }
+
+        /// <inheritdoc />
+        public int GetScratchBufferOffset()
+            => garnetApi.GetScratchBufferOffset();
+
+        /// <inheritdoc />
+        public bool ResetScratchBuffer(int offset)
+            => garnetApi.ResetScratchBuffer(offset);
 
         #endregion
     }

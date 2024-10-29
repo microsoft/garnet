@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -15,7 +14,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool TryTransactionProc(byte id, byte* ptr, byte* end, CustomTransactionProcedure proc)
+        private bool TryTransactionProc(byte id, CustomTransactionProcedure proc, int startIdx = 0)
         {
             // Define output
             var output = new MemoryResult<byte>(null, 0);
@@ -24,9 +23,9 @@ namespace Garnet.server
             Debug.Assert(txnManager.state == TxnState.None);
 
             latencyMetrics?.Start(LatencyMetricsType.TX_PROC_LAT);
-            var input = new ArgSlice(ptr, (int)(end - ptr));
 
-            if (txnManager.RunTransactionProc(id, input, proc, ref output))
+            var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx);
+            if (txnManager.RunTransactionProc(id, ref procInput, proc, ref output))
             {
                 // Write output to wire
                 if (output.MemoryOwner != null)
@@ -49,21 +48,22 @@ namespace Garnet.server
             return true;
         }
 
-        public bool RunTransactionProc(byte id, ArgSlice input, ref MemoryResult<byte> output)
+        public bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             var proc = customCommandManagerSession
                 .GetCustomTransactionProcedure(id, txnManager, scratchBufferManager).Item1;
-            return txnManager.RunTransactionProc(id, input, proc, ref output);
+            return txnManager.RunTransactionProc(id, ref procInput, proc, ref output);
 
         }
 
-        private void TryCustomProcedure(byte id, byte* ptr, byte* end, CustomProcedure proc)
+        private void TryCustomProcedure(CustomProcedure proc, int startIdx = 0)
         {
             Debug.Assert(proc != null);
 
             var output = new MemoryResult<byte>(null, 0);
-            var input = new ArgSlice(ptr, (int)(end - ptr));
-            if (proc.Execute(basicGarnetApi, input, ref output))
+
+            var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx);
+            if (proc.Execute(basicGarnetApi, ref procInput, ref output))
             {
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
@@ -84,50 +84,19 @@ namespace Garnet.server
         /// <summary>
         /// Custom command
         /// </summary>
-        private bool TryCustomRawStringCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
+        private bool TryCustomRawStringCommand<TGarnetApi>(RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyPtr = sbKey.ToPointer();
-            var kSize = sbKey.Length;
 
-            ptr = keyPtr + kSize + 2;
-
-            var metadataSize = 8;
-            if (expirationTicks == 0) metadataSize = 0;
-
-            // Move key back if needed
-            if (metadataSize > 0)
-            {
-                Buffer.MemoryCopy(keyPtr, keyPtr - metadataSize, kSize, kSize);
-                keyPtr -= metadataSize;
-            }
-
-            // write key header size
-            keyPtr -= sizeof(int);
-            *(int*)keyPtr = kSize;
-
-            var inputPtr = ptr;
-            var iSize = (int)(end - ptr);
-
-            inputPtr -= RespInputHeader.Size; // input header
-            inputPtr -= metadataSize; // metadata header
-
-            var input = new SpanByte(metadataSize + RespInputHeader.Size + iSize, (nint)inputPtr);
-
-            ((RespInputHeader*)(inputPtr + metadataSize))->cmd = cmd;
-            ((RespInputHeader*)(inputPtr + metadataSize))->flags = 0;
-
-            if (expirationTicks == -1)
-                input.ExtraMetadata = expirationTicks;
-            else if (expirationTicks > 0)
-                input.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + expirationTicks;
+            var inputArg = expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + expirationTicks : expirationTicks;
+            var input = new RawStringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
             var output = new SpanByteAndMemory(null);
             GarnetStatus status;
             if (type == CommandType.ReadModifyWrite)
             {
-                status = storageApi.RMW_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref output);
+                status = storageApi.RMW_MainStore(ref sbKey, ref input, ref output);
                 Debug.Assert(!output.IsSpanByte);
 
                 if (output.Memory != null)
@@ -138,7 +107,7 @@ namespace Garnet.server
             }
             else
             {
-                status = storageApi.Read_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref output);
+                status = storageApi.Read_MainStore(ref sbKey, ref input, ref output);
                 Debug.Assert(!output.IsSpanByte);
 
                 if (status == GarnetStatus.OK)
@@ -163,22 +132,15 @@ namespace Garnet.server
         /// <summary>
         /// Custom object command
         /// </summary>
-        private bool TryCustomObjectCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, byte subid, CommandType type, ref TGarnetApi storageApi)
+        private bool TryCustomObjectCommand<TGarnetApi>(GarnetObjectType objType, byte subid, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
             var keyBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    cmd = cmd,
-                    SubId = subid
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1
-            };
+
+            var header = new RespInputHeader(objType) { SubId = subid };
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 

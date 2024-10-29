@@ -274,6 +274,16 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CheckHashIncrementDoublePrecision()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("user:user1", [new HashEntry("Field1", "1.1111111111")]);
+            var result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field1"), 2.2222222222);
+            ClassicAssert.AreEqual(3.3333333333, result, 1e-15);
+        }
+
+        [Test]
         public void CanDoHSETNXCommand()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -413,6 +423,16 @@ namespace Garnet.test
 
             members = db.HashScan("user:user789", "*");
             ClassicAssert.IsTrue(members.Count() == 5, "HSCAN with MATCH failed.");
+
+            var fields = db.HashScanNoValues("user:user789", "*");
+            ClassicAssert.IsTrue(fields.Count() == 5, "HSCAN with MATCH failed.");
+            CollectionAssert.AreEquivalent(new[] { "email", "email1", "email2", "email3", "age" }, fields.Select(f => f.ToString()));
+
+            RedisResult result = db.Execute("HSCAN", "user:user789", "0", "MATCH", "*", "COUNT", "2", "NOVALUES");
+            ClassicAssert.IsTrue(result.Length == 2);
+            var fieldsStr = ((RedisResult[])result[1]).Select(x => (string)x).ToArray();
+            ClassicAssert.IsTrue(fieldsStr.Length == 2, "HSCAN with MATCH failed.");
+            CollectionAssert.AreEquivalent(new[] { "email", "email1" }, fieldsStr);
         }
 
 

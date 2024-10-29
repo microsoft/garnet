@@ -71,6 +71,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> match => "match"u8;
         public static ReadOnlySpan<byte> COUNT => "COUNT"u8;
         public static ReadOnlySpan<byte> count => "count"u8;
+        public static ReadOnlySpan<byte> NOVALUES => "NOVALUES"u8;
+        public static ReadOnlySpan<byte> novalues => "novalues"u8;
         public static ReadOnlySpan<byte> TYPE => "TYPE"u8;
         public static ReadOnlySpan<byte> type => "type"u8;
         public static ReadOnlySpan<byte> REGISTERCS => "REGISTERCS"u8;
@@ -89,7 +91,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> WITHSCORES => "WITHSCORES"u8;
         public static ReadOnlySpan<byte> WITHVALUES => "WITHVALUES"u8;
         public static ReadOnlySpan<byte> EX => "EX"u8;
+        public static ReadOnlySpan<byte> EXAT => "EXAT"u8;
         public static ReadOnlySpan<byte> PX => "PX"u8;
+        public static ReadOnlySpan<byte> PXAT => "PXAT"u8;
+        public static ReadOnlySpan<byte> PERSIST => "PERSIST"u8;
         public static ReadOnlySpan<byte> KEEPTTL => "KEEPTTL"u8;
         public static ReadOnlySpan<byte> NX => "NX"u8;
         public static ReadOnlySpan<byte> XX => "XX"u8;
@@ -99,6 +104,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> rank => "rank"u8;
         public static ReadOnlySpan<byte> MAXLEN => "MAXLEN"u8;
         public static ReadOnlySpan<byte> maxlen => "maxlen"u8;
+        public static ReadOnlySpan<byte> PUBSUB => "PUBSUB"u8;
+        public static ReadOnlySpan<byte> CHANNELS => "CHANNELS"u8;
+        public static ReadOnlySpan<byte> NUMPAT => "NUMPAT"u8;
+        public static ReadOnlySpan<byte> NUMSUB => "NUMSUB"u8;
 
         /// <summary>
         /// Response strings
@@ -139,6 +148,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INVALIDEXP_IN_SET => "ERR invalid expire time in 'set' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SYNTAX_ERROR => "ERR syntax error"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_OFFSETOUTOFRANGE => "ERR offset is out of range"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BIT_IS_NOT_INTEGER => "ERR bit is not an integer or out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER => "ERR bit offset is not an integer or out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CURSORVALUE => "ERR cursor value should be equal or greater than 0."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INVALIDCURSOR => "ERR invalid cursor"u8;
@@ -186,6 +196,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_XX_NX_NOT_COMPATIBLE => "ERR XX and NX options at the same time are not compatible"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GT_LT_NX_NOT_COMPATIBLE => "ERR GT, LT, and/or NX options at the same time are not compatible"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR => "ERR INCR option supports a single increment-element pair"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_BITFIELD_TYPE => "ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is"u8;
 
         /// <summary>
         /// Response string templates
@@ -200,6 +211,7 @@ namespace Garnet.server
         public const string GenericParamShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
         public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
         public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
+        public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";
 
         /// <summary>
         /// Response errors while scripting

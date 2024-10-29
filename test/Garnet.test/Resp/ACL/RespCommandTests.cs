@@ -83,7 +83,7 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
             // TODO: See if these commands could be identified programmatically
-            IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE"];
+            IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE", "PUBSUB"];
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
 
             // Check tests against RespCommandsInfo
@@ -2984,6 +2984,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task GetEXACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GETEX",
+                [DoGetEXAsync]
+            );
+
+            static async Task DoGetEXAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("GETEX", ["foo"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
         public async Task GetBitACLsAsync()
         {
             await CheckCommandsAsync(
@@ -3014,6 +3029,38 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task GetSetACLsAsync()
+        {
+            int keyIx = 0;
+
+            await CheckCommandsAsync(
+                "GETSET",
+                [DoGetAndSetAsync]
+            );
+
+            async Task DoGetAndSetAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("GETSET", [$"foo-{keyIx++}", "bar"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task SubStrACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SUBSTR",
+                [DoSubStringAsync]
+            );
+
+            static async Task DoSubStringAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("SUBSTR", ["foo", "10", "15"]);
+                ClassicAssert.AreEqual("", val);
+            }
+        }
+
+        [Test]
         public async Task GetRangeACLsAsync()
         {
             await CheckCommandsAsync(
@@ -3024,6 +3071,21 @@ namespace Garnet.test.Resp.ACL
             static async Task DoGetRangeAsync(GarnetClient client)
             {
                 string val = await client.ExecuteForStringResultAsync("GETRANGE", ["foo", "10", "15"]);
+                ClassicAssert.AreEqual("", val);
+            }
+        }
+
+        [Test]
+        public async Task SubStringACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SUBSTR",
+                [DoSubStringAsync]
+            );
+
+            static async Task DoSubStringAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("SUBSTR", ["foo", "10", "15"]);
                 ClassicAssert.AreEqual("", val);
             }
         }
@@ -3401,6 +3463,24 @@ namespace Garnet.test.Resp.ACL
                 long val = await client.ExecuteForLongResultAsync("INCRBY", [$"foo-{count}", "2"]);
                 count++;
                 ClassicAssert.AreEqual(2, val);
+            }
+        }
+
+        [Test]
+        public async Task IncrByFloatACLsAsync()
+        {
+            int count = 0;
+
+            await CheckCommandsAsync(
+                "INCRBYFLOAT",
+                [DoIncrByFloatAsync]
+            );
+
+            async Task DoIncrByFloatAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("INCRBYFLOAT", [$"foo-{count}", "2"]);
+                count++;
+                ClassicAssert.AreEqual("2", val);
             }
         }
 
@@ -4381,6 +4461,51 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task PubSubChannelsACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "PUBSUB CHANNELS",
+                [DoPubSubChannelsAsync]
+            );
+
+            static async Task DoPubSubChannelsAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForStringArrayResultAsync("PUBSUB", ["CHANNELS"]);
+                CollectionAssert.IsEmpty(count);
+            }
+        }
+
+        [Test]
+        public async Task PubSubNumPatACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "PUBSUB NUMPAT",
+                [DoPubSubNumPatAsync]
+            );
+
+            static async Task DoPubSubNumPatAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForLongResultAsync("PUBSUB", ["NUMPAT"]);
+                ClassicAssert.AreEqual(0, count);
+            }
+        }
+
+        [Test]
+        public async Task PubSubNumSubACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "PUBSUB NUMSUB",
+                [DoPubSubNumSubAsync]
+            );
+
+            static async Task DoPubSubNumSubAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForStringArrayResultAsync("PUBSUB", ["NUMSUB"]);
+                CollectionAssert.IsEmpty(count);
+            }
+        }
+
+        [Test]
         public async Task ReadOnlyACLsAsync()
         {
             await CheckCommandsAsync(
@@ -4811,6 +4936,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task SetNXACLsAsync()
+        {
+            int keyIx = 0;
+
+            await CheckCommandsAsync(
+                "SETNX",
+                [DoSetIfNotExistAsync]
+            );
+
+            async Task DoSetIfNotExistAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("SETNX", [$"foo-{keyIx++}", "bar"]);
+                ClassicAssert.AreEqual(val, "OK");
+            }
+        }
+
+        [Test]
         public async Task SetRangeACLsAsync()
         {
             await CheckCommandsAsync(
@@ -5068,6 +5210,21 @@ namespace Garnet.test.Resp.ACL
             {
                 long val = await client.ExecuteForLongResultAsync("SISMEMBER", ["foo", "bar"]);
                 ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task SMIsMemberACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SMISMEMBER",
+                [DoSMultiIsMemberAsync]
+            );
+
+            static async Task DoSMultiIsMemberAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("SMISMEMBER", ["foo", "5"]);
+                ClassicAssert.IsNotNull(val);
             }
         }
 
@@ -5766,6 +5923,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ZDiffStoreACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZDIFFSTORE",
+                [DoZDiffStoreAsync]
+            );
+
+            static async Task DoZDiffStoreAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("ZDIFFSTORE", ["keyZ", "2", "foo", "bar"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
         public async Task ZScanACLsAsync()
         {
             await CheckCommandsAsync(
@@ -5954,13 +6126,13 @@ namespace Garnet.test.Resp.ACL
             // TODO: should watch fail outside of a transaction?
 
             await CheckCommandsAsync(
-                "WATCH MS",
+                "WATCHMS",
                 [DoWatchMSAsync]
             );
 
             static async Task DoWatchMSAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("WATCH", ["MS", "foo"]);
+                string val = await client.ExecuteForStringResultAsync("WATCHMS", ["foo"]);
                 ClassicAssert.AreEqual("OK", val);
             }
         }
@@ -5971,13 +6143,13 @@ namespace Garnet.test.Resp.ACL
             // TODO: should watch fail outside of a transaction?
 
             await CheckCommandsAsync(
-                "WATCH OS",
+                "WATCHOS",
                 [DoWatchOSAsync]
             );
 
             static async Task DoWatchOSAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("WATCH", ["OS", "foo"]);
+                string val = await client.ExecuteForStringResultAsync("WATCHOS", ["foo"]);
                 ClassicAssert.AreEqual("OK", val);
             }
         }

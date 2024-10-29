@@ -13,16 +13,6 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
-        /// This method is used to verify slot ownership for provided key.
-        /// On error this method writes to response buffer but does not drain recv buffer (caller is responsible for draining).
-        /// </summary>
-        /// <param name="key">Key bytes</param>
-        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation.</param>
-        /// <returns>True when ownership is verified, false otherwise</returns>
-        bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly)
-            => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(key, readOnly, SessionAsking, ref dcurr, ref dend);
-
-        /// <summary>
         /// This method is used to verify slot ownership for provided array of key argslices.
         /// </summary>
         /// <param name="keys">Array of key ArgSlice</param>
@@ -50,6 +40,7 @@ namespace Garnet.server
             if (commandInfo == null)
                 return true;
 
+            csvi.keyNumOffset = -1;
             var specs = commandInfo.KeySpecifications;
             switch (specs.Length)
             {
@@ -67,12 +58,12 @@ namespace Garnet.server
                         case FindKeysKeyNum:
                             var findKeysKeyNum = (FindKeysKeyNum)specs[0].FindKeys;
                             csvi.firstKey = searchIndex.Index + findKeysKeyNum.FirstKey - 1;
-                            csvi.lastKey = searchIndex.Index + parseState.GetInt(0);
+                            csvi.lastKey = csvi.firstKey + parseState.GetInt(searchIndex.Index + findKeysKeyNum.KeyNumIdx - 1);
                             csvi.step = findKeysKeyNum.KeyStep;
                             break;
                         case FindKeysUnknown:
                         default:
-                            throw new GarnetException("FindKeysUnknown range");
+                            throw new GarnetException("FindKeys spec not known");
                     }
 
                     break;
@@ -86,26 +77,31 @@ namespace Garnet.server
                         case FindKeysKeyNum:
                         case FindKeysUnknown:
                         default:
-                            throw new GarnetException("FindKeysUnknown range");
+                            throw new GarnetException("FindKeys spec not known");
                     }
 
+                    var searchIndex1 = (BeginSearchIndex)specs[1].BeginSearch;
                     switch (specs[1].FindKeys)
                     {
                         case FindKeysRange:
-                            var searchIndex1 = (BeginSearchIndex)specs[1].BeginSearch;
                             var findRange = (FindKeysRange)specs[1].FindKeys;
                             csvi.lastKey = findRange.LastKey < 0 ? findRange.LastKey + parseState.Count + 1 : findRange.LastKey + searchIndex1.Index - searchIndex.Index + 1;
                             csvi.step = findRange.KeyStep;
                             break;
                         case FindKeysKeyNum:
+                            var findKeysKeyNum = (FindKeysKeyNum)specs[1].FindKeys;
+                            csvi.keyNumOffset = searchIndex1.Index + findKeysKeyNum.KeyNumIdx - 1;
+                            csvi.lastKey = searchIndex1.Index + parseState.GetInt(csvi.keyNumOffset);
+                            csvi.step = findKeysKeyNum.KeyStep;
+                            break;
                         case FindKeysUnknown:
                         default:
-                            throw new GarnetException("FindKeysUnknown range");
+                            throw new GarnetException("FindKeys spec not known");
                     }
 
                     break;
                 default:
-                    throw new GarnetException("KeySpecification unknown count");
+                    throw new GarnetException("KeySpecification not supported count");
             }
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;

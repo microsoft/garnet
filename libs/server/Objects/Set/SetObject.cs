@@ -26,6 +26,7 @@ namespace Garnet.server
         SMOVE,
         SRANDMEMBER,
         SISMEMBER,
+        SMISMEMBER,
         SUNION,
         SUNIONSTORE,
         SDIFF,
@@ -129,6 +130,9 @@ namespace Garnet.server
                     case SetOperation.SISMEMBER:
                         SetIsMember(ref input, ref output);
                         break;
+                    case SetOperation.SMISMEMBER:
+                        SetMultiIsMember(ref input, ref output);
+                        break;
                     case SetOperation.SREM:
                         SetRemove(ref input, _output);
                         break;
@@ -143,7 +147,7 @@ namespace Garnet.server
                         break;
                     case SetOperation.SSCAN:
                         if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
-                                out var patternLength, out var limitCount, out var error))
+                                out var patternLength, out var limitCount, out bool _, out var error))
                         {
                             Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                                 patternLength: patternLength);
@@ -172,7 +176,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0)
+        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0, bool isNoValue = false)
         {
             cursor = start;
             items = new List<byte[]>();

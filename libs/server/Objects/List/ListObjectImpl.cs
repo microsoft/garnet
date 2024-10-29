@@ -27,7 +27,7 @@ namespace Garnet.server
             _output->result1 = int.MinValue;
 
             // get the source string to remove
-            var itemSpan = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
+            var itemSpan = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
             var removedCount = 0;
             _output->result1 = 0;
@@ -83,16 +83,14 @@ namespace Garnet.server
 
             if (list.Count > 0)
             {
-                var currTokenIdx = input.parseStateStartIdx;
-
                 // figure out where to insert BEFORE or AFTER
-                var position = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                var position = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
                 // get the source string
-                var pivot = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                var pivot = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
                 // get the string to INSERT into the list
-                var item = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
+                var item = input.parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
 
                 var insertBefore = position.SequenceEqual(CmdStrings.BEFORE);
 
@@ -282,9 +280,9 @@ namespace Garnet.server
             *_output = default;
 
             _output->result1 = 0;
-            for (var currTokenIdx = input.parseStateStartIdx; currTokenIdx < input.parseState.Count; currTokenIdx++)
+            for (var i = 0; i < input.parseState.Count; i++)
             {
-                var value = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
+                var value = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
                 // Add the value to the top of the list
                 if (fAddAtHead)
@@ -367,7 +365,6 @@ namespace Garnet.server
             var output_end = output_currptr + output.Length;
 
             ObjectOutputHeader _output = default;
-            var currTokenIdx = input.parseStateStartIdx;
             try
             {
                 if (list.Count == 0)
@@ -378,7 +375,7 @@ namespace Garnet.server
                 }
 
                 // index
-                if (!input.parseState.TryGetInt(currTokenIdx++, out var index))
+                if (!input.parseState.TryGetInt(0, out var index))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
@@ -395,7 +392,7 @@ namespace Garnet.server
                 }
 
                 // element
-                var element = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
+                var element = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
 
                 var targetNode = index == 0 ? list.First
                     : (index == list.Count - 1 ? list.Last
@@ -422,8 +419,7 @@ namespace Garnet.server
 
         private void ListPosition(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var element = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
-            input.parseStateStartIdx++;
+            var element = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -582,14 +578,14 @@ namespace Garnet.server
 
         private static unsafe bool ReadListPositionInput(ref ObjectInput input, out int rank, out int count, out bool isDefaultCount, out int maxlen, out ReadOnlySpan<byte> error)
         {
-            var currTokenIdx = input.parseStateStartIdx;
-
             rank = 1; // By default, LPOS takes first match element
             count = 1; // By default, LPOS return 1 element
             isDefaultCount = true;
             maxlen = 0; // By default, iterate to all the item
 
             error = default;
+
+            var currTokenIdx = 1;
 
             while (currTokenIdx < input.parseState.Count)
             {

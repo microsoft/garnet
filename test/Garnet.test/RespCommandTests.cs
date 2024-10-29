@@ -223,8 +223,8 @@ namespace Garnet.test
         /// Test COMMAND INFO [command-name [command-name ...]]
         /// </summary>
         [Test]
-        [TestCase(["GET", "SET", "COSCAN", "ACL|LOAD", "WATCH|MS"])]
-        [TestCase(["get", "set", "coscan", "acl|load", "watch|ms"])]
+        [TestCase(["GET", "SET", "COSCAN", "ACL|LOAD", "WATCH"])]
+        [TestCase(["get", "set", "coscan", "acl|load", "watch"])]
         public void CommandInfoWithCommandNamesTest(params string[] commands)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -249,8 +249,8 @@ namespace Garnet.test
         /// Test COMMAND DOCS [command-name [command-name ...]]
         /// </summary>
         [Test]
-        [TestCase(["GET", "SET", "COSCAN", "ACL|LOAD", "WATCH|MS"])]
-        [TestCase(["get", "set", "coscan", "acl|load", "watch|ms"])]
+        [TestCase(["GET", "SET", "COSCAN", "ACL|LOAD", "WATCH"])]
+        [TestCase(["get", "set", "coscan", "acl|load", "watch"])]
         public void CommandDocsWithCommandNamesTest(params string[] commands)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -383,7 +383,7 @@ namespace Garnet.test
                 RespCommand.MULTI,
             ];
 
-            foreach (RespCommand cmd in Enum.GetValues(typeof(RespCommand)))
+            foreach (var cmd in Enum.GetValues<RespCommand>().Where(cmd => cmd != RespCommand.INVALID))
             {
                 var expectedAofIndependence = Array.IndexOf(aofIndpendentCmds, cmd) != -1;
                 ClassicAssert.AreEqual(expectedAofIndependence, cmd.IsAofIndependent());

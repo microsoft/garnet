@@ -106,7 +106,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SET-CONFIG-EPOCH](cluster.md#cluster-set-config-epoch) | ➕ |  |
 |  | [SETSLOT](cluster.md#cluster-setslot) | ➕ |  |
 |  | SHARDS | ➖ |  |
-|  | [SLAVES](cluster.md#slaves) | ➕ |  |
+|  | [SLAVES](cluster.md#slaves) | ➕ | (Deprecated) |
 |  | [SLOTS](cluster.md#cluster-slots) | ➕ | (deprecated) |
 | <span id="command">**COMMAND**</span> | [COMMAND](server.md#command) | ➕ |  |
 |  | [COUNT](server.md#command-count) | ➕ |  |
@@ -120,7 +120,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ECHO](generic-commands.md#echo) | ➕ |  |
 |  | [HELLO](generic-commands.md#hello) | ➕ |  |
 |  | [PING](generic-commands.md#ping) | ➕ |  |
-|  | [QUIT](generic-commands.md#quit) | ➕ |  |
+|  | [QUIT](generic-commands.md#quit) | ➕ | (Deprecated) |
 |  | [SELECT](generic-commands.md#select) | ➕ |  |
 | <span id="functions">**FUNCTIONS**</span> | FCALL | ➖ |  |
 |  | FCALL_RO | ➖ |  |
@@ -155,10 +155,10 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [GEODIST](data-structures.md#geodist) | ➕ |  |
 |  | [GEOHASH](data-structures.md#geohash) | ➕ |  |
 |  | [GEOPOS](data-structures.md#geopos) | ➕ |  |
-|  | GEORADIUS | ➖ |  |
-|  | GEORADIUS_RO | ➖ |  |
-|  | GEORADIUSBYMEMBER | ➖ |  |
-|  | GEORADIUSBYMEMBER_RO | ➖ |  |
+|  | GEORADIUS | ➖ | (Deprecated) |
+|  | GEORADIUS_RO | ➖ | (Deprecated) |
+|  | GEORADIUSBYMEMBER | ➖ | (Deprecated) |
+|  | GEORADIUSBYMEMBER_RO | ➖ | (Deprecated) |
 |  | [GEOSEARCH](data-structures.md#geosearch) | ➕ | Partially Implemented |
 |  | GEOSEARCHSTORE | ➖ |  |
 | <span id="hash">**HASH**</span> | [HDEL](data-structures.md#hdel) | ➕ |  |
@@ -173,14 +173,14 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [HKEYS](data-structures.md#hkeys) | ➕ |  |
 |  | [HLEN](data-structures.md#hlen) | ➕ |  |
 |  | [HMGET](data-structures.md#hmget) | ➕ |  |
-|  | [HMSET](data-structures.md#hmset) | ➕ |  |
+|  | [HMSET](data-structures.md#hmset) | ➕ | (Deprecated) |
 |  | HPERSIST | ➖ |  |
 |  | HPEXPIRE | ➖ |  |
 |  | HPEXPIREAT | ➖ |  |
 |  | HPEXPIRETIME | ➖ |  |
 |  | HPTTL | ➖ |  |
 |  | [HRANDFIELD](data-structures.md#hrandfield) | ➕ |  |
-|  | [HSCAN](data-structures.md#hscan) | ➕ | `NOVALUES` flag not yet implemented |
+|  | [HSCAN](data-structures.md#hscan) | ➕ |  |
 |  | [HSET](data-structures.md#hset) | ➕ |  |
 |  | [HSETNX](data-structures.md#hsetnx) | ➕ |  |
 |  | [HSTRLEN](data-structures.md#hstrlen) | ➕ |  |
@@ -188,9 +188,9 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [HVALS](data-structures.md#hvals) | ➕ |  |
 | <span id="hyperloglog">**HYPERLOGLOG**</span> | [PFADD](analytics.md#pfadd) | ➕ |  |
 |  | [PFCOUNT](analytics.md#pfcount) | ➕ |  |
-|  | PFDEBUG | ➖ |  |
+|  | PFDEBUG | ➖ | Internal command |
 |  | [PFMERGE](analytics.md#pfmerge) | ➕ |  |
-|  | PFSELFTEST | ➖ |  |
+|  | PFSELFTEST | ➖ | Internal command |
 | <span id="keys">**KEYS**</span> | COPY | ➖ |  |
 |  | [DEL](generic-commands.md#del) | ➕ |  |
 |  | DUMP | ➖ |  |
@@ -212,12 +212,12 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | BLMPOP | ➖ |  |
 |  | [BLPOP](data-structures.md#blpop) | ➕ |  |
 |  | [BRPOP](data-structures.md#brpop) | ➕ |  |
-|  | BRPOPLPUSH | ➖ |  |
+|  | BRPOPLPUSH | ➖ | (Deprecated) |
 |  | [LINDEX](data-structures.md#lindex) | ➕ |  |
 |  | [LINSERT](data-structures.md#linsert) | ➕ |  |
 |  | [LLEN](data-structures.md#llen) | ➕ |  |
 |  | [LMOVE](data-structures.md#lmove) | ➕ |  |
-|  | LMPOP | ➖ |  |
+|  | [LMPOP](data-structures.md#lmpop) | ➕ |  |
 |  | [LPOP](data-structures.md#lpop) | ➕ |  |
 |  | [LPOS](data-structures.md#lpos) | ➕ |  |
 |  | [LPUSH](data-structures.md#lpush) | ➕ |  |
@@ -227,7 +227,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [LSET](data-structures.md#lset) | ➕ |  |
 |  | [LTRIM](data-structures.md#ltrim) | ➕ |  |
 |  | [RPOP](data-structures.md#rpop) | ➕ |  |
-|  | [RPOPLPUSH](data-structures.md#rpoplpush) | ➕ |  |
+|  | [RPOPLPUSH](data-structures.md#rpoplpush) | ➕ | (Deprecated) |
 |  | [RPUSH](data-structures.md#rpush) | ➕ |  |
 |  | [RPUSHX](data-structures.md#rpushx) | ➕ |  |
 | <span id="memory">**MEMORY**</span> | DOCTOR | ➖ |  |
@@ -248,10 +248,10 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | REFCOUNT | ➖ |  |
 | <span id="pubsub">**PUB/SUB**</span> | [PSUBSCRIBE](analytics.md#psubscribe) | ➕ |  |
 |  | [PUBLISH](analytics.md#publish) | ➕ |  |
-|  | PUBSUB CHANNELS | ➖ |  |
+|  | [PUBSUB CHANNELS](analytics.md#pubsub-channels) | ➖ |  |
 |  | PUBSUB HELP | ➖ |  |
-|  | PUBSUB NUMPAT | ➖ |  |
-|  | PUBSUB NUMSUB | ➖ |  |
+|  | [PUBSUB NUMPAT](analytics.md#pubsub-numpat) | ➖ |  |
+|  | [PUBSUB NUMSUB](analytics.md#pubsub-numsub) | ➖ |  |
 |  | PUBSUB SHARDCHANNELS | ➖ |  |
 |  | PUBSUB SHARDNUMSUB | ➖ |  |
 |  | [PUNSUBSCRIBE](analytics.md#punsubscribe) | ➕ |  |
@@ -290,7 +290,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | ROLE | ➖ |  |
 |  | [SAVE](checkpoint.md#save) | ➕ |  |
 |  | SHUTDOWN | ➖ |  |
-|  | SLAVEOF | ➖ |  |
+|  | SLAVEOF | ➖ | (Deprecated) |
 |  | SWAPDB | ➖ |  |
 |  | SYNC | ➖ |  |
 |  | [TIME](server.md#time) | ➕ |  |
@@ -303,8 +303,8 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | SINTERCARD | ➖ |  |
 |  | [SISMEMBER](data-structures.md#sismember) | ➕ |  |
 |  | [SMEMBERS](data-structures.md#smembers) | ➕ |  |
-|  | SMISMEMBER | ➖ |  |
-|  | SMOVE | ➖ |  |
+|  | [SMISMEMBER](data-structures.md#smismember) | ➕ |  |
+|  | [SMOVE](data-structures.md#smove) | ➕ |  |
 |  | [SPOP](data-structures.md#spop) | ➕ |  |
 |  | SPUBLISH | ➖ |  |
 |  | [SRANDMEMBER](data-structures.md#srandmember) | ➕ |  |
@@ -318,15 +318,14 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | HELP | ➖ |  |
 |  | LEN | ➖ |  |
 |  | RESET | ➖ |  |
-| <span id="sorted-set">**SORTED SET**</span> | BZPOP | ➖ |  |
-|  | BZMPOP | ➖ |  |
+| <span id="sorted-set">**SORTED SET**</span> | BZMPOP | ➖ |  |
 |  | BZPOPMAX | ➖ |  |
 |  | BZPOPMIN | ➖ |  |
 |  | [ZADD](data-structures.md#zadd) | ➕ |  |
 |  | [ZCARD](data-structures.md#zcard) | ➕ |  |
 |  | [ZCOUNT](data-structures.md#zcount) | ➕ |  |
 |  | [ZDIFF](data-structures.md#zdiff) | ➕ |  |
-|  | ZDIFFSTORE | ➖ |  |
+|  | [ZDIFFSTORE](data-structures.md#zdiffstore) | ➕ |  |
 |  | [ZINCRBY](data-structures.md#zincrby) | ➕ |  |
 |  | ZINTER | ➖ |  |
 |  | ZINTERCARD | ➖ |  |
@@ -338,17 +337,17 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZPOPMIN](data-structures.md#zpopmin) | ➕ |  |
 |  | [ZRANDMEMBER](data-structures.md#zrandmember) | ➕ |  |
 |  | [ZRANGE](data-structures.md#zrange) | ➕ |  |
-|  | [ZRANGEBYLEX](data-structures.md#zrangebylex) | ➕ |  |
-|  | [ZRANGEBYSCORE](data-structures.md#zrangebyscore) | ➕ |  |
+|  | [ZRANGEBYLEX](data-structures.md#zrangebylex) | ➕ | (Deprecated) |
+|  | [ZRANGEBYSCORE](data-structures.md#zrangebyscore) | ➕ | (Deprecated) |
 |  | ZRANGESTORE | ➖ |  |
 |  | [ZRANK](data-structures.md#zrank) | ➕ |  |
 |  | [ZREM](data-structures.md#zrem) | ➕ |  |
 |  | [ZREMRANGEBYLEX](data-structures.md#zremrangebylex) | ➕ |  |
 |  | [ZREMRANGEBYRANK](data-structures.md#zremrangebyrank) | ➕ |  |
 |  | [ZREMRANGEBYSCORE](data-structures.md#zremrangebyscore) | ➕ |  |
-|  | [ZREVRANGE](data-structures.md#zrevrange) | ➕ |  |
-|  | ZREVRANGEBYLEX | ➖ |  |
-|  | [ZREVRANGEBYSCORE](data-structures.md#zrevrangebyscore) | ➕ |  |
+|  | [ZREVRANGE](data-structures.md#zrevrange) | ➕ | (Deprecated) |
+|  | ZREVRANGEBYLEX | ➖ | (Deprecated) |
+|  | [ZREVRANGEBYSCORE](data-structures.md#zrevrangebyscore) | ➕ | (Deprecated) |
 |  | [ZREVRANK](data-structures.md#zrevrank) | ➕ |  |
 |  | [ZSCAN](data-structures.md#zscan) | ➕ |  |
 |  | [ZSCORE](data-structures.md#zscore) | ➕ |  |
@@ -382,24 +381,23 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [DECRBY](raw-string.md#decrby) | ➕ |  |
 |  | [GET](raw-string.md#get) | ➕ |  |
 |  | [GETDEL](raw-string.md#getdel) | ➕ |  |
-|  | GETEX | ➖ |  |
+|  | [GETEX](raw-string.md#getex) | ➕ |  |
 |  | [GETRANGE](raw-string.md#getrange) | ➕ |  |
-|  | GETSET | ➖ |  |
+|  | [GETSET](raw-string.md#getset) | ➖ |  |
 |  | [INCR](raw-string.md#incr) | ➕ |  |
 |  | [INCRBY](raw-string.md#incrby) | ➕ |  |
-|  | INCRBYFLOAT | ➖ |  |
+|  | [INCRBYFLOAT](raw-string.md#incrbyfloat) | ➖ |  |
 |  | LCS | ➖ |  |
 |  | [MGET](raw-string.md#mget) | ➕ |  |
 |  | [MSET](raw-string.md#mset) | ➕ |  |
 |  | [MSETNX](raw-string.md#msetnx) | ➕ |  |
-|  | [PSETEX](raw-string.md#psetex) | ➕ |  |
+|  | [PSETEX](raw-string.md#psetex) | ➕ | (Deprecated) |
 |  | [SET](raw-string.md#set) | ➕ |  |
-|  | [SET ... NX](raw-string.md#set) | ➕ |  |
-|  | [SETEX](raw-string.md#setex) | ➕ |  |
-|  | SETNX | ➖ |  |
+|  | [SETEX](raw-string.md#setex) | ➕ | (Deprecated) |
+|  | [SETNX](raw-string.md#setnx) | ➖ |  |
 |  | [SETRANGE](raw-string.md#setrange) | ➕ |  |
 |  | [STRLEN](raw-string.md#strlen) | ➕ |  |
-|  | SUBSTR | ➖ |  |
+|  | SUBSTR | ➖ | (Deprecated) |
 | <span id="transactions">**TRANSACTIONS**</span> | [DISCARD](transactions.md#discard) | ➕ |  |
 |  | [EXEC](transactions.md#exec) | ➕ |  |
 |  | [MULTI](transactions.md#multi) | ➕ |  |
