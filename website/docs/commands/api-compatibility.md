@@ -383,10 +383,10 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [GETDEL](raw-string.md#getdel) | ➕ |  |
 |  | [GETEX](raw-string.md#getex) | ➕ |  |
 |  | [GETRANGE](raw-string.md#getrange) | ➕ |  |
-|  | [GETSET](raw-string.md#getset) | ➖ |  |
+|  | [GETSET](raw-string.md#getset) | ➕ |  |
 |  | [INCR](raw-string.md#incr) | ➕ |  |
 |  | [INCRBY](raw-string.md#incrby) | ➕ |  |
-|  | [INCRBYFLOAT](raw-string.md#incrbyfloat) | ➖ |  |
+|  | [INCRBYFLOAT](raw-string.md#incrbyfloat) | ➕ |  |
 |  | LCS | ➖ |  |
 |  | [MGET](raw-string.md#mget) | ➕ |  |
 |  | [MSET](raw-string.md#mset) | ➕ |  |
@@ -394,7 +394,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [PSETEX](raw-string.md#psetex) | ➕ | (Deprecated) |
 |  | [SET](raw-string.md#set) | ➕ |  |
 |  | [SETEX](raw-string.md#setex) | ➕ | (Deprecated) |
-|  | [SETNX](raw-string.md#setnx) | ➖ |  |
+|  | [SETNX](raw-string.md#setnx) | ➕ |  |
 |  | [SETRANGE](raw-string.md#setrange) | ➕ |  |
 |  | [STRLEN](raw-string.md#strlen) | ➕ |  |
 |  | SUBSTR | ➖ | (Deprecated) |
