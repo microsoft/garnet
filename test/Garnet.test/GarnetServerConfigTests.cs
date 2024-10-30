@@ -6,10 +6,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using CommandLine;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -43,10 +44,16 @@ namespace Garnet.test
                 }
             }
             // Deserialize default.conf to get all defined default options
-            Dictionary<string, string> jsonSettings = [];
+            Dictionary<string, object> jsonSettings = [];
+            var jsonSerializerOptions = new JsonSerializerOptions
+            {
+                ReadCommentHandling = JsonCommentHandling.Skip,
+                NumberHandling = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.WriteAsString
+            };
+
             try
             {
-                jsonSettings = JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
+                jsonSettings = JsonSerializer.Deserialize<Dictionary<string, object>>(json, jsonSerializerOptions);
             }
             catch (Exception e)
             {
@@ -57,7 +64,7 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(jsonSettings);
             foreach (var property in typeof(Options).GetProperties().Where(pi =>
                          pi.GetCustomAttribute<OptionAttribute>() != null &&
-                         pi.GetCustomAttribute<System.Text.Json.Serialization.JsonIgnoreAttribute>() == null))
+                         pi.GetCustomAttribute<JsonIgnoreAttribute>() == null))
             {
                 ClassicAssert.Contains(property.Name, jsonSettings.Keys);
             }
