@@ -8,7 +8,7 @@ namespace Garnet.server
 {
     sealed partial class StorageSession
     {
-        void CompletePending<TKeyLocker>(out Status status, ref SpanByteAndMemory output)
+        void CompletePending<TKeyLocker>(out Status status, out SpanByteAndMemory output)
             where TKeyLocker : struct, ISessionLocker
         {
             // Main store

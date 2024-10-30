@@ -6,46 +6,33 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
     sealed partial class StorageSession : IDisposable
     {
-        public GarnetStatus RMW_ObjectStore<TObjectContext>(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus RMW_ObjectStore<TKeyLocker, TEpochGuard>(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            var status = objectStoreContext.RMW(ref key, ref input, ref output);
+            var status = dualContext.RMW<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
 
             if (status.IsPending)
-                CompletePendingForObjectStoreSession(ref status, ref output, ref objectStoreContext);
+                CompletePending<TKeyLocker>(out status, out output);
 
             if (status.Found)
-            {
-                if (output.spanByteAndMemory.Length == 0)
-                    return GarnetStatus.WRONGTYPE;
-
-                return GarnetStatus.OK;
-            }
-
+                return output.spanByteAndMemory.Length == 0 ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
             return GarnetStatus.NOTFOUND;
         }
 
-        public GarnetStatus Read_ObjectStore<TObjectContext>(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
-        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus Read_ObjectStore<TKeyLocker, TEpochGuard>(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            var status = objectStoreContext.Read(ref key, ref input, ref output);
+            var status = dualContext.Read<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
 
             if (status.IsPending)
-                CompletePendingForObjectStoreSession(ref status, ref output, ref objectStoreContext);
+                CompletePending<TKeyLocker>(out status, out output);
 
             if (status.Found)
-            {
-                if (output.spanByteAndMemory.Length == 0)
-                    return GarnetStatus.WRONGTYPE;
-
-                return GarnetStatus.OK;
-            }
-
+                return output.spanByteAndMemory.Length == 0 ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
             return GarnetStatus.NOTFOUND;
         }
     }

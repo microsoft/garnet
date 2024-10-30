@@ -25,15 +25,18 @@ namespace Tsavorite.core
         {
             // Called by Single Tsavorite instance configurations, so we must do Kernel entry, lock, etc. here
             var keyHash = readOptions.KeyHash ?? storeFunctions.GetKeyHashCode64(ref key);
-            var status = Kernel.EnterForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, keyHash, partitionId, out var hei);
-            if (status.NotFound)
-            {
-                output = default;
-                recordMetadata = default;
-                return status;
-            }
+            HashEntryInfo hei = default;
+
             try
             {
+                var status = Kernel.EnterForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, keyHash, partitionId, out hei);
+                if (status.NotFound)
+                {
+                    output = default;
+                    recordMetadata = default;
+                    return status;
+                }
+
                 return ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
                         ref hei, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, sessionFunctions);
             }
@@ -86,7 +89,7 @@ namespace Tsavorite.core
             if (address < hlogBase.HeadAddress)
                 return new(StatusCode.Found);
 
-            // TODO move all EnterKernelReadAtAddress inside the try{} bc lock timeout can throw
+            // This can throw on lock timeout so make sure it is called within try/finally to ensure epoch is released
             TEpochGuard.BeginUnsafe(ref kernelSession);
 
             // CheckHashTableGrowth(); TODO
@@ -136,16 +139,17 @@ namespace Tsavorite.core
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             // Called by Single Tsavorite instance configurations (this API is called only for specific store instances)
-            var status = EnterKernelForReadAtAddress<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, PartitionId, address, ref key, readOptions.KeyHash ?? GetKeyHash(ref key), isNoKey, out var hei);
-            if (status.NotFound)
-            {
-                output = default;
-                recordMetadata = default;
-                return status;
-            }
-
+            HashEntryInfo hei = default;
             try
             {
+                var status = EnterKernelForReadAtAddress<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, PartitionId, address, ref key, readOptions.KeyHash ?? GetKeyHash(ref key), isNoKey, out hei);
+                if (status.NotFound)
+                {
+                    output = default;
+                    recordMetadata = default;
+                    return status;
+                }
+
                 return ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref hei, ref key, isNoKey, ref input, ref output, ref readOptions, out recordMetadata, context, sessionFunctions);
             }
             finally
@@ -166,7 +170,7 @@ namespace Tsavorite.core
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions, ref readOptions, noKey: true);
             OperationStatus internalStatus;
             do
-                internalStatus = InternalReadAtAddress<TKeyLocker>(ref stackCtx, ref key, isNoKey, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions);
+                internalStatus = InternalReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref stackCtx, ref key, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx.hei, internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
             recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress);
@@ -183,16 +187,18 @@ namespace Tsavorite.core
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             // Called by Single Tsavorite instance configurations, so we must do Kernel entry, lock, etc. here
-            var status = Kernel.EnterForUpdate<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, keyHash, partitionId, Log.BeginAddress, out var hei);
-            if (status.NotFound)
-            {
-                output = default;
-                recordMetadata = default;
-                return status;
-            }
- 
+            HashEntryInfo hei = default;
+
             try
             {
+                var status = Kernel.EnterForUpdate<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, keyHash, partitionId, Log.BeginAddress, out hei);
+                if (status.NotFound)
+                {
+                    output = default;
+                    recordMetadata = default;
+                    return status;
+                }
+
                 return ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
                         ref hei, ref key, ref input, ref value, ref output, out recordMetadata, context, sessionFunctions);
             }
@@ -232,18 +238,19 @@ namespace Tsavorite.core
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             // Called by Single Tsavorite instance configurations, so we must do Kernel entry, lock, etc. here
-            var status = Kernel.EnterForUpdate<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, keyHash, partitionId, Log.BeginAddress, out var hei);
-            if (status.NotFound)
-            {
-                output = default;
-                recordMetadata = default;
-                return status;
-            }
+            HashEntryInfo hei = default;
 
             try
             {
-                return ContextRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
-                        ref hei, ref key, ref input, ref output, out recordMetadata, context, sessionFunctions);
+                var status = Kernel.EnterForUpdate<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, keyHash, partitionId, Log.BeginAddress, out hei);
+                if (status.NotFound)
+                {
+                    output = default;
+                    recordMetadata = default;
+                    return status;
+                }
+
+                return ContextRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref hei, ref key, ref input, ref output, out recordMetadata, context, sessionFunctions);
             }
             finally
             {
@@ -280,12 +287,14 @@ namespace Tsavorite.core
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             // Called by Single Tsavorite instance configurations, so we must do Kernel entry, lock, etc. here
-            var status = Kernel.EnterForUpdate<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, keyHash, partitionId, Log.BeginAddress, out var hei);
-            if (status.NotFound)
-                return status;
+            HashEntryInfo hei = default;
 
             try
             {
+                var status = Kernel.EnterForUpdate<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, keyHash, partitionId, Log.BeginAddress, out hei);
+                if (status.NotFound)
+                    return status;
+
                 return ContextDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref hei, ref key, context, sessionFunctions);
             }
             finally

@@ -75,7 +75,8 @@ namespace Tsavorite.core
 
         #region ITsavoriteContext
 
-        public ClientSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1> Session => KernelSession.clientSession1;
+        public ClientSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1> Session1 => KernelSession.clientSession1;
+        public ClientSession<TKey2, TValue2, TInput2, TOutput2, TContext, TSessionFunctions2, TStoreFunctions2, TAllocator2> Session2 => KernelSession.clientSession2;
 
         #region Kernel utilities
         public long GetKeyHash(ref TKey1 key) => KernelSession.clientSession1.Store.GetKeyHash(ref key);
@@ -86,6 +87,7 @@ namespace Tsavorite.core
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
+            // This can throw on lock timeout so make sure it is called within try/finally to ensure epoch is released
             return Kernel.EnterForRead<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>, TKeyLocker, TEpochGuard>(
                     ref KernelSession, keyHash, partitionId, out hei);
         }
@@ -94,6 +96,7 @@ namespace Tsavorite.core
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
+            // This can throw on lock timeout so make sure it is called within try/finally to ensure epoch is released
             Kernel.ExitForRead<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>, TKeyLocker, TEpochGuard>(
                     ref KernelSession, ref hei);
         }
@@ -102,6 +105,7 @@ namespace Tsavorite.core
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
+            // This can throw on lock timeout so make sure it is called within try/finally to ensure epoch is released
             var status = Kernel.EnterForUpdate<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>, TKeyLocker, TEpochGuard>(
                     ref KernelSession, keyHash, partitionId, beginAddress, out hei);
             Debug.Assert(beginAddress <= 0 || status.Found, "Should always 'find' the tag when specifying BeginAddress to EnterForUpdate");
@@ -193,16 +197,17 @@ namespace Tsavorite.core
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
-            var status = EnterKernelForRead<TKeyLocker, TEpochGuard>(readOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, out var hei);
-            if (!status.Found)
-            {
-                output = default;
-                recordMetadata = default;
-                return status;
-            }
-
+            HashEntryInfo hei = default;
             try
             {
+                var status = EnterKernelForRead<TKeyLocker, TEpochGuard>(readOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, out hei);
+                if (!status.Found)
+                {
+                    output = default;
+                    recordMetadata = default;
+                    return status;
+                }
+
                 return ItemContext1.Read<TKeyLocker>(ref hei, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
             }
             finally
@@ -289,16 +294,16 @@ namespace Tsavorite.core
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
-            var status = EnterKernelForRead<TKeyLocker, TEpochGuard>(readOptions.KeyHash ?? GetKeyHash(ref key), PartitionId2, out var hei);
-            if (!status.Found)
-            {
-                output = default;
-                recordMetadata = default;
-                return status;
-            }
-
+            HashEntryInfo hei = default;
             try
             {
+                var status = EnterKernelForRead<TKeyLocker, TEpochGuard>(readOptions.KeyHash ?? GetKeyHash(ref key), PartitionId2, out hei);
+                if (!status.Found)
+                {
+                    output = default;
+                    recordMetadata = default;
+                    return status;
+                }
                 return ItemContext2.Read<TKeyLocker>(ref hei, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
             }
             finally
@@ -315,7 +320,7 @@ namespace Tsavorite.core
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
             ReadOptions readOptions = default;
-            return Read<TKeyLocker, TEpochGuard>(ref key1, ref input1, ref output1, ref output2, ref readOptions, out _, userContext);
+            return DualRead<TKeyLocker, TEpochGuard>(ref key1, ref input1, ref output1, ref output2, ref readOptions, out _, userContext);
         }
 
         public (Status, ushort storeId) Read<TKeyLocker, TEpochGuard>(TKey1 key1, TInput1 input1, ref TOutput1 output1, ref TOutput2 output2, TContext userContext = default)
@@ -323,28 +328,30 @@ namespace Tsavorite.core
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
             ReadOptions readOptions = default;
-            return Read<TKeyLocker, TEpochGuard>(ref key1, ref input1, ref output1, ref output2, ref readOptions, out _, userContext);
+            return DualRead<TKeyLocker, TEpochGuard>(ref key1, ref input1, ref output1, ref output2, ref readOptions, out _, userContext);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (Status, ushort storeId) Read<TKeyLocker, TEpochGuard>(TKey1 key1, TInput1 input1, ref TOutput1 output1, ref TOutput2 output2, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
-            => Read<TKeyLocker, TEpochGuard>(ref key1, ref input1, ref output1, ref output2, ref readOptions, out recordMetadata, userContext);
+            => DualRead<TKeyLocker, TEpochGuard>(ref key1, ref input1, ref output1, ref output2, ref readOptions, out recordMetadata, userContext);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (Status, ushort) Read<TKeyLocker, TEpochGuard>(ref TKey1 key1, ref TInput1 input1, ref TOutput1 output1, ref TOutput2 output2, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public (Status, ushort) DualRead<TKeyLocker, TEpochGuard>(ref TKey1 key1, ref TInput1 input1, ref TOutput1 output1, ref TOutput2 output2, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
             var keyHash = readOptions.KeyHash ?? GetKeyHash(ref key1);
-            var status = EnterKernelForRead<TKeyLocker, TEpochGuard>(keyHash, PartitionId1, out var hei);
-            output1 = default;
-            output2 = default;
-            recordMetadata = default;
+            HashEntryInfo hei = default;
 
             try
             {
+                var status = EnterKernelForRead<TKeyLocker, TEpochGuard>(keyHash, PartitionId1, out hei);
+                output1 = default;
+                output2 = default;
+                recordMetadata = default;
+
                 TKey2 key2;
                 TInput2 input2;
                 if (status.Found)
@@ -397,18 +404,19 @@ namespace Tsavorite.core
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
-            var status = Store1.EnterKernelForReadAtAddress
-                    <DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>,
-                    TKeyLocker, TEpochGuard>(ref KernelSession, PartitionId1, address, ref key, readOptions.KeyHash ?? GetKeyHash(ref key), isNoKey, out var hei);
-            if (!status.Found)
-            {
-                output = default;
-                recordMetadata = default;
-                return status;
-            }
-
+            HashEntryInfo hei = default;
             try
             {
+                var status = Store1.EnterKernelForReadAtAddress
+                        <DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>,
+                        TKeyLocker, TEpochGuard>(ref KernelSession, PartitionId1, address, ref key, readOptions.KeyHash ?? GetKeyHash(ref key), isNoKey, out hei);
+                if (!status.Found)
+                {
+                    output = default;
+                    recordMetadata = default;
+                    return status;
+                }
+
                 return ItemContext1.ReadAtAddress<TKeyLocker>(ref hei, ref key, isNoKey, ref input, ref output, ref readOptions, out recordMetadata, userContext);
             }
             finally
@@ -431,18 +439,19 @@ namespace Tsavorite.core
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
-            var status = Store2.EnterKernelForReadAtAddress
-                    <DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>,
-                    TKeyLocker, TEpochGuard>(ref KernelSession, PartitionId2, address, ref key, readOptions.KeyHash ?? GetKeyHash(ref key), isNoKey, out var hei);
-            if (!status.Found)
-            {
-                output = default;
-                recordMetadata = default;
-                return status;
-            }
-
+            HashEntryInfo hei = default;
             try
             {
+                var status = Store2.EnterKernelForReadAtAddress
+                        <DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>,
+                        TKeyLocker, TEpochGuard>(ref KernelSession, PartitionId2, address, ref key, readOptions.KeyHash ?? GetKeyHash(ref key), isNoKey, out hei);
+                if (!status.Found)
+                {
+                    output = default;
+                    recordMetadata = default;
+                    return status;
+                }
+
                 return ItemContext2.ReadAtAddress<TKeyLocker>(ref hei, ref key, isNoKey, ref input, ref output, ref readOptions, out recordMetadata, userContext);
             }
             finally
@@ -502,9 +511,10 @@ namespace Tsavorite.core
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
-            _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(upsertOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, KernelSession.clientSession1.Store.Log.BeginAddress, out var hei);
+            HashEntryInfo hei = default;
             try
             {
+                _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(upsertOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, KernelSession.clientSession1.Store.Log.BeginAddress, out hei);
                 return ItemContext1.Upsert<TKeyLocker>(ref hei, ref key, ref input, ref desiredValue, ref output, out recordMetadata, userContext);
             }
             finally
@@ -564,9 +574,10 @@ namespace Tsavorite.core
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
-            _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(upsertOptions.KeyHash ?? GetKeyHash(ref key), PartitionId2, KernelSession.clientSession2.Store.Log.BeginAddress, out var hei);
+            HashEntryInfo hei = default;
             try
             {
+                _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(upsertOptions.KeyHash ?? GetKeyHash(ref key), PartitionId2, KernelSession.clientSession2.Store.Log.BeginAddress, out hei);
                 return ItemContext2.Upsert<TKeyLocker>(ref hei, ref key, ref input, ref desiredValue, ref output, out recordMetadata, userContext);
             }
             finally
@@ -607,9 +618,10 @@ namespace Tsavorite.core
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
-            _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(rmwOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, KernelSession.clientSession2.Store.Log.BeginAddress, out var hei);
+            HashEntryInfo hei = default;
             try
             {
+                _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(rmwOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, KernelSession.clientSession2.Store.Log.BeginAddress, out hei);
                 return ItemContext1.RMW<TKeyLocker>(ref hei, ref key, ref input, ref output, out recordMetadata, userContext);
             }
             finally
@@ -646,9 +658,10 @@ namespace Tsavorite.core
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
-            _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(rmwOptions.KeyHash ?? GetKeyHash(ref key), PartitionId2, KernelSession.clientSession2.Store.Log.BeginAddress, out var hei);
+            HashEntryInfo hei = default;
             try
             {
+                _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(rmwOptions.KeyHash ?? GetKeyHash(ref key), PartitionId2, KernelSession.clientSession2.Store.Log.BeginAddress, out hei);
                 return ItemContext2.RMW<TKeyLocker>(ref hei, ref key, ref input, ref output, out recordMetadata, userContext);
             }
             finally
@@ -689,11 +702,11 @@ namespace Tsavorite.core
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
-            _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(deleteOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, KernelSession.clientSession2.Store.Log.BeginAddress, out var hei);
+            HashEntryInfo hei = default;
             try
             {
-                return ItemContext1.Delete<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>, TKeyLocker>(
-                        ref hei, ref key, userContext, ref KernelSession);
+                _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(deleteOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, TsavoriteKernel.DoNotCreateSlotAddress, out hei);
+                return ItemContext1.Delete<TKeyLocker>(ref hei, ref key, userContext);
             }
             finally
             {
@@ -729,11 +742,11 @@ namespace Tsavorite.core
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
-            _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(deleteOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, KernelSession.clientSession2.Store.Log.BeginAddress, out var hei);
+            HashEntryInfo hei = default;
             try
             {
-                return ItemContext2.Delete<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>, TKeyLocker>(
-                        ref hei, ref key, userContext, ref KernelSession);
+                _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(deleteOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, TsavoriteKernel.DoNotCreateSlotAddress, out hei);
+                return ItemContext2.Delete<TKeyLocker>(ref hei, ref key, userContext);
             }
             finally
             {
@@ -743,16 +756,121 @@ namespace Tsavorite.core
         #endregion Delete store2
 
         #region Delete both stores
-        // TODO Delete both--we don't go to disk, so we will just delete it in both stores blindly
-        #endregion Delete both stores
-
-        // TODO ResetModified clarification (how will it know which store--it is blind now for Both), no IsModified?
-        // TODO RENAME
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status DualDelete<TKeyLocker, TEpochGuard>(ref TKey1 key1, TContext userContext = default)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
+        { 
+            DeleteOptions deleteOptions = default;
+            return DualDelete<TKeyLocker, TEpochGuard>(ref key1, ref deleteOptions);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetModified(ref TKey1 key)
-            => KernelSession.clientSession1.UnsafeResetModified(sessionFunctions, ref key);
+        public Status DualDelete<TKeyLocker, TEpochGuard>(ref TKey1 key1, ref DeleteOptions deleteOptions, TContext userContext = default)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
+        {
+            HashEntryInfo hei = default;
+            try
+            {
+                // Delete doesn't go to disk, so we will just delete it in both stores blindly. If the key slot is not found, then there is nothing to delete.
+                var status1 = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(deleteOptions.KeyHash ?? GetKeyHash(ref key1), PartitionId1, TsavoriteKernel.DoNotCreateSlotAddress, out hei);
+                if (status1.Found)
+                    status1 = ItemContext1.Delete<TKeyLocker>(ref hei, ref key1, userContext);
 
-       #endregion ITsavoriteContext
+                // Create key for to the second store.
+                inputConverter.ConvertKey(ref key1, out var key2);
+                Debug.Assert(hei.HashCodeEquals(GetKeyHash(ref key2)), "Main and Object hash codes are not the same");
+                var status2 = Kernel.EnterForReadDual2(PartitionId2, ref hei);
+                if (status2.Found)
+                    status2 = ItemContext2.Delete<TKeyLocker>(ref hei, ref key2, userContext);
+                return (status1.Found || status2.Found) ? new(StatusCode.Found) : new(StatusCode.NotFound);
+            }
+            finally
+            {
+                ExitKernelForUpdate<TKeyLocker, TEpochGuard>(ref hei);
+            }
+        }
+        #endregion Delete both stores
+
+        #region ResetModified
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ResetModified<TKeyLocker, TEpochGuard>(TKey1 key1)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
+            => ResetModified<TKeyLocker, TEpochGuard>(ref key1);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ResetModified<TKeyLocker, TEpochGuard>(ref TKey1 key1)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
+        {
+            HashEntryInfo hei = default;
+            try
+            {
+                // Reset doesn't go to disk, so we will just Reset it in both stores blindly. If the key slot is not found, then there is nothing to reset.
+                var status = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(GetKeyHash(ref key1), PartitionId1, TsavoriteKernel.DoNotCreateSlotAddress, out hei);
+                if (status.Found)
+                    ItemContext1.ResetModified<TKeyLocker>(ref hei, ref key1);
+            }
+            finally
+            {
+                ExitKernelForUpdate<TKeyLocker, TEpochGuard>(ref hei);
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ResetModified<TKeyLocker, TEpochGuard>(TKey2 key2)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
+            => ResetModified<TKeyLocker, TEpochGuard>(ref key2);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ResetModified<TKeyLocker, TEpochGuard>(ref TKey2 key2)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
+        {
+            HashEntryInfo hei = default;
+            try
+            {
+                // Reset doesn't go to disk, so we will just Reset it in both stores blindly. If the key slot is not found, then there is nothing to reset.
+                var status = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(GetKeyHash(ref key2), PartitionId1, TsavoriteKernel.DoNotCreateSlotAddress, out hei);
+                if (status.Found)
+                    ItemContext2.ResetModified<TKeyLocker>(ref hei, ref key2);
+            }
+            finally
+            {
+                ExitKernelForUpdate<TKeyLocker, TEpochGuard>(ref hei);
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void DualResetModified<TKeyLocker, TEpochGuard>(ref TKey1 key1)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
+        {
+            HashEntryInfo hei = default;
+            try
+            {
+                // Reset doesn't go to disk, so we will just Reset it in both stores blindly. If the key slot is not found, then there is nothing to reset.
+                var status = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(GetKeyHash(ref key1), PartitionId1, TsavoriteKernel.DoNotCreateSlotAddress, out hei);
+                if (status.Found)
+                    ItemContext1.ResetModified<TKeyLocker>(ref hei, ref key1);
+
+                // Create key for to the second store.
+                inputConverter.ConvertKey(ref key1, out var key2);
+                Debug.Assert(hei.HashCodeEquals(GetKeyHash(ref key2)), "Main and Object hash codes are not the same");
+                status = Kernel.EnterForReadDual2(PartitionId2, ref hei);
+                if (status.Found)
+                    ItemContext2.ResetModified<TKeyLocker>(ref hei, ref key2);
+            }
+            finally
+            {
+                ExitKernelForUpdate<TKeyLocker, TEpochGuard>(ref hei);
+            }
+        }
+        #endregion ResetModified
+
+        #endregion ITsavoriteContext
     }
 }

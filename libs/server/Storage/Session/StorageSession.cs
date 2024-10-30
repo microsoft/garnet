@@ -29,7 +29,9 @@ namespace Garnet.server
                                  byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator, GarnetDualInputConverter> dualContext;
 
         private DualItemContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> MainContext => dualContext.ItemContext1;
+        private ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> MainSession => dualContext.Session1;
         private DualItemContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> ObjectContext => dualContext.ItemContext2;
+        private ClientSession<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> ObjectSession => dualContext.Session2;
 
         SectorAlignedMemory sectorAlignedMemoryHll;
         readonly int hllBufferSize = HyperLogLog.DefaultHLL.DenseBytes;
@@ -44,7 +46,7 @@ namespace Garnet.server
 
         internal TsavoriteKernel Kernel => txnManager.TsavoriteKernel;
 
-        public int SessionID => dualContext.Session.ID;
+        public int SessionID => dualContext.Session1.ID;
 
         public readonly int ObjectScanCountLimit;
 

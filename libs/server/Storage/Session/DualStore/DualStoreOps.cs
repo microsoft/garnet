@@ -82,70 +82,119 @@ namespace Garnet.server
             return GarnetStatus.NOTFOUND;
         }
 
-        public GarnetStatus DELETE<TContext, TObjectContext>(ArgSlice key, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus DELETE<TKeyLocker, TEpochGuard>(ArgSlice key, StoreType storeType)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             var _key = key.SpanByte;
-            return DELETE(ref _key, storeType, ref context, ref objectContext);
+            return DELETE<TKeyLocker, TEpochGuard>(ref _key, storeType);
         }
 
-        public GarnetStatus DELETE<TContext, TObjectContext>(ref SpanByte key, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus DELETE<TKeyLocker, TEpochGuard>(ref SpanByte key, StoreType storeType)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
+            if (storeType == StoreType.All && !dualContext.IsDual)
+                storeType = StoreType.Main;
+            var status = storeType switch
+            {
+                StoreType.All => dualContext.DualDelete<TKeyLocker, TEpochGuard>(ref key),
+                StoreType.Main => dualContext.Delete<TKeyLocker, TEpochGuard>(ref key),
+                StoreType.Object => dualContext.Delete<TKeyLocker, TEpochGuard>(key.ToByteArray()),
+                _ => throw new GarnetException($"Unknown storeType {storeType}")
+            };
+            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+        }
+
+        public GarnetStatus DELETE<TKeyLocker, TEpochGuard>(byte[] key, StoreType storeType)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+        {
+            if (storeType == StoreType.All && !dualContext.IsDual)
+                storeType = StoreType.Main;
+
+            // Status.Found is not reliable because Tsavorite does not go to disk to verify whether the record is found; it deletes blindly.
+            // So we have to delete in both stores. We do this on explicit store type because we have the object key instead of the SpanByte.
             var found = false;
-
-            if (storeType == StoreType.Main || storeType == StoreType.All)
+            if (storeType is StoreType.Object or StoreType.All)
             {
-                var status = context.Delete(ref key);
+                var status = dualContext.Delete<TKeyLocker, TEpochGuard>(key);
                 Debug.Assert(!status.IsPending);
-                if (status.Found) found = true;
+                found = status.Found;
             }
 
-            if (!objectStoreBasicContext.IsNull && (storeType == StoreType.Object || storeType == StoreType.All))
-            {
-                var keyBA = key.ToByteArray();
-                var status = objectContext.Delete(ref keyBA);
-                Debug.Assert(!status.IsPending);
-                if (status.Found) found = true;
-            }
-            return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
-        }
-
-        public GarnetStatus DELETE<TContext, TObjectContext>(byte[] key, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        {
-            bool found = false;
-
-            if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
-            {
-                var status = objectContext.Delete(key);
-                Debug.Assert(!status.IsPending);
-                if (status.Found) found = true;
-            }
-
-            if (!found && (storeType == StoreType.Main || storeType == StoreType.All))
+            if (storeType is StoreType.Main or StoreType.All)
             {
                 unsafe
                 {
                     fixed (byte* ptr = key)
                     {
                         var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
-                        var status = context.Delete(ref keySB);
+                        var status = dualContext.Delete<TKeyLocker, TEpochGuard>(ref keySB);
                         Debug.Assert(!status.IsPending);
-                        if (status.Found) found = true;
+                        found = status.Found;
                     }
                 }
             }
             return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
-        public unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType)
+        public GarnetStatus DELETE<TKeyLocker>(ref HashEntryInfo hei, ref SpanByte key, StoreType storeType)
+            where TKeyLocker : struct, ISessionLocker
         {
-            return RENAME(oldKeySlice, newKeySlice, storeType, false, out _);
+            if (storeType == StoreType.All && !dualContext.IsDual)
+                storeType = StoreType.Main;
+            var status = storeType switch
+            {
+                StoreType.Main or StoreType.All => dualContext.ItemContext1.Delete<TKeyLocker>(ref hei, ref key),
+                StoreType.Object or StoreType.All => dualContext.ItemContext2.Delete<TKeyLocker>(ref hei, key.ToByteArray()),
+                _ => throw new GarnetException($"Unknown storeType {storeType}")
+            };
+            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
+
+        public GarnetStatus DELETE<TKeyLocker>(ref HashEntryInfo hei, byte[] key, StoreType storeType)
+            where TKeyLocker : struct, ISessionLocker
+        {
+            if (storeType == StoreType.All && !dualContext.IsDual)
+                storeType = StoreType.Main;
+
+            // Status.Found is not reliable because Tsavorite does not go to disk to verify whether the record is found; it deletes blindly.
+            // So we have to delete in both stores. We do this on explicit store type because we have the object key instead of the SpanByte.
+            var found = false;
+            if (storeType is StoreType.Object or StoreType.All)
+            {
+                var status = dualContext.ItemContext2.Delete<TKeyLocker>(ref hei, key);
+                Debug.Assert(!status.IsPending);
+                found = status.Found;
+            }
+
+            if (storeType is StoreType.Main or StoreType.All)
+            {
+                unsafe
+                {
+                    fixed (byte* ptr = key)
+                    {
+                        var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
+                        var status = dualContext.ItemContext1.Delete<TKeyLocker>(ref hei, ref keySB);
+                        Debug.Assert(!status.IsPending);
+                        found = status.Found;
+                    }
+                }
+            }
+            return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+        }
+
+        /// <summary>
+        /// Renames key to newkey. It returns an error when key does not exist.
+        /// </summary>
+        /// <param name="oldKeySlice">The old key to be renamed.</param>
+        /// <param name="newKeySlice">The new key name.</param>
+        /// <param name="storeType">The type of store to perform the operation on.</param>
+        /// <returns></returns>
+        public unsafe GarnetStatus RENAME<TEpochGuard>(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType)
+            where TEpochGuard : struct, IGarnetEpochGuard 
+            => RENAME<TEpochGuard>(oldKeySlice, newKeySlice, storeType, false, out _);
 
         /// <summary>
         /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
@@ -153,12 +202,21 @@ namespace Garnet.server
         /// <param name="oldKeySlice">The old key to be renamed.</param>
         /// <param name="newKeySlice">The new key name.</param>
         /// <param name="storeType">The type of store to perform the operation on.</param>
+        /// <param name="result">The result indicating whether the key was renamed: 1 if key was renamed to newkey, 0 if newkey already exists</param>
         /// <returns></returns>
-        public unsafe GarnetStatus RENAMENX(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, out int result)
-        {
-            return RENAME(oldKeySlice, newKeySlice, storeType, true, out result);
-        }
+        public unsafe GarnetStatus RENAMENX<TEpochGuard>(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, out int result)
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => RENAME<TEpochGuard>(oldKeySlice, newKeySlice, storeType, true, out result);
 
+        /// <summary>
+        /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
+        /// </summary>
+        /// <param name="oldKeySlice">The old key to be renamed.</param>
+        /// <param name="newKeySlice">The new key name.</param>
+        /// <param name="storeType">The type of store to perform the operation on.</param>
+        /// <param name="isNX">Whether this is a "not exists" operation</param>
+        /// <param name="result">The result indicating whether the key was renamed: 1 if key was renamed to newkey, 0 if newkey already exists</param>
+        /// <remarks>This takes only the TEpochGuard; it creates a transaction if one does not yet exist, so always uses <see cref="TransactionalSessionLocker"/></remarks>>
         private unsafe GarnetStatus RENAME<TEpochGuard>(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, bool isNX, out int result)
             where TEpochGuard : struct, IGarnetEpochGuard
         {
@@ -231,7 +289,7 @@ namespace Garnet.server
                                         ((RespInputHeader*)(setValuePtr + sizeof(long)))->cmd = RespCommand.SETEXNX;
                                         ((RespInputHeader*)(setValuePtr + sizeof(long)))->flags = 0;
                                         var newKey = newKeySlice.SpanByte;
-                                        var setStatus = SET_Conditional<TransactionalSessionLocker>(ref hei, ref newKey, ref setValueSpan, ref context);
+                                        var setStatus = SET_Conditional<TransactionalSessionLocker>(ref hei, ref newKey, ref setValueSpan);
 
                                         // For SET NX `NOTFOUND` means the operation succeeded
                                         result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
@@ -239,7 +297,7 @@ namespace Garnet.server
                                     }
                                     else
                                     {
-                                        SETEX(ref hei, newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs), ref context);
+                                        SETEX<TransactionalSessionLocker>(ref hei, newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs));
                                     }
                                 }
                                 else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
@@ -253,7 +311,7 @@ namespace Garnet.server
                                         ((RespInputHeader*)setValuePtr)->cmd = RespCommand.SETEXNX;
                                         ((RespInputHeader*)setValuePtr)->flags = 0;
                                         var newKey = newKeySlice.SpanByte;
-                                        var setStatus = SET_Conditional(ref hei, ref newKey, ref setValueSpan, ref context);
+                                        var setStatus = SET_Conditional<TransactionalSessionLocker>(ref hei, ref newKey, ref setValueSpan);
 
                                         // For SET NX `NOTFOUND` means the operation succeeded
                                         result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
@@ -261,9 +319,9 @@ namespace Garnet.server
                                     }
                                     else
                                     {
-                                        SpanByte newKey = newKeySlice.SpanByte;
+                                        var newKey = newKeySlice.SpanByte;
                                         var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
-                                        SET(ref hei, ref newKey, ref value, ref context);
+                                        _ = SET<TransactionalSessionLocker>(ref hei, ref newKey, ref value);
                                     }
                                 }
 
@@ -274,13 +332,12 @@ namespace Garnet.server
                                 // Delete the old key only when SET NX succeeded
                                 if (isNX && result == 1)
                                 {
-                                    DELETE(ref hei, ref oldKey, StoreType.Main, ref context, ref objectContext);
+                                    _ = DELETE<TransactionalSessionLocker>(ref hei, ref oldKey, StoreType.Main);
                                 }
                                 else if (!isNX)
                                 {
                                     // Delete the old key
-                                    DELETE(ref hei, ref oldKey, StoreType.Main, ref context, ref objectContext);
-
+                                    _ = DELETE<TransactionalSessionLocker>(ref hei, ref oldKey, StoreType.Main);
                                     returnStatus = GarnetStatus.OK;
                                 }
                             }
@@ -309,37 +366,36 @@ namespace Garnet.server
 
                     try
                     {
-                        byte[] oldKeyArray = oldKeySlice.ToArray();
-                        var status = GET(ref hei, oldKeyArray, out var value, ref objectContext);
+                        var oldKeyArray = oldKeySlice.ToArray();
+                        GarnetObjectStoreOutput value = default;
+                        var status = GET<TransactionalSessionLocker>(ref hei, oldKeyArray, ref value);
 
                         if (status == GarnetStatus.OK)
                         {
                             var valObj = value.garnetObject;
-                            byte[] newKeyArray = newKeySlice.ToArray();
+                            var newKeyArray = newKeySlice.ToArray();
 
                             returnStatus = GarnetStatus.OK;
                             var canSetAndDelete = true;
                             if (isNX)
                             {
                                 // Not using EXISTS method to avoid new allocation of Array for key
-                                var getNewStatus = GET(ref hei, newKeyArray, out _, ref objectContext);
+                                GarnetObjectStoreOutput output = default;
+                                var getNewStatus = GET<TransactionalSessionLocker>(ref hei, newKeyArray, ref output);
                                 canSetAndDelete = getNewStatus == GarnetStatus.NOTFOUND;
                             }
 
                             if (canSetAndDelete)
                             {
                                 // valObj already has expiration time, so no need to write expiration logic here
-                                SET(ref hei, newKeyArray, valObj, ref objectContext);
+                                _ = SET<TransactionalSessionLocker>(ref hei, newKeyArray, valObj);
 
                                 // Delete the old key
-                                DELETE(ref hei, oldKeyArray, StoreType.Object, ref context, ref objectContext);
-
+                                _ = DELETE<TransactionalSessionLocker>(ref hei, oldKeyArray, StoreType.Object);
                                 result = 1;
                             }
                             else
-                            {
                                 result = 0;
-                            }
                         }
                     }
                     finally
@@ -359,25 +415,23 @@ namespace Garnet.server
         /// <summary>
         /// Returns if key is an existing one in the store.
         /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key">The name of the key to use in the operation</param>
         /// <param name="storeType">The store to operate on.</param>
-        /// <param name="context">Basic context for the main store.</param>
-        /// <param name="objectContext">Object context for the object store.</param>
         /// <returns></returns>
-        public GarnetStatus EXISTS<TContext, TObjectContext>(ArgSlice key, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus EXISTS<TKeyLocker, TEpochGuard>(ArgSlice key, StoreType storeType)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            GarnetStatus status = GarnetStatus.NOTFOUND;
+            var status = GarnetStatus.NOTFOUND;
+            if (storeType == StoreType.All && !dualContext.IsDual)
+                storeType = StoreType.Main;
 
-            if (storeType == StoreType.Main || storeType == StoreType.All)
+            if (storeType is StoreType.Main or StoreType.All)
             {
                 var _key = key.SpanByte;
                 SpanByte input = default;
                 var _output = new SpanByteAndMemory { SpanByte = scratchBufferManager.ViewRemainingArgSlice().SpanByte };
-                status = GET(ref _key, ref input, ref _output, ref context);
+                status = GET<TKeyLocker, TEpochGuard>(ref _key, ref input, ref _output);
 
                 if (status == GarnetStatus.OK)
                 {
@@ -387,9 +441,10 @@ namespace Garnet.server
                 }
             }
 
-            if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
+            if (storeType is StoreType.Object or StoreType.All)
             {
-                status = GET(key.ToArray(), out _, ref objectContext);
+                GarnetObjectStoreOutput output = default;
+                status = GET<TKeyLocker, TEpochGuard>(key.ToArray(), ref output);
             }
 
             return status;
@@ -398,40 +453,32 @@ namespace Garnet.server
         /// <summary>
         /// Set a timeout on key
         /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key">The key to set the timeout on.</param>
         /// <param name="expiryMs">Milliseconds value for the timeout.</param>
         /// <param name="timeoutSet">True when the timeout was properly set.</param>
         /// <param name="storeType">The store to operate on.</param>
         /// <param name="expireOption">>Flags to use for the operation.</param>
-        /// <param name="context">Basic context for the main store.</param>
-        /// <param name="objectStoreContext">Object context for the object store.</param>
         /// <returns></returns>
-        public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(ArgSlice key, ArgSlice expiryMs, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => EXPIRE(key, TimeSpan.FromMilliseconds(NumUtils.BytesToLong(expiryMs.Length, expiryMs.ptr)), out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext);
+        public unsafe GarnetStatus EXPIRE<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice expiryMs, out bool timeoutSet, StoreType storeType, ExpireOption expireOption)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => EXPIRE<TKeyLocker, TEpochGuard>(key, TimeSpan.FromMilliseconds(NumUtils.BytesToLong(expiryMs.Length, expiryMs.ptr)), out timeoutSet, storeType, expireOption);
 
         /// <summary>
         /// Set a timeout on key.
         /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key">The key to set the timeout on.</param>
         /// <param name="expiry">The timespan value to set the expiration for.</param>
         /// <param name="timeoutSet">True when the timeout was properly set.</param>
         /// <param name="storeType">The store to operate on.</param>
         /// <param name="expireOption">Flags to use for the operation.</param>
-        /// <param name="context">Basic context for the main store</param>
-        /// <param name="objectStoreContext">Object context for the object store</param>
         /// <param name="milliseconds">When true the command executed is PEXPIRE, expire by default.</param>
         /// <returns></returns>
-        public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext, bool milliseconds = false)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public unsafe GarnetStatus EXPIRE<TKeyLocker, TEpochGuard>(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, bool milliseconds = false)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            byte* pbCmdInput = stackalloc byte[sizeof(int) + sizeof(long) + RespInputHeader.Size + sizeof(byte)];
+            var pbCmdInput = stackalloc byte[sizeof(int) + sizeof(long) + RespInputHeader.Size + sizeof(byte)];
             *(int*)pbCmdInput = sizeof(long) + RespInputHeader.Size;
             ((RespInputHeader*)(pbCmdInput + sizeof(int) + sizeof(long)))->cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE;
             ((RespInputHeader*)(pbCmdInput + sizeof(int) + sizeof(long)))->flags = 0;
@@ -445,20 +492,21 @@ namespace Garnet.server
             var output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(rmwOutput, ObjectOutputHeader.Size));
             timeoutSet = false;
 
-            bool found = false;
+            var found = false;
+            if (storeType == StoreType.All && !dualContext.IsDual)
+                storeType = StoreType.Main;
 
-            if (storeType == StoreType.Main || storeType == StoreType.All)
+            if (storeType is StoreType.Main or StoreType.All)
             {
                 var _key = key.SpanByte;
-                var status = context.RMW(ref _key, ref input, ref output);
+                var status = dualContext.RMW<TKeyLocker, TEpochGuard>(ref _key, ref input, ref output);
 
                 if (status.IsPending)
-                    CompletePendingForSession(ref status, ref output, ref context);
+                    CompletePending<TKeyLocker>(out status, out output);
                 if (status.Found) found = true;
             }
 
-            if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
-                !objectStoreBasicContext.IsNull)
+            if (!found && (storeType is StoreType.Object or StoreType.All))
             {
                 var parseState = new SessionParseState();
                 ArgSlice[] parseStateBuffer = default;
@@ -491,10 +539,10 @@ namespace Garnet.server
                 // Retry on object store
                 var objOutput = new GarnetObjectStoreOutput { spanByteAndMemory = output };
                 var keyBytes = key.ToArray();
-                var status = objectStoreContext.RMW(ref keyBytes, ref objInput, ref objOutput);
+                var status = dualContext.RMW<TKeyLocker, TEpochGuard>(ref keyBytes, ref objInput, ref objOutput);
 
                 if (status.IsPending)
-                    CompletePendingForObjectStoreSession(ref status, ref objOutput, ref objectStoreContext);
+                    CompletePending<TKeyLocker>(out status, out objOutput);
                 if (status.Found) found = true;
 
                 output = objOutput.spanByteAndMemory;
@@ -506,37 +554,37 @@ namespace Garnet.server
             return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
-        public unsafe GarnetStatus PERSIST<TContext, TObjectContext>(ArgSlice key, StoreType storeType, ref TContext context, ref TObjectContext objectStoreContext)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public unsafe GarnetStatus PERSIST<TKeyLocker, TEpochGuard>(ArgSlice key, StoreType storeType)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            GarnetStatus status = GarnetStatus.NOTFOUND;
+            var status = GarnetStatus.NOTFOUND;
 
-            int inputSize = sizeof(int) + RespInputHeader.Size;
-            byte* pbCmdInput = stackalloc byte[inputSize];
-            byte* pcurr = pbCmdInput;
+            var inputSize = sizeof(int) + RespInputHeader.Size;
+            var pbCmdInput = stackalloc byte[inputSize];
+            var pcurr = pbCmdInput;
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
             (*(RespInputHeader*)pcurr).cmd = RespCommand.PERSIST;
             (*(RespInputHeader*)pcurr).flags = 0;
 
-            byte* pbOutput = stackalloc byte[8];
-            var o = new SpanByteAndMemory(pbOutput, 8);
+            var pbOutput = stackalloc byte[8];
+            var output = new SpanByteAndMemory(pbOutput, 8);
 
-            if (storeType == StoreType.Main || storeType == StoreType.All)
+            if (storeType is StoreType.Main or StoreType.All)
             {
                 var _key = key.SpanByte;
-                var _status = context.RMW(ref _key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+                var _status = dualContext.RMW<TKeyLocker, TEpochGuard>(ref _key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref output);
 
                 if (_status.IsPending)
-                    CompletePendingForSession(ref _status, ref o, ref context);
+                    CompletePending<TKeyLocker>(out _status, out output);
 
-                Debug.Assert(o.IsSpanByte);
-                if (o.SpanByte.AsReadOnlySpan()[0] == 1)
+                Debug.Assert(output.IsSpanByte);
+                if (output.SpanByte.AsReadOnlySpan()[0] == 1)
                     status = GarnetStatus.OK;
             }
 
-            if (status == GarnetStatus.NOTFOUND && (storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
+            if (status == GarnetStatus.NOTFOUND && (storeType is StoreType.Object or StoreType.All) && dualContext.IsDual)
             {
                 // Retry on object store
                 var objInput = new ObjectInput
@@ -548,15 +596,15 @@ namespace Garnet.server
                     },
                 };
 
-                var objO = new GarnetObjectStoreOutput { spanByteAndMemory = o };
+                var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
                 var _key = key.ToArray();
-                var _status = objectStoreContext.RMW(ref _key, ref objInput, ref objO);
+                var _status = dualContext.RMW<TKeyLocker, TEpochGuard>(ref _key, ref objInput, ref objO);
 
                 if (_status.IsPending)
-                    CompletePendingForObjectStoreSession(ref _status, ref objO, ref objectStoreContext);
+                    CompletePending<TKeyLocker>(out _status, out objO);
 
-                Debug.Assert(o.IsSpanByte);
-                if (o.SpanByte.AsReadOnlySpan().Slice(0, CmdStrings.RESP_RETURN_VAL_1.Length)
+                Debug.Assert(output.IsSpanByte);
+                if (output.SpanByte.AsReadOnlySpan().Slice(0, CmdStrings.RESP_RETURN_VAL_1.Length)
                     .SequenceEqual(CmdStrings.RESP_RETURN_VAL_1))
                     status = GarnetStatus.OK;
             }
@@ -564,18 +612,19 @@ namespace Garnet.server
             return status;
         }
 
-        public GarnetStatus GetKeyType<TContext, TObjectContext>(ArgSlice key, out string keyType, ref TContext context, ref TObjectContext objectContext)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus GetKeyType<TKeyLocker, TEpochGuard>(ArgSlice key, out string keyType)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             keyType = "string";
             // Check if key exists in Main store
-            var status = EXISTS(key, StoreType.Main, ref context, ref objectContext);
+            var status = EXISTS<TKeyLocker, TEpochGuard>(key, StoreType.Main);
 
             // If key was not found in the main store then it is an object
-            if (status != GarnetStatus.OK && !objectStoreBasicContext.IsNull)
+            if (status != GarnetStatus.OK && dualContext.IsDual)
             {
-                status = GET(key.ToArray(), out GarnetObjectStoreOutput output, ref objectContext);
+                GarnetObjectStoreOutput output = default;
+                status = GET<TKeyLocker, TEpochGuard>(key.ToArray(), ref output);
                 if (status == GarnetStatus.OK)
                 {
                     keyType = output.garnetObject switch
@@ -596,18 +645,19 @@ namespace Garnet.server
             return status;
         }
 
-        public GarnetStatus MemoryUsageForKey<TContext, TObjectContext>(ArgSlice key, out long memoryUsage, ref TContext context, ref TObjectContext objectContext, int samples = 0)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus MemoryUsageForKey<TKeyLocker, TEpochGuard>(ArgSlice key, out long memoryUsage, int samples = 0) // TODO: Implement SAMPLES
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             memoryUsage = -1;
 
             // Check if key exists in Main store
-            var status = GET(key, out ArgSlice keyValue, ref context);
+            var status = GET<TKeyLocker, TEpochGuard>(key, out ArgSlice keyValue);
 
             if (status == GarnetStatus.NOTFOUND)
             {
-                status = GET(key.ToArray(), out GarnetObjectStoreOutput objectValue, ref objectContext);
+                GarnetObjectStoreOutput objectValue = new();
+                status = GET<TKeyLocker, TEpochGuard>(key.ToArray(), ref objectValue);
                 if (status != GarnetStatus.NOTFOUND)
                 {
                     memoryUsage = RecordInfo.GetLength() + (2 * IntPtr.Size) + // Log record length
@@ -623,14 +673,14 @@ namespace Garnet.server
             return status;
         }
 
-        public GarnetStatus Watch<TContext, TObjectContext>(ArgSlice key, StoreType storeType, in TContext context, in TObjectContext objectContext)
-             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus Watch<TKeyLocker, TEpochGuard>(ArgSlice key, StoreType storeType)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            if (storeType == StoreType.Main || storeType == StoreType.All)
-                basicContext.ResetModified(key.SpanByte);
-            if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
-                objectStoreBasicContext.ResetModified(key.ToArray());
+            if (storeType is StoreType.Main or StoreType.All)
+                dualContext.ResetModified<TKeyLocker, TEpochGuard>(key.SpanByte);
+            if ((storeType is StoreType.Object or StoreType.All) && dualContext.IsDual)
+                dualContext.ResetModified<TKeyLocker, TEpochGuard>(key.ToArray());
             return GarnetStatus.OK;
         }
     }

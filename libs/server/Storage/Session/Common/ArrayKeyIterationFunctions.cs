@@ -24,7 +24,7 @@ namespace Garnet.server
 
         long lastScanCursor;
         List<byte[]> objStoreKeys;
-        List<byte[]> Keys;
+        List<byte[]> keys;
 
         /// <summary>
         ///  Gets keys matching the pattern with a limit of count in every iteration
@@ -41,13 +41,13 @@ namespace Garnet.server
         internal unsafe bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> keys, long count = 10, ReadOnlySpan<byte> typeObject = default)
         {
             const long IsObjectStoreCursor = 1L << 49;
-            Keys ??= new();
-            Keys.Clear();
+            this.keys ??= [];
+            this.keys.Clear();
 
-            objStoreKeys ??= new();
+            objStoreKeys ??= [];
             objStoreKeys.Clear();
 
-            keys = Keys;
+            keys = this.keys;
 
             Type matchType = null;
             if (!typeObject.IsEmpty)
@@ -76,34 +76,34 @@ namespace Garnet.server
                 }
             }
 
-            byte* patternPtr = patternB.ptr;
+            var patternPtr = patternB.ptr;
 
             mainStoreDbScanFuncs ??= new();
-            mainStoreDbScanFuncs.Initialize(Keys, allKeys ? null : patternPtr, patternB.Length);
+            mainStoreDbScanFuncs.Initialize(this.keys, allKeys ? null : patternPtr, patternB.Length);
             objStoreDbScanFuncs ??= new();
             objStoreDbScanFuncs.Initialize(objStoreKeys, allKeys ? null : patternPtr, patternB.Length, matchType);
 
             storeCursor = cursor;
-            long remainingCount = count;
+            var remainingCount = count;
 
             // Cursor is zero or not an object store address
             // Scan main store only for string or default key type
             if ((cursor & IsObjectStoreCursor) == 0 && (typeObject.IsEmpty || typeObject.SequenceEqual(CmdStrings.STRING) || typeObject.SequenceEqual(CmdStrings.stringt)))
             {
-                basicContext.Session.ScanCursor(ref storeCursor, count, mainStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
-                remainingCount -= Keys.Count;
+                _ = MainSession.ScanCursor(ref storeCursor, count, mainStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
+                remainingCount -= this.keys.Count;
             }
 
             // Scan object store with the type parameter
             // Check the cursor value corresponds to the object store
-            if (!objectStoreBasicContext.IsNull && remainingCount > 0 && (typeObject.IsEmpty || (!typeObject.SequenceEqual(CmdStrings.STRING) && !typeObject.SequenceEqual(CmdStrings.stringt))))
+            if (dualContext.IsDual && remainingCount > 0 && (typeObject.IsEmpty || (!typeObject.SequenceEqual(CmdStrings.STRING) && !typeObject.SequenceEqual(CmdStrings.stringt))))
             {
                 var validateCursor = storeCursor != 0 && storeCursor != lastScanCursor;
                 storeCursor &= ~IsObjectStoreCursor;
-                objectStoreBasicContext.Session.ScanCursor(ref storeCursor, remainingCount, objStoreDbScanFuncs, validateCursor: validateCursor);
+                _ = ObjectSession.ScanCursor(ref storeCursor, remainingCount, objStoreDbScanFuncs, validateCursor: validateCursor);
                 if (storeCursor != 0)
                     storeCursor |= IsObjectStoreCursor;
-                Keys.AddRange(objStoreKeys);
+                this.keys.AddRange(objStoreKeys);
             }
 
             lastScanCursor = storeCursor;
@@ -119,13 +119,13 @@ namespace Garnet.server
         /// <returns></returns>
         internal bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
             where TScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
-            => basicContext.Session.IterateLookup(ref scanFunctions, untilAddress);
+            => MainSession.IterateLookup(ref scanFunctions, untilAddress);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)
         /// </summary>
         internal ITsavoriteScanIterator<SpanByte, SpanByte> IterateMainStore()
-            => basicContext.Session.Iterate();
+            => MainSession.Iterate();
 
         /// <summary>
         /// Iterate the contents of the object store (push-based)
@@ -136,13 +136,13 @@ namespace Garnet.server
         /// <returns></returns>
         internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
             where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>
-            => objectStoreBasicContext.Session.IterateLookup(ref scanFunctions, untilAddress);
+            => ObjectSession.IterateLookup(ref scanFunctions, untilAddress);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)
         /// </summary>
         internal ITsavoriteScanIterator<byte[], IGarnetObject> IterateObjectStore()
-            => objectStoreBasicContext.Session.Iterate();
+            => ObjectSession.Iterate();
 
         /// <summary>
         ///  Get a list of the keys in the store and object store
@@ -151,23 +151,23 @@ namespace Garnet.server
         /// <returns></returns>
         internal unsafe List<byte[]> DBKeys(ArgSlice pattern)
         {
-            Keys ??= new();
-            Keys.Clear();
+            keys ??= [];
+            keys.Clear();
 
             var allKeys = *pattern.ptr == '*' && pattern.Length == 1;
 
             mainStoreDbKeysFuncs ??= new();
-            mainStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ptr, pattern.Length);
-            basicContext.Session.Iterate(ref mainStoreDbKeysFuncs);
+            mainStoreDbKeysFuncs.Initialize(keys, allKeys ? null : pattern.ptr, pattern.Length);
+            _ = MainSession.Iterate(ref mainStoreDbKeysFuncs);
 
-            if (!objectStoreBasicContext.IsNull)
+            if (dualContext.IsDual)
             {
                 objStoreDbKeysFuncs ??= new();
-                objStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ptr, pattern.Length, matchType: null);
-                objectStoreBasicContext.Session.Iterate(ref objStoreDbKeysFuncs);
+                objStoreDbKeysFuncs.Initialize(keys, allKeys ? null : pattern.ptr, pattern.Length, matchType: null);
+                _ = ObjectSession.Iterate(ref objStoreDbKeysFuncs);
             }
 
-            return Keys;
+            return keys;
         }
 
         /// <summary>
@@ -179,14 +179,14 @@ namespace Garnet.server
             mainStoreDbSizeFuncs ??= new();
             mainStoreDbSizeFuncs.Initialize();
             long cursor = 0;
-            basicContext.Session.ScanCursor(ref cursor, long.MaxValue, mainStoreDbSizeFuncs);
-            int count = mainStoreDbSizeFuncs.Count;
-            if (objectStoreBasicContext.Session != null)
+            _ = MainSession.ScanCursor(ref cursor, long.MaxValue, mainStoreDbSizeFuncs);
+            var count = mainStoreDbSizeFuncs.Count;
+            if (dualContext.IsDual)
             {
                 objectStoreDbSizeFuncs ??= new();
                 objectStoreDbSizeFuncs.Initialize();
                 cursor = 0;
-                objectStoreBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, objectStoreDbSizeFuncs);
+                _ = ObjectSession.ScanCursor(ref cursor, long.MaxValue, objectStoreDbSizeFuncs);
                 count += objectStoreDbSizeFuncs.Count;
             }
 
@@ -207,7 +207,7 @@ namespace Garnet.server
                 {
                     this.keys = keys;
                     this.patternB = patternB;
-                    this.patternLength = length;
+                    patternLength = length;
                     this.matchType = matchType;
                 }
             }

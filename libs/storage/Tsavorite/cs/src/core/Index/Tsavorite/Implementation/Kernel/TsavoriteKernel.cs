@@ -28,6 +28,7 @@ namespace Tsavorite.core
         internal ILogger Logger;
 
         const int KeyLockMaxRetryAttempts = 1000;
+        internal const int DoNotCreateSlotAddress = -1;
 
         public TsavoriteKernel(long numBuckets, int sectorSize, ILogger logger = null)
         {
@@ -55,11 +56,11 @@ namespace Tsavorite.core
         /// <remarks>
         /// This does epoch entry and the hash bucket lookup and transient lock (which is the only hash bucket lock unless a RETRY is needed, in which case transient locks are released then reacquired by the TsavoriteKV instance).
         /// </remarks>
-        /// <returns><see cref="Status.Found"/> if the tag was found, else <see cref="Status.NotFound"/>. TODO Add Lock timeout and possible <see cref="Status.NotFound"/> return.</returns>
+        /// <returns><see cref="Status.Found"/> if the tag was found, else <see cref="Status.NotFound"/></returns>
         public Status EnterForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref TKernelSession kernelSession, long keyHash, ushort partitionId, out HashEntryInfo hei)
             where TKernelSession : IKernelSession
-            where TKeyLocker : ISessionLocker
-            where TEpochGuard : IEpochGuard<TKernelSession>
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             TEpochGuard.BeginUnsafe(ref kernelSession);
 
@@ -74,7 +75,7 @@ namespace Tsavorite.core
 
             while (!TKeyLocker.TryLockTransientShared(this, ref hei))
             {
-                kernelSession.Refresh(ref hei);
+                kernelSession.Refresh<TKeyLocker>(ref hei);
                 _ = Thread.Yield();
             }
             return new(StatusCode.Found);
@@ -105,8 +106,8 @@ namespace Tsavorite.core
         /// </remarks>
         public void ExitForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref TKernelSession kernelSession, ref HashEntryInfo hei)
             where TKernelSession : IKernelSession
-            where TKeyLocker : ISessionLocker
-            where TEpochGuard : IEpochGuard<TKernelSession>
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             TKeyLocker.UnlockTransientShared(this, ref hei);
             if (Epoch.ThisInstanceProtected())
@@ -122,27 +123,27 @@ namespace Tsavorite.core
         /// This is a strict update operation from the HashBucket perspective; if the tag is not found, we do not create it. It is used for operations like Delete or Expire. Operations that do in-place updates or RCU will know
         /// which store they are operating on and will call a different method.
         /// </remarks>
-        /// <returns><see cref="Status.Found"/> if the tag was found, else <see cref="Status.NotFound"/>. TODO Add Lock timeout and possible <see cref="Status.NotFound"/> return.</returns>
+        /// <returns><see cref="Status.Found"/> if the tag was found, else <see cref="Status.NotFound"/></returns>
         public Status EnterForUpdate<TKernelSession, TKeyLocker, TEpochGuard>(ref TKernelSession kernelSession, long keyHash, ushort partitionId, long createIfNotFoundBeginAddress, out HashEntryInfo hei)
             where TKernelSession : IKernelSession
-            where TKeyLocker : ISessionLocker
-            where TEpochGuard : IEpochGuard<TKernelSession>
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             TEpochGuard.BeginUnsafe(ref kernelSession);
 
-            // CheckHashTableGrowth();
+            // CheckHashTableGrowth(); TODO
 
             hei = new(keyHash, partitionId);
 
             // We may do FindTag rather than FindOrCreateTag here because we don't want to create the slot if the tag is not found.
-            if (createIfNotFoundBeginAddress > 0)
+            if (createIfNotFoundBeginAddress == DoNotCreateSlotAddress)
                 hashTable.FindOrCreateTag(ref hei, createIfNotFoundBeginAddress);
             else if (!hashTable.FindTag(ref hei))
                 return new(StatusCode.NotFound);
 
             while (!TKeyLocker.TryLockTransientExclusive(this, ref hei))
             {
-                kernelSession.Refresh(ref hei);
+                kernelSession.Refresh<TKeyLocker>(ref hei);
                 _ = Thread.Yield();
             }
             return new(StatusCode.Found);
@@ -173,8 +174,8 @@ namespace Tsavorite.core
         /// </remarks>
         public void ExitForUpdate<TKernelSession, TKeyLocker, TEpochGuard>(ref TKernelSession kernelSession, ref HashEntryInfo hei)
             where TKernelSession : IKernelSession
-            where TKeyLocker : ISessionLocker
-            where TEpochGuard : IEpochGuard<TKernelSession>
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             TKeyLocker.UnlockTransientShared(this, ref hei);
             TEpochGuard.EndUnsafe(ref kernelSession);

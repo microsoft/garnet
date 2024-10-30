@@ -12,66 +12,42 @@ namespace Garnet.server
 
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
     using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
+    using GarnetDualKernelSession = DualKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+                /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+                /* MainStoreAllocator */ SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>,
+                byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions,
+                /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+                /* ObjectStoreAllocator */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>
     #endregion Aliases
 
-    interface IGarnetEpochGuard : IEpochGuard<DualKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
-            /* TStoreFunctions1 */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            /* TAllocator1 */ SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>,
-                             byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions,
-            /* TStoreFunctions2 */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            /* TAllocator2 */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
+    interface IGarnetEpochGuard : IEpochGuard<GarnetDualKernelSession>;
 
     /// <summary>
     /// Perform epoch safety operations when entering/exiting an API 
     /// </summary>
-    public struct GarnetSafeEpochGuard : IEpochGuard<DualKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
-            /* TStoreFunctions1 */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            /* TAllocator1 */ SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>,
-                             byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions,
-            /* TStoreFunctions2 */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            /* TAllocator2 */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>
+    public struct GarnetSafeEpochGuard : IGarnetEpochGuard
     {
         /// <summary>Acquire (resume) the epoch.</summary>
-        public static void BeginUnsafe(ref DualKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
-            /* TStoreFunctions1 */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            /* TAllocator1 */ SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>,
-                             byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions,
-            /* TStoreFunctions2 */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            /* TAllocator2 */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>> kernelSession) => kernelSession.BeginUnsafe();
+        public static void BeginUnsafe(ref GarnetDualKernelSession kernelSession) 
+            => kernelSession.BeginUnsafe();
 
         /// <summary>Leave (suspend) the epoch.</summary>
-        public static void EndUnsafe(ref DualKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
-            /* TStoreFunctions1 */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            /* TAllocator1 */ SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>,
-                             byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions,
-            /* TStoreFunctions2 */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            /* TAllocator2 */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>> kernelSession) => kernelSession.EndUnsafe();
+        public static void EndUnsafe(ref GarnetDualKernelSession kernelSession) 
+            => kernelSession.EndUnsafe();
     }
 
     /// <summary>
     /// Do not perform epoch safety operations when entering/exiting an API (assumes a higher code region has done so)
     /// </summary>
-    public struct GarnetUnsafeEpochGuard : IEpochGuard<DualKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
-            /* TStoreFunctions1 */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            /* TAllocator1 */ SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>,
-                             byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions,
-            /* TStoreFunctions2 */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            /* TAllocator2 */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>
+    public struct GarnetUnsafeEpochGuard : IGarnetEpochGuard
     {
         /// <summary>Acquire (resume) the epoch.</summary>
-        public static void BeginUnsafe(ref DualKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
-            /* TStoreFunctions1 */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            /* TAllocator1 */ SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>,
-                             byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions,
-            /* TStoreFunctions2 */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            /* TAllocator2 */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>> kernelSession) { }
+        public static void BeginUnsafe(ref GarnetDualKernelSession kernelSession)
+        { }
 
         /// <summary>Leave (suspend) the epoch.</summary>
-        public static void EndUnsafe(ref DualKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
-            /* TStoreFunctions1 */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            /* TAllocator1 */ SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>,
-                             byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions,
-            /* TStoreFunctions2 */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            /* TAllocator2 */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>> kernelSession) { }
+        public static void EndUnsafe(ref GarnetDualKernelSession kernelSession)
+        { }
     }
 }

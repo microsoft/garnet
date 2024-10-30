@@ -8,15 +8,13 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
     sealed partial class StorageSession : IDisposable
     {
-        public GarnetStatus GET_WithPending<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, long ctx, out bool pending, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public GarnetStatus GET_WithPending<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, long ctx, out bool pending)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            var status = context.Read(ref key, ref input, ref output, ctx);
+            var status = dualContext.Read<TKeyLocker, TEpochGuard>(ref key, ref input, ref output, ctx);
 
             if (status.IsPending)
             {
@@ -31,20 +29,18 @@ namespace Garnet.server
                 incr_session_found();
                 return GarnetStatus.OK;
             }
-            else
-            {
-                incr_session_notfound();
-                return GarnetStatus.NOTFOUND;
-            }
+            incr_session_notfound();
+            return GarnetStatus.NOTFOUND;
         }
 
-        public bool GET_CompletePending<TContext>((GarnetStatus, SpanByteAndMemory)[] outputArr, bool wait, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public bool GET_CompletePending<TKeyLocker, TEpochGuard>((GarnetStatus, SpanByteAndMemory)[] outputArr, bool wait)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             Debug.Assert(outputArr != null);
 
             latencyMetrics?.Start(LatencyMetricsType.PENDING_LAT);
-            var ret = context.CompletePendingWithOutputs(out var completedOutputs, wait);
+            var ret = MainContext.CompletePendingWithOutputs<TKeyLocker>(out var completedOutputs, wait);
             latencyMetrics?.Stop(LatencyMetricsType.PENDING_LAT);
 
             // Update array with completed outputs
@@ -58,45 +54,40 @@ namespace Garnet.server
                     sessionMetrics?.incr_total_notfound();
             }
             completedOutputs.Dispose();
-
             return ret;
         }
 
-        public bool GET_CompletePending<TContext>(out CompletedOutputIterator<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long> completedOutputs, bool wait, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public bool GET_CompletePending<TKeyLocker>(out CompletedOutputIterator<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long> completedOutputs, bool wait)
+            where TKeyLocker : struct, ISessionLocker
         {
             latencyMetrics?.Start(LatencyMetricsType.PENDING_LAT);
-            var ret = context.CompletePendingWithOutputs(out completedOutputs, wait);
+            var ret = MainContext.CompletePendingWithOutputs<TKeyLocker>(out completedOutputs, wait);
             latencyMetrics?.Stop(LatencyMetricsType.PENDING_LAT);
             return ret;
         }
 
-        public GarnetStatus RMW_MainStore<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public GarnetStatus RMW_MainStore<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            var status = context.RMW(ref key, ref input, ref output);
+            var status = dualContext.RMW<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
 
             if (status.IsPending)
-                CompletePendingForSession(ref status, ref output, ref context);
+                CompletePending<TKeyLocker>(out status, out output);
 
-            if (status.Found || status.Record.Created)
-                return GarnetStatus.OK;
-            else
-                return GarnetStatus.NOTFOUND;
+            return status.Found || status.Record.Created ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
-        public GarnetStatus Read_MainStore<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public GarnetStatus Read_MainStore<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            var status = context.Read(ref key, ref input, ref output);
+            var status = dualContext.Read<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
 
             if (status.IsPending)
-                CompletePendingForSession(ref status, ref output, ref context);
+                CompletePending<TKeyLocker>(out status, out output);
 
-            if (status.Found)
-                return GarnetStatus.OK;
-            else
-                return GarnetStatus.NOTFOUND;
+            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
     }
 }

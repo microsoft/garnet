@@ -17,7 +17,7 @@ namespace Garnet.server
         {
             var status = dualContext.Read<TKeyLocker, TEpochGuard>(key, ref output, default);
             if (status.IsPending)
-                CompletePending<TKeyLocker>(ref status, ref output);
+                CompletePending<TKeyLocker>(out status, out output);
 
             if (status.Found)
             {
@@ -28,9 +28,8 @@ namespace Garnet.server
             return GarnetStatus.NOTFOUND;
         }
 
-        public GarnetStatus GET<TKeyLocker, TEpochGuard>(ref HashEntryInfo hei, byte[] key, ref GarnetObjectStoreOutput output)
+        public GarnetStatus GET<TKeyLocker>(ref HashEntryInfo hei, byte[] key, ref GarnetObjectStoreOutput output)
             where TKeyLocker : struct, ISessionLocker
-            where TEpochGuard : struct, IGarnetEpochGuard
         {
             ObjectInput input = default;
             ReadOptions readOptions = default;
@@ -59,7 +58,8 @@ namespace Garnet.server
             where TKeyLocker : struct, ISessionLocker
         {
             ObjectInput input = default;
-            ObjectContext.Upsert<TKeyLocker>(ref hei, ref key, ref input, ref value, output: out _, recordMetadata: out _, userContext: default);
+            GarnetObjectStoreOutput output = default;
+            ObjectContext.Upsert<TKeyLocker>(ref hei, ref key, ref input, ref value, ref output, recordMetadata: out _, userContext: default);
             return GarnetStatus.OK;
         }
     }

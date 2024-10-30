@@ -10,17 +10,15 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
     sealed partial class StorageSession : IDisposable
     {
         #region Common ObjectStore Methods
 
-        unsafe GarnetStatus RMWObjectStoreOperation<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        unsafe GarnetStatus RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            if (objectStoreContext.Session is null)
+            if (!dualContext.IsDual)
                 ThrowObjectStoreUninitializedException();
 
             output = new();
@@ -31,87 +29,66 @@ namespace Garnet.server
             };
 
             // Perform RMW on object store
-            var status = objectStoreContext.RMW(ref key, ref input, ref objStoreOutput);
-
-            return CompletePendingAndGetGarnetStatus(status, ref objectStoreContext, ref objStoreOutput);
+            var status = dualContext.RMW<TKeyLocker, TEpochGuard>(ref key, ref input, ref objStoreOutput);
+            return CompletePendingAndGetGarnetStatus<TKeyLocker>(status, ref objStoreOutput);
         }
 
-        unsafe GarnetStatus RMWObjectStoreOperation<TObjectContext>(byte[] key, ArgSlice input,
-            out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        unsafe GarnetStatus RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            if (objectStoreContext.Session is null)
+            if (!dualContext.IsDual)
                 ThrowObjectStoreUninitializedException();
 
             ref var objInput = ref Unsafe.AsRef<ObjectInput>(input.ptr);
-
-            return RMWObjectStoreOperation(key, ref objInput, out output, ref objectStoreContext);
+            return RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref objInput, out output);
         }
 
         /// <summary>
         /// Perform RMW operation in object store 
         /// use this method in commands that return an array
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <param name="outputFooter"></param>
-        /// <returns></returns>
-        GarnetStatus RMWObjectStoreOperationWithOutput<TObjectContext>(byte[] key, ref ObjectInput input, ref TObjectContext objectStoreContext, ref GarnetObjectStoreOutput outputFooter)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        GarnetStatus RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            if (objectStoreContext.Session is null)
+            if (!dualContext.IsDual)
                 ThrowObjectStoreUninitializedException();
 
             // Perform RMW on object store
-            var status = objectStoreContext.RMW(ref key, ref input, ref outputFooter);
-
-            return CompletePendingAndGetGarnetStatus(status, ref objectStoreContext, ref outputFooter);
+            var status = dualContext.RMW<TKeyLocker, TEpochGuard>(ref key, ref input, ref outputFooter);
+            return CompletePendingAndGetGarnetStatus<TKeyLocker>(status, ref outputFooter);
         }
 
         /// <summary>
         /// Perform Read operation in object store 
         /// use this method in commands that return an array
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <param name="outputFooter"></param>
-        /// <returns></returns>
-        GarnetStatus ReadObjectStoreOperationWithOutput<TObjectContext>(byte[] key, ref ObjectInput input, ref TObjectContext objectStoreContext, ref GarnetObjectStoreOutput outputFooter)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        GarnetStatus ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            if (objectStoreContext.Session is null)
+            if (!dualContext.IsDual)
                 ThrowObjectStoreUninitializedException();
 
             // Perform read on object store
-            var status = objectStoreContext.Read(ref key, ref input, ref outputFooter);
-
-            return CompletePendingAndGetGarnetStatus(status, ref objectStoreContext, ref outputFooter);
+            var status = dualContext.Read<TKeyLocker, TEpochGuard>(ref key, ref input, ref outputFooter);
+            return CompletePendingAndGetGarnetStatus<TKeyLocker>(status, ref outputFooter);
         }
 
         /// <summary>
         /// Perform Read operation in object store 
         /// use this method in commands that return an array
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <param name="outputFooter"></param>
-        /// <returns></returns>
-        unsafe GarnetStatus ReadObjectStoreOperationWithOutput<TObjectContext>(byte[] key, ArgSlice input,
-            ref TObjectContext objectStoreContext, ref GarnetObjectStoreOutput outputFooter)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        unsafe GarnetStatus ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            if (objectStoreContext.Session is null)
+            if (!dualContext.IsDual)
                 ThrowObjectStoreUninitializedException();
 
             ref var objInput = ref Unsafe.AsRef<ObjectInput>(input.ptr);
-
-            return ReadObjectStoreOperationWithOutput(key, ref objInput, ref objectStoreContext, ref outputFooter);
+            return ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref objInput, ref outputFooter);
         }
 
         /// <summary>
@@ -123,9 +100,9 @@ namespace Garnet.server
         /// <param name="match">The pattern to match</param>
         /// <param name="count">Limit number for the response</param>
         /// <param name="items">The list of items for the response</param>
-        /// <param name="objectStoreContext"></param>
-        public unsafe GarnetStatus ObjectScan<TObjectContext>(GarnetObjectType objectType, ArgSlice key, long cursor, string match, int count, out ArgSlice[] items, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public unsafe GarnetStatus ObjectScan<TKeyLocker, TEpochGuard>(GarnetObjectType objectType, ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             Debug.Assert(objectType is GarnetObjectType.Hash or GarnetObjectType.Set or GarnetObjectType.SortedSet);
 
@@ -191,7 +168,7 @@ namespace Garnet.server
             }
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+            var status = ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, ref outputFooter);
 
             items = default;
             if (status == GarnetStatus.OK)
@@ -215,10 +192,11 @@ namespace Garnet.server
 
             // For reading the elements in the outputFooter
             byte* element = null;
-            int len = 0;
+            var len = 0;
 
-            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
-                             outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte
+                            ? outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan()
+                            : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
 
             try
             {
@@ -253,7 +231,7 @@ namespace Garnet.server
                         // Create the argslice[]
                         elements = new ArgSlice[isScanOutput ? arraySize + 1 : arraySize];
 
-                        int i = 0;
+                        var i = 0;
                         if (isScanOutput)
                             elements[i++] = new ArgSlice(element, len);
 
@@ -409,16 +387,11 @@ namespace Garnet.server
         /// <summary>
         /// Gets the value of the key store in the Object Store
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        unsafe GarnetStatus ReadObjectStoreOperation<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        unsafe GarnetStatus ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            if (objectStoreContext.Session is null)
+            if (!dualContext.IsDual)
                 ThrowObjectStoreUninitializedException();
 
             ref var _input = ref Unsafe.AsRef<ObjectInput>(input.ptr);
@@ -427,10 +400,10 @@ namespace Garnet.server
             var _output = new GarnetObjectStoreOutput { spanByteAndMemory = new(SpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size)) };
 
             // Perform Read on object store
-            var status = objectStoreContext.Read(ref key, ref _input, ref _output);
+            var status = dualContext.Read<TKeyLocker, TEpochGuard>(ref key, ref _input, ref _output);
 
             if (status.IsPending)
-                CompletePendingForObjectStoreSession(ref status, ref _output, ref objectStoreContext);
+                CompletePending<TKeyLocker>(ref status, ref _output);
 
             if (_output.spanByteAndMemory.Length == 0)
                 return GarnetStatus.WRONGTYPE;
@@ -438,23 +411,17 @@ namespace Garnet.server
 
             if (status.Found && (!status.Record.Created && !status.Record.CopyUpdated && !status.Record.InPlaceUpdated))
                 return GarnetStatus.OK;
-
             return GarnetStatus.NOTFOUND;
         }
 
         /// <summary>
         /// Gets the value of the key store in the Object Store
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        unsafe GarnetStatus ReadObjectStoreOperation<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        unsafe GarnetStatus ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            if (objectStoreContext.Session is null)
+            if (!dualContext.IsDual)
                 ThrowObjectStoreUninitializedException();
 
             output = new();
@@ -483,10 +450,10 @@ namespace Garnet.server
         /// <param name="key">The key of the sorted set</param>
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
-        /// <param name="objectStoreContext"></param>
-        public GarnetStatus ObjectScan<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-          => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus ObjectScan<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+          => ReadObjectStoreOperationWithOutput(key, ref input, ref outputFooter);
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         static void ThrowObjectStoreUninitializedException()
@@ -497,16 +464,11 @@ namespace Garnet.server
         /// <summary>
         /// Complete operation if pending and get GarnetStatus based on status returned from the Object Store
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="status"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <param name="outputFooter"></param>
-        /// <returns></returns>
-        private GarnetStatus CompletePendingAndGetGarnetStatus<TObjectContext>(Status status, ref TObjectContext objectStoreContext, ref GarnetObjectStoreOutput outputFooter)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        private GarnetStatus CompletePendingAndGetGarnetStatus<TKeyLocker>(Status status, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
         {
             if (status.IsPending)
-                CompletePendingForObjectStoreSession(ref status, ref outputFooter, ref objectStoreContext);
+                CompletePending<TKeyLocker>(out status, out outputFooter);
 
             if (status.NotFound && !status.Record.Created)
                 return GarnetStatus.NOTFOUND;
