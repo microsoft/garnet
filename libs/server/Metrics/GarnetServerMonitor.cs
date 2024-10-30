@@ -29,12 +29,11 @@ namespace Garnet.server
         readonly StoreWrapper storeWrapper;
         readonly GarnetServerOptions opts;
         readonly IGarnetServer server;
-        readonly int monitorTaskDelay;
+        readonly TimeSpan monitorSamplingFrequency;
         public long monitor_iterations;
 
         GarnetServerMetrics globalMetrics;
         readonly GarnetSessionMetrics accSessionMetrics;
-        private int instant_metrics_period;
         private ulong instant_input_net_bytes;
         private ulong instant_output_net_bytes;
         private ulong instant_commands_processed;
@@ -55,10 +54,9 @@ namespace Garnet.server
             this.opts = opts;
             this.server = server;
             this.logger = logger;
-            monitorTaskDelay = opts.MetricsSamplingFrequency * 1000;
+            monitorSamplingFrequency = TimeSpan.FromSeconds(opts.MetricsSamplingFrequency);
             monitor_iterations = 0;
 
-            instant_metrics_period = monitorTaskDelay > 0 ? Math.Max((1000 / monitorTaskDelay), 1) : 0;
             instant_input_net_bytes = 0;
             instant_output_net_bytes = 0;
             instant_commands_processed = 0;
@@ -110,23 +108,20 @@ namespace Garnet.server
 
         private void UpdateInstantaneousMetrics()
         {
-            if (monitor_iterations % instant_metrics_period == 0)
-            {
-                var currTimestamp = Stopwatch.GetTimestamp();
-                var elapsedSec = TimeSpan.FromTicks(currTimestamp - startTimestamp).TotalSeconds;
-                globalMetrics.instantaneous_net_input_tpt = (globalMetrics.globalSessionMetrics.get_total_net_input_bytes() - instant_input_net_bytes) / (elapsedSec * GarnetServerMetrics.byteUnit);
-                globalMetrics.instantaneous_net_output_tpt = (globalMetrics.globalSessionMetrics.get_total_net_output_bytes() - instant_output_net_bytes) / (elapsedSec * GarnetServerMetrics.byteUnit);
-                globalMetrics.instantaneous_cmd_per_sec = (globalMetrics.globalSessionMetrics.get_total_commands_processed() - instant_commands_processed) / elapsedSec;
+            var currTimestamp = Stopwatch.GetTimestamp();
+            var elapsedSec = monitorSamplingFrequency.TotalSeconds;
+            globalMetrics.instantaneous_net_input_tpt = (globalMetrics.globalSessionMetrics.get_total_net_input_bytes() - instant_input_net_bytes) / (elapsedSec * GarnetServerMetrics.byteUnit);
+            globalMetrics.instantaneous_net_output_tpt = (globalMetrics.globalSessionMetrics.get_total_net_output_bytes() - instant_output_net_bytes) / (elapsedSec * GarnetServerMetrics.byteUnit);
+            globalMetrics.instantaneous_cmd_per_sec = (globalMetrics.globalSessionMetrics.get_total_commands_processed() - instant_commands_processed) / elapsedSec;
 
-                globalMetrics.instantaneous_net_input_tpt = Math.Round(globalMetrics.instantaneous_net_input_tpt, 2);
-                globalMetrics.instantaneous_net_output_tpt = Math.Round(globalMetrics.instantaneous_net_output_tpt, 2);
-                globalMetrics.instantaneous_cmd_per_sec = Math.Round(globalMetrics.instantaneous_cmd_per_sec);
+            globalMetrics.instantaneous_net_input_tpt = Math.Round(globalMetrics.instantaneous_net_input_tpt, 2);
+            globalMetrics.instantaneous_net_output_tpt = Math.Round(globalMetrics.instantaneous_net_output_tpt, 2);
+            globalMetrics.instantaneous_cmd_per_sec = Math.Round(globalMetrics.instantaneous_cmd_per_sec);
 
-                startTimestamp = currTimestamp;
-                instant_input_net_bytes = globalMetrics.globalSessionMetrics.get_total_net_input_bytes();
-                instant_output_net_bytes = globalMetrics.globalSessionMetrics.get_total_net_output_bytes();
-                instant_commands_processed = globalMetrics.globalSessionMetrics.get_total_commands_processed();
-            }
+            startTimestamp = currTimestamp;
+            instant_input_net_bytes = globalMetrics.globalSessionMetrics.get_total_net_input_bytes();
+            instant_output_net_bytes = globalMetrics.globalSessionMetrics.get_total_net_output_bytes();
+            instant_commands_processed = globalMetrics.globalSessionMetrics.get_total_commands_processed();
         }
 
         private void UpdateAllMetricsHistory()
@@ -252,7 +247,7 @@ namespace Garnet.server
             {
                 while (true)
                 {
-                    await Task.Delay(monitorTaskDelay, token);
+                    await Task.Delay(monitorSamplingFrequency, token);
 
                     // Reset the session level latency metrics for the prior version, as we are
                     // about to make that the current version.
