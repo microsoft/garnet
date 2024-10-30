@@ -111,20 +111,5 @@ namespace Garnet.cluster
                 throw new GarnetException(ex.Message, ex, LogLevel.Warning, clientResponse: false);
             }
         }
-
-        unsafe int GetFirstAofEntryLength(byte* ptr)
-        {
-            int entryLength = storeWrapper.appendOnlyFile.HeaderSize;
-            int payloadLength = storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
-            if (payloadLength > 0)
-            {
-                entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
-            }
-            else if (payloadLength < 0)
-            {
-                entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
-            }
-            return entryLength;
-        }
     }
 }
