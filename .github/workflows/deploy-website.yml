@@ -22,6 +22,11 @@ jobs:
         working-directory: website
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: continuousbenchmark
+          sparse-checkout: |
+            website/static/charts
       - uses: actions/setup-node@v4
         with:
           node-version: 20
