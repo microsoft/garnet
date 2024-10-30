@@ -759,12 +759,11 @@ namespace Tsavorite.core
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
-                if (logicalAddress == 0)
-                {
-                    epoch.Suspend();
-                    if (cannedException != null) throw cannedException;
-                    return false;
-                }
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             entryBytes.CopyTo(new Span<byte>((byte*)physicalAddress, length));
