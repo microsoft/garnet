@@ -31,7 +31,7 @@ jobs:
       - name: Copy charts
         run: |
           mkdir -p static/charts
-          cp continuousbenchmark/website/static/charts/* static/charts
+          cp ../continuousbenchmark/website/static/charts/* static/charts
       - uses: actions/setup-node@v4
         with:
           node-version: 20
