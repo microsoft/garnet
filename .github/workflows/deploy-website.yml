@@ -28,9 +28,10 @@ jobs:
           sparse-checkout: |
             website/static/charts
           path: continuousbenchmark
-      - run: |
-          mkdir -p website/static/charts
-          cp continuousbenchmark/website/static/charts/* website/static/charts
+      - name: Copy charts
+        run: |
+          mkdir -p static/charts
+          cp continuousbenchmark/website/static/charts/* static/charts
       - uses: actions/setup-node@v4
         with:
           node-version: 20
