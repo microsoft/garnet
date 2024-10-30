@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - continuousbenchmark
     paths:
       - '.github/workflows/deploy-website.yml'
       - 'website/**'
@@ -22,6 +23,8 @@ jobs:
         working-directory: website
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: actions/checkout@v4
         with:
           ref: continuousbenchmark
