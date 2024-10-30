@@ -27,7 +27,7 @@ namespace Garnet.server
         private const int deltaFraction = 10; // 10% of target size
         private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
 
-        internal bool Stopped => mainLogTracker.Stopped && (readCacheTracker == null || readCacheTracker.Stopped);
+        internal bool Stopped => (mainLogTracker == null || mainLogTracker.Stopped) && (readCacheTracker == null || readCacheTracker.Stopped);
 
         /// <summary>Helps calculate size of a record including heap memory in Object store.</summary>
         internal struct LogSizeCalculator : ILogSizeCalculator<byte[], IGarnetObject>
@@ -95,22 +95,21 @@ namespace Garnet.server
         /// <param name="size">Size to be added</param>
         public void AddTrackedSize(long size)
         {
-            Debug.Assert(mainLogTracker != null);
-
             if (size == 0) return;
 
-            this.mainLogTracker.IncrementSize(size);
+            // mainLogTracker could be null if heap size limit is set just for the read cache
+            this.mainLogTracker?.IncrementSize(size);
         }
 
         /// <summary>Add to the tracked size of read cache.</summary>
         /// <param name="size">Size to be added</param>
         public void AddReadCacheTrackedSize(long size)
         {
-            Debug.Assert(readCacheTracker != null);
-
             if (size == 0) return;
 
-            this.readCacheTracker.IncrementSize(size);
+            // readCacheTracker could be null if read cache is not enabled or heap size limit is set
+            // just for the main log
+            this.readCacheTracker?.IncrementSize(size);
         }
     }
 }

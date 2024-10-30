@@ -244,11 +244,11 @@ namespace Garnet.server
                     new("Log.MemorySizeBytes", storeWrapper.objectStore.Log.MemorySizeBytes.ToString()),
                     new("Log.SafeReadOnlyAddress", storeWrapper.objectStore.Log.SafeReadOnlyAddress.ToString()),
                     new("Log.TailAddress", storeWrapper.objectStore.Log.TailAddress.ToString()),
-                    new("ReadCache.BeginAddress", storeWrapper.store.ReadCache?.BeginAddress.ToString() ?? "N/A"),
-                    new("ReadCache.BufferSize", storeWrapper.store.ReadCache?.BufferSize.ToString() ?? "N/A"),
-                    new("ReadCache.EmptyPageCount", storeWrapper.store.ReadCache?.EmptyPageCount.ToString() ?? "N/A"),
-                    new("ReadCache.MemorySizeBytes", storeWrapper.store.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
-                    new("ReadCache.TailAddress", storeWrapper.store.ReadCache?.TailAddress.ToString() ?? "N/A"),
+                    new("ReadCache.BeginAddress", storeWrapper.objectStore.ReadCache?.BeginAddress.ToString() ?? "N/A"),
+                    new("ReadCache.BufferSize", storeWrapper.objectStore.ReadCache?.BufferSize.ToString() ?? "N/A"),
+                    new("ReadCache.EmptyPageCount", storeWrapper.objectStore.ReadCache?.EmptyPageCount.ToString() ?? "N/A"),
+                    new("ReadCache.MemorySizeBytes", storeWrapper.objectStore.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
+                    new("ReadCache.TailAddress", storeWrapper.objectStore.ReadCache?.TailAddress.ToString() ?? "N/A"),
                 ];
         }
 

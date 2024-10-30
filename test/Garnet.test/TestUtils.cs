@@ -203,6 +203,7 @@ namespace Garnet.test
             string objectStoreHeapMemorySize = default,
             string objectStoreIndexSize = "16k",
             string objectStoreIndexMaxSize = default,
+            string objectStoreReadCacheHeapMemorySize = default,
             string indexSize = "1m",
             string indexMaxSize = default,
             string[] extensionBinPaths = null,
@@ -212,6 +213,7 @@ namespace Garnet.test
             IAuthenticationSettings authenticationSettings = null,
             bool enableLua = false,
             bool enableReadCache = false,
+            bool enableObjectStoreReadCache = false,
             ILogger logger = null,
             IEnumerable<string> loadModulePaths = null)
         {
@@ -291,10 +293,14 @@ namespace Garnet.test
                 ThreadPoolMinThreads = threadPoolMinThreads,
                 LoadModuleCS = loadModulePaths,
                 EnableReadCache = enableReadCache,
+                EnableObjectStoreReadCache = enableObjectStoreReadCache,
             };
 
             if (!string.IsNullOrEmpty(objectStoreHeapMemorySize))
                 opts.ObjectStoreHeapMemorySize = objectStoreHeapMemorySize;
+
+            if (!string.IsNullOrEmpty(objectStoreReadCacheHeapMemorySize))
+                opts.ObjectStoreReadCacheHeapMemorySize = objectStoreReadCacheHeapMemorySize;
 
             if (indexMaxSize != default) opts.IndexMaxSize = indexMaxSize;
             if (objectStoreIndexMaxSize != default) opts.ObjectStoreIndexMaxSize = objectStoreIndexMaxSize;
@@ -307,6 +313,12 @@ namespace Garnet.test
                 {
                     opts.ReadCacheMemorySize = opts.MemorySize;
                     opts.ReadCachePageSize = opts.PageSize;
+                }
+
+                if (enableObjectStoreReadCache)
+                {
+                    opts.ObjectStoreReadCacheLogMemorySize = opts.MemorySize;
+                    opts.ObjectStoreReadCachePageSize = opts.PageSize;
                 }
             }
 
@@ -854,10 +866,10 @@ namespace Garnet.test
             }
         }
 
-        public static StoreAddressInfo GetStoreAddressInfo(IServer server, bool includeReadCache = false)
+        public static StoreAddressInfo GetStoreAddressInfo(IServer server, bool includeReadCache = false, bool isObjectStore = false)
         {
             StoreAddressInfo result = default;
-            var info = server.Info("STORE");
+            var info = isObjectStore ? server.Info("OBJECTSTORE") : server.Info("STORE");
             foreach (var section in info)
             {
                 foreach (var entry in section)

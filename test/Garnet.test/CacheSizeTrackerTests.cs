@@ -88,5 +88,48 @@ namespace Garnet.test
                 Assert.Fail("Timeout occurred. Resizing did not happen within the specified time.");
             }
         }
+
+        [Test]
+        public void ReadCacheIncreaseEmptyPageCountTest()
+        {
+            server?.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, MemorySize: "1k", PageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreReadCacheHeapMemorySize: "1k", enableObjectStoreReadCache: true);
+            server.Start();
+            objStore = server.Provider.StoreWrapper.objectStore;
+            cacheSizeTracker = server.Provider.StoreWrapper.objectStoreSizeTracker;
+
+            var readCacheEmptyPageCountIncrements = 0;
+            var readCacheEpcEvent = new ManualResetEventSlim(false);
+
+            cacheSizeTracker.readCacheTracker.PostEmptyPageCountIncrease = (int count) => { readCacheEmptyPageCountIncrements++; readCacheEpcEvent.Set(); };
+
+            ClassicAssert.AreEqual(0, cacheSizeTracker.readCacheTracker.LogHeapSizeBytes);
+            ClassicAssert.AreEqual(0, cacheSizeTracker.readCacheTracker.logAccessor.EmptyPageCount);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            // Have enough records (24 bytes each) to spill over to disk
+            for (var i = 0; i < 100; i++)
+            {
+                db.HashSet($"user:user{i}", [new HashEntry("Title", "Faster")]);
+            }
+
+            for (var i = 0; i < 25; i++)
+            {
+                var value = db.HashGet($"user:user{i}", "Title");
+                ClassicAssert.AreEqual("Faster", (string)value, i.ToString());
+            }
+
+            ClassicAssert.AreEqual(6200, cacheSizeTracker.readCacheTracker.LogHeapSizeBytes); // 25 * 248 for each hashset object
+            var info = TestUtils.GetStoreAddressInfo(redis.GetServer(TestUtils.Address, TestUtils.Port), includeReadCache: true, isObjectStore: true);
+            ClassicAssert.AreEqual(632, info.ReadCacheTailAddress); // 25 (records) * 24 (rec size) + 24 (initial) + 8 (page boundary)
+
+            if (!readCacheEpcEvent.Wait(TimeSpan.FromSeconds(3 * 3 * LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, CacheSizeTracker.LogSizeCalculator>.resizeTaskDelaySeconds)))
+                ClassicAssert.Fail("Timeout occurred. Resizing did not happen within the specified time.");
+
+            ClassicAssert.AreEqual(1, readCacheEmptyPageCountIncrements);
+            ClassicAssert.AreEqual(1240, cacheSizeTracker.readCacheTracker.LogHeapSizeBytes);
+        }
     }
 }
