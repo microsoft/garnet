@@ -4,13 +4,13 @@ on:
   push:
     branches:
       - main
-      - continuousbenchmark
     paths:
       - '.github/workflows/deploy-website.yml'
       - 'website/**'
-    # Review gh actions docs if you want to further define triggers, paths, etc
-    # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on
-
+  workflow_run:
+    workflows: [Garnet CI BDN.benchmark]
+    types:
+      - completed
 permissions:
   contents: write
 
