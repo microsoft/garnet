@@ -104,6 +104,7 @@ namespace Garnet.test.cluster
                 new ZREMRANGEBYRANK(),
                 new ZRANDMEMBER(),
                 new ZDIFF(),
+                new ZDIFFSTORE(),
                 new HSET(),
                 new HGET(),
                 new HGETALL(),
@@ -281,6 +282,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("ZDIFFSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -418,6 +420,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("ZDIFFSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -565,6 +568,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("ZDIFFSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -704,6 +708,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("ZDIFFSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -850,6 +855,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("ZDIFFSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -1013,6 +1019,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("ZDIFFSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]

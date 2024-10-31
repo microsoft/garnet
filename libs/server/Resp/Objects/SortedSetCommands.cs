@@ -32,7 +32,7 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
@@ -72,7 +72,7 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREM };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = storageApi.SortedSetRemove(keyBytes, ref input, out var rmwOutput);
 
@@ -169,7 +169,7 @@ namespace Garnet.server
                 };
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, ref parseState, 1, -1, respProtocolVersion);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: respProtocolVersion);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
@@ -215,7 +215,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZSCORE };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -262,7 +262,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZMSCORE };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -376,7 +376,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOUNT };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))) };
@@ -434,7 +434,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = op == SortedSetOperation.ZREMRANGEBYLEX ?
                 storageApi.SortedSetRemoveRangeByLex(keyBytes, ref input, out var output) :
@@ -491,7 +491,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZINCRBY };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -560,7 +560,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, ref parseState, 1, -1, includeWithScore ? 1 : 0);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: includeWithScore ? 1 : 0);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -616,7 +616,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, ref parseState, 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -744,7 +744,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("ZDIFF");
             }
 
-            //number of keys
+            // Number of keys
             if (!parseState.TryGetInt(0, out var nKeys))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -822,6 +822,57 @@ namespace Garnet.server
                             }
                         }
                     }
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        ///  Computes a difference operation  between the first and all successive sorted sets and store
+        ///  and returns the result to the client.
+        ///  The total number of input keys is specified.
+        /// </summary>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        /// <exception cref="GarnetException"></exception>
+        private unsafe bool SortedSetDifferenceStore<TGarnetApi>(ref TGarnetApi storageApi)
+             where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 3)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZDIFFSTORE));
+            }
+
+            // Number of keys
+            if (!parseState.TryGetInt(1, out var nKeys))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (parseState.Count - 2 != nKeys)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var destination = parseState.GetArgSliceByRef(0);
+            var keys = parseState.Parameters.Slice(2, nKeys);
+
+            var status = storageApi.SortedSetDifferenceStore(destination, keys, out var count);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    while (!RespWriteUtils.WriteInteger(count, ref dcurr, dend))
+                        SendAndReset();
                     break;
             }
 

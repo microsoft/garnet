@@ -274,6 +274,16 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CheckHashIncrementDoublePrecision()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("user:user1", [new HashEntry("Field1", "1.1111111111")]);
+            var result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field1"), 2.2222222222);
+            ClassicAssert.AreEqual(3.3333333333, result, 1e-15);
+        }
+
+        [Test]
         public void CanDoHSETNXCommand()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

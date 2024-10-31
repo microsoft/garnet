@@ -108,7 +108,7 @@ namespace Garnet.server
             {
                 case GarnetObjectType.Expire:
                 case GarnetObjectType.PExpire:
-                    var expiryValue = input.parseState.GetLong(input.parseStateFirstArgIdx);
+                    var expiryValue = input.parseState.GetLong(0);
 
                     var optionType = (ExpireOption)input.arg1;
                     var expireAt = input.arg2 == 1;
@@ -198,7 +198,7 @@ namespace Garnet.server
             {
                 case GarnetObjectType.Expire:
                 case GarnetObjectType.PExpire:
-                    var expiryValue = input.parseState.GetLong(input.parseStateFirstArgIdx);
+                    var expiryValue = input.parseState.GetLong(0);
 
                     var optionType = (ExpireOption)input.arg1;
                     var expireAt = input.arg2 == 1;

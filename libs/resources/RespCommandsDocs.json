@@ -3859,6 +3859,54 @@
     ]
   },
   {
+    "Command": "PUBSUB",
+    "Name": "PUBSUB",
+    "Summary": "A container for Pub/Sub commands.",
+    "Group": "PubSub",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "PUBSUB_NUMPAT",
+        "Name": "PUBSUB|NUMPAT",
+        "Summary": "Returns a count of unique pattern subscriptions.",
+        "Group": "PubSub",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "PUBSUB_CHANNELS",
+        "Name": "PUBSUB|CHANNELS",
+        "Summary": "Returns the active channels.",
+        "Group": "PubSub",
+        "Complexity": "O(N) where N is the number of active channels, and assuming constant time pattern matching (relatively short channels and patterns)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "PATTERN",
+            "DisplayText": "pattern",
+            "Type": "Pattern",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "Command": "PUBSUB_NUMSUB",
+        "Name": "PUBSUB|NUMSUB",
+        "Summary": "Returns a count of subscribers to channels.",
+        "Group": "PubSub",
+        "Complexity": "O(N) for the NUMSUB subcommand, where N is the number of requested channels",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CHANNEL",
+            "DisplayText": "channel",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "PUNSUBSCRIBE",
     "Name": "PUNSUBSCRIBE",
     "Summary": "Stops listening to messages published to channels that match one or more patterns.",
@@ -5307,6 +5355,36 @@
         "Type": "PureToken",
         "Token": "WITHSCORES",
         "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZDIFFSTORE",
+    "Name": "ZDIFFSTORE",
+    "Summary": "Stores the difference of multiple sorted sets in a key.",
+    "Group": "SortedSet",
+    "Complexity": "O(L \u002B (N-K)log(N)) worst case where L is the total number of elements in all the sets, N is the size of the first set, and K is the size of the result set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 1
       }
     ]
   },
