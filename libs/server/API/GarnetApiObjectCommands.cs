@@ -6,131 +6,179 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
     /// <summary>
     /// Garnet API implementation
     /// </summary>
-    public partial struct GarnetApi<TContext, TObjectContext> : IGarnetApi, IGarnetWatchApi
-        where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+    internal partial struct GarnetApi : IGarnetApi, IGarnetWatchApi
     {
         #region SortedSet Methods
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetAdd(ArgSlice key, ArgSlice score, ArgSlice member, out int zaddCount)
+        public GarnetStatus SortedSetAdd<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice score, ArgSlice member, out int zaddCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetAdd(key, score, member, out zaddCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetAdd(ArgSlice key, (ArgSlice score, ArgSlice member)[] inputs, out int zaddCount)
+        public GarnetStatus SortedSetAdd<TKeyLocker, TEpochGuard>(ArgSlice key, (ArgSlice score, ArgSlice member)[] inputs, out int zaddCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetAdd(key, inputs, out zaddCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetAdd(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        public GarnetStatus SortedSetAdd<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetAdd(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemove(ArgSlice key, ArgSlice member, out int zremCount)
+        public GarnetStatus SortedSetRemove<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice member, out int zremCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetRemove(key.ToArray(), member, out zremCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemove(ArgSlice key, ArgSlice[] members, out int zaddCount)
+        public GarnetStatus SortedSetRemove<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] members, out int zaddCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetRemove(key.ToArray(), members, out zaddCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemove(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetRemove<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetRemove(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLength(ArgSlice key, out int len)
+        public GarnetStatus SortedSetLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int len)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetLength(key, out len, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetLength(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetRange<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetRange(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetScore(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetScore<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetScore(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetScores(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetScores<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetScores(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetPop<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetPop(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetPop(ArgSlice key, out (ArgSlice member, ArgSlice score)[] pairs, int count = 1, bool lowScoresFirst = true)
+        public GarnetStatus SortedSetPop<TKeyLocker, TEpochGuard>(ArgSlice key, out (ArgSlice member, ArgSlice score)[] pairs, int count = 1, bool lowScoresFirst = true)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetPop(key, count, lowScoresFirst, out pairs, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        public GarnetStatus SortedSetCount<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetCount(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLengthByValue(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetLengthByValue<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetLengthByValue(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemoveRangeByLex(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetRemoveRangeByLex<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetRemoveRangeByLex(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemoveRangeByLex(ArgSlice key, string min, string max, out int countRemoved)
+        public GarnetStatus SortedSetRemoveRangeByLex<TKeyLocker, TEpochGuard>(ArgSlice key, string min, string max, out int countRemoved)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetRemoveRangeByLex(key, min, max, out countRemoved, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemoveRangeByScore(ArgSlice key, string min, string max, out int countRemoved)
+        public GarnetStatus SortedSetRemoveRangeByScore<TKeyLocker, TEpochGuard>(ArgSlice key, string min, string max, out int countRemoved)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetRemoveRangeByScore(key, min, max, out countRemoved, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemoveRangeByRank(ArgSlice key, int start, int stop, out int countRemoved)
+        public GarnetStatus SortedSetRemoveRangeByRank<TKeyLocker, TEpochGuard>(ArgSlice key, int start, int stop, out int countRemoved)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetRemoveRangeByRank(key, start, stop, out countRemoved, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetIncrement<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetIncrement(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetIncrement(ArgSlice key, double increment, ArgSlice member, out double newScore)
+        public GarnetStatus SortedSetIncrement<TKeyLocker, TEpochGuard>(ArgSlice key, double increment, ArgSlice member, out double newScore)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetIncrement(key, increment, member, out newScore, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemoveRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetRemoveRange<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetRemoveRange(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRank(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetRank<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetRank(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRank(ArgSlice key, ArgSlice member, bool reverse, out long? rank)
+        public GarnetStatus SortedSetRank<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice member, bool reverse, out long? rank)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetRank(key, member, reverse, out rank, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetRandomMember<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetRandomMember(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRange(ArgSlice key, ArgSlice min, ArgSlice max, SortedSetOrderOperation sortedSetOrderOperation, out ArgSlice[] elements, out string error, bool withScores = false, bool reverse = false, (string, int) limit = default)
+        public GarnetStatus SortedSetRange<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice min, ArgSlice max, SortedSetOrderOperation sortedSetOrderOperation, out ArgSlice[] elements, out string error, bool withScores = false, bool reverse = false, (string, int) limit = default)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetRange(key, min, max, sortedSetOrderOperation, ref objectContext, out elements, out error, withScores, reverse, limit);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetDifference(ArgSlice[] keys, out Dictionary<byte[], double> pairs)
+        public GarnetStatus SortedSetDifference<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out Dictionary<byte[], double> pairs)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SortedSetDifference(keys, out pairs);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+        public GarnetStatus SortedSetScan<TKeyLocker, TEpochGuard>(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ObjectScan(GarnetObjectType.SortedSet, key, cursor, match, count, out items, ref objectContext);
 
         #endregion
@@ -138,11 +186,15 @@ namespace Garnet.server
         #region Geospatial commands
 
         /// <inheritdoc />
-        public GarnetStatus GeoAdd(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus GeoAdd<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.GeoAdd(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus GeoCommands<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.GeoCommands(key, ref input, ref outputFooter, ref objectContext);
 
         #endregion
@@ -152,101 +204,149 @@ namespace Garnet.server
         #region PUSHPOP
 
         /// <inheritdoc />
-        public GarnetStatus ListRightPush(ArgSlice key, ArgSlice element, out int itemsCount, bool whenExists = false)
+        public GarnetStatus ListRightPush<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice element, out int itemsCount, bool whenExists = false)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListPush(key, element, whenExists ? ListOperation.RPUSHX : ListOperation.RPUSH, out itemsCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListRightPush(ArgSlice key, ArgSlice[] elements, out int itemsCount, bool whenExists = false)
+        public GarnetStatus ListRightPush<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] elements, out int itemsCount, bool whenExists = false)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListPush(key, elements, whenExists ? ListOperation.RPUSHX : ListOperation.RPUSH, out itemsCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListRightPush(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus ListRightPush<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
              => storageSession.ListPush(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListLeftPush(ArgSlice key, ArgSlice[] elements, out int itemsCount, bool onlyWhenExists = false)
+        public GarnetStatus ListLeftPush<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] elements, out int itemsCount, bool onlyWhenExists = false)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListPush(key, elements, onlyWhenExists ? ListOperation.LPUSHX : ListOperation.LPUSH, out itemsCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListLeftPush(ArgSlice key, ArgSlice element, out int count, bool onlyWhenExists = false)
+        public GarnetStatus ListLeftPush<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice element, out int count, bool onlyWhenExists = false)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListPush(key, element, onlyWhenExists ? ListOperation.LPUSHX : ListOperation.LPUSH, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListLeftPush(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus ListLeftPush<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListPush(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListLeftPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus ListLeftPop<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListPop(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public unsafe GarnetStatus ListLeftPop(ArgSlice key, out ArgSlice element)
+        public unsafe GarnetStatus ListLeftPop<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice element)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
              => storageSession.ListPop(key, ListOperation.LPOP, ref objectContext, out element);
 
         /// <inheritdoc />
-        public GarnetStatus ListLeftPop(ArgSlice key, int count, out ArgSlice[] poppedElements)
+        public GarnetStatus ListLeftPop<TKeyLocker, TEpochGuard>(ArgSlice key, int count, out ArgSlice[] poppedElements)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
              => storageSession.ListPop(key, count, ListOperation.LPOP, ref objectContext, out poppedElements);
 
         /// <inheritdoc />
-        public GarnetStatus ListLeftPop(ArgSlice[] keys, int count, out ArgSlice poppedKey, out ArgSlice[] poppedElements)
+        public GarnetStatus ListLeftPop<TKeyLocker, TEpochGuard>(ArgSlice[] keys, int count, out ArgSlice poppedKey, out ArgSlice[] poppedElements)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListPopMultiple(keys, OperationDirection.Left, count, ref objectContext, out poppedKey, out poppedElements);
 
         /// <inheritdoc />
-        public GarnetStatus ListRightPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus ListRightPop<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListPop(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public unsafe GarnetStatus ListRightPop(ArgSlice key, out ArgSlice element)
+        public unsafe GarnetStatus ListRightPop<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice element)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListPop(key, ListOperation.RPOP, ref objectContext, out element);
 
         /// <inheritdoc />
-        public GarnetStatus ListRightPop(ArgSlice key, int count, out ArgSlice[] poppedElements)
+        public GarnetStatus ListRightPop<TKeyLocker, TEpochGuard>(ArgSlice key, int count, out ArgSlice[] poppedElements)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListPop(key, count, ListOperation.RPOP, ref objectContext, out poppedElements);
 
         /// <inheritdoc />
-        public GarnetStatus ListRightPop(ArgSlice[] keys, int count, out ArgSlice poppedKey, out ArgSlice[] poppedElements)
+        public GarnetStatus ListRightPop<TKeyLocker, TEpochGuard>(ArgSlice[] keys, int count, out ArgSlice poppedKey, out ArgSlice[] poppedElements)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListPopMultiple(keys, OperationDirection.Right, count, ref objectContext, out poppedKey, out poppedElements);
 
         #endregion
 
         /// <inheritdoc />
-        public GarnetStatus ListLength(ArgSlice key, out int count)
+        public GarnetStatus ListLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListLength(key, ref objectContext, out count);
 
         /// <inheritdoc />
-        public GarnetStatus ListLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus ListLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListLength(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListMove(ArgSlice source, ArgSlice destination, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element)
+        public GarnetStatus ListMove<TKeyLocker, TEpochGuard>(ArgSlice source, ArgSlice destination, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListMove(source, destination, sourceDirection, destinationDirection, out element);
 
         /// <inheritdoc />
         public bool ListTrim(ArgSlice key, int start, int stop)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListTrim(key, start, stop, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListTrim(byte[] key, ref ObjectInput input)
+        public GarnetStatus ListTrim<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListTrim(key, ref input, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus ListRange<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListRange(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListInsert(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus ListInsert<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListInsert(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListIndex(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus ListIndex<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
              => storageSession.ListIndex(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListRemove(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus ListRemove<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListRemove(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListSet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus ListSet<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ListSet(key, ref input, ref outputFooter, ref objectContext);
 
         #endregion
@@ -254,94 +354,140 @@ namespace Garnet.server
         #region Set Methods
 
         /// <inheritdoc />
-        public GarnetStatus SetAdd(ArgSlice key, ArgSlice member, out int saddCount)
+        public GarnetStatus SetAdd<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice member, out int saddCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetAdd(key, member, out saddCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetAdd(ArgSlice key, ArgSlice[] members, out int saddCount)
+        public GarnetStatus SetAdd<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] members, out int saddCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetAdd(key, members, out saddCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetAdd(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SetAdd<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetAdd(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetRemove(ArgSlice key, ArgSlice member, out int sremCount)
+        public GarnetStatus SetRemove<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice member, out int sremCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetRemove(key, member, out sremCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetRemove(ArgSlice key, ArgSlice[] members, out int sremCount)
+        public GarnetStatus SetRemove<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] members, out int sremCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetRemove(key, members, out sremCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetRemove(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SetRemove<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetRemove(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetLength(ArgSlice key, out int count)
+        public GarnetStatus SetLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetLength(key, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SetLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetLength(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetMembers(ArgSlice key, out ArgSlice[] members)
+        public GarnetStatus SetMembers<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice[] members)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetMembers(key, out members, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetMembers(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SetMembers<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetMembers(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetIsMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SetIsMember<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetIsMember(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetPop(ArgSlice key, out ArgSlice member)
+        public GarnetStatus SetPop<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice member)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetPop(key, out member, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetPop(ArgSlice key, int count, out ArgSlice[] members)
+        public GarnetStatus SetPop<TKeyLocker, TEpochGuard>(ArgSlice key, int count, out ArgSlice[] members)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetPop(key, count, out members, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SetPop<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetPop(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SetRandomMember<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetRandomMember(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+        public GarnetStatus SetScan<TKeyLocker, TEpochGuard>(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ObjectScan(GarnetObjectType.Set, key, cursor, match, count, out items, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetMove(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult)
+        public GarnetStatus SetMove<TKeyLocker, TEpochGuard>(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetMove(sourceKey, destinationKey, member, out smoveResult);
 
-        public GarnetStatus SetUnion(ArgSlice[] keys, out HashSet<byte[]> output)
+        public GarnetStatus SetUnion<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out HashSet<byte[]> output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetUnion(keys, out output);
 
         /// <inheritdoc />
-        public GarnetStatus SetUnionStore(byte[] key, ArgSlice[] keys, out int count)
+        public GarnetStatus SetUnionStore<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice[] keys, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetUnionStore(key, keys, out count);
 
         /// <inheritdoc />
-        public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members)
+        public GarnetStatus SetDiff<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out HashSet<byte[]> members)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetDiff(keys, out members);
 
         /// <inheritdoc />
-        public GarnetStatus SetDiffStore(byte[] key, ArgSlice[] keys, out int count)
+        public GarnetStatus SetDiffStore<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice[] keys, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetDiffStore(key, keys, out count);
 
         /// <inheritdoc />
-        public GarnetStatus SetIntersect(ArgSlice[] keys, out HashSet<byte[]> output)
+        public GarnetStatus SetIntersect<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out HashSet<byte[]> output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetIntersect(keys, out output);
 
         /// <inheritdoc />
-        public GarnetStatus SetIntersectStore(byte[] key, ArgSlice[] keys, out int count)
+        public GarnetStatus SetIntersectStore<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice[] keys, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.SetIntersectStore(key, keys, out count);
 
         #endregion
@@ -349,107 +495,159 @@ namespace Garnet.server
         #region Hash Methods
 
         /// <inheritdoc />
-        public GarnetStatus HashSet(ArgSlice key, ArgSlice field, ArgSlice value, out int count)
+        public GarnetStatus HashSet<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, ArgSlice value, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashSet(key, field, value, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashSetWhenNotExists(ArgSlice key, ArgSlice field, ArgSlice value, out int count)
+        public GarnetStatus HashSetWhenNotExists<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, ArgSlice value, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashSet(key, field, value, out count, ref objectContext, nx: true);
 
         /// <inheritdoc />
-        public GarnetStatus HashSet(ArgSlice key, (ArgSlice field, ArgSlice value)[] elements, out int count)
-         => storageSession.HashSet(key, elements, out count, ref objectContext);
+        public GarnetStatus HashSet<TKeyLocker, TEpochGuard>(ArgSlice key, (ArgSlice field, ArgSlice value)[] elements, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => storageSession.HashSet(key, elements, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashSet(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus HashSet<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashSet(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashDelete(ArgSlice key, ArgSlice field, out int count)
-        => storageSession.HashDelete(key, field, out count, ref objectContext);
+        public GarnetStatus HashDelete<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => storageSession.HashDelete(key, field, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashDelete(ArgSlice key, ArgSlice[] fields, out int count)
-        => storageSession.HashDelete(key, fields, out count, ref objectContext);
+        public GarnetStatus HashDelete<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] fields, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => storageSession.HashDelete(key, fields, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashGet(ArgSlice key, ArgSlice field, out ArgSlice value)
-         => storageSession.HashGet(key, field, out value, ref objectContext);
+        public GarnetStatus HashGet<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, out ArgSlice value)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => storageSession.HashGet(key, field, out value, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashGetAll(ArgSlice key, out ArgSlice[] values)
-        => storageSession.HashGetAll(key, out values, ref objectContext);
+        public GarnetStatus HashGetAll<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice[] values)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => storageSession.HashGetAll(key, out values, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashGet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-        => storageSession.HashGet(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashGet<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => storageSession.HashGet(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashGetAll(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashGetAll<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashGetAll(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashGetMultiple(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashGetMultiple<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashGetMultiple(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashGetMultiple(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
+        public GarnetStatus HashGetMultiple<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashGetMultiple(key, fields, out values, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashLength(ArgSlice key, out int count)
-        => storageSession.HashLength(key, out count, ref objectContext);
+        public GarnetStatus HashLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => storageSession.HashLength(key, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus HashLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashLength(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashStrLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus HashStrLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashStrLength(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashExists(ArgSlice key, ArgSlice field, out bool exists)
+        public GarnetStatus HashExists<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, out bool exists)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashExists(key, field, out exists, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashExists(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus HashExists<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashExists(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashRandomField(ArgSlice key, out ArgSlice field)
-        => storageSession.HashRandomField(key, out field, ref objectContext);
+        public GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice field)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => storageSession.HashRandomField(key, out field, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashRandomField(ArgSlice key, int count, bool withValues, out ArgSlice[] fields)
-        => storageSession.HashRandomField(key, count, withValues, out fields, ref objectContext);
+        public GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(ArgSlice key, int count, bool withValues, out ArgSlice[] fields)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => storageSession.HashRandomField(key, count, withValues, out fields, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashRandomField(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashRandomField(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashDelete(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus HashDelete<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashDelete(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashKeys(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashKeys<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashKeys(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashVals(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashVals<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashVals(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashIncrement(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+        public GarnetStatus HashIncrement<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashIncrement(key, input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashIncrement<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.HashIncrement(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+        public GarnetStatus HashScan<TKeyLocker, TEpochGuard>(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
             => storageSession.ObjectScan(GarnetObjectType.Hash, key, cursor, match, count, out items, ref objectContext);
 
         #endregion

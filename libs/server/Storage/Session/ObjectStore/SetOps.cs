@@ -8,9 +8,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
     /// <summary>
     /// Server session for RESP protocol - SET
     /// </summary>
@@ -21,17 +18,10 @@ namespace Garnet.server
         ///  Specified members that are already a member of this set are ignored. 
         ///  If key does not exist, a new set is created.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key">ArgSlice with key</param>
-        /// <param name="member"></param>
-        /// <param name="saddCount"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        internal unsafe GarnetStatus SetAdd<TObjectContext>(ArgSlice key, ArgSlice member, out int saddCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        internal GarnetStatus SetAdd<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice member, out int saddCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            saddCount = 0;
-
             // Prepare the parse state
             var parseState = new SessionParseState();
             ArgSlice[] parseStateBuffer = default;
@@ -49,7 +39,7 @@ namespace Garnet.server
                 parseStateStartIdx = 0,
             };
 
-            var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, out var output);
 
             saddCount = output.result1;
             return status;
@@ -60,14 +50,9 @@ namespace Garnet.server
         ///  Specified members that are already a member of this set are ignored. 
         ///  If key does not exist, a new set is created.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key">ArgSlice with key</param>
-        /// <param name="members"></param>
-        /// <param name="saddCount"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        internal unsafe GarnetStatus SetAdd<TObjectContext>(ArgSlice key, ArgSlice[] members, out int saddCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        internal GarnetStatus SetAdd<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] members, out int saddCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             saddCount = 0;
 
@@ -94,7 +79,7 @@ namespace Garnet.server
             // Iterate through all inputs and add them to the scratch buffer in RESP format
 
 
-            var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, out var output);
             saddCount = output.result1;
 
             return status;
@@ -104,17 +89,10 @@ namespace Garnet.server
         /// Removes the specified member from the set.
         /// Members that are not in the set are ignored.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key">ArgSlice with key</param>
-        /// <param name="member"></param>
-        /// <param name="sremCount"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        internal unsafe GarnetStatus SetRemove<TObjectContext>(ArgSlice key, ArgSlice member, out int sremCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        internal GarnetStatus SetRemove<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice member, out int sremCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            sremCount = 0;
-
             // Prepare the parse state
             var parseState = new SessionParseState();
             ArgSlice[] parseStateBuffer = default;
@@ -132,7 +110,7 @@ namespace Garnet.server
                 parseStateStartIdx = 0,
             };
 
-            var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, out var output);
             sremCount = output.result1;
 
             return status;
@@ -144,14 +122,9 @@ namespace Garnet.server
         /// Specified members that are not a member of the set are ignored. 
         /// If key does not exist, this command returns 0.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key">ArgSlice with key</param>
-        /// <param name="members"></param>
-        /// <param name="sremCount"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        internal unsafe GarnetStatus SetRemove<TObjectContext>(ArgSlice key, ArgSlice[] members, out int sremCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        internal GarnetStatus SetRemove<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] members, out int sremCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             sremCount = 0;
 
@@ -175,7 +148,7 @@ namespace Garnet.server
                 parseStateStartIdx = 0,
             };
 
-            var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, out var output);
 
             sremCount = output.result1;
             return status;
@@ -184,13 +157,9 @@ namespace Garnet.server
         /// <summary>
         /// Returns the number of elements of the set.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="count"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        internal unsafe GarnetStatus SetLength<TObjectContext>(ArgSlice key, out int count, ref TObjectContext objectStoreContext)
-                where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        internal GarnetStatus SetLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             count = 0;
 
@@ -207,7 +176,7 @@ namespace Garnet.server
                 },
             };
 
-            var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
+            var status = ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, out var output);
 
             count = output.result1;
             return status;
@@ -216,13 +185,9 @@ namespace Garnet.server
         /// <summary>
         /// Returns all members of the set at key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="members"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        internal unsafe GarnetStatus SetMembers<TObjectContext>(ArgSlice key, out ArgSlice[] members, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        internal GarnetStatus SetMembers<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice[] members)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             members = default;
 
@@ -240,27 +205,20 @@ namespace Garnet.server
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-
-            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
-
+            var status = RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, ref outputFooter);
             if (status == GarnetStatus.OK)
                 members = ProcessRespArrayOutput(outputFooter, out _);
-
             return status;
         }
 
         /// <summary>
         /// Removes and returns one random member from the set at key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="element"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        internal GarnetStatus SetPop<TObjectContext>(ArgSlice key, out ArgSlice element, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        internal GarnetStatus SetPop<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice element)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            var status = SetPop(key, int.MinValue, out var elements, ref objectStoreContext);
+            var status = SetPop<TKeyLocker, TEpochGuard>(key, int.MinValue, out var elements);
             element = default;
             if (status == GarnetStatus.OK && elements != default)
                 element = elements[0];
@@ -271,17 +229,11 @@ namespace Garnet.server
         /// <summary>
         /// Removes and returns up to count random members from the set at key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="count"></param>
-        /// <param name="elements"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        internal unsafe GarnetStatus SetPop<TObjectContext>(ArgSlice key, int count, out ArgSlice[] elements, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        internal GarnetStatus SetPop<TKeyLocker, TEpochGuard>(ArgSlice key, int count, out ArgSlice[] elements)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             elements = default;
-
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
@@ -297,15 +249,11 @@ namespace Garnet.server
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-
-            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
-
+            var status = RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, ref outputFooter);
             if (status != GarnetStatus.OK)
                 return status;
 
-            //process output
             elements = ProcessRespArrayOutput(outputFooter, out _);
-
             return GarnetStatus.OK;
         }
 
@@ -314,11 +262,7 @@ namespace Garnet.server
         /// If the move was performed, this command returns 1.
         /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
         /// </summary>
-        /// <param name="sourceKey"></param>
-        /// <param name="destinationKey"></param>
-        /// <param name="member"></param>
-        /// <param name="smoveResult"></param>
-        internal unsafe GarnetStatus SetMove(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult)
+        internal GarnetStatus SetMove(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult)
         {
             smoveResult = 0;
 
@@ -331,14 +275,17 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
-            var objectLockableContext = txnManager.ObjectStoreLockableContext;
-
             try
             {
+                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
+                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
+
                 var arrDstKey = destinationKey.ToArray();
                 var arrSrcKey = sourceKey.ToArray();
 
-                var srcGetStatus = GET(arrSrcKey, out var srcObject, ref objectLockableContext);
+                GarnetObjectStoreOutput srcObject = new();
+                var srcGetStatus = GET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(arrSrcKey, ref srcObject);
 
                 if (srcGetStatus == GarnetStatus.NOTFOUND)
                     return GarnetStatus.NOTFOUND;
@@ -351,50 +298,43 @@ namespace Garnet.server
                 if (sameKey)
                     return GarnetStatus.OK;
 
-                var dstGetStatus = GET(arrDstKey, out var dstObject, ref objectLockableContext);
+                GarnetObjectStoreOutput dstObject = new();
+                var dstGetStatus = GET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(arrDstKey, ref dstObject);
 
                 SetObject dstSetObject;
                 if (dstGetStatus == GarnetStatus.OK)
                 {
                     if (dstObject.garnetObject is not SetObject tmpDstSetObject)
                         return GarnetStatus.WRONGTYPE;
-
                     dstSetObject = tmpDstSetObject;
                 }
                 else
-                {
                     dstSetObject = new SetObject();
-                }
 
                 var arrMember = member.ToArray();
 
-                var removed = srcSetObject.Set.Remove(arrMember);
-                if (!removed) return GarnetStatus.OK;
+                if (!srcSetObject.Set.Remove(arrMember))
+                    return GarnetStatus.OK;
 
                 srcSetObject.UpdateSize(arrMember, false);
-
                 if (srcSetObject.Set.Count == 0)
-                {
-                    _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                        ref lockableContext, ref objectLockableContext);
-                }
+                    _ = EXPIRE<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(sourceKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None);
 
-                dstSetObject.Set.Add(arrMember);
+                _ = dstSetObject.Set.Add(arrMember);
                 dstSetObject.UpdateSize(arrMember);
 
                 if (dstGetStatus == GarnetStatus.NOTFOUND)
                 {
-                    var setStatus = SET(arrDstKey, dstSetObject, ref objectLockableContext);
+                    var setStatus = SET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(arrDstKey, dstSetObject);
                     if (setStatus == GarnetStatus.OK)
                         smoveResult = 1;
                 }
                 else
-                {
                     smoveResult = 1;
-                }
             }
             finally
             {
+                GarnetSafeEpochGuard.EndUnsafe(ref dualContext.KernelSession);
                 if (createTransaction)
                     txnManager.Commit(true);
             }
@@ -407,9 +347,6 @@ namespace Garnet.server
         /// Returns the members of the set resulting from the intersection of all the given sets.
         /// Keys that do not exist are considered to be empty sets.
         /// </summary>
-        /// <param name="keys"></param>
-        /// <param name="output"></param>
-        /// <returns></returns>
         public GarnetStatus SetIntersect(ArgSlice[] keys, out HashSet<byte[]> output)
         {
             output = default;
@@ -428,15 +365,17 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
-            // SetObject
-            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
-
             try
             {
-                return SetIntersect(keys, ref setObjectStoreLockableContext, out output);
+                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
+                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
+
+                return SetIntersect<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out output);
             }
             finally
             {
+                GarnetSafeEpochGuard.EndUnsafe(ref dualContext.KernelSession);
                 if (createTransaction)
                     txnManager.Commit(true);
             }
@@ -446,18 +385,12 @@ namespace Garnet.server
         /// This command is equal to SINTER, but instead of returning the resulting set, it is stored in destination.
         /// If destination already exists, it is overwritten.
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="keys"></param>
-        /// <param name="count"></param>
-        /// <returns></returns>
         public GarnetStatus SetIntersectStore(byte[] key, ArgSlice[] keys, out int count)
         {
             count = default;
 
             if (keys.Length == 0)
-            {
                 return GarnetStatus.OK;
-            }
 
             var destination = scratchBufferManager.CreateArgSlice(key);
 
@@ -473,13 +406,13 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
-            // SetObject
-            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
-
             try
             {
-                var status = SetIntersect(keys, ref setObjectStoreLockableContext, out var members);
+                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
+                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
+                var status = SetIntersect<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out var members);
                 if (status == GarnetStatus.OK)
                 {
                     if (members.Count > 0)
@@ -490,14 +423,10 @@ namespace Garnet.server
                             _ = newSetObject.Set.Add(item);
                             newSetObject.UpdateSize(item);
                         }
-
-                        _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                        _ = SET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(key, newSetObject);
                     }
                     else
-                    {
-                        _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                            ref lockableContext, ref setObjectStoreLockableContext);
-                    }
+                        _ = EXPIRE<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None);
 
                     count = members.Count;
                 }
@@ -506,23 +435,23 @@ namespace Garnet.server
             }
             finally
             {
+                GarnetSafeEpochGuard.EndUnsafe(ref dualContext.KernelSession);
                 if (createTransaction)
                     txnManager.Commit(true);
             }
         }
 
 
-        private GarnetStatus SetIntersect<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext, out HashSet<byte[]> output)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        private GarnetStatus SetIntersect<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out HashSet<byte[]> output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             output = new HashSet<byte[]>(ByteArrayComparer.Instance);
-
             if (keys.Length == 0)
-            {
                 return GarnetStatus.OK;
-            }
 
-            var status = GET(keys[0].ToArray(), out var first, ref objectContext);
+            GarnetObjectStoreOutput first = new();
+            var status = GET<TKeyLocker, TEpochGuard>(keys[0].ToArray(), ref first);
             if (status == GarnetStatus.OK)
             {
                 if (first.garnetObject is not SetObject firstObject)
@@ -530,14 +459,10 @@ namespace Garnet.server
                     output = default;
                     return GarnetStatus.WRONGTYPE;
                 }
-
                 output = new HashSet<byte[]>(firstObject.Set, ByteArrayComparer.Instance);
             }
             else
-            {
                 return GarnetStatus.OK;
-            }
-
 
             for (var i = 1; i < keys.Length; i++)
             {
@@ -548,7 +473,8 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                status = GET(keys[i].ToArray(), out var next, ref objectContext);
+                GarnetObjectStoreOutput next = new();
+                status = GET<TKeyLocker, TEpochGuard>(keys[i].ToArray(), ref next);
                 if (status == GarnetStatus.OK)
                 {
                     if (next.garnetObject is not SetObject nextObject)
@@ -584,7 +510,6 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             var createTransaction = false;
-
             if (txnManager.state != TxnState.Running)
             {
                 Debug.Assert(txnManager.state == TxnState.None);
@@ -594,15 +519,17 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
-            // SetObject
-            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
-
             try
             {
-                return SetUnion(keys, ref setObjectStoreLockableContext, out output);
+                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
+                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
+
+                return SetUnion<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out output);
             }
             finally
             {
+                GarnetSafeEpochGuard.EndUnsafe(ref dualContext.KernelSession);
                 if (createTransaction)
                     txnManager.Commit(true);
             }
@@ -637,12 +564,13 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
-            // SetObject
-            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
-
             try
             {
-                var status = SetUnion(keys, ref setObjectStoreLockableContext, out var members);
+                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
+                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
+
+                var status = SetUnion<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out var members);
 
                 if (status == GarnetStatus.OK)
                 {
@@ -654,14 +582,10 @@ namespace Garnet.server
                             _ = newSetObject.Set.Add(item);
                             newSetObject.UpdateSize(item);
                         }
-
-                        _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                        _ = SET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(key, newSetObject);
                     }
                     else
-                    {
-                        _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                            ref lockableContext, ref setObjectStoreLockableContext);
-                    }
+                        _ = EXPIRE<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None);
 
                     count = members.Count;
                 }
@@ -670,30 +594,30 @@ namespace Garnet.server
             }
             finally
             {
+                GarnetSafeEpochGuard.EndUnsafe(ref dualContext.KernelSession);
                 if (createTransaction)
                     txnManager.Commit(true);
             }
         }
 
-        private GarnetStatus SetUnion<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext, out HashSet<byte[]> output)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        private GarnetStatus SetUnion<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out HashSet<byte[]> output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             output = new HashSet<byte[]>(ByteArrayComparer.Instance);
             if (keys.Length == 0)
-            {
                 return GarnetStatus.OK;
-            }
 
             foreach (var item in keys)
             {
-                if (GET(item.ToArray(), out var currObject, ref objectContext) == GarnetStatus.OK)
+                GarnetObjectStoreOutput currObject = new();
+                if (GET<TKeyLocker, TEpochGuard>(item.ToArray(), ref currObject) == GarnetStatus.OK)
                 {
                     if (currObject.garnetObject is not SetObject setObject)
                     {
                         output = default;
                         return GarnetStatus.WRONGTYPE;
                     }
-
                     output.UnionWith(setObject.Set);
                 }
             }
@@ -706,82 +630,52 @@ namespace Garnet.server
         ///  Specified members that are already a member of this set are ignored. 
         ///  If key does not exist, a new set is created.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="objectContext"></param>
-        /// <returns></returns>
-        public GarnetStatus SetAdd<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-           => RMWObjectStoreOperation(key, ref input, out output, ref objectContext);
+        public GarnetStatus SetAdd<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+           => RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
         /// <summary>
         /// Removes the specified members from the set.
         /// Specified members that are not a member of this set are ignored. 
         /// If key does not exist, this command returns 0.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="objectContext"></param>
-        /// <returns></returns>
-        public GarnetStatus SetRemove<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => RMWObjectStoreOperation(key, ref input, out output, ref objectContext);
+        public GarnetStatus SetRemove<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
         /// <summary>
         /// Returns the number of elements of the set.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="objectContext"></param>
-        /// <returns></returns>
-        public GarnetStatus SetLength<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperation(key, ref input, out output, ref objectContext);
+        public GarnetStatus SetLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
         /// <summary>
         /// Returns all members of the set at key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
-        /// <param name="objectContext"></param>
-        /// <returns></returns>
-        public GarnetStatus SetMembers<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+        public GarnetStatus SetMembers<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
         /// <summary>
         /// Returns if member is a member of the set stored at key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
-        /// <param name="objectContext"></param>
-        /// <returns></returns>
-        public GarnetStatus SetIsMember<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+        public GarnetStatus SetIsMember<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
         /// <summary>
         /// Removes and returns one or more random members from the set at key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
-        /// <param name="objectContext"></param>
-        /// <returns></returns>
-        public GarnetStatus SetPop<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+        public GarnetStatus SetPop<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
         /// <summary>
         /// When called with just the key argument, return a random element from the set value stored at key.
@@ -790,15 +684,10 @@ namespace Garnet.server
         /// If called with a negative count, the behavior changes and the command is allowed to return the same element multiple times. 
         /// In this case, the number of returned elements is the absolute value of the specified count.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
-        /// <param name="objectContext"></param>
-        /// <returns></returns>
-        public GarnetStatus SetRandomMember<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+        public GarnetStatus SetRandomMember<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
         /// <summary>
         /// Returns the members of the set resulting from the difference between the first set at key and all the successive sets at keys.
@@ -809,12 +698,10 @@ namespace Garnet.server
         public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members)
         {
             members = default;
-
             if (keys.Length == 0)
                 return GarnetStatus.OK;
 
             var createTransaction = false;
-
             if (txnManager.state != TxnState.Running)
             {
                 Debug.Assert(txnManager.state == TxnState.None);
@@ -824,15 +711,17 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
-            // SetObject
-            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
-
             try
             {
-                return SetDiff(keys, ref setObjectStoreLockableContext, out members);
+                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
+                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
+
+                return InternalSetDiff<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out members);
             }
             finally
             {
+                GarnetSafeEpochGuard.EndUnsafe(ref dualContext.KernelSession);
                 if (createTransaction)
                     txnManager.Commit(true);
             }
@@ -867,12 +756,13 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
-            // SetObject
-            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
-
             try
             {
-                var status = SetDiff(keys, ref setObjectStoreLockableContext, out var diffSet);
+                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
+                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
+
+                var status = InternalSetDiff<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out var diffSet);
 
                 if (status == GarnetStatus.OK)
                 {
@@ -884,12 +774,11 @@ namespace Garnet.server
                             _ = newSetObject.Set.Add(item);
                             newSetObject.UpdateSize(item);
                         }
-                        _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                        _ = SET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(key, newSetObject);
                     }
                     else
                     {
-                        _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                            ref lockableContext, ref setObjectStoreLockableContext);
+                        _ = EXPIRE<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None);
                     }
 
                     count = diffSet.Count;
@@ -899,22 +788,23 @@ namespace Garnet.server
             }
             finally
             {
+                GarnetSafeEpochGuard.EndUnsafe(ref dualContext.KernelSession);
                 if (createTransaction)
                     txnManager.Commit(true);
             }
         }
 
-        private GarnetStatus SetDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext, out HashSet<byte[]> output)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        private GarnetStatus InternalSetDiff<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out HashSet<byte[]> output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            output = new HashSet<byte[]>();
+            output = [];
             if (keys.Length == 0)
-            {
                 return GarnetStatus.OK;
-            }
 
             // first SetObject
-            var status = GET(keys[0].ToArray(), out var first, ref objectContext);
+            GarnetObjectStoreOutput first = new();
+            var status = GET<TKeyLocker, TEpochGuard>(keys[0].ToArray(), ref first);
             if (status == GarnetStatus.OK)
             {
                 if (first.garnetObject is not SetObject firstObject)
@@ -922,18 +812,16 @@ namespace Garnet.server
                     output = default;
                     return GarnetStatus.WRONGTYPE;
                 }
-
                 output = new HashSet<byte[]>(firstObject.Set, ByteArrayComparer.Instance);
             }
             else
-            {
                 return GarnetStatus.OK;
-            }
 
             // after SetObjects
             for (var i = 1; i < keys.Length; i++)
             {
-                status = GET(keys[i].ToArray(), out var next, ref objectContext);
+                GarnetObjectStoreOutput next = new();
+                status = GET<TKeyLocker, TEpochGuard>(keys[i].ToArray(), ref next);
                 if (status == GarnetStatus.OK)
                 {
                     if (next.garnetObject is not SetObject nextObject)
@@ -941,7 +829,6 @@ namespace Garnet.server
                         output = default;
                         return GarnetStatus.WRONGTYPE;
                     }
-
                     output.ExceptWith(nextObject.Set);
                 }
             }

@@ -128,11 +128,10 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
-            // Perform Main store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
-
             try
             {
-                // We only need to protect the epoch here; we have already locked via TransactionManager.Run
+                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
+                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
             readFromScratch:

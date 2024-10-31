@@ -17,25 +17,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
-    using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
-    using DualGarnetApi = GarnetApi<DualItemContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        DualItemContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
-
     /// <summary>
     /// RESP server session
     /// </summary>
@@ -283,30 +264,25 @@ namespace Garnet.server
         /// <param name="username">Name of the user to authenticate.</param>
         /// <param name="password">Password to authenticate with.</param>
         /// <returns>True if the session has been authenticated successfully, false if the user could not be authenticated.</returns>
-        bool AuthenticateUser(ReadOnlySpan<byte> username, ReadOnlySpan<byte> password = default(ReadOnlySpan<byte>))
+        bool AuthenticateUser(ReadOnlySpan<byte> username, ReadOnlySpan<byte> password = default)
         {
             // Authenticate user or change to default user if no authentication is supported
-            bool success = _authenticator.CanAuthenticate ? _authenticator.Authenticate(password, username) : true;
+            var success = !_authenticator.CanAuthenticate || _authenticator.Authenticate(password, username);
 
             if (success)
             {
                 // Set authenticated user or fall back to default user, if separate users are not supported
                 // NOTE: Currently only GarnetACLAuthenticator supports multiple users
-                if (_authenticator is GarnetACLAuthenticator aclAuthenticator)
-                {
-                    this._user = aclAuthenticator.GetUser();
-                }
-                else
-                {
-                    this._user = this.storeWrapper.accessControlList.GetDefaultUser();
-                }
+                _user = _authenticator is GarnetACLAuthenticator aclAuthenticator
+                    ? aclAuthenticator.GetUser()
+                    : storeWrapper.accessControlList.GetDefaultUser();
 
                 // Propagate authentication to cluster session
-                clusterSession?.SetUser(this._user);
-                sessionScriptCache?.SetUser(this._user);
+                clusterSession?.SetUser(_user);
+                sessionScriptCache?.SetUser(_user);
             }
 
-            return _authenticator.CanAuthenticate ? success : false;
+            return _authenticator.CanAuthenticate && success;
         }
 
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)
@@ -413,7 +389,7 @@ namespace Garnet.server
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
                 // On success, readHead is left at the start of the command payload for legacy operators
-                var cmd = ParseCommand(out bool commandReceived);
+                var cmd = ParseCommand(out var commandReceived);
 
                 // If the command was not fully received, reset addresses and break out
                 if (!commandReceived)
@@ -427,28 +403,25 @@ namespace Garnet.server
                 {
                     if (CheckACLPermissions(cmd))
                     {
-                        if (!ProcessDualCommands(cmd, ref dualGarnetApi))
-                        { 
-                            if (txnManager.state != TxnState.None)
+                        if (txnManager.state != TxnState.None)
+                        {
+                            if (txnManager.state == TxnState.Running)
                             {
-                                if (txnManager.state == TxnState.Running)
-                                {
-                                    _ = ProcessBasicCommands(cmd, ref lockableGarnetApi);
-                                }
-                                else _ = cmd switch
-                                {
-                                    RespCommand.EXEC => NetworkEXEC(),
-                                    RespCommand.MULTI => NetworkMULTI(),
-                                    RespCommand.DISCARD => NetworkDISCARD(),
-                                    RespCommand.QUIT => NetworkQUIT(),
-                                    _ => NetworkSKIP(cmd),
-                                };
+                                _ = ProcessBasicCommands(cmd, ref lockableGarnetApi);
                             }
-                            else
+                            else _ = cmd switch
                             {
-                                if (clusterSession == null || CanServeSlot(cmd))
-                                    _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
-                            }
+                                RespCommand.EXEC => NetworkEXEC(),
+                                RespCommand.MULTI => NetworkMULTI(),
+                                RespCommand.DISCARD => NetworkDISCARD(),
+                                RespCommand.QUIT => NetworkQUIT(),
+                                _ => NetworkSKIP(cmd),
+                            };
+                        }
+                        else
+                        {
+                            if (clusterSession == null || CanServeSlot(cmd))
+                                _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
                         }
                     }
                     else
@@ -491,16 +464,20 @@ namespace Garnet.server
         // Make first command in string as uppercase
         private bool MakeUpperCase(byte* ptr)
         {
-            byte* tmp = ptr;
+            var tmp = ptr;
 
             while (tmp < ptr + bytesRead - readHead)
             {
                 if (*tmp > 64) // found string
                 {
-                    bool ret = false;
+                    var ret = false;
                     while (*tmp > 64 && *tmp < 123 && tmp < ptr + bytesRead - readHead)
                     {
-                        if (*tmp > 96) { ret = true; *tmp -= 32; }
+                        if (*tmp > 96)
+                        {
+                            ret = true;
+                            *tmp -= 32;
+                        }
                         tmp++;
                     }
                     return ret;
@@ -508,35 +485,6 @@ namespace Garnet.server
                 tmp++;
             }
             return false;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool ProcessDualCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
-        {
-            // We only use dual when using both stores
-            if (storageSession.objectStoreBasicContext.IsNull)
-                return false;
-
-            /*
-             * WARNING: Do not add any command here classified as @slow!
-             * Only @fast commands otherwise latency tracking will break for NET_RS (check how containsSlowCommand is used).
-             */
-            return cmd switch
-            {
-                RespCommand.DEL => NetworkDEL(ref storageApi),
-                RespCommand.RENAME => NetworkRENAME(ref storageApi),
-                RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),
-                RespCommand.EXISTS => NetworkEXISTS(ref storageApi),
-                RespCommand.EXPIRE => NetworkEXPIRE(RespCommand.EXPIRE, ref storageApi),
-                RespCommand.PEXPIRE => NetworkEXPIRE(RespCommand.PEXPIRE, ref storageApi),
-                RespCommand.PERSIST => NetworkPERSIST(ref storageApi),
-                RespCommand.TTL => NetworkTTL(RespCommand.TTL, ref storageApi),
-                RespCommand.PTTL => NetworkTTL(RespCommand.PTTL, ref storageApi),
-                RespCommand.MEMORY_USAGE => NetworkMemoryUsage(ref storageApi),
-                RespCommand.TYPE => NetworkTYPE(ref storageApi),
-                _ => false  // Not a dual command; fall through to ProcessBasicCommands
-            };
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -554,6 +502,15 @@ namespace Garnet.server
                 RespCommand.SETEX => NetworkSETEX(false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(ref storageApi),
+                RespCommand.DEL => NetworkDEL(ref storageApi),
+                RespCommand.RENAME => NetworkRENAME(ref storageApi),
+                RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),
+                RespCommand.EXISTS => NetworkEXISTS(ref storageApi),
+                RespCommand.EXPIRE => NetworkEXPIRE(RespCommand.EXPIRE, ref storageApi),
+                RespCommand.PEXPIRE => NetworkEXPIRE(RespCommand.PEXPIRE, ref storageApi),
+                RespCommand.TTL => NetworkTTL(RespCommand.TTL, ref storageApi),
+                RespCommand.PTTL => NetworkTTL(RespCommand.PTTL, ref storageApi),
+                RespCommand.PERSIST => NetworkPERSIST(ref storageApi),
                 RespCommand.GETRANGE => NetworkGetRange(ref storageApi),
                 RespCommand.SETRANGE => NetworkSetRange(ref storageApi),
                 RespCommand.GETDEL => NetworkGETDEL(ref storageApi),
@@ -601,6 +558,8 @@ namespace Garnet.server
                 RespCommand.WATCH => NetworkWATCH(),
                 RespCommand.WATCH_MS => NetworkWATCH_MS(),
                 RespCommand.WATCH_OS => NetworkWATCH_OS(),
+                RespCommand.MEMORY_USAGE => NetworkMemoryUsage(ref storageApi),
+                RespCommand.TYPE => NetworkTYPE(ref storageApi),
                 // Pub/sub commands
                 RespCommand.SUBSCRIBE => NetworkSUBSCRIBE(),
                 RespCommand.PSUBSCRIBE => NetworkPSUBSCRIBE(),
@@ -770,7 +729,7 @@ namespace Garnet.server
                 }
 
                 // Perform the operation
-                TryTransactionProc(currentCustomTransaction.id, recvBufferPtr + readHead, recvBufferPtr + endReadHead, customCommandManagerSession.GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager).Item1);
+                _ = TryTransactionProc(currentCustomTransaction.id, recvBufferPtr + readHead, recvBufferPtr + endReadHead, customCommandManagerSession.GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager).Item1);
                 currentCustomTransaction = null;
                 return true;
             }
@@ -810,7 +769,7 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomRawStringCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomRawStringCommand.GetRespCommand(), currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
+            _ = TryCustomRawStringCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomRawStringCommand.GetRespCommand(), currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
             currentCustomRawStringCommand = null;
             return true;
         }
@@ -825,7 +784,7 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomObjectCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
+            _ = TryCustomObjectCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
             currentCustomObjectCommand = null;
             return true;
         }
@@ -854,7 +813,7 @@ namespace Garnet.server
             var end = recvBufferPtr + bytesRead;
 
             // Try the command length
-            if (!RespReadUtils.ReadUnsignedLengthHeader(out int length, ref ptr, end))
+            if (!RespReadUtils.ReadUnsignedLengthHeader(out var length, ref ptr, end))
             {
                 success = false;
                 return default;
@@ -891,7 +850,7 @@ namespace Garnet.server
             }
 
             Debug.Assert(*(recvBufferPtr + readHead) == '$');
-            int psize = *(recvBufferPtr + readHead + 1) - '0';
+            var psize = *(recvBufferPtr + readHead + 1) - '0';
             readHead += 2;
             while (*(recvBufferPtr + readHead) != '\r')
             {
@@ -961,7 +920,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SendAndReset()
         {
-            byte* d = networkSender.GetResponseObjectHead();
+            var d = networkSender.GetResponseObjectHead();
             if ((int)(dcurr - d) > 0)
             {
                 Send(d);
@@ -984,17 +943,17 @@ namespace Garnet.server
             // Copy allocated memory to main buffer and send
             fixed (byte* _src = memory.Memory.Span)
             {
-                byte* src = _src;
-                int bytesLeft = length;
+                var src = _src;
+                var bytesLeft = length;
 
                 // Repeat while we have bytes left to write from input Memory to output buffer
                 while (bytesLeft > 0)
                 {
                     // Compute space left on output buffer
-                    int destSpace = (int)(dend - dcurr);
+                    var destSpace = (int)(dend - dcurr);
 
                     // Adjust number of bytes to copy, to MIN(space left on output buffer, bytes left to copy)
-                    int toCopy = bytesLeft;
+                    var toCopy = bytesLeft;
                     if (toCopy > destSpace)
                         toCopy = destSpace;
 
@@ -1027,7 +986,7 @@ namespace Garnet.server
             while (src.Length > 0)
             {
                 // Compute space left on output buffer
-                int destSpace = (int)(dend - dcurr);
+                var destSpace = (int)(dend - dcurr);
 
                 // Fast path if there is enough space 
                 if (src.Length <= destSpace)
@@ -1068,8 +1027,8 @@ namespace Garnet.server
                     var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
                 }
-                int sendBytes = (int)(dcurr - d);
-                networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);
+                var sendBytes = (int)(dcurr - d);
+                _ = networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);
                 sessionMetrics?.incr_total_net_output_bytes((ulong)sendBytes);
             }
         }
@@ -1088,16 +1047,16 @@ namespace Garnet.server
                     var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
                 }
-                int sendBytes = (int)(dcurr - d);
-                byte[] buffer = new byte[sendBytes];
+                var sendBytes = (int)(dcurr - d);
+                var buffer = new byte[sendBytes];
                 fixed (byte* dest = buffer)
                     Buffer.MemoryCopy(d, dest, sendBytes, sendBytes);
 
 
-                for (int i = 0; i < sendBytes; i++)
+                for (var i = 0; i < sendBytes; i++)
                 {
                     *d = buffer[i];
-                    networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), 1);
+                    _ = networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), 1);
                     networkSender.GetResponseObject();
                     d = dcurr = networkSender.GetResponseObjectHead();
                     dend = networkSender.GetResponseObjectTail();

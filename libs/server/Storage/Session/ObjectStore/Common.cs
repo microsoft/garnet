@@ -403,7 +403,7 @@ namespace Garnet.server
             var status = dualContext.Read<TKeyLocker, TEpochGuard>(ref key, ref _input, ref _output);
 
             if (status.IsPending)
-                CompletePending<TKeyLocker>(ref status, ref _output);
+                CompletePending<TKeyLocker>(out status, out _output);
 
             if (_output.spanByteAndMemory.Length == 0)
                 return GarnetStatus.WRONGTYPE;
@@ -428,10 +428,10 @@ namespace Garnet.server
             var _output = new GarnetObjectStoreOutput { spanByteAndMemory = new(SpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size)) };
 
             // Perform Read on object store
-            var status = objectStoreContext.Read(ref key, ref input, ref _output);
+            var status = dualContext.Read<TKeyLocker, TEpochGuard>(ref key, ref input, ref _output);
 
             if (status.IsPending)
-                CompletePendingForObjectStoreSession(ref status, ref _output, ref objectStoreContext);
+                CompletePending<TKeyLocker>(out status, out _output);
 
             if (_output.spanByteAndMemory.Length == 0)
                 return GarnetStatus.WRONGTYPE;
@@ -453,7 +453,7 @@ namespace Garnet.server
         public GarnetStatus ObjectScan<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
-          => ReadObjectStoreOperationWithOutput(key, ref input, ref outputFooter);
+          => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         static void ThrowObjectStoreUninitializedException()

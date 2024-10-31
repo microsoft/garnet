@@ -239,17 +239,14 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
-            var context = txnManager.LockableContext;
-            var objectContext = txnManager.ObjectStoreLockableContext;
             var oldKey = oldKeySlice.SpanByte;
-
-            // Try to find the oldKey; if the old tag is not found, we cannot do the RENAME. The TransactionalSessionLocker will not try to lock.
-            var kernelStatus = dualContext.EnterKernelForRead<TransactionalSessionLocker, TEpochGuard>(GetMainStoreKeyHashCode64(ref oldKey), MainStoreId, out var hei);
-            if (!kernelStatus.IsCompletedSuccessfully)
-                return GarnetStatus.NOTFOUND;
 
             try
             {
+                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
+                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
+
                 if (storeType is StoreType.Main or StoreType.All)
                 {
                     try
@@ -345,6 +342,7 @@ namespace Garnet.server
                     }
                     finally
                     {
+                        GarnetSafeEpochGuard.EndUnsafe(ref dualContext.KernelSession);
                         if (createTransaction)
                         {
                             txnManager.Commit(true);

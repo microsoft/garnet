@@ -6,9 +6,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
     /// <summary>
     /// Server API methods - HASH
     /// </summary>
@@ -21,16 +18,9 @@ namespace Garnet.server
         /// HashSetNX: Sets only if field does not yet exist. A new hash is created if it does not exists.
         /// If field exists the operation has no effect.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="field"></param>
-        /// <param name="value"></param>
-        /// <param name="itemsDoneCount"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <param name="nx"></param>
-        /// <returns></returns>
-        public unsafe GarnetStatus HashSet<TObjectContext>(ArgSlice key, ArgSlice field, ArgSlice value, out int itemsDoneCount, ref TObjectContext objectStoreContext, bool nx = false)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus HashSet<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, ArgSlice value, out int itemsDoneCount, bool nx = false)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             itemsDoneCount = 0;
 
@@ -54,7 +44,7 @@ namespace Garnet.server
                 parseStateStartIdx = 0,
             };
 
-            var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, out var output);
             itemsDoneCount = output.result1;
 
             return status;
@@ -65,14 +55,9 @@ namespace Garnet.server
         /// Values of specified fields that exist in the hash are overwritten.
         /// If key doesn't exist, a new hash is created.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="elements"></param>
-        /// <param name="itemsDoneCount"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public unsafe GarnetStatus HashSet<TObjectContext>(ArgSlice key, (ArgSlice field, ArgSlice value)[] elements, out int itemsDoneCount, ref TObjectContext objectStoreContext)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus HashSet<TKeyLocker, TEpochGuard>(ArgSlice key, (ArgSlice field, ArgSlice value)[] elements, out int itemsDoneCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             itemsDoneCount = 0;
 
@@ -102,7 +87,7 @@ namespace Garnet.server
                 parseStateStartIdx = 0,
             };
 
-            var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, out var output);
             itemsDoneCount = output.result1;
 
             return status;
@@ -111,28 +96,17 @@ namespace Garnet.server
         /// <summary>
         /// Removes the specified field from the hash key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="field"></param>
-        /// <param name="itemsDoneCount"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <param name="nx"></param>
-        /// <returns></returns>
-        public GarnetStatus HashDelete<TObjectContext>(ArgSlice key, ArgSlice field, out int itemsDoneCount, ref TObjectContext objectStoreContext, bool nx = false)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-         => HashDelete(key, [field], out itemsDoneCount, ref objectStoreContext);
+        public GarnetStatus HashDelete<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, out int itemsDoneCount, bool nx = false)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+         => HashDelete<TKeyLocker, TEpochGuard>(key, [field], out itemsDoneCount);
 
         /// <summary>
         /// Removes the specified fields from the hash key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="fields"></param>
-        /// <param name="itemsDoneCount"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public unsafe GarnetStatus HashDelete<TObjectContext>(ArgSlice key, ArgSlice[] fields, out int itemsDoneCount, ref TObjectContext objectStoreContext)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus HashDelete<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] fields, out int itemsDoneCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             itemsDoneCount = 0;
 
@@ -156,7 +130,7 @@ namespace Garnet.server
                 parseStateStartIdx = 0,
             };
 
-            var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, out var output);
             itemsDoneCount = output.result1;
 
             return status;
@@ -165,14 +139,9 @@ namespace Garnet.server
         /// <summary>
         /// Returns the value associated with the field in the hash key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="field"></param>
-        /// <param name="value"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public unsafe GarnetStatus HashGet<TObjectContext>(ArgSlice key, ArgSlice field, out ArgSlice value, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus HashGet<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, out ArgSlice value)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             value = default;
 
@@ -198,26 +167,17 @@ namespace Garnet.server
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
-
-            value = default;
-            if (status == GarnetStatus.OK)
-                value = ProcessRespSingleTokenOutput(outputFooter);
-
+            var status = ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, ref outputFooter);
+            value = status == GarnetStatus.OK ? ProcessRespSingleTokenOutput(outputFooter) : default;
             return status;
         }
 
         /// <summary>
         /// Returns the values associated with the fields in the hash key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="fields"></param>
-        /// <param name="values"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public unsafe GarnetStatus HashGetMultiple<TObjectContext>(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values, ref TObjectContext objectStoreContext)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus HashGetMultiple<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             values = default;
 
@@ -243,25 +203,17 @@ namespace Garnet.server
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
-
-            values = default;
-            if (status == GarnetStatus.OK)
-                values = ProcessRespArrayOutput(outputFooter, out _);
-
+            var status = ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, ref outputFooter);
+            values = status == GarnetStatus.OK ? ProcessRespArrayOutput(outputFooter, out _) : default;
             return status;
         }
 
         /// <summary>
         /// Returns all fields and values of the hash key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="values"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public unsafe GarnetStatus HashGetAll<TObjectContext>(ArgSlice key, out ArgSlice[] values, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus HashGetAll<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice[] values)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             values = default;
 
@@ -281,26 +233,14 @@ namespace Garnet.server
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
-
-            values = default;
-            if (status == GarnetStatus.OK)
-                values = ProcessRespArrayOutput(outputFooter, out _);
-
+            var status = ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, ref outputFooter);
+            values = status == GarnetStatus.OK ? ProcessRespArrayOutput(outputFooter, out _) : default;
             return status;
         }
 
-        /// <summary>
-        /// Returns the number of fields contained in the hash key.
-        /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="items"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <param name="nx"></param>
-        /// <returns></returns>
-        public unsafe GarnetStatus HashLength<TObjectContext>(ArgSlice key, out int items, ref TObjectContext objectStoreContext, bool nx = false)
-          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus HashLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int items, bool nx = false)   // TODO implement nx
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             items = 0;
 
@@ -317,24 +257,17 @@ namespace Garnet.server
                 },
             };
 
-            var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
-
+            var status = ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, out var output);
             items = output.result1;
-
             return status;
         }
 
         /// <summary>
         /// Returns if field exists in the hash stored at key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="field"></param>
-        /// <param name="exists"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public unsafe GarnetStatus HashExists<TObjectContext>(ArgSlice key, ArgSlice field, out bool exists, ref TObjectContext objectStoreContext)
-         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus HashExists<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, out bool exists)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             exists = false;
             if (key.Length == 0)
@@ -357,23 +290,17 @@ namespace Garnet.server
                 parseStateStartIdx = 0,
             };
 
-            var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
-
+            var status = ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, out var output);
             exists = output.result1 == 1;
-
             return status;
         }
 
         /// <summary>
         /// Returns a random field from the hash value stored at key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="field"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public unsafe GarnetStatus HashRandomField<TObjectContext>(ArgSlice key, out ArgSlice field, ref TObjectContext objectStoreContext)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice field)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             field = default;
 
@@ -397,12 +324,11 @@ namespace Garnet.server
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+            var status = ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, ref outputFooter);
 
             // Process output
             if (status == GarnetStatus.OK)
                 field = ProcessRespSingleTokenOutput(outputFooter);
-
             return status;
         }
 
@@ -411,15 +337,9 @@ namespace Garnet.server
         /// whichever is lower. If count is negative, it is allowed to return ssame field multiple times,
         /// in this case the fields returned is the absolute value of count.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="count"></param>
-        /// <param name="withValues"></param>
-        /// <param name="fields"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public unsafe GarnetStatus HashRandomField<TObjectContext>(ArgSlice key, int count, bool withValues, out ArgSlice[] fields, ref TObjectContext objectStoreContext)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(ArgSlice key, int count, bool withValues, out ArgSlice[] fields)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             fields = default;
 
@@ -442,7 +362,7 @@ namespace Garnet.server
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+            var status = ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key.ToArray(), ref input, ref outputFooter);
 
             fields = default;
             if (status == GarnetStatus.OK)
@@ -456,15 +376,10 @@ namespace Garnet.server
         /// Values of specified fields that exist in the hash are overwritten.
         /// If key doesn't exist, a new hash is created.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public GarnetStatus HashSet<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
+        public GarnetStatus HashSet<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
         /// <summary>
         /// HashGet: Returns the value associated with field in the hash stored at key.
@@ -472,158 +387,98 @@ namespace Garnet.server
         /// HashGetMultiple: Returns the values associated with the specified fields in the hash stored at key.
         /// HashRandomField: Returns a random field from the hash value stored at key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public GarnetStatus HashGet<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus HashGet<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
         /// <summary>
         /// Returns all fields and values of the hash stored at key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public GarnetStatus HashGetAll<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus HashGetAll<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
         /// <summary>
         /// Returns the values associated with the specified fields in the hash stored at key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public GarnetStatus HashGetMultiple<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus HashGetMultiple<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
         /// <summary>
         /// Returns a random field from the hash value stored at key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public GarnetStatus HashRandomField<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
         /// <summary>
         /// Returns the number of fields contained in the hash key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public GarnetStatus HashLength<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
+        public GarnetStatus HashLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
         /// <summary>
         /// Returns the string length of the value associated with field in the hash stored at key. If the key or the field do not exist, 0 is returned.
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <returns></returns>
-        public GarnetStatus HashStrLength<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
+        public GarnetStatus HashStrLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
         /// <summary>
         /// Removes the specified fields from the hash key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public GarnetStatus HashDelete<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
+        public GarnetStatus HashDelete<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
         /// <summary>
         /// Returns if field exists in the hash stored at key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public GarnetStatus HashExists<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
+        public GarnetStatus HashExists<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
         /// <summary>
         /// Returns all field names in the hash key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
-        /// <param name="objectContext"></param>
-        /// <returns></returns>
-        public GarnetStatus HashKeys<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+        public GarnetStatus HashKeys<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
         /// <summary>
         /// Returns all values in the hash key.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
-        /// <param name="objectContext"></param>
-        /// <returns></returns>
-        public GarnetStatus HashVals<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+        public GarnetStatus HashVals<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
         /// <summary>
         /// Increments the number stored at field in the hash stored at key by increment.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="objectContext"></param>
-        /// <returns></returns>
-        public GarnetStatus HashIncrement<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => RMWObjectStoreOperation(key, input, out output, ref objectContext);
+        public GarnetStatus HashIncrement<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, input, out output);
 
         /// <summary>
         /// HashIncrementByFloat: Increment the specified field of a hash stored at key,
         /// and representing a floating point number, by the specified increment.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
-        /// <param name="objectContext"></param>
-        /// <returns></returns>
-        public GarnetStatus HashIncrement<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+        public GarnetStatus HashIncrement<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
     }
 }
