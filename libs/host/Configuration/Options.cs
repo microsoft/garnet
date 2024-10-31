@@ -108,7 +108,7 @@ namespace Garnet
         public bool? EnableObjectStoreReadCache { get; set; }
 
         [MemorySizeValidation]
-        [Option("obj-readcache-memory", Required = false, HelpText = "Total object store read cache log memory used in bytes (rounds down to power of 2)")]
+        [Option("obj-readcache-log-memory", Required = false, HelpText = "Total object store read cache log memory used in bytes (rounds down to power of 2)")]
         public string ObjectStoreReadCacheLogMemorySize { get; set; }
 
         [MemorySizeValidation]

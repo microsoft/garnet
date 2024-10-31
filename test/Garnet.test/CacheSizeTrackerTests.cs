@@ -129,6 +129,8 @@ namespace Garnet.test
                 ClassicAssert.Fail("Timeout occurred. Resizing did not happen within the specified time.");
 
             ClassicAssert.AreEqual(1, readCacheEmptyPageCountIncrements);
+            // 1 page of the read cache has been evicted => 20 records removed (512 pg size - 24 initial - 8 pg boundary = 480. 480/24 = 20 records)
+            // Leaves 5 records in the read cache. 5 * 248 = 1240
             ClassicAssert.AreEqual(1240, cacheSizeTracker.readCacheTracker.LogHeapSizeBytes);
         }
     }
