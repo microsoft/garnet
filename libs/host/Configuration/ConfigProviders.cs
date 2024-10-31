@@ -87,11 +87,17 @@ namespace Garnet
                 var jsonSerializerOptions = new JsonSerializerOptions
                 {
                     Converters = { new PopulateObjectJsonConverter<Options>(options), new JsonStringEnumConverter() },
-                    NumberHandling = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.WriteAsString
+                    NumberHandling = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.WriteAsString,
                 };
 
                 var json = streamReader.ReadToEnd();
-                var jsonReaderOptions = new JsonReaderOptions { CommentHandling = JsonCommentHandling.Skip };
+                
+                var jsonReaderOptions = new JsonReaderOptions
+                {
+                    CommentHandling = JsonCommentHandling.Skip, 
+                    AllowTrailingCommas = true
+                };
+
                 var jsonReader = new Utf8JsonReader(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(json)), jsonReaderOptions);
 
                 // No need fot the return value, as the deserializer populates the existing options instance

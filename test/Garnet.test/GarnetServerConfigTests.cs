@@ -48,7 +48,8 @@ namespace Garnet.test
             var jsonSerializerOptions = new JsonSerializerOptions
             {
                 ReadCommentHandling = JsonCommentHandling.Skip,
-                NumberHandling = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.WriteAsString
+                NumberHandling = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.WriteAsString,
+                AllowTrailingCommas = true,
             };
 
             try
