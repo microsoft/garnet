@@ -87,14 +87,14 @@ namespace Garnet
                 var jsonSerializerOptions = new JsonSerializerOptions
                 {
                     Converters = { new PopulateObjectJsonConverter<Options>(options), new JsonStringEnumConverter() },
-                    NumberHandling = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.WriteAsString,
+                    NumberHandling = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.WriteAsString
                 };
 
                 var json = streamReader.ReadToEnd();
-                
+
                 var jsonReaderOptions = new JsonReaderOptions
                 {
-                    CommentHandling = JsonCommentHandling.Skip, 
+                    CommentHandling = JsonCommentHandling.Skip,
                     AllowTrailingCommas = true
                 };
 
