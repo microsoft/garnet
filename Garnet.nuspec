@@ -20,7 +20,6 @@
       <dependency id="Microsoft.Extensions.Logging" version="8.0.0" />
       <dependency id="Microsoft.Extensions.Logging.Configuration" version="8.0.0" />
       <dependency id="Microsoft.Extensions.Logging.Console" version="8.0.0" />
-      <dependency id="Newtonsoft.Json" version="13.0.3" />
       <dependency id="CommandLineParser" version="2.9.1" />
       <dependency id="Microsoft.IdentityModel.Protocols.OpenIdConnect" version="8.0.1" />
       <dependency id="System.IdentityModel.Tokens.Jwt" version="8.0.1" />
