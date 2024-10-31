@@ -1,19 +1,9 @@
 {
-    "configuration": "Release",
-    "framework": "net8.0",
     "filter": "BDN.benchmark.Lua.*",
-
-    "expectedScript1_None_AllocatedValue_linux": 24,
-    "expectedScript2_None_AllocatedValue_linux": 144,
-    "expectedScript3_None_AllocatedValue_linux": 240,
-    "expectedScript4_None_AllocatedValue_linux": 776,
-
-    "expectedScript1_None_AllocatedValue_win": 24,
-    "expectedScript2_None_AllocatedValue_win": 144,
-    "expectedScript3_None_AllocatedValue_win": 240,
-    "expectedScript4_None_AllocatedValue_win": 776,
     
-    "acceptableAllocatedRange": 10,    
-    "acceptableError": ".1",
-    "acceptableStdDev": ".1"
+    "_comment": "All these values are the expected Allocated.",
+    "expectedScript1_None": 24,
+    "expectedScript2_None": 144,
+    "expectedScript3_None": 240,
+    "expectedScript4_None": 776
 }

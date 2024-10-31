@@ -1,19 +1,9 @@
 {
-    "configuration": "Release",
-    "framework": "net8.0",
     "filter": "BDN.benchmark.Cluster.ClusterMigrate.*",
 
-    "expectedGet_None_AllocatedValue_linux": 0,
-    "expectedSet_None_AllocatedValue_linux": 0,
-    "expectedMGet_None_AllocatedValue_linux": 0,
-    "expectedMSet_None_AllocatedValue_linux": 0,
-
-    "expectedGet_None_AllocatedValue_win": 0,
-    "expectedSet_None_AllocatedValue_win": 0,
-    "expectedMGet_None_AllocatedValue_win": 0,
-    "expectedMSet_None_AllocatedValue_win": 0,
-
-    "acceptableAllocatedRange": 10, 
-    "acceptableError": ".1",
-    "acceptableStdDev": ".1"
+    "_comment": "All these values are the expected Allocated.",
+    "expectedGet_None": 0,
+    "expectedSet_None": 0,
+    "expectedMGet_None": 0,
+    "expectedMSet_None": 0
 }
