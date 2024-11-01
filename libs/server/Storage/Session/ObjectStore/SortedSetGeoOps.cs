@@ -76,35 +76,48 @@ namespace Garnet.server
 
             try
             {
-                var isStoreDist = false;
-                Span<ArgSlice> geoSearchParseState = stackalloc ArgSlice[input.parseState.Count + 1]; // Current MaxSize of this stactalloc will be 144 bytes ( 12 (Max Args) x 12 (sizeof ArgSlice) )
-                var currArgIdx = 0;
+                var storeDistIdx = -1;
                 var i = 0;
                 while (i < input.parseState.Count)
                 {
-                    if (!isStoreDist && input.parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
+                    if (input.parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
                     {
-                        isStoreDist = true;
+                        storeDistIdx = i;
                         break;
-                    }
-                    else
-                    {
-                        geoSearchParseState[currArgIdx] = input.parseState.GetArgSliceByRef(i);
-                        currArgIdx++;
                     }
                     i++;
                 }
-                geoSearchParseState[currArgIdx++] = isStoreDist ? ArgSlice.FromPinnedSpan(CmdStrings.WITHDIST) : ArgSlice.FromPinnedSpan(CmdStrings.WITHHASH);
+
+                SessionParseState parseState = default;
+                // Prepare the arguments for geo search when store distance is not provided
+                if (storeDistIdx == -1)
+                {
+                    parseState = new SessionParseState();
+                    parseState.Initialize(input.parseState.Count + 1);
+                    parseState.SetArguments(0, input.parseState.Parameters);
+                    parseState.SetArguments(input.parseState.Count, ArgSlice.FromPinnedSpan(CmdStrings.WITHHASH));
+                }
+                // When StoreDist is provided as the last argument
+                else if (storeDistIdx == input.parseState.Count - 1)
+                {
+                    parseState = new SessionParseState();
+                    parseState.Initialize(input.parseState.Count);
+                    parseState.SetArguments(0, input.parseState.Parameters.Slice(0, input.parseState.Count - 1));
+                    parseState.SetArguments(input.parseState.Count - 1, ArgSlice.FromPinnedSpan(CmdStrings.WITHDIST));
+                }
+                // When StoreDist is provided in the middle
+                else
+                {
+                    parseState = new SessionParseState();
+                    parseState.Initialize(input.parseState.Count);
+                    parseState.SetArguments(0, input.parseState.Parameters.Slice(0, storeDistIdx));
+                    parseState.SetArguments(storeDistIdx, ArgSlice.FromPinnedSpan(CmdStrings.WITHDIST));
+                    parseState.SetArguments(storeDistIdx + 1, input.parseState.Parameters.Slice(storeDistIdx + 1));
+                }
 
                 var sourceKey = key.ToArray();
-                var parseState = new SessionParseState();
-                parseState.InitializeWithArguments(geoSearchParseState.Slice(0, currArgIdx));
-
-                var searchInput = new ObjectInput(new RespInputHeader
-                {
-                    type = GarnetObjectType.SortedSet,
-                    SortedSetOp = SortedSetOperation.GEOSEARCH,
-                }, ref parseState);
+                var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOSEARCH };
+                var searchInput = new ObjectInput(header, ref parseState);
 
                 SpanByteAndMemory searchOutMem = default;
                 var searchOut = new GarnetObjectStoreOutput { spanByteAndMemory = searchOutMem };
@@ -118,6 +131,7 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.NOTFOUND)
                 {
+                    // Expire/Delete the destination key if the source key is not found
                     _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None, ref lockableContext, ref objectStoreLockableContext);
                     while (!RespWriteUtils.WriteInteger(0, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -129,7 +143,6 @@ namespace Garnet.server
                 var searchOutHandler = searchOutMem.Memory.Memory.Pin();
                 try
                 {
-
                     var searchOutPtr = (byte*)searchOutHandler.Pointer;
                     var currOutPtr = searchOutPtr;
                     var endOutPtr = searchOutPtr + searchOutMem.Length;
@@ -156,7 +169,7 @@ namespace Garnet.server
                         Debug.Assert(innerLength == 2, "Should always has location and hash or distance");
 
                         RespReadUtils.TrySliceWithLengthHeader(out var location, ref currOutPtr, endOutPtr);
-                        if (isStoreDist)
+                        if (storeDistIdx != -1)
                         {
                             RespReadUtils.ReadSpanWithLengthHeader(out var score, ref currOutPtr, endOutPtr);
                             zParseState.SetArgument(2 * j, ArgSlice.FromPinnedSpan(score));
