@@ -111,8 +111,8 @@ namespace Garnet.server
                     parseState = new SessionParseState();
                     parseState.Initialize(input.parseState.Count);
                     parseState.SetArguments(0, input.parseState.Parameters.Slice(0, storeDistIdx));
-                    parseState.SetArguments(storeDistIdx, ArgSlice.FromPinnedSpan(CmdStrings.WITHDIST));
-                    parseState.SetArguments(storeDistIdx + 1, input.parseState.Parameters.Slice(storeDistIdx + 1));
+                    parseState.SetArguments(storeDistIdx, input.parseState.Parameters.Slice(storeDistIdx + 1));
+                    parseState.SetArguments(input.parseState.Count - 1, ArgSlice.FromPinnedSpan(CmdStrings.WITHDIST));
                 }
 
                 var sourceKey = key.ToArray();
