@@ -4,22 +4,23 @@
 
 .DESCRIPTION
 
-    Script to test for performance regressions in Allocated Memory using BDN Benchmark tool.  There are configuration files (in /ConfigFiles dir) associated with each test that contains name and expected values of the BDN benchmark. Any of these can be sent as the parameter to the file.
+    Script to test for performance regressions in Allocated Memory using BDN Benchmark tool.  There are configuration files (in /ConfigFiles dir) associated with each test that contains name and expected values of the BDN benchmark. 
+    Any of these can be sent as the parameter to the file.
     
-        CI_CONFIG_BDN_Benchmark_BasicOperations.json
+        CI_CONFIG_BDN_Benchmark_Operations.BasicOperations.json
 
     NOTE: The expected values are specific for the CI Machine. If you run these on your machine, you will need to change the expected values.
     NOTE: The acceptablerange* parameters in the config file is how far +/- X% the found value can be from the expected value and still say it is pass. Defaulted to 10% 
     
 .EXAMPLE
     ./run_bdnperftest.ps1 
-    ./run_bdnperftest.ps1 CI_CONFIG_BDN_Benchmark_BasicOperations.json
+    ./run_bdnperftest.ps1 CI_CONFIG_BDN_Benchmark_Operations.BasicOperations.json
 #>
 
 
 # Send the config file for the benchmark. Defaults to a simple one
 param (
-  [string]$configFile = "CI_CONFIG_BDN_Benchmark_BasicOperations.json"
+  [string]$configFile = "CI_CONFIG_BDN_Benchmark_Operations.BasicOperations.json"
 )
 
 $OFS = "`r`n"
@@ -79,6 +80,7 @@ param ($ResultsLine, $columnNum)
     }
    
     $foundValue = $foundValue.Trim(' B')  
+    $foundValue = $foundValue.Trim(' K')  
     $foundValue = $foundValue.Trim(' m')  
 
     return $foundValue
@@ -124,98 +126,72 @@ if ($IsLinux) {
 Write-Host "************** Start BDN.benchmark Test Run ********************" 
 Write-Host " "
 
-# Set all the config options (args to benchmark app) based on values from config json file
-$configuration = $object.configuration
-$framework = $object.framework
-$filter = $object.filter
+# Set all the config options (args to benchmark app)
+$configuration = "Release"
+$framework = "net8.0"
 $allocatedColumn = "-1"   # last one is allocated, just to ensure in case other column gets added
 $paramNone = "None"
 $paramDSV = "DSV"
 $paramACL = "ACL"
 $paramAOF = "AOF"
+$acceptableAllocatedRange = "10"   # percent allowed variance when comparing expected vs actual found value - same for linux and windows. 
+$filter = $object.filter
 
-# Set the expected values based on the OS
-if ($IsLinux) {
-    # Linux expected values
-    $expectedGet_None_AllocatedValue = $object.expectedGET_None_AllocatedValue_linux
-    $expectedSet_None_AllocatedValue = $object.expectedSET_None_AllocatedValue_linux
-    $expectedMGet_None_AllocatedValue = $object.expectedMGET_None_AllocatedValue_linux
-    $expectedMSet_None_AllocatedValue = $object.expectedMSET_None_AllocatedValue_linux
-    $expectedCPBSET_None_AllocatedValue = $object.expectedCPBSET_None_AllocatedValue_linux
+# Expected values for Allocated amount 
+switch -Wildcard ($configFile) {
+    "CI_CONFIG_BDN_Benchmark_Cluster.ClusterMigrate.json" {
+        $expectedGet_None = $object.expectedGET_None
+        $expectedSet_None = $object.expectedSET_None
+        $expectedMGet_None = $object.expectedMGET_None
+        $expectedMSet_None = $object.expectedMSET_None
+    }
+    "CI_CONFIG_BDN_Benchmark_Cluster.ClusterOperations.json" {
+        $expectedGet_DSV = $object.expectedGET_DSV
+        $expectedSet_DSV = $object.expectedSET_DSV
+        $expectedMGet_DSV = $object.expectedMGET_DSV
+        $expectedMSet_DSV = $object.expectedMSET_DSV
+        $expectedCPBSET_DSV = $object.expectedCPBSET_DSV
 
-    $expectedGet_DSV_AllocatedValue = $object.expectedGET_DSV_AllocatedValue_linux
-    $expectedSet_DSV_AllocatedValue = $object.expectedSET_DSV_AllocatedValue_linux
-    $expectedMGet_DSV_AllocatedValue = $object.expectedMGET_DSV_AllocatedValue_linux
-    $expectedMSet_DSV_AllocatedValue = $object.expectedMSET_DSV_AllocatedValue_linux
-    $expectedCPBSET_DSV_AllocatedValue = $object.expectedCPBSET_DSV_AllocatedValue_linux
+        $expectedGet_None = $object.expectedGET_None
+        $expectedSet_None = $object.expectedSET_None
+        $expectedMGet_None = $object.expectedMGET_None
+        $expectedMSet_None = $object.expectedMSET_None
+        $expectedCPBSET_None = $object.expectedCPBSET_None
+    }
+    "CI_CONFIG_BDN_Benchmark_Lua.LuaScripts.json" {
+        $expectedScript1_None = $object.expectedScript1_None
+        $expectedScript2_None = $object.expectedScript2_None
+        $expectedScript3_None = $object.expectedScript3_None
+        $expectedScript4_None = $object.expectedScript4_None
+    }
+    "CI_CONFIG_BDN_Benchmark_Operations.BasicOperations.json" {
+        $expectedInlinePing_ACL = $object.expectedInlinePing_ACL
+        $expectedInlinePing_AOF = $object.expectedInlinePing_AOF
+        $expectedInlinePing_None = $object.expectedInlinePing_None
+    }
+    "CI_CONFIG_BDN_Benchmark_Operations.ObjectOperations.json" {
+        $expectedZAddRem_None = $object.expectedZAddRem_None
+        $expectedLPushPop_None = $object.expectedLPushPop_None
+        $expectedSAddRem_None = $object.expectedSAddRem_None
+        $expectedHSetDel_None = $object.expectedHSetDel_None
+        $expectedMyDictSetGet_None = $object.expectedMyDictSetGet_None
+        $expectedCustomProcSet_None = $object.expectedCustomProcSet_None
 
-    $expectedZAddRem_None_AllocatedValue = $object.expectedZAddRem_None_AllocatedValue_linux
-    $expectedLPushPop_None_AllocatedValue = $object.expectedLPushPop_None_AllocatedValue_linux
-    $expectedSAddRem_None_AllocatedValue = $object.expectedSAddRem_None_AllocatedValue_linux
-    $expectedHSetDel_None_AllocatedValue = $object.expectedHSetDel_None_AllocatedValue_linux
-    $expectedMyDictSetGet_None_AllocatedValue = $object.expectedMyDictSetGet_None_AllocatedValue_linux
-    $expectedZAddRem_ACL_AllocatedValue = $object.expectedZAddRem_ACL_AllocatedValue_linux
-    $expectedLPushPop_ACL_AllocatedValue = $object.expectedLPushPop_ACL_AllocatedValue_linux
-    $expectedSAddRem_ACL_AllocatedValue = $object.expectedSAddRem_ACL_AllocatedValue_linux
-    $expectedHSetDel_ACL_AllocatedValue = $object.expectedHSetDel_ACL_AllocatedValue_linux
-    $expectedMyDictSetGet_ACL_AllocatedValue = $object.expectedMyDictSetGet_ACL_AllocatedValue_linux
-    $expectedZAddRem_AOF_AllocatedValue = $object.expectedZAddRem_AOF_AllocatedValue_linux
-    $expectedLPushPop_AOF_AllocatedValue = $object.expectedLPushPop_AOF_AllocatedValue_linux
-    $expectedSAddRem_AOF_AllocatedValue = $object.expectedSAddRem_AOF_AllocatedValue_linux
-    $expectedHSetDel_AOF_AllocatedValue = $object.expectedHSetDel_AOF_AllocatedValue_linux
-    $expectedMyDictSetGet_AOF_AllocatedValue = $object.expectedMyDictSetGet_AOF_AllocatedValue_linux
+        $expectedZAddRem_ACL = $object.expectedZAddRem_ACL
+        $expectedLPushPop_ACL = $object.expectedLPushPop_ACL
+        $expectedSAddRem_ACL = $object.expectedSAddRem_ACL
+        $expectedHSetDel_ACL = $object.expectedHSetDel_ACL
+        $expectedMyDictSetGet_ACL = $object.expectedMyDictSetGet_ACL
+        $expectedCustomProcSet_ACL = $object.expectedCustomProcSet_ACL
 
-    $expectedScript1_None_AllocatedValue = $object.expectedScript1_None_AllocatedValue_linux
-    $expectedScript2_None_AllocatedValue = $object.expectedScript2_None_AllocatedValue_linux
-    $expectedScript3_None_AllocatedValue = $object.expectedScript3_None_AllocatedValue_linux
-    $expectedScript4_None_AllocatedValue = $object.expectedScript4_None_AllocatedValue_linux
-
-    $expectedInlinePing_ACL_AllocatedValue = $object.expectedInlinePing_ACL_AllocatedValue_linux
-    $expectedInlinePing_AOF_AllocatedValue = $object.expectedInlinePing_AOF_AllocatedValue_linux
-    $expectedInlinePing_None_AllocatedValue = $object.expectedInlinePing_None_AllocatedValue_linux
+        $expectedZAddRem_AOF = $object.expectedZAddRem_AOF
+        $expectedLPushPop_AOF = $object.expectedLPushPop_AOF
+        $expectedSAddRem_AOF = $object.expectedSAddRem_AOF
+        $expectedHSetDel_AOF = $object.expectedHSetDel_AOF
+        $expectedMyDictSetGet_AOF = $object.expectedMyDictSetGet_AOF
+        $expectedCustomProcSet_AOF = $object.expectedCustomProcSet_AOF
+    }
 }
-else {
-    # Windows expected values
-    $expectedGet_None_AllocatedValue = $object.expectedGET_None_AllocatedValue_win
-    $expectedSet_None_AllocatedValue = $object.expectedSET_None_AllocatedValue_win
-    $expectedMGet_None_AllocatedValue = $object.expectedMGET_None_AllocatedValue_win
-    $expectedMSet_None_AllocatedValue = $object.expectedMSET_None_AllocatedValue_win
-    $expectedCPBSET_None_AllocatedValue = $object.expectedCPBSET_None_AllocatedValue_win
-
-    $expectedGet_DSV_AllocatedValue = $object.expectedGET_DSV_AllocatedValue_win
-    $expectedSet_DSV_AllocatedValue = $object.expectedSET_DSV_AllocatedValue_win
-    $expectedMGet_DSV_AllocatedValue = $object.expectedMGET_DSV_AllocatedValue_win
-    $expectedMSet_DSV_AllocatedValue = $object.expectedMSET_DSV_AllocatedValue_win
-    $expectedCPBSET_DSV_AllocatedValue = $object.expectedCPBSET_DSV_AllocatedValue_win
-
-    $expectedZAddRem_None_AllocatedValue = $object.expectedZAddRem_None_AllocatedValue_win
-    $expectedLPushPop_None_AllocatedValue = $object.expectedLPushPop_None_AllocatedValue_win
-    $expectedSAddRem_None_AllocatedValue = $object.expectedSAddRem_None_AllocatedValue_win
-    $expectedHSetDel_None_AllocatedValue = $object.expectedHSetDel_None_AllocatedValue_win
-    $expectedMyDictSetGet_None_AllocatedValue = $object.expectedMyDictSetGet_None_AllocatedValue_win
-    $expectedZAddRem_ACL_AllocatedValue = $object.expectedZAddRem_ACL_AllocatedValue_win
-    $expectedLPushPop_ACL_AllocatedValue = $object.expectedLPushPop_ACL_AllocatedValue_win
-    $expectedSAddRem_ACL_AllocatedValue = $object.expectedSAddRem_ACL_AllocatedValue_win
-    $expectedHSetDel_ACL_AllocatedValue = $object.expectedHSetDel_ACL_AllocatedValue_win
-    $expectedMyDictSetGet_ACL_AllocatedValue = $object.expectedMyDictSetGet_ACL_AllocatedValue_win
-    $expectedZAddRem_AOF_AllocatedValue = $object.expectedZAddRem_AOF_AllocatedValue_win
-    $expectedLPushPop_AOF_AllocatedValue = $object.expectedLPushPop_AOF_AllocatedValue_win
-    $expectedSAddRem_AOF_AllocatedValue = $object.expectedSAddRem_AOF_AllocatedValue_win
-    $expectedHSetDel_AOF_AllocatedValue = $object.expectedHSetDel_AOF_AllocatedValue_win
-    $expectedMyDictSetGet_AOF_AllocatedValue = $object.expectedMyDictSetGet_AOF_AllocatedValue_win
-
-    $expectedScript1_None_AllocatedValue = $object.expectedScript1_None_AllocatedValue_win
-    $expectedScript2_None_AllocatedValue = $object.expectedScript2_None_AllocatedValue_win
-    $expectedScript3_None_AllocatedValue = $object.expectedScript3_None_AllocatedValue_win
-    $expectedScript4_None_AllocatedValue = $object.expectedScript4_None_AllocatedValue_win
-
-    $expectedInlinePing_ACL_AllocatedValue = $object.expectedInlinePing_ACL_AllocatedValue_win
-    $expectedInlinePing_AOF_AllocatedValue = $object.expectedInlinePing_AOF_AllocatedValue_win
-    $expectedInlinePing_None_AllocatedValue = $object.expectedInlinePing_None_AllocatedValue_win
-}
-
-# percent allowed variance when comparing expected vs actual found value - same for linux and windows. 
-$acceptableAllocatedRange = $object.acceptableAllocatedRange 
 
 # Set up the results dir and errorlog dir
 $resultsDir = "$basePath/test/BDNPerfTests/results" 
@@ -272,40 +248,40 @@ Get-Content $resultsFile | ForEach-Object {
     switch -Wildcard ($line) {
         "*| Set*$paramNone*" {
             Write-Host "** Set ($paramNone) Allocated Value test"
-            $foundSet_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundSet_None_AllocatedValue $expectedSet_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundSet_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundSet_None $expectedSet_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| Get*$paramNone*" {
             Write-Host "** Get ($paramNone) Allocated Value test"
-            $foundGet_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundGet_None_AllocatedValue $expectedGet_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundGet_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundGet_None $expectedGet_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| MSet*$paramNone*" {
             Write-Host "** MSet ($paramNone) Allocated Value test"
-            $foundMSet_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundMSet_None_AllocatedValue $expectedMSet_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundMSet_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundMSet_None $expectedMSet_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| MGet*$paramNone*" {
             Write-Host "** MGet ($paramNone) Allocated Value test"
-            $foundMGet_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundMGet_None_AllocatedValue $expectedMGet_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundMGet_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundMGet_None $expectedMGet_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| CPBSET*$paramNone*" {
             Write-Host "** CPBSET ($paramNone) Allocated Value test"
-            $foundCPBSET_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundCPBSET_None_AllocatedValue $expectedCPBSET_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundCPBSET_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundCPBSET_None $expectedCPBSET_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
@@ -313,40 +289,40 @@ Get-Content $resultsFile | ForEach-Object {
 
         "*| Set*$paramDSV*" {
             Write-Host "** Set ($paramDSV) Allocated Value test"
-            $foundSet_DSV_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundSet_DSV_AllocatedValue $expectedSet_DSV_AllocatedValue $acceptableAllocatedRange $true
+            $foundSet_DSV = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundSet_DSV $expectedSet_DSV $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| Get*$paramDSV*" {
             Write-Host "** Get ($paramDSV) Allocated Value test"
-            $foundGet_DSV_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundGet_DSV_AllocatedValue $expectedGet_DSV_AllocatedValue $acceptableAllocatedRange $true
+            $foundGet_DSV = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundGet_DSV $expectedGet_DSV $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| MSet*$paramDSV*" {
             Write-Host "** MSet ($paramDSV) Allocated Value test"
-            $foundMSet_DSV_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundMSet_DSV_AllocatedValue $expectedMSet_DSV_AllocatedValue $acceptableAllocatedRange $true
+            $foundMSet_DSV = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundMSet_DSV $expectedMSet_DSV $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| MGet*$paramDSV*" {
             Write-Host "** MGet ($paramDSV) Allocated Value test"
-            $foundMGet_DSV_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundMGet_DSV_AllocatedValue $expectedMGet_DSV_AllocatedValue $acceptableAllocatedRange $true
+            $foundMGet_DSV = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundMGet_DSV $expectedMGet_DSV $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| CPBSET*$paramDSV*" {
             Write-Host "** CPBSET ($paramDSV) Allocated Value test"
-            $foundCPBSET_DSV_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundCPBSET_DSV_AllocatedValue $expectedCPBSET_DSV_AllocatedValue $acceptableAllocatedRange $true
+            $foundCPBSET_DSV = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundCPBSET_DSV $expectedCPBSET_DSV $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
@@ -354,96 +330,96 @@ Get-Content $resultsFile | ForEach-Object {
 
         "*| ZAddRem*$paramNone*" {
             Write-Host "** ZAddRem ($paramNone) Allocated Value test"
-            $foundZAddRem_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundZAddRem_None_AllocatedValue $expectedZAddRem_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundZAddRem_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundZAddRem_None $expectedZAddRem_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| LPushPop*$paramNone*" {
             Write-Host "** LPushPop ($paramNone) Allocated Value test"
-            $foundLPushPop_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundLPushPop_None_AllocatedValue $expectedLPushPop_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundLPushPop_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundLPushPop_None $expectedLPushPop_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| SAddRem*$paramNone*" {
             Write-Host "** SAddRem ($paramNone) Allocated Value test"
-            $foundSAddRem_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundSAddRem_None_AllocatedValue $expectedSAddRem_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundSAddRem_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundSAddRem_None $expectedSAddRem_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| HSetDel*$paramNone*" {
             Write-Host "** HSetDel ($paramNone) Allocated Value test"
-            $foundHSetDel_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundHSetDel_None_AllocatedValue $expectedHSetDel_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundHSetDel_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundHSetDel_None $expectedHSetDel_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| MyDictSetGet*$paramNone*" {
             Write-Host "** MyDictSetGet ($paramNone) Allocated Value test"
-            $foundMyDictSetGet_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundMyDictSetGet_None_AllocatedValue $expectedMyDictSetGet_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundMyDictSetGet_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundMyDictSetGet_None $expectedMyDictSetGet_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| CustomProcSet*$paramNone*" {
             Write-Host "** MyDictSetGet ($paramNone) Allocated Value test"
-            $foundCustomProcSet_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundCustomProcSet_None_AllocatedValue $expectedCustomProcSet_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundCustomProcSet_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundCustomProcSet_None $expectedCustomProcSet_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| ZAddRem*$paramACL*" {
             Write-Host "** ZAddRem ($paramACL) Allocated Value test"
-            $foundZAddRem_ACL_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundZAddRem_ACL_AllocatedValue $expectedZAddRem_ACL_AllocatedValue $acceptableAllocatedRange $true
+            $foundZAddRem_ACL = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundZAddRem_ACL $expectedZAddRem_ACL $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| LPushPop*$paramACL*" {
             Write-Host "** LPushPop ($paramACL) Allocated Value test"
-            $foundLPushPop_ACL_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundLPushPop_ACL_AllocatedValue $expectedLPushPop_ACL_AllocatedValue $acceptableAllocatedRange $true
+            $foundLPushPop_ACL = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundLPushPop_ACL $expectedLPushPop_ACL $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| SAddRem*$paramACL*" {
             Write-Host "** SAddRem ($paramACL) Allocated Value test"
-            $foundSAddRem_ACL_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundSAddRem_ACL_AllocatedValue $expectedSAddRem_ACL_AllocatedValue $acceptableAllocatedRange $true
+            $foundSAddRem_ACL = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundSAddRem_ACL $expectedSAddRem_ACL $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| HSetDel*$paramACL*" {
             Write-Host "** HSetDel ($paramACL) Allocated Value test"
-            $foundHSetDel_ACL_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundHSetDel_ACL_AllocatedValue $expectedHSetDel_ACL_AllocatedValue $acceptableAllocatedRange $true
+            $foundHSetDel_ACL = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundHSetDel_ACL $expectedHSetDel_ACL $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| MyDictSetGet*$paramACL*" {
             Write-Host "** MyDictSetGet ($paramACL) Allocated Value test"
-            $foundMyDictSetGet_ACL_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundMyDictSetGet_ACL_AllocatedValue $expectedMyDictSetGet_ACL_AllocatedValue $acceptableAllocatedRange $true
+            $foundMyDictSetGet_ACL = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundMyDictSetGet_ACL $expectedMyDictSetGet_ACL $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| CustomProcSet*$paramACL*" {
             Write-Host "** MyDictSetGet ($paramACL) Allocated Value test"
-            $foundCustomProcSet_ACL_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundCustomProcSet_ACL_AllocatedValue $expectedCustomProcSet_ACL_AllocatedValue $acceptableAllocatedRange $true
+            $foundCustomProcSet_ACL = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundCustomProcSet_ACL $expectedCustomProcSet_ACL $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
@@ -451,48 +427,48 @@ Get-Content $resultsFile | ForEach-Object {
 
         "*| ZAddRem*$paramAOF*" {
             Write-Host "** ZAddRem ($paramAOF) Allocated Value test"
-            $foundZAddRem_AOF_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundZAddRem_AOF_AllocatedValue $expectedZAddRem_AOF_AllocatedValue $acceptableAllocatedRange $true
+            $foundZAddRem_AOF = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundZAddRem_AOF $expectedZAddRem_AOF $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| LPushPop*$paramAOF*" {
             Write-Host "** LPushPop ($paramAOF) Allocated Value test"
-            $foundLPushPop_AOF_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundLPushPop_AOF_AllocatedValue $expectedLPushPop_AOF_AllocatedValue $acceptableAllocatedRange $true
+            $foundLPushPop_AOF = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundLPushPop_AOF $expectedLPushPop_AOF $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| SAddRem*$paramAOF*" {
             Write-Host "** SAddRem ($paramAOF) Allocated Value test"
-            $foundSAddRem_AOF_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundSAddRem_AOF_AllocatedValue $expectedSAddRem_AOF_AllocatedValue $acceptableAllocatedRange $true
+            $foundSAddRem_AOF = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundSAddRem_AOF $expectedSAddRem_AOF $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| HSetDel*$paramAOF*" {
             Write-Host "** HSetDel ($paramAOF) Allocated Value test"
-            $foundHSetDel_AOF_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundHSetDel_AOF_AllocatedValue $expectedHSetDel_AOF_AllocatedValue $acceptableAllocatedRange $true
+            $foundHSetDel_AOF = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundHSetDel_AOF $expectedHSetDel_AOF $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| MyDictSetGet*$paramAOF*" {
             Write-Host "** MyDictSetGet ($paramAOF) Allocated Value test"
-            $foundMyDictSetGet_AOF_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundMyDictSetGet_AOF_AllocatedValue $expectedMyDictSetGet_AOF_AllocatedValue $acceptableAllocatedRange $true
+            $foundMyDictSetGet_AOF = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundMyDictSetGet_AOF $expectedMyDictSetGet_AOF $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| CustomProcSet*$paramAOF*" {
-            Write-Host "** MyDictSetGet ($paramAOF) Allocated Value test"
-            $foundMyCustomProcSet_AOF_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundMyCustomProcSet_AOF_AllocatedValue $expectedCustomProcSetSetGet_AOF_AllocatedValue $acceptableAllocatedRange $true
+            Write-Host "** CustomProcSet ($paramAOF) Allocated Value test"
+            $foundMyCustomProcSet_AOF = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundMyCustomProcSet_AOF $expectedCustomProcSet_AOF $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
@@ -500,32 +476,32 @@ Get-Content $resultsFile | ForEach-Object {
 
         "*| Script1*$paramNone*" {
             Write-Host "** Lua Script1 ($paramNone) Allocated Value test"
-            $foundScript1_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundScript1_None_AllocatedValue $expectedScript1_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundScript1_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundScript1_None $expectedScript1_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| Script2*$paramNone*" {
             Write-Host "** Lua Script2 ($paramNone) Allocated Value test"
-            $foundScript2_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundScript2_None_AllocatedValue $expectedScript2_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundScript2_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundScript2_None $expectedScript2_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| Script3*$paramNone*" {
             Write-Host "** Lua Script3 ($paramNone) Allocated Value test"
-            $foundScript3_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundScript3_None_AllocatedValue $expectedScript3_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundScript3_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundScript3_None $expectedScript3_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| Script4*$paramNone*" {
             Write-Host "** LuaScript4 ($paramNone) Allocated Value test"
-            $foundScript4_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundScript4_None_AllocatedValue $expectedScript4_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundScript4_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundScript4_None $expectedScript4_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
@@ -534,8 +510,8 @@ Get-Content $resultsFile | ForEach-Object {
 
         "*| InlinePing*$paramNone*" {
             Write-Host "** InlinePing ($paramNone) Allocated Value test"
-            $foundInlinePing_None_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundInlinePing_None_AllocatedValue $expectedInlinePing_None_AllocatedValue $acceptableAllocatedRange $true
+            $foundInlinePing_None = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundInlinePing_None $expectedInlinePing_None $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
@@ -543,22 +519,20 @@ Get-Content $resultsFile | ForEach-Object {
 
         "*| InlinePing*$paramACL*" {
             Write-Host "** InlinePing ($paramACL) Allocated Value test"
-            $foundInlinePing_ACL_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundInlinePing_ACL_AllocatedValue $expectedInlinePing_ACL_AllocatedValue $acceptableAllocatedRange $true
+            $foundInlinePing_ACL = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundInlinePing_ACL $expectedInlinePing_ACL $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         "*| InlinePing*$paramAOF*" {
             Write-Host "** InlinePing ($paramAOF) Allocated Value test"
-            $foundInlinePing_AOF_AllocatedValue = ParseValueFromResults $line $allocatedColumn
-            $currentResults = AnalyzeResult $foundInlinePing_AOF_AllocatedValue $expectedInlinePing_AOF_AllocatedValue $acceptableAllocatedRange $true
+            $foundInlinePing_AOF = ParseValueFromResults $line $allocatedColumn
+            $currentResults = AnalyzeResult $foundInlinePing_AOF $expectedInlinePing_AOF $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
-   
-
     }
 }
 
