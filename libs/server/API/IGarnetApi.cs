@@ -17,17 +17,23 @@ namespace Garnet.server
         /// <summary>
         /// SET
         /// </summary>
-        GarnetStatus SET(ref SpanByte key, ref SpanByte value);
+        GarnetStatus SET<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte value)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// SET Conditional
         /// </summary>
-        GarnetStatus SET_Conditional(ref SpanByte key, ref SpanByte input);
+        GarnetStatus SET_Conditional<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// SET Conditional
         /// </summary>
-        GarnetStatus SET_Conditional(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus SET_Conditional<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// SET
@@ -35,23 +41,23 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        GarnetStatus SET(ArgSlice key, Memory<byte> value);
+        GarnetStatus SET<TKeyLocker, TEpochGuard>(ArgSlice key, Memory<byte> value)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// SET
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <returns></returns>
-        GarnetStatus SET(ArgSlice key, ArgSlice value);
+        GarnetStatus SET<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice value)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// SET
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <returns></returns>
-        GarnetStatus SET(byte[] key, IGarnetObject value);
+        GarnetStatus SET<TKeyLocker, TEpochGuard>(byte[] key, IGarnetObject value)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
         #endregion
 
         #region SETEX
@@ -62,7 +68,9 @@ namespace Garnet.server
         /// <param name="value">Value</param>
         /// <param name="expiryMs">Expiry in milliseconds, formatted as ASCII digits</param>
         /// <returns></returns>
-        GarnetStatus SETEX(ArgSlice key, ArgSlice value, ArgSlice expiryMs);
+        GarnetStatus SETEX<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice value, ArgSlice expiryMs)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// SETEX
@@ -70,7 +78,9 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="value">Value</param>
         /// <param name="expiry">Expiry</param>
-        GarnetStatus SETEX(ArgSlice key, ArgSlice value, TimeSpan expiry);
+        GarnetStatus SETEX<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice value, TimeSpan expiry)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -84,8 +94,9 @@ namespace Garnet.server
         /// <param name="offset">Offset in Bytes</param>
         /// <param name="output">The output of the operation</param>
         /// <returns></returns>
-        GarnetStatus SETRANGE(ArgSlice key, ArgSlice value, int offset, ref ArgSlice output);
-
+        GarnetStatus SETRANGE<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice value, int offset, ref ArgSlice output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -97,7 +108,9 @@ namespace Garnet.server
         /// <param name="value">Value to be appended</param>
         /// <param name="output">Length of updated value</param>
         /// <returns>Operation status</returns>
-        GarnetStatus APPEND(ref SpanByte key, ref SpanByte value, ref SpanByteAndMemory output);
+        GarnetStatus APPEND<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte value, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// APPEND command
@@ -106,7 +119,9 @@ namespace Garnet.server
         /// <param name="value">Value to be appended</param>
         /// <param name="output">Length of updated value</param>
         /// <returns>Operation status</returns>
-        GarnetStatus APPEND(ArgSlice key, ArgSlice value, ref ArgSlice output);
+        GarnetStatus APPEND<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice value, ref ArgSlice output)
+            where TKeyLocker : struct, ISessionLocker 
+            where TEpochGuard : struct, IGarnetEpochGuard;
         #endregion
 
         #region RENAME
@@ -137,7 +152,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="storeType"></param>
         /// <returns></returns>
-        GarnetStatus EXISTS(ArgSlice key, StoreType storeType = StoreType.All);
+        GarnetStatus EXISTS<TKeyLocker, TEpochGuard>(ArgSlice key, StoreType storeType = StoreType.All)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
         #endregion
 
         #region EXPIRE
@@ -150,7 +167,9 @@ namespace Garnet.server
         /// <param name="storeType">Store type: main, object, or both</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIRE(ArgSlice key, ArgSlice expiryMs, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIRE<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice expiryMs, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Set a timeout on key using a timeSpan in seconds
@@ -161,7 +180,9 @@ namespace Garnet.server
         /// <param name="storeType">Store type: main, object, or both</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIRE(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIRE<TKeyLocker, TEpochGuard>(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Set a timeout on key using a timeSpan in milliseconds
@@ -172,7 +193,9 @@ namespace Garnet.server
         /// <param name="storeType">Store type: main, object, or both</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus PEXPIRE(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus PEXPIRE<TKeyLocker, TEpochGuard>(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -183,7 +206,9 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="storeType">Store type: main, object, or both</param>
         /// <returns></returns>
-        GarnetStatus PERSIST(ArgSlice key, StoreType storeType = StoreType.All);
+        GarnetStatus PERSIST<TKeyLocker, TEpochGuard>(ArgSlice key, StoreType storeType = StoreType.All)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
         #endregion
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)
@@ -194,7 +219,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus Increment(ArgSlice key, ArgSlice input, ref ArgSlice output);
+        GarnetStatus Increment<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice input, ref ArgSlice output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Increment (INCR, INCRBY)
@@ -203,7 +230,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="incrementCount"></param>
         /// <returns></returns>
-        GarnetStatus Increment(ArgSlice key, out long output, long incrementCount = 1);
+        GarnetStatus Increment<TKeyLocker, TEpochGuard>(ArgSlice key, out long output, long incrementCount = 1)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Decrement (DECR, DECRBY)
@@ -212,7 +241,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="decrementCount"></param>
         /// <returns></returns>
-        GarnetStatus Decrement(ArgSlice key, out long output, long decrementCount = 1);
+        GarnetStatus Decrement<TKeyLocker, TEpochGuard>(ArgSlice key, out long output, long decrementCount = 1)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
         #endregion
 
         #region DELETE
@@ -248,7 +279,9 @@ namespace Garnet.server
         /// <param name="key"> Key to get and delete </param>
         /// <param name="output"> Current value of key </param>
         /// <returns> Operation status </returns>
-        GarnetStatus GETDEL(ref SpanByte key, ref SpanByteAndMemory output);
+        GarnetStatus GETDEL<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// GETDEL
@@ -256,7 +289,9 @@ namespace Garnet.server
         /// <param name="key"> Key to get and delete </param>
         /// <param name="output"> Current value of key </param>
         /// <returns> Operation status </returns>
-        GarnetStatus GETDEL(ArgSlice key, ref SpanByteAndMemory output);
+        GarnetStatus GETDEL<TKeyLocker, TEpochGuard>(ArgSlice key, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
         #endregion
 
         #region TYPE
@@ -268,7 +303,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="typeName"></param>
         /// <returns></returns>
-        GarnetStatus GetKeyType(ArgSlice key, out string typeName);
+        GarnetStatus GetKeyType<TKeyLocker, TEpochGuard>(ArgSlice key, out string typeName)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -281,7 +318,9 @@ namespace Garnet.server
         /// <param name="memoryUsage">The value in bytes the key or object is using</param>
         /// <param name="samples">Number of sampled nested values</param>
         /// <returns>GarnetStatus</returns>
-        GarnetStatus MemoryUsageForKey(ArgSlice key, out long memoryUsage, int samples = 0);
+        GarnetStatus MemoryUsageForKey<TKeyLocker, TEpochGuard>(ArgSlice key, out long memoryUsage, int samples = 0)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -295,7 +334,9 @@ namespace Garnet.server
         /// <param name="member">Member</param>
         /// <param name="zaddCount">Number of adds performed</param>
         /// <returns></returns>
-        GarnetStatus SortedSetAdd(ArgSlice key, ArgSlice score, ArgSlice member, out int zaddCount);
+        GarnetStatus SortedSetAdd<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice score, ArgSlice member, out int zaddCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Adds all the specified members with the specified scores to the sorted set stored at key.
@@ -305,7 +346,9 @@ namespace Garnet.server
         /// <param name="inputs">Input key-value pairs to add</param>
         /// <param name="zaddCount">Number of adds performed</param>
         /// <returns></returns>
-        GarnetStatus SortedSetAdd(ArgSlice key, (ArgSlice score, ArgSlice member)[] inputs, out int zaddCount);
+        GarnetStatus SortedSetAdd<TKeyLocker, TEpochGuard>(ArgSlice key, (ArgSlice score, ArgSlice member)[] inputs, out int zaddCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Adds all the specified members with the specified scores to the sorted set stored at key.
@@ -315,12 +358,16 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetAdd(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+        GarnetStatus SortedSetAdd<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes the specified member from the sorted set stored at key.
         /// </summary>
-        GarnetStatus SortedSetRemove(ArgSlice key, ArgSlice member, out int zremCount);
+        GarnetStatus SortedSetRemove<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice member, out int zremCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes the specified members from the sorted set stored at key.
@@ -330,7 +377,9 @@ namespace Garnet.server
         /// <param name="members">Input members to remove</param>
         /// <param name="zremCount">Number of removes performed</param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemove(ArgSlice key, ArgSlice[] members, out int zremCount);
+        GarnetStatus SortedSetRemove<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] members, out int zremCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes the specified members from the sorted set stored at key.
@@ -340,7 +389,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemove(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetRemove<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes all elements in the sorted set between the
@@ -350,7 +401,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemoveRangeByLex(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetRemoveRangeByLex<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes and returns the first element from the sorted set stored at key,
@@ -360,7 +413,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetPop<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes and returns up to count members with the highest or lowest scores in the sorted set stored at key.
@@ -370,7 +425,9 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="lowScoresFirst">When true, return the members with the lowest scores, otherwise return the highest scores.</param>
         /// <returns></returns>
-        GarnetStatus SortedSetPop(ArgSlice key, out (ArgSlice member, ArgSlice score)[] pairs, int count = 1, bool lowScoresFirst = true);
+        GarnetStatus SortedSetPop<TKeyLocker, TEpochGuard>(ArgSlice key, out (ArgSlice member, ArgSlice score)[] pairs, int count = 1, bool lowScoresFirst = true)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Increments the score of member in the sorted set stored at key by increment.
@@ -380,7 +437,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetIncrement<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Increments the score of member in the sorted set stored at key by increment.
@@ -392,7 +451,9 @@ namespace Garnet.server
         /// <param name="member"></param>
         /// <param name="newScore"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetIncrement(ArgSlice key, Double increment, ArgSlice member, out double newScore);
+        GarnetStatus SortedSetIncrement<TKeyLocker, TEpochGuard>(ArgSlice key, double increment, ArgSlice member, out double newScore)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ZREMRANGEBYRANK: Removes all elements in the sorted set stored at key with rank between start and stop.
@@ -403,7 +464,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemoveRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetRemoveRange<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes all elements in the range specified by min and max, having the same score.
@@ -413,7 +476,9 @@ namespace Garnet.server
         /// <param name="max"></param>
         /// <param name="countRemoved"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemoveRangeByLex(ArgSlice key, string min, string max, out int countRemoved);
+        GarnetStatus SortedSetRemoveRangeByLex<TKeyLocker, TEpochGuard>(ArgSlice key, string min, string max, out int countRemoved)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes all elements that have a score in the range specified by min and max.
@@ -423,7 +488,9 @@ namespace Garnet.server
         /// <param name="max"></param>
         /// <param name="countRemoved"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemoveRangeByScore(ArgSlice key, string min, string max, out int countRemoved);
+        GarnetStatus SortedSetRemoveRangeByScore<TKeyLocker, TEpochGuard>(ArgSlice key, string min, string max, out int countRemoved)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes all elements with the index in the range specified by start and stop.
@@ -433,7 +500,9 @@ namespace Garnet.server
         /// <param name="stop"></param>
         /// <param name="countRemoved"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemoveRangeByRank(ArgSlice key, int start, int stop, out int countRemoved);
+        GarnetStatus SortedSetRemoveRangeByRank<TKeyLocker, TEpochGuard>(ArgSlice key, int start, int stop, out int countRemoved)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Adds geospatial items (longitude, latitude, name) to the specified key.
@@ -442,8 +511,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus GeoAdd(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
-
+        GarnetStatus GeoAdd<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
         #endregion
 
         #region Set Methods
@@ -456,7 +526,9 @@ namespace Garnet.server
         /// <param name="member"></param>
         /// <param name="saddCount"></param>
         /// <returns></returns>
-        GarnetStatus SetAdd(ArgSlice key, ArgSlice member, out int saddCount);
+        GarnetStatus SetAdd<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice member, out int saddCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         ///  Adds the specified members to the set at key.
@@ -467,7 +539,9 @@ namespace Garnet.server
         /// <param name="members"></param>
         /// <param name="saddCount"></param>
         /// <returns></returns>
-        GarnetStatus SetAdd(ArgSlice key, ArgSlice[] members, out int saddCount);
+        GarnetStatus SetAdd<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] members, out int saddCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         ///  Adds the specified members to the set at key.
@@ -478,7 +552,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetAdd(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SetAdd<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes the specified member from the set.
@@ -489,7 +565,9 @@ namespace Garnet.server
         /// <param name="member"></param>
         /// <param name="sremCount"></param>
         /// <returns></returns>
-        GarnetStatus SetRemove(ArgSlice key, ArgSlice member, out int sremCount);
+        GarnetStatus SetRemove<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice member, out int sremCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes the specified members from the set.
@@ -500,7 +578,9 @@ namespace Garnet.server
         /// <param name="members"></param>
         /// <param name="sremCount"></param>
         /// <returns></returns>
-        GarnetStatus SetRemove(ArgSlice key, ArgSlice[] members, out int sremCount);
+        GarnetStatus SetRemove<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] members, out int sremCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes the specified members from the set.
@@ -511,7 +591,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetRemove(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SetRemove<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes and returns one random member from the set at key.
@@ -519,7 +601,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="member"></param>
         /// <returns></returns>
-        GarnetStatus SetPop(ArgSlice key, out ArgSlice member);
+        GarnetStatus SetPop<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice member)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes and returns random members from the set at key.
@@ -528,7 +612,9 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="members"></param>
         /// <returns></returns>
-        GarnetStatus SetPop(ArgSlice key, int count, out ArgSlice[] members);
+        GarnetStatus SetPop<TKeyLocker, TEpochGuard>(ArgSlice key, int count, out ArgSlice[] members)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes and returns random members from the set at key.
@@ -537,7 +623,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SetPop<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Moves a member from a source set to a destination set.
@@ -562,7 +650,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SetRandomMember<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// This command is equal to SUNION, but instead of returning the resulting set, it is stored in destination.
@@ -606,7 +696,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListLeftPush(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus ListLeftPush<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ListLeftPush ArgSlice version, one element
@@ -616,7 +708,9 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="whenExists">When true the operation is executed only if the key already exists</param>
         /// <returns></returns>
-        GarnetStatus ListLeftPush(ArgSlice key, ArgSlice element, out int count, bool whenExists = false);
+        GarnetStatus ListLeftPush<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice element, out int count, bool whenExists = false)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ListLeftPush ArgSlice version for multiple values
@@ -626,7 +720,9 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="whenExists">When true the operation is executed only if the key already exists</param>
         /// <returns></returns>
-        GarnetStatus ListLeftPush(ArgSlice key, ArgSlice[] elements, out int count, bool whenExists = false);
+        GarnetStatus ListLeftPush<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] elements, out int count, bool whenExists = false)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ListRightPush ArgSlice version with ObjectOutputHeader output
@@ -635,7 +731,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        public GarnetStatus ListRightPush(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        public GarnetStatus ListRightPush<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ListRightPush ArgSlice version, one element
@@ -645,7 +743,9 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="whenExists">When true the operation is executed only if the key already exists</param>
         /// <returns></returns>
-        GarnetStatus ListRightPush(ArgSlice key, ArgSlice element, out int count, bool whenExists = false);
+        GarnetStatus ListRightPush<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice element, out int count, bool whenExists = false)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ListRightPush ArgSlice version for multiple values
@@ -655,7 +755,9 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="whenExists">When true the operation is executed only if the key already exists</param>
         /// <returns></returns>
-        GarnetStatus ListRightPush(ArgSlice key, ArgSlice[] elements, out int count, bool whenExists = false);
+        GarnetStatus ListRightPush<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] elements, out int count, bool whenExists = false)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -668,7 +770,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus ListLeftPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ListLeftPop<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ListLeftPop ArgSlice version, one element
@@ -676,7 +780,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="element"></param>
         /// <returns></returns>
-        GarnetStatus ListLeftPop(ArgSlice key, out ArgSlice element);
+        GarnetStatus ListLeftPop<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice element)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ListLeftPop ArgSlice version for multiple values
@@ -685,7 +791,9 @@ namespace Garnet.server
         /// <param name="elements"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        GarnetStatus ListLeftPop(ArgSlice key, int count, out ArgSlice[] elements);
+        GarnetStatus ListLeftPop<TKeyLocker, TEpochGuard>(ArgSlice key, int count, out ArgSlice[] elements)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ListLeftPop ArgSlice version for multiple keys and values
@@ -695,7 +803,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="elements"></param>
         /// <returns>GarnetStatus</returns>
-        GarnetStatus ListLeftPop(ArgSlice[] keys, int count, out ArgSlice key, out ArgSlice[] elements);
+        GarnetStatus ListLeftPop<TKeyLocker, TEpochGuard>(ArgSlice[] keys, int count, out ArgSlice key, out ArgSlice[] elements)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ListRightPop ArgSlice version, with GarnetObjectStoreOutput
@@ -704,7 +814,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus ListRightPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ListRightPop<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ListRightPop ArgSlice version, one element
@@ -712,7 +824,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="element"></param>
         /// <returns></returns>
-        GarnetStatus ListRightPop(ArgSlice key, out ArgSlice element);
+        GarnetStatus ListRightPop<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice element)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ListRightPop ArgSlice version for multiple values
@@ -721,8 +835,9 @@ namespace Garnet.server
         /// <param name="elements"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        GarnetStatus ListRightPop(ArgSlice key, int count, out ArgSlice[] elements);
-
+        GarnetStatus ListRightPop<TKeyLocker, TEpochGuard>(ArgSlice key, int count, out ArgSlice[] elements)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ListRightPop ArgSlice version for multiple keys and values
@@ -732,8 +847,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="elements"></param>
         /// <returns>GarnetStatus</returns>
-        GarnetStatus ListRightPop(ArgSlice[] keys, int count, out ArgSlice key, out ArgSlice[] elements);
-
+        GarnetStatus ListRightPop<TKeyLocker, TEpochGuard>(ArgSlice[] keys, int count, out ArgSlice key, out ArgSlice[] elements)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
         #endregion
 
         /// <summary>
@@ -755,7 +871,9 @@ namespace Garnet.server
         /// <param name="start"></param>
         /// <param name="stop"></param>
         /// <returns></returns>
-        public bool ListTrim(ArgSlice key, int start, int stop);
+        public bool ListTrim<TKeyLocker, TEpochGuard>(ArgSlice key, int start, int stop)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Trim an existing list so it only contains the specified range of elements.
@@ -763,7 +881,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <returns></returns>
-        GarnetStatus ListTrim(byte[] key, ref ObjectInput input);
+        GarnetStatus ListTrim<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Inserts a new element in the list stored at key either before or after a value pivot
@@ -772,7 +892,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListInsert(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus ListInsert<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes the first count occurrences of elements equal to element from the list.
@@ -781,7 +903,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListRemove(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus ListRemove<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Sets the list element at index to element.
@@ -790,7 +914,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListSet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+        GarnetStatus ListSet<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -804,7 +930,9 @@ namespace Garnet.server
         /// <param name="value"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        GarnetStatus HashSet(ArgSlice key, ArgSlice field, ArgSlice value, out int count);
+        GarnetStatus HashSet<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, ArgSlice value, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Sets the specified fields to their respective values in the hash stored at key.
@@ -813,7 +941,9 @@ namespace Garnet.server
         /// <param name="elements"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        GarnetStatus HashSet(ArgSlice key, (ArgSlice field, ArgSlice value)[] elements, out int count);
+        GarnetStatus HashSet<TKeyLocker, TEpochGuard>(ArgSlice key, (ArgSlice field, ArgSlice value)[] elements, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Sets or updates the values of the specified fields that exist in the hash.
@@ -826,7 +956,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashSet(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus HashSet<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Set only if field does not yet exist. If key does not exist, a new key holding a hash is created.
@@ -838,7 +970,9 @@ namespace Garnet.server
         /// <param name="value"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        GarnetStatus HashSetWhenNotExists(ArgSlice key, ArgSlice field, ArgSlice value, out int count);
+        GarnetStatus HashSetWhenNotExists<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, ArgSlice value, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes the specified field from the hash stored at key.
@@ -847,7 +981,9 @@ namespace Garnet.server
         /// <param name="field"></param>
         /// <param name="count">Number of fields removed</param>
         /// <returns></returns>
-        GarnetStatus HashDelete(ArgSlice key, ArgSlice field, out int count);
+        GarnetStatus HashDelete<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes the specified fields from the hash stored at key.
@@ -856,7 +992,9 @@ namespace Garnet.server
         /// <param name="fields"></param>
         /// <param name="count">Number of fields removed</param>
         /// <returns></returns>
-        GarnetStatus HashDelete(ArgSlice key, ArgSlice[] fields, out int count);
+        GarnetStatus HashDelete<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] fields, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Removes the specified fields from the hash stored at key.
@@ -865,7 +1003,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashDelete(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus HashDelete<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Increments the number stored at field in the hash key by increment parameter.
@@ -874,7 +1014,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashIncrement(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus HashIncrement<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Increments the number stored at field representing a floating point value
@@ -884,7 +1026,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus HashIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashIncrement<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -898,7 +1042,9 @@ namespace Garnet.server
         /// <param name="bit"></param>
         /// <param name="previous"></param>
         /// <returns></returns>
-        GarnetStatus StringSetBit(ArgSlice key, ArgSlice offset, bool bit, out bool previous);
+        GarnetStatus StringSetBit<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice offset, bool bit, out bool previous)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Sets or clears the bit at offset in the given key.
@@ -909,7 +1055,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringSetBit(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus StringSetBit<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Performs a bitwise operations on multiple keys
@@ -918,7 +1066,9 @@ namespace Garnet.server
         /// <param name="bitop"></param>
         /// <param name="result"></param>
         /// <returns></returns>
-        GarnetStatus StringBitOperation(Span<ArgSlice> keys, BitmapOperation bitop, out long result);
+        GarnetStatus StringBitOperation<TKeyLocker, TEpochGuard>(Span<ArgSlice> keys, BitmapOperation bitop, out long result)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Perform a bitwise operation between multiple keys
@@ -939,12 +1089,16 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="secondaryCommand"></param>
         /// <returns></returns>
-        GarnetStatus StringBitField(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output);
+        GarnetStatus StringBitField<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Performs arbitrary bitfield integer operations on strings.
         /// </summary>
-        GarnetStatus StringBitField(ArgSlice key, List<BitFieldCmdArgs> commandArguments, out List<long?> result);
+        GarnetStatus StringBitField<TKeyLocker, TEpochGuard>(ArgSlice key, List<BitFieldCmdArgs> commandArguments, out List<long?> result)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
         #endregion
 
         #region HyperLogLog Methods
@@ -956,7 +1110,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogAdd(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus HyperLogLogAdd<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Adds all the element arguments to the HyperLogLog data structure stored at the variable name specified as key.
@@ -965,7 +1121,9 @@ namespace Garnet.server
         /// <param name="elements"></param>
         /// <param name="updated">true if at least 1 HyperLogLog internal register was altered</param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogAdd(ArgSlice keys, string[] elements, out bool updated);
+        GarnetStatus HyperLogLogAdd<TKeyLocker, TEpochGuard>(ArgSlice keys, string[] elements, out bool updated)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Merge multiple HyperLogLog values into a unique value that will approximate the cardinality
@@ -974,7 +1132,9 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogMerge(Span<ArgSlice> keys, out bool error);
+        GarnetStatus HyperLogLogMerge<TKeyLocker, TEpochGuard>(Span<ArgSlice> keys, out bool error)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
     }
@@ -988,7 +1148,9 @@ namespace Garnet.server
         /// <summary>
         /// GET
         /// </summary>
-        GarnetStatus GET(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus GET<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// GET
@@ -996,7 +1158,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        GarnetStatus GETForMemoryResult(ArgSlice key, out MemoryResult<byte> value);
+        GarnetStatus GETForMemoryResult<TKeyLocker, TEpochGuard>(ArgSlice key, out MemoryResult<byte> value)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// GET
@@ -1004,7 +1168,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        GarnetStatus GET(ArgSlice key, out ArgSlice value);
+        GarnetStatus GET<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice value)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// GET
@@ -1012,7 +1178,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        GarnetStatus GET(byte[] key, out GarnetObjectStoreOutput value);
+        GarnetStatus GET<TKeyLocker, TEpochGuard>(byte[] key, out GarnetObjectStoreOutput value)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
         #endregion
 
         #region GETRANGE
@@ -1024,7 +1192,9 @@ namespace Garnet.server
         /// <param name="sliceLength"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GETRANGE(ref SpanByte key, int sliceStart, int sliceLength, ref SpanByteAndMemory output);
+        GarnetStatus GETRANGE<TKeyLocker, TEpochGuard>(ref SpanByte key, int sliceStart, int sliceLength, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
         #endregion
 
         #region TTL
@@ -1036,7 +1206,9 @@ namespace Garnet.server
         /// <param name="storeType">The store type to operate on.</param>
         /// <param name="output">The span to allocate the output of the operation.</param>
         /// <returns></returns>
-        GarnetStatus TTL(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output);
+        GarnetStatus TTL<TKeyLocker, TEpochGuard>(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the remaining time to live in milliseconds of a key that has a timeout.
@@ -1045,7 +1217,9 @@ namespace Garnet.server
         /// <param name="storeType">The store type to operate on.</param>
         /// <param name="output">The span to allocate the output of the operation.</param>
         /// <returns></returns>
-        GarnetStatus PTTL(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output);
+        GarnetStatus PTTL<TKeyLocker, TEpochGuard>(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -1057,7 +1231,9 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="zcardCount"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetLength(ArgSlice key, out int zcardCount);
+        GarnetStatus SortedSetLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int zcardCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the sorted set cardinality (number of elements) of the sorted set
@@ -1066,7 +1242,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the specified range of elements in the sorted set stored at key.
@@ -1077,7 +1255,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetRange<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the score of member in the sorted set at key.
@@ -1087,7 +1267,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetScore(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetScore<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the scores associated with the specified members in the sorted set stored at key.
@@ -1097,7 +1279,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetScores(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetScores<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the number of elements in the sorted set at key with a score between min and max.
@@ -1106,7 +1290,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+        GarnetStatus SortedSetCount<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the number of elements in the sorted set with a value between min and max.
@@ -1117,7 +1303,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetLengthByValue(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetLengthByValue<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ZRANK: Returns the rank of member in the sorted set, the scores in the sorted set are ordered from low to high
@@ -1127,7 +1315,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRank(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetRank<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// ZRANK: Returns the rank of member in the sorted set, the scores in the sorted set are ordered from low to high
@@ -1138,7 +1328,9 @@ namespace Garnet.server
         /// <param name="reverse"></param>
         /// <param name="rank"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRank(ArgSlice key, ArgSlice member, bool reverse, out long? rank);
+        GarnetStatus SortedSetRank<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice member, bool reverse, out long? rank)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns a random element from the sorted set key.
@@ -1147,7 +1339,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetRandomMember<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the specified range of elements in the sorted set stored at key, using byscore, bylex and rev modifiers.
@@ -1164,7 +1358,9 @@ namespace Garnet.server
         /// <param name="reverse"></param>
         /// <param name="limit"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRange(ArgSlice key, ArgSlice min, ArgSlice max, SortedSetOrderOperation sortedSetOrderOperation, out ArgSlice[] elements, out string error, bool withScores = false, bool reverse = false, (string, int) limit = default);
+        GarnetStatus SortedSetRange<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice min, ArgSlice max, SortedSetOrderOperation sortedSetOrderOperation, out ArgSlice[] elements, out string error, bool withScores = false, bool reverse = false, (string, int) limit = default)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Computes the difference between the first and all successive sorted sets and returns resulting pairs.
@@ -1172,7 +1368,9 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="pairs"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetDifference(ArgSlice[] keys, out Dictionary<byte[], double> pairs);
+        GarnetStatus SortedSetDifference<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out Dictionary<byte[], double> pairs)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Iterates members of SortedSet key and their associated scores using a cursor,
@@ -1184,7 +1382,9 @@ namespace Garnet.server
         /// <param name="count">Limit number for the response</param>
         /// <param name="items">The list of items for the response</param>
         /// <returns></returns>
-        GarnetStatus SortedSetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items);
+        GarnetStatus SortedSetScan<TKeyLocker, TEpochGuard>(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -1200,7 +1400,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus GeoCommands<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -1212,7 +1414,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        GarnetStatus ListLength(ArgSlice key, out int count);
+        GarnetStatus ListLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Gets length of the list, RESP version
@@ -1221,7 +1425,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus ListLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Gets the specified elements of the list stored at key.
@@ -1230,7 +1436,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus ListRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ListRange<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the element at index.
@@ -1239,7 +1447,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus ListIndex(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ListIndex<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -1251,7 +1461,9 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="count"></param>
         /// <returns></returns>
-        GarnetStatus SetLength(ArgSlice key, out int count);
+        GarnetStatus SetLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the number of elements of the set.
@@ -1260,7 +1472,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SetLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// SMEMBERS key
@@ -1268,7 +1482,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="members"></param>
         /// <returns></returns>
-        GarnetStatus SetMembers(ArgSlice key, out ArgSlice[] members);
+        GarnetStatus SetMembers<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice[] members)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns all members of the set at key.
@@ -1277,7 +1493,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SetMembers(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SetMembers<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns if member is a member of the set stored at key.
@@ -1286,7 +1504,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SetIsMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SetIsMember<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Iterates over the members of the Set with the given key using a cursor,
@@ -1298,7 +1518,9 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="items"></param>
         /// <returns></returns>
-        GarnetStatus SetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items);
+        GarnetStatus SetScan<TKeyLocker, TEpochGuard>(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the members of the set resulting from the union of all the given sets.
@@ -1336,7 +1558,9 @@ namespace Garnet.server
         /// <param name="field"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        GarnetStatus HashGet(ArgSlice key, ArgSlice field, out ArgSlice value);
+        GarnetStatus HashGet<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, out ArgSlice value)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the values associated with the fields in the hash stored at key.
@@ -1345,7 +1569,9 @@ namespace Garnet.server
         /// <param name="fields"></param>
         /// <param name="values"></param>
         /// <returns></returns>
-        GarnetStatus HashGetMultiple(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values);
+        GarnetStatus HashGetMultiple<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the value associated with field in the hash stored at key.
@@ -1354,7 +1580,9 @@ namespace Garnet.server
         /// <param name="input">The metadata input for the operation</param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus HashGet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashGet<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns all fields and values of the hash stored at key.
@@ -1363,7 +1591,9 @@ namespace Garnet.server
         /// <param name="input">The metadata input for the operation</param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus HashGetAll(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashGetAll<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the values associated with the specified fields in the hash stored at key.
@@ -1372,7 +1602,9 @@ namespace Garnet.server
         /// <param name="input">The metadata input for the operation</param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus HashGetMultiple(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashGetMultiple<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns ALL the values in the hash stored at key.
@@ -1380,7 +1612,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="values"></param>
         /// <returns></returns>
-        GarnetStatus HashGetAll(ArgSlice key, out ArgSlice[] values);
+        GarnetStatus HashGetAll<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice[] values)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the number of fields contained in the hash Key
@@ -1388,7 +1622,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        GarnetStatus HashLength(ArgSlice key, out int count);
+        GarnetStatus HashLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         ///Returns the string length of the value associated with field in the hash stored at key. If the key or the field do not exist, 0 is returned.
@@ -1397,7 +1633,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashStrLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus HashStrLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the number of fields contained in the hash Key.
@@ -1406,7 +1644,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus HashLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns if field is an existing field in the hash stored at key.
@@ -1415,7 +1655,9 @@ namespace Garnet.server
         /// <param name="field"></param>
         /// <param name="exists"></param>
         /// <returns></returns>
-        GarnetStatus HashExists(ArgSlice key, ArgSlice field, out bool exists);
+        GarnetStatus HashExists<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, out bool exists)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns if field is an existing field in the hash stored at key.
@@ -1424,7 +1666,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashExists(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus HashExists<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns count random fields from the hash value.
@@ -1434,7 +1678,9 @@ namespace Garnet.server
         /// <param name="withValues"></param>
         /// <param name="fields"></param>
         /// <returns></returns>
-        GarnetStatus HashRandomField(ArgSlice key, int count, bool withValues, out ArgSlice[] fields);
+        GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(ArgSlice key, int count, bool withValues, out ArgSlice[] fields)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns a random field from the hash value stored at key.
@@ -1442,7 +1688,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="field"></param>
         /// <returns></returns>
-        GarnetStatus HashRandomField(ArgSlice key, out ArgSlice field);
+        GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice field)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns a random field(s) from the hash value stored at key.
@@ -1451,7 +1699,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus HashRandomField(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns all field names in the hash key.
@@ -1460,7 +1710,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus HashKeys(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashKeys<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns all values in the hash key.
@@ -1469,7 +1721,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus HashVals(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashVals<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Iterates fields of Hash key and their associated values using a cursor,
@@ -1481,7 +1735,9 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="items"></param>
         /// <returns></returns>
-        GarnetStatus HashScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items);
+        GarnetStatus HashScan<TKeyLocker, TEpochGuard>(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -1494,7 +1750,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringGetBit(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus StringGetBit<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the bit value at offset in the key stored.
@@ -1503,7 +1761,9 @@ namespace Garnet.server
         /// <param name="offset"></param>
         /// <param name="bValue"></param>
         /// <returns></returns>
-        GarnetStatus StringGetBit(ArgSlice key, ArgSlice offset, out bool bValue);
+        GarnetStatus StringGetBit<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice offset, out bool bValue)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Count the number of set bits in a string.
@@ -1513,7 +1773,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringBitCount(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus StringBitCount<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Count the number of set bits in a string.
@@ -1525,7 +1787,9 @@ namespace Garnet.server
         /// <param name="result"></param>
         /// <param name="useBitInterval"></param>
         /// <returns></returns>
-        GarnetStatus StringBitCount(ArgSlice key, long start, long end, out long result, bool useBitInterval = false);
+        GarnetStatus StringBitCount<TKeyLocker, TEpochGuard>(ArgSlice key, long start, long end, out long result, bool useBitInterval = false)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Returns the position of the first bit set to 1 or 0 in a key.
@@ -1534,7 +1798,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringBitPosition(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus StringBitPosition<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// Read-only variant of the StringBitField method.
@@ -1544,7 +1810,9 @@ namespace Garnet.server
         /// <param name="secondaryCommand"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output);
+        GarnetStatus StringBitFieldReadOnly<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -1558,7 +1826,9 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error);
+        GarnetStatus HyperLogLogLength<TKeyLocker, TEpochGuard>(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         ///
@@ -1566,7 +1836,9 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, out long count);
+        GarnetStatus HyperLogLogLength<TKeyLocker, TEpochGuard>(Span<ArgSlice> keys, out long count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
         #endregion
 
         #region Server Methods
@@ -1576,7 +1848,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="pattern">Expression to match the keys name</param>
         /// <returns></returns>
-        List<byte[]> GetDbKeys(ArgSlice pattern);
+        List<byte[]> GetDbKeys<TKeyLocker, TEpochGuard>(ArgSlice pattern);
 
         /// <summary>
         /// Gets the number of existing keys in both stores
@@ -1640,7 +1912,9 @@ namespace Garnet.server
         /// <param name="key">The key of the sorted set</param>
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
-        GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ObjectScan<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         #endregion
 
@@ -1656,13 +1930,17 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="type"></param>
-        void WATCH(ArgSlice key, StoreType type);
+        void WATCH<TKeyLocker, TEpochGuard>(ArgSlice key, StoreType type)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// WATCH
         /// </summary>
         /// <param name="key"></param>
         /// <param name="type"></param>
-        void WATCH(byte[] key, StoreType type);
+        void WATCH<TKeyLocker, TEpochGuard>(byte[] key, StoreType type)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
     }
 }

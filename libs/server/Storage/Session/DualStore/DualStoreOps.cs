@@ -192,9 +192,8 @@ namespace Garnet.server
         /// <param name="newKeySlice">The new key name.</param>
         /// <param name="storeType">The type of store to perform the operation on.</param>
         /// <returns></returns>
-        public unsafe GarnetStatus RENAME<TEpochGuard>(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType)
-            where TEpochGuard : struct, IGarnetEpochGuard 
-            => RENAME<TEpochGuard>(oldKeySlice, newKeySlice, storeType, false, out _);
+        public unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType)
+            => RENAME(oldKeySlice, newKeySlice, storeType, false, out _);
 
         /// <summary>
         /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
@@ -204,9 +203,8 @@ namespace Garnet.server
         /// <param name="storeType">The type of store to perform the operation on.</param>
         /// <param name="result">The result indicating whether the key was renamed: 1 if key was renamed to newkey, 0 if newkey already exists</param>
         /// <returns></returns>
-        public unsafe GarnetStatus RENAMENX<TEpochGuard>(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, out int result)
-            where TEpochGuard : struct, IGarnetEpochGuard
-            => RENAME<TEpochGuard>(oldKeySlice, newKeySlice, storeType, true, out result);
+        public unsafe GarnetStatus RENAMENX(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, out int result)
+            => RENAME(oldKeySlice, newKeySlice, storeType, true, out result);
 
         /// <summary>
         /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
@@ -217,8 +215,7 @@ namespace Garnet.server
         /// <param name="isNX">Whether this is a "not exists" operation</param>
         /// <param name="result">The result indicating whether the key was renamed: 1 if key was renamed to newkey, 0 if newkey already exists</param>
         /// <remarks>This takes only the TEpochGuard; it creates a transaction if one does not yet exist, so always uses <see cref="TransactionalSessionLocker"/></remarks>>
-        private unsafe GarnetStatus RENAME<TEpochGuard>(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, bool isNX, out int result)
-            where TEpochGuard : struct, IGarnetEpochGuard
+        private unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, bool isNX, out int result)
         {
             var returnStatus = GarnetStatus.NOTFOUND;
             result = -1;
@@ -230,15 +227,6 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
-            var createTransaction = false;
-            if (txnManager.state != TxnState.Running)
-            {
-                createTransaction = true;
-                txnManager.SaveKeyEntryToLock(oldKeySlice, isObject: false, LockType.Exclusive);
-                txnManager.SaveKeyEntryToLock(newKeySlice, isObject: false, LockType.Exclusive);
-                _ = txnManager.Run(true);
-            }
-
             var oldKey = oldKeySlice.SpanByte;
 
             try
@@ -247,13 +235,23 @@ namespace Garnet.server
                 // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
+
+                var createTransaction = false;
                 if (storeType is StoreType.Main or StoreType.All)
                 {
+                    if (txnManager.state != TxnState.Running)
+                    {
+                        createTransaction = true;
+                        txnManager.SaveKeyEntryToLock(oldKeySlice, isObject: false, LockType.Exclusive);
+                        txnManager.SaveKeyEntryToLock(newKeySlice, isObject: false, LockType.Exclusive);
+                        _ = txnManager.Run(true);
+                    }
+
                     try
                     {
                         SpanByte input = default;
                         var output = new SpanByteAndMemory();
-                        var status = GET<TransactionalSessionLocker, TEpochGuard>(ref hei, ref oldKey, ref input, ref output);
+                        var status = GET<TransactionalSessionLocker>(ref hei, ref oldKey, ref input, ref output);
 
                         if (status == GarnetStatus.OK)
                         {
@@ -405,7 +403,7 @@ namespace Garnet.server
             }
             finally
             {
-                dualContext.ExitKernelForRead<TransactionalSessionLocker, TEpochGuard>(ref hei);
+                GarnetSafeEpochGuard.EndUnsafe(ref dualContext.KernelSession);
             }
             return returnStatus;
         }

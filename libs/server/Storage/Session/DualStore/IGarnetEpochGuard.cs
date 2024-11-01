@@ -21,7 +21,7 @@ namespace Garnet.server
                 /* ObjectStoreAllocator */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>
     #endregion Aliases
 
-    interface IGarnetEpochGuard : IEpochGuard<GarnetDualKernelSession>;
+    public interface IGarnetEpochGuard : IEpochGuard<GarnetDualKernelSession>;
 
     /// <summary>
     /// Perform epoch safety operations when entering/exiting an API 

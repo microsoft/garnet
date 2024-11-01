@@ -12,9 +12,6 @@ namespace Garnet.server
         /// <summary>
         /// Save key entry
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="isObject"></param>
-        /// <param name="type"></param>
         public void SaveKeyEntryToLock(ArgSlice key, bool isObject, LockType type)
         {
             UpdateTransactionStoreType(isObject ? StoreType.Object : StoreType.Main);
@@ -24,8 +21,6 @@ namespace Garnet.server
         /// <summary>
         /// Verify key ownership
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="type"></param>
         public unsafe void VerifyKeyOwnership(ArgSlice key, LockType type)
         {
             if (!clusterEnabled) return;
