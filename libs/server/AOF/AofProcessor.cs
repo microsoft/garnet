@@ -275,7 +275,7 @@ namespace Garnet.server
 
         unsafe void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)
         {
-            var curr = ptr;
+            var curr = ptr + sizeof(AofHeader);
 
             // Reconstructing CustomProcedureInput
 
