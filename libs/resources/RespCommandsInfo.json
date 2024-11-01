@@ -2844,6 +2844,35 @@
     "AclCategories": "Fast, PubSub"
   },
   {
+    "Command": "PUBSUB",
+    "Name": "PUBSUB",
+    "Arity": -2,
+    "AclCategories": "Slow",
+    "SubCommands": [
+      {
+        "Command": "PUBSUB_CHANNELS",
+        "Name": "PUBSUB|CHANNELS",
+        "Arity": -2,
+        "Flags": "Loading, PubSub, Stale",
+        "AclCategories": "PubSub, Slow"
+      },
+      {
+        "Command": "PUBSUB_NUMPAT",
+        "Name": "PUBSUB|NUMPAT",
+        "Arity": 2,
+        "Flags": "Loading, PubSub, Stale",
+        "AclCategories": "PubSub, Slow"
+      },
+      {
+        "Command": "PUBSUB_NUMSUB",
+        "Name": "PUBSUB|NUMSUB",
+        "Arity": -2,
+        "Flags": "Loading, PubSub, Stale",
+        "AclCategories": "PubSub, Slow"
+      }
+    ]
+  },
+  {
     "Command": "PUNSUBSCRIBE",
     "Name": "PUNSUBSCRIBE",
     "Arity": -1,
@@ -4083,6 +4112,44 @@
         "BeginSearch": {
           "TypeDiscriminator": "BeginSearchIndex",
           "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysKeyNum",
+          "KeyNumIdx": 0,
+          "FirstKey": 1,
+          "KeyStep": 1
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "ZDIFFSTORE",
+    "Name": "ZDIFFSTORE",
+    "Arity": -4,
+    "Flags": "DenyOom, MovableKeys, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Slow, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "OW, Update"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
         },
         "FindKeys": {
           "TypeDiscriminator": "FindKeysKeyNum",

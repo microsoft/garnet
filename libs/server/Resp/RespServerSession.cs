@@ -580,6 +580,9 @@ namespace Garnet.server
                 RespCommand.PSUBSCRIBE => NetworkPSUBSCRIBE(),
                 RespCommand.UNSUBSCRIBE => NetworkUNSUBSCRIBE(),
                 RespCommand.PUNSUBSCRIBE => NetworkPUNSUBSCRIBE(),
+                RespCommand.PUBSUB_CHANNELS => NetworkPUBSUB_CHANNELS(),
+                RespCommand.PUBSUB_NUMSUB => NetworkPUBSUB_NUMSUB(),
+                RespCommand.PUBSUB_NUMPAT => NetworkPUBSUB_NUMPAT(),
                 // Custom Object Commands
                 RespCommand.COSCAN => ObjectScan(GarnetObjectType.All, ref storageApi),
                 // Sorted Set commands
@@ -602,6 +605,7 @@ namespace Garnet.server
                 RespCommand.ZPOPMIN => SortedSetPop(cmd, ref storageApi),
                 RespCommand.ZRANDMEMBER => SortedSetRandomMember(ref storageApi),
                 RespCommand.ZDIFF => SortedSetDifference(ref storageApi),
+                RespCommand.ZDIFFSTORE => SortedSetDifferenceStore(ref storageApi),
                 RespCommand.ZREVRANGE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZSCAN => ObjectScan(GarnetObjectType.SortedSet, ref storageApi),
