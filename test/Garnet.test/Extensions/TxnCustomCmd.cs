@@ -9,6 +9,8 @@ namespace Garnet
 {
     class TxnCustomCmd : CustomTransactionProcedure
     {
+        private CustomObjectCommand customObjectCommand;
+
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             var offset = 0;
@@ -20,6 +22,9 @@ namespace Garnet
 
             var myDictKey = GetNextArg(ref procInput, ref offset);
             AddKey(myDictKey, LockType.Exclusive, true);
+
+            if (!ParseCustomObjectCommand("MYDICTSET", out customObjectCommand))
+                return false;
 
             return true;
         }
@@ -41,7 +46,7 @@ namespace Garnet
             args[0] = myDictField;
             args[1] = myDictValue;
 
-            ExecuteCustomCommand(api, "MYDICTSET", myDictKey, args, out var _output);
+            ExecuteCustomObjectCommand(api, customObjectCommand, myDictKey, args, out var _output);
 
             WriteSimpleString(ref output, "OK");
         }

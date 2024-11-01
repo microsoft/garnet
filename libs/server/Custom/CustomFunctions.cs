@@ -210,19 +210,46 @@ namespace Garnet.server
             return GetNextArg(ref procInput.parseState, ref idx);
         }
 
-        /// <summary>
-        /// Execute custom raw string or object command
-        /// </summary>
+        /// <summary>Parse custom raw string command</summary>
+        /// <param name="cmd">Command name</param>
+        /// <param name="rawStringCommand">Parsed raw string command</param>
+        /// <returns>True if command found, false otherwise</returns>
+        protected bool ParseCustomRawStringCommand(string cmd, out CustomRawStringCommand rawStringCommand) =>
+            respServerSession.ParseCustomRawStringCommand(cmd, out rawStringCommand);
+
+        /// <summary>Parse custom object command</summary>
+        /// <param name="cmd">Command name</param>
+        /// <param name="objectCommand">Parsed object command</param>
+        /// <returns>True if command found, false othrewise</returns>
+        protected bool ParseCustomObjectCommand(string cmd, out CustomObjectCommand objectCommand) =>
+            respServerSession.ParseCustomObjectCommand(cmd, out objectCommand);
+
+        /// <summary>Execute a specific custom raw string command</summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="garnetApi"></param>
-        /// <param name="cmd">Command to execute</param>
-        /// <param name="key">Key argument</param>
-        /// <param name="input">Array of arguments to command</param>
-        /// <param name="output">Output from command</param>
-        /// <returns>True if command found, else false</returns>
-        protected bool ExecuteCustomCommand<TGarnetApi>(TGarnetApi garnetApi, string cmd, ArgSlice key, ArgSlice[] input, out ArgSlice output)
+        /// <param name="rawStringCommand">Custom raw string command to execute</param>
+        /// <param name="key">Key param</param>
+        /// <param name="input">Args to the command</param>
+        /// <param name="output">Output from the command</param>
+        /// <returns>True if successful</returns>
+        protected bool ExecuteCustomRawStringCommand<TGarnetApi>(TGarnetApi garnetApi, CustomRawStringCommand rawStringCommand, ArgSlice key, ArgSlice[] input, out ArgSlice output)
             where TGarnetApi : IGarnetApi
         {
-            return respServerSession.InvokeCustomCommand(ref garnetApi, cmd, key, input, out output);
+            return respServerSession.InvokeCustomRawStringCommand(ref garnetApi, rawStringCommand, key, input, out output);
+        }
+
+        /// <summary>Execute a specific custom object command</summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="garnetApi"></param>
+        /// <param name="objectCommand">Custom object command to execute</param>
+        /// <param name="key">Key parameter</param>
+        /// <param name="input">Args to the command</param>
+        /// <param name="output">Output from the command</param>
+        /// <returns>True if successful</returns>
+        protected bool ExecuteCustomObjectCommand<TGarnetApi>(TGarnetApi garnetApi, CustomObjectCommand objectCommand, ArgSlice key, ArgSlice[] input, out ArgSlice output)
+            where TGarnetApi : IGarnetApi
+        {
+            return respServerSession.InvokeCustomObjectCommand(ref garnetApi, objectCommand, key, input, out output);
         }
     }
 }

@@ -127,7 +127,7 @@ namespace Garnet.test
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
 
-            if (ExecuteCustomCommand(garnetApi, "INVALIDCMD", key, null, out var _output))
+            if (ParseCustomRawStringCommand("INVALIDCMD", out var _output))
             {
                 WriteError(ref output, "ERR ExecuteCustomCommand should have failed");
             }
