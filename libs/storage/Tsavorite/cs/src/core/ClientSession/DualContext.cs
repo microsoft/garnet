@@ -2,10 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Threading;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
@@ -30,12 +28,12 @@ namespace Tsavorite.core
         private readonly TDualInputConverter inputConverter;
         private readonly IPendingMetrics pendingMetrics;
 
-        const ushort StoreId1 = 0;
-        const ushort StoreId2 = 1;
+        public const ushort StoreId1 = 0;
+        public const ushort StoreId2 = 1;
 
         // Stores may be subdivided into partitions later, so keep these separate.
-        const ushort PartitionId1 = 0;
-        const ushort PartitionId2 = 1;
+        public const ushort PartitionId1 = 0;
+        public const ushort PartitionId2 = 1;
 
         // Do not create a record if not found on update (used for the first of two stores).
         const long DoNotCreateAddress = -1;
@@ -44,8 +42,8 @@ namespace Tsavorite.core
 
         /// <summary>The Tsavorite kernel</summary>
         public TsavoriteKernel Kernel => KernelSession.clientSession1.Store.Kernel;
-        internal TsavoriteKV<TKey1, TValue1, TStoreFunctions1, TAllocator1> Store1 => KernelSession.clientSession1.Store;
-        internal TsavoriteKV<TKey2, TValue2, TStoreFunctions2, TAllocator2> Store2 => KernelSession.clientSession2.Store;
+        public TsavoriteKV<TKey1, TValue1, TStoreFunctions1, TAllocator1> Store1 => KernelSession.clientSession1.Store;
+        public TsavoriteKV<TKey2, TValue2, TStoreFunctions2, TAllocator2> Store2 => KernelSession.clientSession2.Store;
 
         /// <summary>Whether this dual session has a second store</summary>
         public bool IsDual => KernelSession.clientSession2 is not null;
@@ -82,6 +80,11 @@ namespace Tsavorite.core
         public long GetKeyHash(ref TKey1 key) => KernelSession.clientSession1.Store.GetKeyHash(ref key);
 
         public long GetKeyHash(ref TKey2 key) => KernelSession.clientSession2.Store.GetKeyHash(ref key);
+
+        public HashEntryInfo CreateHei(ref TKey1 key) => CreateHei1(GetKeyHash(ref key));
+        public HashEntryInfo CreateHei1(long keyHash) => new(keyHash, PartitionId1);
+        public HashEntryInfo CreateHei(ref TKey2 key) => CreateHei2(GetKeyHash(ref key));
+        public HashEntryInfo CreateHei2(long keyHash) => new(keyHash, PartitionId1);
 
         public Status EnterKernelForRead<TKeyLocker, TEpochGuard>(long keyHash, ushort partitionId, out HashEntryInfo hei)
             where TKeyLocker : struct, ISessionLocker
@@ -359,7 +362,7 @@ namespace Tsavorite.core
                     // Tag was found in the first store; see if it has the key (it may have been a collision)
                     status = ItemContext1.Read<TKeyLocker>(ref hei, ref key1, ref input1, ref output1, ref readOptions, out recordMetadata, userContext);
                     if (status.IsPending)
-                        (status, output1) = ItemContext1.GetSinglePendingResult<TKeyLocker>();
+                        (status, output1) = ItemContext1.GetSinglePendingResult<TKeyLocker>(pendingMetrics);
                     if (status.Found)
                         return (status, StoreId1);
 
@@ -379,7 +382,7 @@ namespace Tsavorite.core
 
                 status = ItemContext2.Read<TKeyLocker>(ref hei, ref key2, ref input2, ref output2, ref readOptions, out recordMetadata, userContext);
                 if (status.IsPending)
-                    (status, output2) = ItemContext2.GetSinglePendingResult<TKeyLocker>();
+                    (status, output2) = ItemContext2.GetSinglePendingResult<TKeyLocker>(pendingMetrics);
                 return (status, StoreId2);
             }
             finally

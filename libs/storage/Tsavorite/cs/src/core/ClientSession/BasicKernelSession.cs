@@ -10,7 +10,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Tsavorite in single-store mode uses this class. Garnet in dual-store mode uses RespKernelSession to implement <see cref="IKernelSession"/>
     /// </summary>
-    internal struct BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> : IKernelSession
+    public struct BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> : IKernelSession
         where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>

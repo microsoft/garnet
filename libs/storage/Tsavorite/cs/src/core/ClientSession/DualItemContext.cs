@@ -59,13 +59,16 @@ namespace Tsavorite.core
         /// <summary>
         /// Utility function to return the single pending result immediately after detecting status.IsPending
         /// </summary>
-        public (Status, TOutput output) GetSinglePendingResult<TKeyLocker>()
+        public (Status, TOutput output) GetSinglePendingResult<TKeyLocker>(IPendingMetrics pendingMetrics)
             where TKeyLocker : struct, ISessionLocker
         {
+            pendingMetrics?.StartPendingMetrics();
             _ = CompletePendingWithOutputs<TKeyLocker>(out var completedOutputs, wait: true);
             var hasNext = completedOutputs.Next();
             Debug.Assert(hasNext, "hasNext should be true");
             var (status, output) = (completedOutputs.Current.Status, completedOutputs.Current.Output);
+            pendingMetrics?.StartPendingMetrics();
+
             hasNext = completedOutputs.Next();
             Debug.Assert(!hasNext, "hasNext should be false");
             completedOutputs.Dispose();

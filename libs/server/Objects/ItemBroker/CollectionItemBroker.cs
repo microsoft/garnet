@@ -438,14 +438,11 @@ namespace Garnet.server
                 Debug.Assert(storageSession.txnManager.state == TxnState.None);
                 createTransaction = true;
                 var asKey = storageSession.scratchBufferManager.CreateArgSlice(key);
-                storageSession.txnManager.SaveKeyEntryToLock(asKey, true, LockType.Exclusive);
+                _ = storageSession.txnManager.SaveKeyEntryToLock(asKey, true, LockType.Exclusive);
 
                 if (command == RespCommand.BLMOVE)
-                {
                     storageSession.txnManager.SaveKeyEntryToLock(dstKey, true, LockType.Exclusive);
-                }
-
-                _ = storageSession.txnManager.Run(true);
+                _ = storageSession.txnManager.Run(internal_txn: true);
             }
 
             var objectLockableContext = storageSession.txnManager.ObjectStoreLockableContext;

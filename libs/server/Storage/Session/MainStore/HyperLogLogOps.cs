@@ -132,20 +132,17 @@ namespace Garnet.server
         public unsafe GarnetStatus HyperLogLogMerge(Span<ArgSlice> keys, out bool error)
         {
             error = false;
-
             if (keys.Length == 0)
                 return GarnetStatus.OK;
 
             var createTransaction = false;
-
             if (txnManager.state != TxnState.Running)
             {
                 Debug.Assert(txnManager.state == TxnState.None);
-                createTransaction = true;
-                txnManager.SaveKeyEntryToLock(keys[0], false, LockType.Exclusive);
+                _ = txnManager.SaveKeyEntryToLock(keys[0], false, LockType.Exclusive);
                 for (var i = 1; i < keys.Length; i++)
-                    txnManager.SaveKeyEntryToLock(keys[i], false, LockType.Shared);
-                _ = txnManager.Run(true);
+                    _ = txnManager.SaveKeyEntryToLock(keys[i], false, LockType.Shared);
+                createTransaction = txnManager.Run(internal_txn: true);
             }
 
             try

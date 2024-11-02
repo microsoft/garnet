@@ -29,9 +29,8 @@ namespace Garnet.server
             return GarnetStatus.NOTFOUND;
         }
 
-        public GarnetStatus GET<TKeyLocker, TEpochGuard>(ref HashEntryInfo hei, ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+        public GarnetStatus GET<TKeyLocker>(ref HashEntryInfo hei, ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
             where TKeyLocker : struct, ISessionLocker
-            where TEpochGuard : struct, IGarnetEpochGuard
         {
             ReadOptions readOptions = default;
             var status = MainContext.Read<TKeyLocker>(ref hei, ref key, ref input, ref output, ref readOptions, recordMetadata: out _, userContext: default);

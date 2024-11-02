@@ -269,10 +269,9 @@ namespace Garnet.server
             var createTransaction = false;
             if (txnManager.state != TxnState.Running)
             {
-                createTransaction = true;
-                txnManager.SaveKeyEntryToLock(sourceKey, true, LockType.Exclusive);
-                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
-                _ = txnManager.Run(true);
+                _ = txnManager.SaveKeyEntryToLock(sourceKey, true, LockType.Exclusive);
+                _ = txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                createTransaction = txnManager.Run(internal_txn: true);
             }
 
             try
@@ -359,10 +358,9 @@ namespace Garnet.server
             if (txnManager.state != TxnState.Running)
             {
                 Debug.Assert(txnManager.state == TxnState.None);
-                createTransaction = true;
                 foreach (var item in keys)
                     txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
-                _ = txnManager.Run(true);
+                createTransaction = txnManager.Run(internal_txn: true);
             }
 
             try
@@ -399,11 +397,10 @@ namespace Garnet.server
             if (txnManager.state != TxnState.Running)
             {
                 Debug.Assert(txnManager.state == TxnState.None);
-                createTransaction = true;
                 txnManager.SaveKeyEntryToLock(destination, true, LockType.Exclusive);
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
-                _ = txnManager.Run(true);
+                    _ = txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                createTransaction = txnManager.Run(internal_txn: true);
             }
 
             try
@@ -513,10 +510,9 @@ namespace Garnet.server
             if (txnManager.state != TxnState.Running)
             {
                 Debug.Assert(txnManager.state == TxnState.None);
-                createTransaction = true;
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
-                _ = txnManager.Run(true);
+                    _ = txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                createTransaction = txnManager.Run(internal_txn: true);
             }
 
             try
@@ -557,11 +553,10 @@ namespace Garnet.server
             if (txnManager.state != TxnState.Running)
             {
                 Debug.Assert(txnManager.state == TxnState.None);
-                createTransaction = true;
                 txnManager.SaveKeyEntryToLock(destination, true, LockType.Exclusive);
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
-                _ = txnManager.Run(true);
+                    _ = txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                createTransaction = txnManager.Run(internal_txn: true);
             }
 
             try
@@ -705,10 +700,9 @@ namespace Garnet.server
             if (txnManager.state != TxnState.Running)
             {
                 Debug.Assert(txnManager.state == TxnState.None);
-                createTransaction = true;
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
-                _ = txnManager.Run(true);
+                    _ = txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                createTransaction = txnManager.Run(internal_txn: true);
             }
 
             try
@@ -749,11 +743,10 @@ namespace Garnet.server
             if (txnManager.state != TxnState.Running)
             {
                 Debug.Assert(txnManager.state == TxnState.None);
-                createTransaction = true;
                 txnManager.SaveKeyEntryToLock(destination, true, LockType.Exclusive);
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
-                _ = txnManager.Run(true);
+                    _ = txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                createTransaction = txnManager.Run(internal_txn: true);
             }
 
             try

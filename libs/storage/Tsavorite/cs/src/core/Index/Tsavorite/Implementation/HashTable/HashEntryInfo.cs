@@ -45,7 +45,7 @@ namespace Tsavorite.core
         public readonly ushort partitionId;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal HashEntryInfo(long hash, ushort partitionId)
+        public HashEntryInfo(long hash, ushort partitionId)
         {
             firstBucket = default;
             bucket = default;

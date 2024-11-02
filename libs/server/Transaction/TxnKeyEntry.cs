@@ -83,7 +83,7 @@ namespace Garnet.server
                 return true;
             }
         }
-        public void AddKey(StoreWrapper storeWrapper, ArgSlice keyArgSlice, bool isObject, LockType type)
+        public long AddKey(StoreWrapper storeWrapper, ArgSlice keyArgSlice, bool isObject, LockType type)
         {
             var keyHash = !isObject
                 ? storeWrapper.store.GetKeyHash(keyArgSlice.SpanByte)
@@ -102,6 +102,7 @@ namespace Garnet.server
             keys[keyCount].partitionId = !isObject ? storeWrapper.store.PartitionId : storeWrapper.objectStore.PartitionId;
             keys[keyCount].lockType = type;
             ++keyCount;
+            return keyHash;
         }
 
         internal void LockAllKeys(ref KernelSession kernelSession)

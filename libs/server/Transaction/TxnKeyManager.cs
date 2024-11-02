@@ -12,10 +12,11 @@ namespace Garnet.server
         /// <summary>
         /// Save key entry
         /// </summary>
-        public void SaveKeyEntryToLock(ArgSlice key, bool isObject, LockType type)
+        /// <returns>KeyHash of the key</returns>
+        public long SaveKeyEntryToLock(ArgSlice key, bool isObject, LockType type)
         {
             UpdateTransactionStoreType(isObject ? StoreType.Object : StoreType.Main);
-            keyEntries.AddKey(respSession.storeWrapper, key, isObject, type);
+            return keyEntries.AddKey(respSession.storeWrapper, key, isObject, type);
         }
 
         /// <summary>

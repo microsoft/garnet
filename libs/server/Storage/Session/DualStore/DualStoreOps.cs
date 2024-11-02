@@ -3,9 +3,11 @@
 
 using System;
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Garnet.server
 {
@@ -227,31 +229,38 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
-            var oldKey = oldKeySlice.SpanByte;
-
+            var createTransaction = false;
             try
             {
                 // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
                 // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
+                var oldKey = oldKeySlice.SpanByte;
+                var newKey = newKeySlice.SpanByte;
 
-                var createTransaction = false;
+                long oldKeyHash, newKeyHash;
+                if (txnManager.state != TxnState.Running)
+                {
+                    oldKeyHash = txnManager.SaveKeyEntryToLock(oldKeySlice, isObject: false, LockType.Exclusive);
+                    newKeyHash = txnManager.SaveKeyEntryToLock(newKeySlice, isObject: false, LockType.Exclusive);
+                    createTransaction = txnManager.Run(internal_txn: true);
+                }
+                else
+                {
+                    oldKeyHash = dualContext.GetKeyHash(ref oldKey);
+                    newKeyHash = dualContext.GetKeyHash(ref newKey);
+                }
+
+                var oldHei = dualContext.CreateHei1(oldKeyHash);
+                var newHei = dualContext.CreateHei1(newKeyHash);
+
                 if (storeType is StoreType.Main or StoreType.All)
                 {
-                    if (txnManager.state != TxnState.Running)
-                    {
-                        createTransaction = true;
-                        txnManager.SaveKeyEntryToLock(oldKeySlice, isObject: false, LockType.Exclusive);
-                        txnManager.SaveKeyEntryToLock(newKeySlice, isObject: false, LockType.Exclusive);
-                        _ = txnManager.Run(true);
-                    }
-
-                    try
                     {
                         SpanByte input = default;
                         var output = new SpanByteAndMemory();
-                        var status = GET<TransactionalSessionLocker>(ref hei, ref oldKey, ref input, ref output);
+                        var status = GET<TransactionalSessionLocker>(ref oldHei, ref oldKey, ref input, ref output);
 
                         if (status == GarnetStatus.OK)
                         {
@@ -263,7 +272,7 @@ namespace Garnet.server
 
                             // Find expiration time of the old key
                             var expireSpan = new SpanByteAndMemory();
-                            var ttlStatus = InternalTTL<TransactionalSessionLocker>(ref hei, ref oldKey, storeType, ref expireSpan, milliseconds:true);
+                            var ttlStatus = InternalTTL<TransactionalSessionLocker>(ref oldHei, ref oldKey, storeType, ref expireSpan, milliseconds:true);
 
                             if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
                             {
@@ -283,8 +292,7 @@ namespace Garnet.server
                                         setValueSpan.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
                                         ((RespInputHeader*)(setValuePtr + sizeof(long)))->cmd = RespCommand.SETEXNX;
                                         ((RespInputHeader*)(setValuePtr + sizeof(long)))->flags = 0;
-                                        var newKey = newKeySlice.SpanByte;
-                                        var setStatus = SET_Conditional<TransactionalSessionLocker>(ref hei, ref newKey, ref setValueSpan);
+                                        var setStatus = SET_Conditional<TransactionalSessionLocker>(ref newHei, ref newKey, ref setValueSpan);
 
                                         // For SET NX `NOTFOUND` means the operation succeeded
                                         result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
@@ -292,7 +300,7 @@ namespace Garnet.server
                                     }
                                     else
                                     {
-                                        SETEX<TransactionalSessionLocker>(ref hei, newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs));
+                                        _ = SETEX<TransactionalSessionLocker>(ref newHei, newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs));
                                     }
                                 }
                                 else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
@@ -305,8 +313,7 @@ namespace Garnet.server
                                         var setValuePtr = setValueSpan.ToPointerWithMetadata();
                                         ((RespInputHeader*)setValuePtr)->cmd = RespCommand.SETEXNX;
                                         ((RespInputHeader*)setValuePtr)->flags = 0;
-                                        var newKey = newKeySlice.SpanByte;
-                                        var setStatus = SET_Conditional<TransactionalSessionLocker>(ref hei, ref newKey, ref setValueSpan);
+                                        var setStatus = SET_Conditional<TransactionalSessionLocker>(ref newHei, ref newKey, ref setValueSpan);
 
                                         // For SET NX `NOTFOUND` means the operation succeeded
                                         result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
@@ -314,9 +321,8 @@ namespace Garnet.server
                                     }
                                     else
                                     {
-                                        var newKey = newKeySlice.SpanByte;
                                         var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
-                                        _ = SET<TransactionalSessionLocker>(ref hei, ref newKey, ref value);
+                                        _ = SET<TransactionalSessionLocker>(ref newHei, ref newKey, ref value);
                                     }
                                 }
 
@@ -327,44 +333,28 @@ namespace Garnet.server
                                 // Delete the old key only when SET NX succeeded
                                 if (isNX && result == 1)
                                 {
-                                    _ = DELETE<TransactionalSessionLocker>(ref hei, ref oldKey, StoreType.Main);
+                                    _ = DELETE<TransactionalSessionLocker>(ref oldHei, ref oldKey, StoreType.Main);
                                 }
                                 else if (!isNX)
                                 {
                                     // Delete the old key
-                                    _ = DELETE<TransactionalSessionLocker>(ref hei, ref oldKey, StoreType.Main);
+                                    _ = DELETE<TransactionalSessionLocker>(ref oldHei, ref oldKey, StoreType.Main);
                                     returnStatus = GarnetStatus.OK;
                                 }
                             }
-                        }
-                    }
-                    finally
-                    {
-                        GarnetSafeEpochGuard.EndUnsafe(ref dualContext.KernelSession);
-                        if (createTransaction)
-                        {
-                            txnManager.Commit(true);
-                            createTransaction = false;
                         }
                     }
                 }
 
                 if ((storeType == StoreType.Object || storeType == StoreType.All) && dualContext.IsDual)
                 {
-                    createTransaction = false;
-                    if (txnManager.state != TxnState.Running)
-                    {
-                        createTransaction = true;
-                        txnManager.SaveKeyEntryToLock(oldKeySlice, isObject: true, LockType.Exclusive);
-                        txnManager.SaveKeyEntryToLock(newKeySlice, isObject: true, LockType.Exclusive);
-                        _ = txnManager.Run(true);
-                    }
+                    oldHei = dualContext.CreateHei1(oldKeyHash);
+                    newHei = dualContext.CreateHei1(newKeyHash);
 
-                    try
                     {
                         var oldKeyArray = oldKeySlice.ToArray();
                         GarnetObjectStoreOutput value = default;
-                        var status = GET<TransactionalSessionLocker>(ref hei, oldKeyArray, ref value);
+                        var status = GET<TransactionalSessionLocker>(ref oldHei, oldKeyArray, ref value);
 
                         if (status == GarnetStatus.OK)
                         {
@@ -377,33 +367,30 @@ namespace Garnet.server
                             {
                                 // Not using EXISTS method to avoid new allocation of Array for key
                                 GarnetObjectStoreOutput output = default;
-                                var getNewStatus = GET<TransactionalSessionLocker>(ref hei, newKeyArray, ref output);
+                                var getNewStatus = GET<TransactionalSessionLocker>(ref newHei, newKeyArray, ref output);
                                 canSetAndDelete = getNewStatus == GarnetStatus.NOTFOUND;
                             }
 
                             if (canSetAndDelete)
                             {
                                 // valObj already has expiration time, so no need to write expiration logic here
-                                _ = SET<TransactionalSessionLocker>(ref hei, newKeyArray, valObj);
+                                _ = SET<TransactionalSessionLocker>(ref newHei, newKeyArray, valObj);
 
                                 // Delete the old key
-                                _ = DELETE<TransactionalSessionLocker>(ref hei, oldKeyArray, StoreType.Object);
+                                _ = DELETE<TransactionalSessionLocker>(ref oldHei, oldKeyArray, StoreType.Object);
                                 result = 1;
                             }
                             else
                                 result = 0;
                         }
                     }
-                    finally
-                    {
-                        if (createTransaction)
-                            txnManager.Commit(true);
-                    }
                 }
             }
             finally
             {
                 GarnetSafeEpochGuard.EndUnsafe(ref dualContext.KernelSession);
+                if (createTransaction)
+                    txnManager.Commit(true);
             }
             return returnStatus;
         }

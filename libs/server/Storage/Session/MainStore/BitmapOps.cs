@@ -120,12 +120,11 @@ namespace Garnet.server
             var createTransaction = false;
             if (txnManager.state != TxnState.Running)
             {
-                createTransaction = true;
                 Debug.Assert(txnManager.state == TxnState.None);
                 txnManager.SaveKeyEntryToLock(keys[0], false, LockType.Exclusive);
                 for (var i = 1; i < keys.Length; i++)
-                    txnManager.SaveKeyEntryToLock(keys[i], false, LockType.Shared);
-                _ = txnManager.Run(true);
+                    _ = txnManager.SaveKeyEntryToLock(keys[i], false, LockType.Shared);
+                createTransaction = txnManager.Run(internal_txn: true);
             }
 
             try
