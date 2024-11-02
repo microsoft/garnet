@@ -231,5 +231,25 @@ namespace Garnet.test
             ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
             ClassicAssert.IsTrue(releasingTask.IsCompletedSuccessfully);
         }
+
+        [Test]
+        public void BasicBlockingListPopPushTest()
+        {
+            var srcKey1 = "mykey_src";
+            var dstKey1 = "mykey_dst";
+            var value1 = "myval";
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var response = lightClientRequest.SendCommand($"LPUSH {srcKey1} {value1}");
+            var expectedResponse = ":1\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand($"BRPOPLPUSH {srcKey1} {dstKey1} 10");
+            expectedResponse = $"${value1.Length}\r\n{value1}\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
     }
 }

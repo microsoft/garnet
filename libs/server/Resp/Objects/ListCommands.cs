@@ -381,6 +381,27 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// BRPOPLPUSH
+        /// </summary>
+        /// <returns></returns>
+        private bool ListBlockingPopPush()
+        {
+            if (parseState.Count != 3)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BRPOPLPUSH));
+            }
+
+            var srcKey = parseState.GetArgSliceByRef(0);
+            var dstKey = parseState.GetArgSliceByRef(1);
+            var rightOption = ArgSlice.FromPinnedSpan(CmdStrings.RIGHT);
+            var leftOption = ArgSlice.FromPinnedSpan(CmdStrings.LEFT);
+            var timeout = parseState.GetArgSliceByRef(2);
+            parseState.InitializeWithArguments(srcKey, dstKey, rightOption, leftOption, timeout);
+
+            return ListBlockingMove(RespCommand.BLMOVE);
+        }
+
+        /// <summary>
         /// LLEN key
         /// Gets the length of the list stored at key.
         /// </summary>

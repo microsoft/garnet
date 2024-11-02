@@ -72,6 +72,7 @@ namespace Garnet.test.cluster
                 new LMPOP(),
                 new BLPOP(),
                 new BLMOVE(),
+                new BRPOPLPUSH(),
                 new LLEN(),
                 new LTRIM(),
                 new LRANGE(),
@@ -94,6 +95,7 @@ namespace Garnet.test.cluster
                 new ZREM(),
                 new ZCARD(),
                 new ZRANGE(),
+                new ZREVRANGEBYLEX(),
                 new ZSCORE(),
                 new ZMSCORE(),
                 new ZPOPMAX(),
@@ -250,6 +252,7 @@ namespace Garnet.test.cluster
         [TestCase("LMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
+        [TestCase("BRPOPLPUSH")]
         [TestCase("LLEN")]
         [TestCase("LTRIM")]
         [TestCase("LRANGE")]
@@ -272,6 +275,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
+        [TestCase("ZREVRANGEBYLEX")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -388,6 +392,7 @@ namespace Garnet.test.cluster
         [TestCase("LMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
+        [TestCase("BRPOPLPUSH")]
         [TestCase("LLEN")]
         [TestCase("LTRIM")]
         [TestCase("LRANGE")]
@@ -410,6 +415,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
+        [TestCase("ZREVRANGEBYLEX")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -536,6 +542,7 @@ namespace Garnet.test.cluster
         [TestCase("LMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
+        [TestCase("BRPOPLPUSH")]
         [TestCase("LLEN")]
         [TestCase("LTRIM")]
         [TestCase("LRANGE")]
@@ -558,6 +565,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
+        [TestCase("ZREVRANGEBYLEX")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -676,6 +684,7 @@ namespace Garnet.test.cluster
         [TestCase("LMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
+        [TestCase("BRPOPLPUSH")]
         [TestCase("LLEN")]
         [TestCase("LTRIM")]
         [TestCase("LRANGE")]
@@ -698,6 +707,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
+        [TestCase("ZREVRANGEBYLEX")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -823,6 +833,7 @@ namespace Garnet.test.cluster
         [TestCase("LMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
+        [TestCase("BRPOPLPUSH")]
         [TestCase("LLEN")]
         [TestCase("LTRIM")]
         [TestCase("LRANGE")]
@@ -845,6 +856,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
+        [TestCase("ZREVRANGEBYLEX")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -987,6 +999,7 @@ namespace Garnet.test.cluster
         [TestCase("LMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
+        [TestCase("BRPOPLPUSH")]
         [TestCase("LLEN")]
         [TestCase("LTRIM")]
         [TestCase("LRANGE")]
@@ -1009,6 +1022,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
+        [TestCase("ZREVRANGEBYLEX")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]

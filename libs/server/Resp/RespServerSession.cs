@@ -637,6 +637,7 @@ namespace Garnet.server
                 RespCommand.LLEN => ListLength(ref storageApi),
                 RespCommand.LTRIM => ListTrim(ref storageApi),
                 RespCommand.LRANGE => ListRange(ref storageApi),
+                RespCommand.ZREVRANGEBYLEX => ListRangeByLength(ref storageApi),
                 RespCommand.LINDEX => ListIndex(ref storageApi),
                 RespCommand.LINSERT => ListInsert(ref storageApi),
                 RespCommand.LREM => ListRemove(ref storageApi),
@@ -647,6 +648,7 @@ namespace Garnet.server
                 RespCommand.BLPOP => ListBlockingPop(cmd),
                 RespCommand.BRPOP => ListBlockingPop(cmd),
                 RespCommand.BLMOVE => ListBlockingMove(cmd),
+                RespCommand.BRPOPLPUSH => ListBlockingPopPush(),
                 // Hash Commands
                 RespCommand.HSET => HashSet(cmd, ref storageApi),
                 RespCommand.HMSET => HashSet(cmd, ref storageApi),
