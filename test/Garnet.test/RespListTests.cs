@@ -1626,7 +1626,7 @@ namespace Garnet.test
             db.SortedSetAdd(key, "b", 0);
             db.SortedSetAdd(key, "c", 0);
             db.SortedSetAdd(key, "d", 0);
-            db.SortedSetAdd(key, "e", 0);`
+            db.SortedSetAdd(key, "e", 0);
             db.SortedSetAdd(key, "f", 0);
             db.SortedSetAdd(key, "g", 0);
 
