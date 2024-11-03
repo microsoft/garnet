@@ -17,49 +17,48 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession;
+        readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> ClientSession => sessionFunctions.ClientSession;
         internal readonly SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> sessionFunctions;
 
         /// <inheritdoc/>
-        public bool IsNull => clientSession is null;
+        public bool IsNull => ClientSession is null;
 
         internal DualItemContext(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession)
         {
-            this.clientSession = clientSession;
             sessionFunctions = new(clientSession, isDual: true);
         }
 
         /// <inheritdoc/>
-        public ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> Session => clientSession;
+        public readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> Session => ClientSession;
 
         /// <inheritdoc/>
-        public long GetKeyHash(TKey key) => clientSession.Store.GetKeyHash(ref key);
+        public readonly long GetKeyHash(TKey key) => ClientSession.Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
-        public long GetKeyHash(ref TKey key) => clientSession.Store.GetKeyHash(ref key);
+        public readonly long GetKeyHash(ref TKey key) => ClientSession.Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
-        public bool CompletePending<TKeyLocker>(bool wait = false, bool spinWaitForCommit = false)
+        public readonly bool CompletePending<TKeyLocker>(bool wait = false, bool spinWaitForCommit = false)
             where TKeyLocker : struct, ISessionLocker
         {
-            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            return clientSession.UnsafeCompletePending<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
+            Debug.Assert(ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return ClientSession.UnsafeCompletePending<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
                     sessionFunctions, false, wait, spinWaitForCommit);
         }
 
         /// <inheritdoc/>
-        public bool CompletePendingWithOutputs<TKeyLocker>(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
+        public readonly bool CompletePendingWithOutputs<TKeyLocker>(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
             where TKeyLocker : struct, ISessionLocker
         {
-            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            return clientSession.UnsafeCompletePendingWithOutputs<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
+            Debug.Assert(ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return ClientSession.UnsafeCompletePendingWithOutputs<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
                     sessionFunctions, out completedOutputs, wait, spinWaitForCommit);
         }
 
         /// <summary>
         /// Utility function to return the single pending result immediately after detecting status.IsPending
         /// </summary>
-        public (Status, TOutput output) GetSinglePendingResult<TKeyLocker>(IPendingMetrics pendingMetrics)
+        public readonly (Status, TOutput output) GetSinglePendingResult<TKeyLocker>(IPendingMetrics pendingMetrics)
             where TKeyLocker : struct, ISessionLocker
         {
             pendingMetrics?.StartPendingMetrics();
@@ -76,75 +75,75 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public ValueTask CompletePendingAsync<TKeyLocker>(bool waitForCommit = false, CancellationToken token = default)
+        public readonly ValueTask CompletePendingAsync<TKeyLocker>(bool waitForCommit = false, CancellationToken token = default)
             where TKeyLocker : struct, ISessionLocker
-            => clientSession.CompletePendingAsync<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, waitForCommit, token);
+            => ClientSession.CompletePendingAsync<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
-        public ValueTask<CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext>> CompletePendingWithOutputsAsync<TKeyLocker>(bool waitForCommit = false, CancellationToken token = default)
+        public readonly ValueTask<CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext>> CompletePendingWithOutputsAsync<TKeyLocker>(bool waitForCommit = false, CancellationToken token = default)
             where TKeyLocker : struct, ISessionLocker
-            => clientSession.CompletePendingWithOutputsAsync<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, waitForCommit, token);
+            => ClientSession.CompletePendingWithOutputsAsync<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public readonly Status Read<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
             where TKeyLocker : struct, ISessionLocker
         {
-            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            return clientSession.Store.ContextRead<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
+            Debug.Assert(ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return ClientSession.Store.ContextRead<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
                     ref hei, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status ReadAtAddress<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, bool isNoKey, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public readonly Status ReadAtAddress<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, bool isNoKey, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
             where TKeyLocker : struct, ISessionLocker
         {
-            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            return clientSession.Store.ContextReadAtAddress<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
+            Debug.Assert(ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return ClientSession.Store.ContextReadAtAddress<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
                     ref hei, ref key, isNoKey, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+        public readonly Status Upsert<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
             where TKeyLocker : struct, ISessionLocker
         {
-            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            return clientSession.Store.ContextUpsert<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
+            Debug.Assert(ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return ClientSession.Store.ContextUpsert<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
                     ref hei, ref key, ref input, ref desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+        public readonly Status RMW<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
             where TKeyLocker : struct, ISessionLocker
         {
-            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            return clientSession.Store.ContextRMW<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
+            Debug.Assert(ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return ClientSession.Store.ContextRMW<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
                     ref hei, ref key, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete<TKeyLocker>(ref HashEntryInfo hei, TKey key, TContext userContext = default)
+        public readonly Status Delete<TKeyLocker>(ref HashEntryInfo hei, TKey key, TContext userContext = default)
             where TKeyLocker : struct, ISessionLocker
             => Delete<TKeyLocker>(ref hei, ref key, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, TContext userContext = default)
+        public readonly Status Delete<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, TContext userContext = default)
             where TKeyLocker : struct, ISessionLocker
         {
-            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            return clientSession.Store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
+            Debug.Assert(ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return ClientSession.Store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
                     ref hei, ref key, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetModified<TKeyLocker>(ref HashEntryInfo hei, ref TKey key)
+        public readonly void ResetModified<TKeyLocker>(ref HashEntryInfo hei, ref TKey key)
             where TKeyLocker : struct, ISessionLocker
-            => clientSession.UnsafeResetModified<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(ref hei, sessionFunctions, ref key);
+            => ClientSession.UnsafeResetModified<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(ref hei, sessionFunctions, ref key);
     }
 }

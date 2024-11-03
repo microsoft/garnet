@@ -16,7 +16,6 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        internal readonly BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> kernelSession;
         internal readonly SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> sessionFunctions;
 
         /// <inheritdoc/>
@@ -24,14 +23,15 @@ namespace Tsavorite.core
 
         internal BasicContext(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession)
         {
-            kernelSession = new(clientSession);
             sessionFunctions = new(clientSession, isDual: false);
         }
 
         #region ITsavoriteContext
 
         /// <inheritdoc/>
-        public ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> Session => kernelSession.ClientSession;
+        public ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> Session => KernelSession.ClientSession;
+
+        private ref BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> KernelSession => ref Session.BasicKernelSession;
 
         /// <inheritdoc/>
         public long GetKeyHash(TKey key) => kernelSession.Store.GetKeyHash(ref key);
@@ -162,7 +162,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public readonly Status Read<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
@@ -170,7 +170,7 @@ namespace Tsavorite.core
                     SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>,
                     BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>,
                     TKeyLocker, TEpochGuard>
-                (ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions, ref kernelSession);
+                (ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions, ref KernelSession);
         }
 
         /// <inheritdoc/>

@@ -32,6 +32,8 @@ namespace Tsavorite.core
         readonly BasicContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> bContext;
         readonly DualItemContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> dualContext;
 
+        internal BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> BasicKernelSession;
+
         ScanCursorState<TKey, TValue> scanCursorState;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -77,6 +79,8 @@ namespace Tsavorite.core
             Store = store;
             this.ExecutionCtx = ctx;
             this.functions = functions;
+
+            BasicKernelSession = new(this);
         }
 
         /// <summary>
@@ -96,8 +100,8 @@ namespace Tsavorite.core
         {
             completedOutputs?.Dispose();
 
-            // By the time Dispose is called, we should have no outstanding locks, so can use the BasicContext's sessionFunctions.
-            _ = CompletePending<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TransientSessionLocker, TStoreFunctions, TAllocator>, NoKeyLocker>(bContext.sessionFunctions, true);
+            // By the time Dispose is called, we should have no outstanding locks, so can use the BasicContext's sessionFunctions and no locking.
+            _ = CompletePending<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, NoKeyLocker>(bContext.sessionFunctions, true);
             Store.DisposeClientSession(ID, ExecutionCtx.phase);
         }
 

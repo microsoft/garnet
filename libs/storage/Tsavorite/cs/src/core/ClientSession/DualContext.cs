@@ -35,9 +35,6 @@ namespace Tsavorite.core
         public const ushort PartitionId1 = 0;
         public const ushort PartitionId2 = 1;
 
-        // Do not create a record if not found on update (used for the first of two stores).
-        const long DoNotCreateAddress = -1;
-
         public int SessionID => KernelSession.clientSession1.ID;
 
         /// <summary>The Tsavorite kernel</summary>

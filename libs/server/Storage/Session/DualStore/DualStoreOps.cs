@@ -3,11 +3,9 @@
 
 using System;
 using System.Diagnostics;
-using System.Numerics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Garnet.server
 {

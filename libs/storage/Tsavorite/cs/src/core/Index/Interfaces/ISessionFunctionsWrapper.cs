@@ -58,7 +58,8 @@ namespace Tsavorite.core
         void ConvertOutputToHeap(ref TInput input, ref TOutput output);
         #endregion Utilities
 
-        bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
+        bool CompletePendingWithOutputs<TKeyLocker>(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
+            where TKeyLocker : struct, ISessionLocker;
 
         TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> ExecutionCtx { get; }
 
