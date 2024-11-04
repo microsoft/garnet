@@ -251,36 +251,73 @@ namespace Garnet.client
 
         Socket GetSendSocket(int millisecondsTimeout = 0)
         {
-            var ip = IPAddress.Parse(address);
-            var endPoint = new IPEndPoint(ip, port);
-
-            var socket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+            if (!IPAddress.TryParse(address, out var ip))
             {
-                NoDelay = true
-            };
-
-            if (millisecondsTimeout > 0)
-            {
-                var result = socket.BeginConnect(endPoint, null, null);
-                result.AsyncWaitHandle.WaitOne(millisecondsTimeout, true);
-
-                if (socket.Connected)
+                var hostEntries = Dns.GetHostEntry(address);
+                // Try all available DNS entries if a hostName is provided
+                foreach (var addressEntry in hostEntries.AddressList)
                 {
-                    socket.EndConnect(result);
+                    var endPoint = new IPEndPoint(addressEntry, port);
+                    if (!TryConnectSocket(endPoint, millisecondsTimeout, out var socket))
+                        continue;
+                    return socket;
                 }
-                else
-                {
-                    socket.Close();
-                    throw new Exception($"Failed to connect server {address}:{port}.");
-                }
+
+                // Reaching this point means we failed to establish connection from any of the provided addresses
+                throw new Exception($"Failed to connect at {address}:{port}");
             }
             else
             {
-                socket.Connect(endPoint);
+                var endPoint = new IPEndPoint(ip, port);
+                if (!TryConnectSocket(endPoint, millisecondsTimeout, out var socket))
+                {
+                    // If failed here then provided endpoint does not accept connections
+                    logger?.LogWarning("Failed to connect at {address}:{port}", ip.ToString(), port);
+                    throw new Exception($"Failed to connect at {ip.ToString()}:{port}");
+                }
+                return socket;
+            }
+        }
+
+        bool TryConnectSocket(IPEndPoint endPoint, int millisecondsTimeout, out Socket socket)
+        {
+            socket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+            {
+                NoDelay = true
+            };
+            try
+            {
+                if (millisecondsTimeout > 0)
+                {
+                    var result = socket.BeginConnect(endPoint, null, null);
+                    result.AsyncWaitHandle.WaitOne(millisecondsTimeout, true);
+
+                    if (socket.Connected)
+                    {
+                        socket.EndConnect(result);
+                    }
+                    else
+                    {
+                        socket.Close();
+                        throw new Exception($"Failed to connect server {address}:{port}.");
+                    }
+                }
+                else
+                {
+                    socket.Connect(endPoint);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed at GarnetClient.TryConnectSocket");
+                socket.Dispose();
+                socket = null;
+                return false;
             }
 
-            return socket;
+            return true;
         }
+
 
         async Task TimeoutChecker()
         {
