@@ -15,8 +15,7 @@ namespace Tsavorite.core
         /// In a stack context with a possible existing transient lock, unlock the transient lock, refresh, and relock.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref HashEntryInfo hei, ExecutionContext<TInput, TOutput, TContext> executionCtx)
-            where TKeyLocker : struct, ISessionLocker
+        internal void InternalRefresh<TInput, TOutput, TContext>(ref HashEntryInfo hei, ExecutionContext<TInput, TOutput, TContext> executionCtx)
         {
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
 
@@ -25,10 +24,10 @@ namespace Tsavorite.core
             switch (lockState)
             {
                 case TransientLockState.TransientSLock:
-                    TransientSUnlock<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx);
+                    TransientSUnlock<TInput, TOutput, TContext, TransientSessionLocker>(ref stackCtx);
                     break;
                 case TransientLockState.TransientXLock:
-                    TransientXUnlock<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx);
+                    TransientXUnlock<TInput, TOutput, TContext, TransientSessionLocker>(ref stackCtx);
                     break;
                 default:
                     break;
@@ -44,10 +43,10 @@ namespace Tsavorite.core
                 switch (lockState)
                 {
                     case TransientLockState.TransientSLock:
-                        TryTransientSLock<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, out internalStatus);
+                        TryTransientSLock<TInput, TOutput, TContext, TransientSessionLocker>(ref stackCtx, out internalStatus);
                         break;
                     case TransientLockState.TransientXLock:
-                        TryTransientXLock<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, out internalStatus);
+                        TryTransientXLock<TInput, TOutput, TContext, TransientSessionLocker>(ref stackCtx, out internalStatus);
                         break;
                     default:
                         break;
@@ -177,6 +176,7 @@ namespace Tsavorite.core
         internal void InternalCompletePendingRequest<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext<TKey, TValue> request,
                                                                                             CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
         {
             // Get and Remove this request.id pending dictionary if it is there.
             if (sessionFunctions.ExecutionCtx.ioPendingRequests.Remove(request.id, out var pendingContext))
@@ -198,6 +198,7 @@ namespace Tsavorite.core
         internal Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext<TKey, TValue> request,
                                                                     ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext<TKey, TValue> newRequest)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
         {
             Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquision");
             newRequest = default;

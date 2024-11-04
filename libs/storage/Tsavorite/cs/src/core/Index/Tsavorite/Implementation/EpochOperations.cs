@@ -21,7 +21,7 @@ namespace Tsavorite.core
             var version = executionCtx.version;
             Debug.Assert(executionCtx.version == version, $"sessionCtx.version ({executionCtx.version}) should == version ({version})");
             Debug.Assert(executionCtx.phase == Phase.PREPARE, $"sessionCtx.phase ({executionCtx.phase}) should == Phase.PREPARE");
-            InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref hei, executionCtx);
+            InternalRefresh(ref hei, executionCtx);
             Debug.Assert(executionCtx.version > version, $"sessionCtx.version ({executionCtx.version}) should be > version ({version})");
         }
 

@@ -37,7 +37,7 @@ namespace Tsavorite.core
                     _ = Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
-                    InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref hei, executionCtx);
+                    InternalRefresh(ref hei, executionCtx);
                     _ = Thread.Yield();
                     return true;
                 default:
@@ -59,7 +59,7 @@ namespace Tsavorite.core
                     _ = Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
-                    InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref hei, executionCtx);
+                    InternalRefresh(ref hei, executionCtx);
                     _ = Thread.Yield();
                     return true;
                 case OperationStatus.CPR_SHIFT_DETECTED:

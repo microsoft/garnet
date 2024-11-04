@@ -371,7 +371,7 @@ namespace Tsavorite.core
             where TKeyLocker: struct, ISessionLocker
         {
             Debug.Assert(kernelSession.ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            kernelSession.ClientSession.Store.InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref hei, sessionFunctions.ExecutionCtx);
+            kernelSession.ClientSession.Store.InternalRefresh(ref hei, sessionFunctions.ExecutionCtx);
         }
 
         #endregion ITsavoriteContext

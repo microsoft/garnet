@@ -144,6 +144,6 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void ResetModified<TKeyLocker>(ref HashEntryInfo hei, ref TKey key)
             where TKeyLocker : struct, ISessionLocker
-            => ClientSession.UnsafeResetModified<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(ref hei, sessionFunctions, ref key);
+            => ClientSession.UnsafeResetModified<TKeyLocker>(ref hei, sessionFunctions.ExecutionCtx, ref key);
     }
 }

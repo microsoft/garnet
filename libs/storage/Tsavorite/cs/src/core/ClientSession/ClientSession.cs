@@ -139,13 +139,12 @@ namespace Tsavorite.core
         public long GetKeyHash(ref TKey key) => Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
-        public void Refresh<TKeyLocker>(ref HashEntryInfo hei)
-            where TKeyLocker : struct, ISessionLocker
+        public void Refresh(ref HashEntryInfo hei)
         {
             UnsafeResumeThread();
             try
             {
-                Store.InternalRefresh<TInput, TOutput, TContext, TKeyLocker>(ref hei, ExecutionCtx);
+                Store.InternalRefresh(ref hei, ExecutionCtx);
             }
             finally
             {
@@ -168,14 +167,13 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal void ResetModified<TSessionFunctionsWrapper, TKeyLocker>(ref HashEntryInfo hei, TSessionFunctionsWrapper sessionFunctions, ref TKey key)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal void ResetModified<TKeyLocker>(ref HashEntryInfo hei, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> executionCtx, ref TKey key)
             where TKeyLocker: struct, ISessionLocker
         {
             UnsafeResumeThread();
             try
             {
-                UnsafeResetModified<TSessionFunctionsWrapper, TKeyLocker>(ref hei, sessionFunctions, ref key);
+                UnsafeResetModified<TKeyLocker>(ref hei, executionCtx, ref key);
             }
             finally
             {
@@ -318,21 +316,19 @@ namespace Tsavorite.core
 
         #region Other Operations
 
-        internal void UnsafeResetModified<TSessionFunctionsWrapper, TKeyLocker>(ref HashEntryInfo hei, TSessionFunctionsWrapper sessionFunctions, ref TKey key)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal void UnsafeResetModified<TKeyLocker>(ref HashEntryInfo hei, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> executionCtx, ref TKey key)
             where TKeyLocker : struct, ISessionLocker
         {
             OperationStatus status;
             do
                 status = Store.InternalModifiedBitOperation(ref key, out _);
-            while (Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref hei, status, sessionFunctions.ExecutionCtx));
+            while (Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref hei, status, executionCtx));
         }
 
         /// <inheritdoc/>
-        internal unsafe void ResetModified<TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, TKey key)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal unsafe void ResetModified<TKeyLocker>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> executionCtx, TKey key)
             where TKeyLocker : struct, ISessionLocker
-            => ResetModified<TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, ref key);
+            => ResetModified<TKeyLocker>(executionCtx, ref key);
 
         /// <summary>
         /// Wait for commit of all operations completed until the current point in session.
@@ -489,7 +485,6 @@ namespace Tsavorite.core
             Debug.Assert(Store.Kernel.Epoch.ThisInstanceProtected());
             Store.Kernel.Epoch.Suspend();
         }
-
 
         public void HandleImmediateNonPendingRetryStatus(bool refresh)
             => Store.HandleImmediateNonPendingRetryStatus(refresh ? OperationStatus.RETRY_LATER : OperationStatus.RETRY_NOW, ExecutionCtx);

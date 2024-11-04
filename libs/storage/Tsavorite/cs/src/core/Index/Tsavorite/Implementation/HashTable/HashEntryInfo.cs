@@ -11,8 +11,11 @@ namespace Tsavorite.core
     /// <summary>Transient lock state, if any</summary>
     public enum TransientLockState
     {
+        /// <summary>No lock is held</summary>
         None = 0,
+        /// <summary>A transient shared lock is held</summary>
         TransientSLock,
+        /// <summary>A transient exclusive lock is held</summary>
         TransientXLock
     }
 

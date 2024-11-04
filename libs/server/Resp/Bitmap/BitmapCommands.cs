@@ -112,8 +112,9 @@ namespace Garnet.server
         /// The bit is either set or cleared depending on value, which can be either 0 or 1.
         /// When key does not exist, a new key is created.The key is grown to make sure it can hold a bit at offset.
         /// </summary>
-        private bool NetworkStringSetBit<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private bool NetworkStringSetBit<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count != 3)
             {
@@ -132,7 +133,7 @@ namespace Garnet.server
             var bSetValSlice = parseState.GetArgSliceByRef(2);
             Debug.Assert(bSetValSlice.length == 1);
             var bSetVal = (byte)(bSetValSlice.ReadOnlySpan[0] - '0');
-            Debug.Assert(bSetVal == 0 || bSetVal == 1);
+            Debug.Assert(bSetVal is 0 or 1);
 
             #region SetBitCmdInput
             //4 byte length of input
@@ -140,29 +141,26 @@ namespace Garnet.server
             //1 byte RespInputFlags
             //8 byte bit offset
             //1 byte set/clear bit
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long) + sizeof(byte);
-            byte* pbCmdInput = stackalloc byte[inputSize];
+            var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long) + sizeof(byte);
+            var pbCmdInput = stackalloc byte[inputSize];
 
             ///////////////
             //Build Input//
             ///////////////
-            byte* pcurr = pbCmdInput;
+            var pcurr = pbCmdInput;
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
             //1. header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.SETBIT;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
+            (*(RespInputHeader*)pcurr).cmd = RespCommand.SETBIT;
+            (*(RespInputHeader*)pcurr).flags = 0;
             pcurr += RespInputHeader.Size;
             //2. cmd args
-            *(long*)(pcurr) = bOffset; pcurr += sizeof(long);
+            *(long*)pcurr = bOffset; pcurr += sizeof(long);
             *pcurr = bSetVal;
             #endregion
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.StringSetBit(
-                ref sbKey,
-                ref Unsafe.AsRef<SpanByte>(pbCmdInput),
-                ref o);
+            var status = storageApi.StringSetBit<TKeyLocker, TEpochGuard>(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
             if (status == GarnetStatus.OK)
                 dcurr += o.Length;
@@ -173,13 +171,12 @@ namespace Garnet.server
         /// <summary>
         /// Returns the bit value at offset in the key stored.
         /// </summary>
-        private bool NetworkStringGetBit<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private bool NetworkStringGetBit<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count != 2)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETBIT));
-            }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
@@ -195,25 +192,25 @@ namespace Garnet.server
             //1 byte RespCommand
             //1 byte RespInputFlags
             //8 byte bit offset
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long);
-            byte* pbCmdInput = stackalloc byte[inputSize];
+            var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long);
+            var pbCmdInput = stackalloc byte[inputSize];
 
             ///////////////
             //Build Input//
             ///////////////
-            byte* pcurr = pbCmdInput;
+            var pcurr = pbCmdInput;
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
             //1. header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.GETBIT;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
+            (*(RespInputHeader*)pcurr).cmd = RespCommand.GETBIT;
+            (*(RespInputHeader*)pcurr).flags = 0;
             pcurr += RespInputHeader.Size;
             //2. cmd args
-            *(long*)(pcurr) = bOffset;
+            *(long*)pcurr = bOffset;
             #endregion
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.StringGetBit(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+            var status = storageApi.StringGetBit<TKeyLocker, TEpochGuard>(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
             if (status == GarnetStatus.NOTFOUND)
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -228,14 +225,13 @@ namespace Garnet.server
         /// Count the number of set bits in a key. 
         /// It can be specified an interval for counting, passing the start and end arguments.
         /// </summary>
-        private bool NetworkStringBitCount<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private bool NetworkStringBitCount<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             var count = parseState.Count;
-            if (count < 1 || count > 4)
-            {
+            if (count is < 1 or > 4)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITCOUNT));
-            }
 
             //<[Get Key]>
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -266,28 +262,28 @@ namespace Garnet.server
             //1 byte RespInputFlags
             //8 byte bit startOffset
             //8 byte bit endOffset
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long) + sizeof(long) + sizeof(byte);
-            byte* pbCmdInput = stackalloc byte[inputSize];
+            var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long) + sizeof(long) + sizeof(byte);
+            var pbCmdInput = stackalloc byte[inputSize];
 
             ///////////////
             //Build Input//
             ///////////////
-            byte* pcurr = pbCmdInput;
+            var pcurr = pbCmdInput;
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
             //1. header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.BITCOUNT;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
+            (*(RespInputHeader*)pcurr).cmd = RespCommand.BITCOUNT;
+            (*(RespInputHeader*)pcurr).flags = 0;
             pcurr += RespInputHeader.Size;
             //2. cmd args
-            *(long*)(pcurr) = startOffset; pcurr += 8;
-            *(long*)(pcurr) = endOffset; pcurr += 8;
+            *(long*)pcurr = startOffset; pcurr += 8;
+            *(long*)pcurr = endOffset; pcurr += 8;
             *pcurr = bitOffsetType;
             #endregion
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.StringBitCount(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+            var status = storageApi.StringBitCount<TKeyLocker, TEpochGuard>(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -308,14 +304,13 @@ namespace Garnet.server
         /// <summary>
         /// Returns the position of the first bit set to 1 or 0 in a key.
         /// </summary>
-        private bool NetworkStringBitPosition<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private bool NetworkStringBitPosition<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             var count = parseState.Count;
-            if (count < 2 || count > 5)
-            {
+            if (count is < 2 or > 5)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS));
-            }
 
             //<[Get Key]>
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -323,7 +318,7 @@ namespace Garnet.server
             var bSetValSlice = parseState.GetArgSliceByRef(1);
             Debug.Assert(bSetValSlice.length == 1);
             var bSetVal = (byte)(bSetValSlice.ReadOnlySpan[0] - '0');
-            Debug.Assert(bSetVal == 0 || bSetVal == 1);
+            Debug.Assert(bSetVal is 0 or 1);
 
             //Process offsets here if they exist
             var startOffset = 0; // default is at the start of bitmap array
@@ -353,29 +348,29 @@ namespace Garnet.server
             //1 byte setVal
             //8 byte bit startOffset
             //8 byte bit endOffset
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(byte) + sizeof(long) + sizeof(long) + sizeof(byte);
-            byte* pbCmdInput = stackalloc byte[inputSize];
+            var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(byte) + sizeof(long) + sizeof(long) + sizeof(byte);
+            var pbCmdInput = stackalloc byte[inputSize];
 
             ///////////////
             //Build Input//
             ///////////////
-            byte* pcurr = pbCmdInput;
+            var pcurr = pbCmdInput;
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
             //1. header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.BITPOS;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
+            (*(RespInputHeader*)pcurr).cmd = RespCommand.BITPOS;
+            (*(RespInputHeader*)pcurr).flags = 0;
             pcurr += RespInputHeader.Size;
             //2. cmd args
-            *(byte*)(pcurr) = bSetVal; pcurr++;
-            *(long*)(pcurr) = startOffset; pcurr += 8;
-            *(long*)(pcurr) = endOffset; pcurr += 8;
+            *pcurr = bSetVal; pcurr++;
+            *(long*)pcurr = startOffset; pcurr += 8;
+            *(long*)pcurr = endOffset; pcurr += 8;
             *pcurr = bitOffsetType;
             #endregion
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.StringBitPosition(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+            var status = storageApi.StringBitPosition<TKeyLocker, TEpochGuard>(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -397,8 +392,7 @@ namespace Garnet.server
         /// <summary>
         /// Performs bitwise operations on multiple strings and store the result.
         /// </summary>
-        private bool NetworkStringBitOperation<TGarnetApi>(BitmapOperation bitop, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private bool NetworkStringBitOperation(BitmapOperation bitop, ref GarnetApi storageApi)
         {
             // Too few keys
             if (parseState.Count < 2)
@@ -426,13 +420,12 @@ namespace Garnet.server
         /// <summary>
         /// Performs arbitrary bitfield integer operations on strings.
         /// </summary>
-        private bool StringBitField<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private bool StringBitField<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count < 1)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITFIELD));
-            }
 
             // BITFIELD key [GET encoding offset] [SET encoding offset value] [INCRBY encoding offset increment] [OVERFLOW WRAP| SAT | FAIL]
             //Extract Key//
@@ -442,7 +435,7 @@ namespace Garnet.server
             var secondaryCmdCount = 0;
             var overFlowType = (byte)BitFieldOverflow.WRAP;
 
-            List<BitFieldCmdArgs> bitfieldArgs = new();
+            List<BitFieldCmdArgs> bitfieldArgs = [];
             byte secondaryOPcode = default;
             byte encodingInfo = default;
             long offset = default;
@@ -509,14 +502,14 @@ namespace Garnet.server
                 }
 
                 //Identify sign for number
-                byte sign = encodingArg.StartsWith('i') ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
+                var sign = encodingArg.StartsWith('i') ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
                 //Number of bits in signed number
-                byte bitCount = (byte)int.Parse(encodingArg.AsSpan(1));
+                var bitCount = (byte)int.Parse(encodingArg.AsSpan(1));
                 //At most 64 bits can fit into encoding info
                 encodingInfo = (byte)(sign | bitCount);
 
                 //Calculate number offset from bitCount if offsetArg starts with #
-                bool offsetType = offsetArg.StartsWith('#');
+                var offsetType = offsetArg.StartsWith('#');
 
                 offset = offsetType ? long.Parse(offsetArg.AsSpan(1)) : long.Parse(offsetArg);
                 offset = offsetType ? (offset * bitCount) : offset;
@@ -546,8 +539,8 @@ namespace Garnet.server
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
             //1. header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.BITFIELD;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
+            (*(RespInputHeader*)pcurr).cmd = RespCommand.BITFIELD;
+            (*(RespInputHeader*)pcurr).flags = 0;
             pcurr += RespInputHeader.Size;
 
             for (var i = 0; i < secondaryCmdCount; i++)
@@ -569,7 +562,7 @@ namespace Garnet.server
                 *pcurr = bitfieldArgs[i].overflowType;
 
                 var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.StringBitField(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), bitfieldArgs[i].secondaryOpCode, ref output);
+                var status = storageApi.StringBitField<TKeyLocker, TEpochGuard>(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), bitfieldArgs[i].secondaryOpCode, ref output);
 
                 if (status == GarnetStatus.NOTFOUND && bitfieldArgs[i].secondaryOpCode == (byte)RespCommand.GET)
                 {
@@ -591,8 +584,9 @@ namespace Garnet.server
         /// <summary>
         /// Performs arbitrary read-only bitfield integer operations
         /// </summary>
-        private bool StringBitFieldReadOnly<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private bool StringBitFieldReadOnly<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             //BITFIELD key [GET encoding offset] [SET encoding offset value] [INCRBY encoding offset increment] [OVERFLOW WRAP| SAT | FAIL]
             //Extract Key//
@@ -603,12 +597,12 @@ namespace Garnet.server
             var secondaryCmdCount = 0;
             var overFlowType = (byte)BitFieldOverflow.WRAP;
 
-            List<BitFieldCmdArgs> bitfieldArgs = new();
+            List<BitFieldCmdArgs> bitfieldArgs = [];
             byte secondaryOPcode = default;
             byte encodingInfo = default;
             long offset = default;
             long value = default;
-            bool writeError = false;
+            var writeError = false;
             while (currCount < parseState.Count)
             {
                 //process overflow command
@@ -662,13 +656,13 @@ namespace Garnet.server
                 }
 
                 //Identify sign for number
-                byte sign = encoding.StartsWith('i') ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
+                var sign = encoding.StartsWith('i') ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
                 //Number of bits in signed number
-                byte bitCount = (byte)int.Parse(encoding.AsSpan(1));
+                var bitCount = (byte)int.Parse(encoding.AsSpan(1));
                 encodingInfo = (byte)(sign | bitCount);
 
                 //Calculate number offset from bitCount if offsetArg starts with #
-                bool offsetType = offsetArg.StartsWith('#');
+                var offsetType = offsetArg.StartsWith('#');
                 offset = offsetType ? long.Parse(offsetArg.AsSpan(1)) : long.Parse(offsetArg);
                 offset = offsetType ? (offset * bitCount) : offset;
 
@@ -706,8 +700,8 @@ namespace Garnet.server
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
             //1. header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.BITFIELD;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
+            (*(RespInputHeader*)pcurr).cmd = RespCommand.BITFIELD;
+            (*(RespInputHeader*)pcurr).flags = 0;
             pcurr += RespInputHeader.Size;
 
             for (var i = 0; i < secondaryCmdCount; i++)
@@ -730,7 +724,7 @@ namespace Garnet.server
 
                 var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-                var status = storageApi.StringBitFieldReadOnly(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), bitfieldArgs[i].secondaryOpCode, ref output);
+                var status = storageApi.StringBitFieldReadOnly<TKeyLocker, TEpochGuard>(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), bitfieldArgs[i].secondaryOpCode, ref output);
 
                 if (status == GarnetStatus.NOTFOUND && bitfieldArgs[i].secondaryOpCode == (byte)RespCommand.GET)
                 {
