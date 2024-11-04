@@ -70,27 +70,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthLockableKeyStruct(TKey key, LockType lockType, ITsavoriteContext<TKey> context, ushort partitionId = 0) : this(ref key, lockType, context, partitionId) { }
+        public FixedLengthLockableKeyStruct(TKey key, long keyHash, LockType lockType, ushort partitionId = 0) : this(ref key, keyHash, lockType, partitionId) { }
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthLockableKeyStruct(ref TKey key, LockType lockType, ITsavoriteContext<TKey> context, ushort partitionId = 0)
-        {
-            Key = key;
-            LockType = lockType;
-            KeyHash = context.GetKeyHash(ref key);
-            PartitionId = partitionId;
-        }
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        public FixedLengthLockableKeyStruct(TKey key, long keyHash, LockType lockType, ILockableContext<TKey> context, ushort partitionId = 0) : this(ref key, keyHash, lockType, context, partitionId) { }
-
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        public FixedLengthLockableKeyStruct(ref TKey key, long keyHash, LockType lockType, ILockableContext<TKey> context, ushort partitionId = 0)
+        public FixedLengthLockableKeyStruct(ref TKey key, long keyHash, LockType lockType, ushort partitionId = 0)
         {
             Key = key;
             KeyHash = keyHash;

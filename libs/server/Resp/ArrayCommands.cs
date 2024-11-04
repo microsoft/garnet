@@ -288,14 +288,10 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkDBSIZE<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
-            where TKeyLocker : struct, ISessionLocker
-            where TEpochGuard : struct, IGarnetEpochGuard
+        private bool NetworkDBSIZE(ref GarnetApi storageApi)
         {
             if (parseState.Count != 0)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.DBSIZE));
-            }
 
             while (!RespWriteUtils.WriteInteger(storageApi.GetDbSize(), ref dcurr, dend))
                 SendAndReset();
@@ -303,14 +299,10 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkKEYS<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
-            where TKeyLocker : struct, ISessionLocker
-            where TEpochGuard : struct, IGarnetEpochGuard
+        private bool NetworkKEYS(ref GarnetApi storageApi)
         {
             if (parseState.Count != 1)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.KEYS));
-            }
 
             // Read pattern for keys filter
             var patternSlice = parseState.GetArgSliceByRef(0);
@@ -339,9 +331,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSCAN<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
-            where TKeyLocker : struct, ISessionLocker
-            where TEpochGuard : struct, IGarnetEpochGuard
+        private bool NetworkSCAN(ref GarnetApi storageApi)
         {
             if (parseState.Count < 1)
                 return AbortWithWrongNumberOfArguments("SCAN");

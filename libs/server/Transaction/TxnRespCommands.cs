@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -178,7 +179,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="type">Store type that's bein gwatch</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool CommonWATCH(StoreType type)
+        private bool CommonWATCH<TKeyLocker, TEpochGuard>(StoreType type)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             var count = parseState.Count;
             // Have to provide at least one key
@@ -186,12 +189,10 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.GenericErrWrongNumArgs, ref dcurr, dend))
                     SendAndReset();
-
                 return true;
             }
 
             List<ArgSlice> keys = [];
-
             for (var c = 0; c < count; c++)
             {
                 var nextKey = parseState.GetArgSliceByRef(c);
@@ -199,9 +200,7 @@ namespace Garnet.server
             }
 
             foreach (var toWatch in keys)
-            {
-                txnManager.Watch(toWatch, type);
-            }
+                txnManager.Watch<TKeyLocker, TEpochGuard>(toWatch, type);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -212,20 +211,26 @@ namespace Garnet.server
         /// <summary>
         /// WATCH MS key [key ..]
         /// </summary>
-        private bool NetworkWATCH_MS()
-        => CommonWATCH(StoreType.Main);
+        private bool NetworkWATCH_MS<TKeyLocker, TEpochGuard>()
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => CommonWATCH<TKeyLocker, TEpochGuard>(StoreType.Main);
 
         /// <summary>
         /// WATCH OS key [key ..]
         /// </summary>
-        private bool NetworkWATCH_OS()
-        => CommonWATCH(StoreType.Object);
+        private bool NetworkWATCH_OS<TKeyLocker, TEpochGuard>()
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => CommonWATCH<TKeyLocker, TEpochGuard>(StoreType.Object);
 
         /// <summary>
         /// Watch key [key ...]
         /// </summary>
-        private bool NetworkWATCH()
-        => CommonWATCH(StoreType.All);
+        private bool NetworkWATCH<TKeyLocker, TEpochGuard>()
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            => CommonWATCH<TKeyLocker, TEpochGuard>(StoreType.All);
 
         /// <summary>
         /// UNWATCH
@@ -233,9 +238,8 @@ namespace Garnet.server
         private bool NetworkUNWATCH()
         {
             if (txnManager.state == TxnState.None)
-            {
                 txnManager.watchContainer.Reset();
-            }
+
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;

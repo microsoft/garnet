@@ -23,56 +23,70 @@ namespace Garnet.server
 
         #region GET
         /// <inheritdoc />
-        public GarnetStatus GET(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+        public GarnetStatus GET<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
-            return garnetApi.GET(ref key, ref input, ref output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(new ArgSlice(ref key), StoreType.Main);
+            return garnetApi.GET<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus GETForMemoryResult(ArgSlice key, out MemoryResult<byte> value)
+        public GarnetStatus GETForMemoryResult<TKeyLocker, TEpochGuard>(ArgSlice key, out MemoryResult<byte> value)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.GETForMemoryResult(key, out value);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Main);
+            return garnetApi.GETForMemoryResult<TKeyLocker, TEpochGuard>(key, out value);
         }
 
         /// <inheritdoc />
-        public GarnetStatus GET(ArgSlice key, out ArgSlice value)
+        public GarnetStatus GET<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice value)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.GET(key, out value);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Main);
+            return garnetApi.GET<TKeyLocker, TEpochGuard>(key, out value);
         }
 
         /// <inheritdoc />
-        public GarnetStatus GET(byte[] key, out GarnetObjectStoreOutput value)
+        public GarnetStatus GET<TKeyLocker, TEpochGuard>(byte[] key, out GarnetObjectStoreOutput value)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.GET(key, out value);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.GET<TKeyLocker, TEpochGuard>(key, out value);
         }
         #endregion
 
         #region GETRANGE
         /// <inheritdoc />
-        public GarnetStatus GETRANGE(ref SpanByte key, int sliceStart, int sliceLength, ref SpanByteAndMemory output)
+        public GarnetStatus GETRANGE<TKeyLocker, TEpochGuard>(ref SpanByte key, int sliceStart, int sliceLength, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
-            return garnetApi.GETRANGE(ref key, sliceStart, sliceLength, ref output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(new ArgSlice(ref key), StoreType.Main);
+            return garnetApi.GETRANGE<TKeyLocker, TEpochGuard>(ref key, sliceStart, sliceLength, ref output);
         }
         #endregion
 
         #region TTL
         /// <inheritdoc />
-        public GarnetStatus TTL(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
+        public GarnetStatus TTL<TKeyLocker, TEpochGuard>(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(new ArgSlice(ref key), storeType);
-            return garnetApi.TTL(ref key, storeType, ref output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(new ArgSlice(ref key), storeType);
+            return garnetApi.TTL<TKeyLocker, TEpochGuard>(ref key, storeType, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus PTTL(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
+        public GarnetStatus PTTL<TKeyLocker, TEpochGuard>(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(new ArgSlice(ref key), storeType);
-            return garnetApi.PTTL(ref key, storeType, ref output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(new ArgSlice(ref key), storeType);
+            return garnetApi.PTTL<TKeyLocker, TEpochGuard>(ref key, storeType, ref output);
         }
 
         #endregion
@@ -80,104 +94,131 @@ namespace Garnet.server
         #region SortedSet Methods
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLength(ArgSlice key, out int zcardCount)
+        public GarnetStatus SortedSetLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int zcardCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetLength(key, out zcardCount);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SortedSetLength<TKeyLocker, TEpochGuard>(key, out zcardCount);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetLength(key, ref input, out output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SortedSetLength<TKeyLocker, TEpochGuard>(key, ref input, out output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        public GarnetStatus SortedSetCount<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetCount(key, ref input, ref output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SortedSetCount<TKeyLocker, TEpochGuard>(key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLengthByValue(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetLengthByValue<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetLengthByValue(key, ref input, out output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SortedSetLengthByValue<TKeyLocker, TEpochGuard>(key, ref input, out output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetRandomMember<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetRandomMember(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SortedSetRandomMember<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetRange<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetRange(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SortedSetRange<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetScore(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetScore<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetScore(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SortedSetScore<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetScores(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetScores<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetScores(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SortedSetScores<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRank(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetRank<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetRank(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SortedSetRank<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRank(ArgSlice key, ArgSlice member, bool reverse, out long? rank)
+        public GarnetStatus SortedSetRank<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice member, bool reverse, out long? rank)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetRank(key, member, reverse, out rank);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SortedSetRank<TKeyLocker, TEpochGuard>(key, member, reverse, out rank);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRange(ArgSlice key, ArgSlice min, ArgSlice max, SortedSetOrderOperation sortedSetOrderOperation, out ArgSlice[] elements, out string error, bool withScores = false, bool reverse = false, (string, int) limit = default)
+        public GarnetStatus SortedSetRange<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice min, ArgSlice max, SortedSetOrderOperation sortedSetOrderOperation, out ArgSlice[] elements, out string error, bool withScores = false, bool reverse = false, (string, int) limit = default)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetRange(key, min, max, sortedSetOrderOperation, out elements, out error, withScores, reverse, limit);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SortedSetRange<TKeyLocker, TEpochGuard>(key, min, max, sortedSetOrderOperation, out elements, out error, withScores, reverse, limit);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetDifference(ArgSlice[] keys, out Dictionary<byte[], double> pairs)
+        public GarnetStatus SortedSetDifference<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out Dictionary<byte[], double> pairs)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             foreach (var key in keys)
-            {
-                garnetApi.WATCH(key, StoreType.Object);
-            }
+                garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+
             return garnetApi.SortedSetDifference(keys, out pairs);
         }
 
         /// <inheritdoc />
-        public GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus GeoCommands<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.GeoCommands(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.GeoCommands<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+        public GarnetStatus SortedSetScan<TKeyLocker, TEpochGuard>(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetScan(key, cursor, match, count, out items);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SortedSetScan<TKeyLocker, TEpochGuard>(key, cursor, match, count, out items);
         }
 
         #endregion
@@ -185,31 +226,39 @@ namespace Garnet.server
         #region List Methods
 
         /// <inheritdoc />
-        public GarnetStatus ListLength(ArgSlice key, out int count)
+        public GarnetStatus ListLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.ListLength(key, out count);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.ListLength<TKeyLocker, TEpochGuard>(key, out count);
         }
 
         /// <inheritdoc />
-        public GarnetStatus ListLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus ListLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.ListLength(key, ref input, out output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.ListLength<TKeyLocker, TEpochGuard>(key, ref input, out output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus ListRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus ListRange<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.ListRange(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.ListRange<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus ListIndex(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus ListIndex<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.ListIndex(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.ListIndex<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
         #endregion
@@ -217,74 +266,86 @@ namespace Garnet.server
         #region Set Methods
 
         /// <inheritdoc />
-        public GarnetStatus SetLength(ArgSlice key, out int scardCount)
+        public GarnetStatus SetLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int scardCount)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SetLength(key, out scardCount);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SetLength<TKeyLocker, TEpochGuard>(key, out scardCount);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SetLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SetLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SetLength(key, ref input, out output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SetLength<TKeyLocker, TEpochGuard>(key, ref input, out output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SetMembers(ArgSlice key, out ArgSlice[] members)
+        public GarnetStatus SetMembers<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice[] members)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SetMembers(key, out members);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SetMembers<TKeyLocker, TEpochGuard>(key, out members);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SetIsMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SetIsMember<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SetIsMember(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SetIsMember<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SetMembers(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SetMembers<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SetMembers(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SetMembers<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+        public GarnetStatus SetScan<TKeyLocker, TEpochGuard>(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SetScan(key, cursor, match, count, out items);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.SetScan<TKeyLocker, TEpochGuard>(key, cursor, match, count, out items);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SetUnion(ArgSlice[] keys, out HashSet<byte[]> output)
+        public GarnetStatus SetUnion<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out HashSet<byte[]> output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             foreach (var key in keys)
-            {
-                garnetApi.WATCH(key, StoreType.Object);
-            }
+                garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
             return garnetApi.SetUnion(keys, out output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SetIntersect(ArgSlice[] keys, out HashSet<byte[]> output)
+        public GarnetStatus SetIntersect<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out HashSet<byte[]> output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             foreach (var key in keys)
-            {
-                garnetApi.WATCH(key, StoreType.Object);
-            }
+                garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
             return garnetApi.SetIntersect(keys, out output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> output)
+        public GarnetStatus SetDiff<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out HashSet<byte[]> output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             foreach (var key in keys)
-            {
-                garnetApi.WATCH(key, StoreType.Object);
-            }
+                garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
             return garnetApi.SetDiff(keys, out output);
         }
         #endregion
@@ -292,120 +353,154 @@ namespace Garnet.server
         #region Hash Methods
 
         /// <inheritdoc />
-        public GarnetStatus HashGet(ArgSlice key, ArgSlice field, out ArgSlice value)
+        public GarnetStatus HashGet<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, out ArgSlice value)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGet(key, field, out value);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashGet<TKeyLocker, TEpochGuard>(key, field, out value);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashGetMultiple(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
+        public GarnetStatus HashGetMultiple<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGetMultiple(key, fields, out values);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashGetMultiple<TKeyLocker, TEpochGuard>(key, fields, out values);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashGetAll(ArgSlice key, out ArgSlice[] values)
+        public GarnetStatus HashGetAll<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice[] values)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGetAll(key, out values);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashGetAll<TKeyLocker, TEpochGuard>(key, out values);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashLength(ArgSlice key, out int count)
+        public GarnetStatus HashLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashLength(key, out count);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashLength<TKeyLocker, TEpochGuard>(key, out count);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashExists(ArgSlice key, ArgSlice field, out bool exists)
+        public GarnetStatus HashExists<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, out bool exists)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashExists(key, field, out exists);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashExists<TKeyLocker, TEpochGuard>(key, field, out exists);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashRandomField(ArgSlice key, int count, bool withValues, out ArgSlice[] fields)
+        public GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(ArgSlice key, int count, bool withValues, out ArgSlice[] fields)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashRandomField(key, count, withValues, out fields);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashRandomField<TKeyLocker, TEpochGuard>(key, count, withValues, out fields);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashRandomField(ArgSlice key, out ArgSlice field)
+        public GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice field)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashRandomField(key, out field);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashRandomField<TKeyLocker, TEpochGuard>(key, out field);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashRandomField(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashRandomField(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashRandomField<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashGet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashGet<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGet(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashGet<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
-        public GarnetStatus HashGetAll(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashGetAll<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGetAll(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashGetAll<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
-        public GarnetStatus HashGetMultiple(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashGetMultiple<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGetMultiple(key, ref input, ref outputFooter);
-        }
-
-        /// <inheritdoc />
-        public GarnetStatus HashStrLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-        {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashStrLength(key, ref input, out output);
-        }
-
-        /// <inheritdoc />
-        public GarnetStatus HashExists(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-        {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashExists(key, ref input, out output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashGetMultiple<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashKeys(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashStrLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashKeys(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashStrLength<TKeyLocker, TEpochGuard>(key, ref input, out output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashVals(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashExists<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashVals(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashExists<TKeyLocker, TEpochGuard>(key, ref input, out output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus HashKeys<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashLength(key, ref input, out output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashKeys<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+        public GarnetStatus HashVals<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashScan(key, cursor, match, count, out items);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashVals<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus HashLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+        {
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashLength<TKeyLocker, TEpochGuard>(key, ref input, out output);
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus HashScan<TKeyLocker, TEpochGuard>(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+        {
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Object);
+            return garnetApi.HashScan<TKeyLocker, TEpochGuard>(key, cursor, match, count, out items);
         }
 
         #endregion
@@ -413,45 +508,57 @@ namespace Garnet.server
         #region Bitmap Methods
 
         /// <inheritdoc />
-        public GarnetStatus StringGetBit(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+        public GarnetStatus StringGetBit<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
-            return garnetApi.StringGetBit(ref key, ref input, ref output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(new ArgSlice(ref key), StoreType.Main);
+            return garnetApi.StringGetBit<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus StringGetBit(ArgSlice key, ArgSlice offset, out bool bValue)
+        public GarnetStatus StringGetBit<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice offset, out bool bValue)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.StringGetBit(key, offset, out bValue);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Main);
+            return garnetApi.StringGetBit<TKeyLocker, TEpochGuard>(key, offset, out bValue);
         }
 
         /// <inheritdoc />
-        public GarnetStatus StringBitCount(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitCount<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
-            return garnetApi.StringBitCount(ref key, ref input, ref output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(new ArgSlice(ref key), StoreType.Main);
+            return garnetApi.StringBitCount<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus StringBitCount(ArgSlice key, long start, long end, out long result, bool useBitInterval = false)
+        public GarnetStatus StringBitCount<TKeyLocker, TEpochGuard>(ArgSlice key, long start, long end, out long result, bool useBitInterval = false)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.StringBitCount(key, start, end, out result, useBitInterval);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Main);
+            return garnetApi.StringBitCount<TKeyLocker, TEpochGuard>(key, start, end, out result, useBitInterval);
         }
 
         /// <inheritdoc />
-        public GarnetStatus StringBitPosition(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitPosition<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
-            return garnetApi.StringBitPosition(ref key, ref input, ref output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(new ArgSlice(ref key), StoreType.Main);
+            return garnetApi.StringBitPosition<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitFieldReadOnly<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
-            return garnetApi.StringBitFieldReadOnly(ref key, ref input, secondaryCommand, ref output);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(new ArgSlice(ref key), StoreType.Main);
+            return garnetApi.StringBitFieldReadOnly<TKeyLocker, TEpochGuard>(ref key, ref input, secondaryCommand, ref output);
         }
 
         #endregion
@@ -459,23 +566,23 @@ namespace Garnet.server
         #region HLL Methods
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error)
+        public GarnetStatus HyperLogLogLength<TKeyLocker, TEpochGuard>(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             foreach (var key in keys)
-            {
-                garnetApi.WATCH(key, StoreType.Main);
-            }
-            return garnetApi.HyperLogLogLength(keys, ref input, out count, out error);
+                garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Main);
+            return garnetApi.HyperLogLogLength<TKeyLocker, TEpochGuard>(keys, ref input, out count, out error);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, out long count)
+        public GarnetStatus HyperLogLogLength<TKeyLocker, TEpochGuard>(Span<ArgSlice> keys, out long count)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             foreach (var key in keys)
-            {
-                garnetApi.WATCH(key, StoreType.Main);
-            }
-            return garnetApi.HyperLogLogLength(keys, out count);
+                garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.Main);
+            return garnetApi.HyperLogLogLength<TKeyLocker, TEpochGuard>(keys, out count);
         }
 
         #endregion
@@ -522,10 +629,12 @@ namespace Garnet.server
 
         #region Common Methods
 
-        public GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus ObjectScan<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            garnetApi.WATCH(key, StoreType.All);
-            return garnetApi.ObjectScan(key, ref input, ref outputFooter);
+            garnetApi.WATCH<TKeyLocker, TEpochGuard>(key, StoreType.All);
+            return garnetApi.ObjectScan<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
         }
 
         #endregion

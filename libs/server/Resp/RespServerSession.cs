@@ -75,8 +75,8 @@ namespace Garnet.server
         byte* dcurr, dend;
         bool toDispose;
 
-        internal GarnetApi storageApi;
         internal StorageSession storageSession;
+        internal GarnetApi garnetApi;
 
         int opCount;
 
@@ -188,8 +188,8 @@ namespace Garnet.server
 
             // Create storage session and API
             this.storageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger);
+            this.garnetApi = new GarnetApi(storageSession);
 
-            this.storageApi = new GarnetApi(storageSession);
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
             this._authenticator = authenticator ?? storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
@@ -203,7 +203,7 @@ namespace Garnet.server
             txnManager = new TransactionManager(storeWrapper.TsavoriteKernel, this, storageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger);
             storageSession.txnManager = txnManager;
 
-            clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._user, sessionMetrics, basicGarnetApi, networkSender, logger);
+            clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._user, sessionMetrics, garnetApi, networkSender, logger);
             clusterSession?.SetUser(this._user);
             sessionScriptCache?.SetUser(this._user);
 
@@ -250,7 +250,6 @@ namespace Garnet.server
         }
 
         public int StoreSessionID => storageSession.SessionID;
-        public int ObjectStoreSessionID => storageSession.ObjectStoreSessionID;
 
         /// <summary>
         /// Tries to authenticate the given username/password and updates the user associated with this server session.
@@ -415,7 +414,7 @@ namespace Garnet.server
                         else
                         {
                             if (clusterSession == null || CanServeSlot(cmd))
-                                _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
+                                _ = ProcessBasicCommands<TransientSessionLocker>(cmd);
                         }
                     }
                     else
@@ -491,33 +490,33 @@ namespace Garnet.server
              */
             _ = cmd switch
             {
-                RespCommand.GET => NetworkGET<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
-                RespCommand.SET => NetworkSET<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
-                RespCommand.SETEX => NetworkSETEX<TKeyLocker, GarnetSafeEpochGuard>(false, ref storageApi),
-                RespCommand.PSETEX => NetworkSETEX<TKeyLocker, GarnetSafeEpochGuard>(true, ref storageApi),
-                RespCommand.SETEXNX => NetworkSETEXNX<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
-                RespCommand.DEL => NetworkDEL<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
-                RespCommand.RENAME => NetworkRENAME(ref storageApi),
-                RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),
-                RespCommand.EXISTS => NetworkEXISTS<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
-                RespCommand.EXPIRE => NetworkEXPIRE<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.EXPIRE, ref storageApi),
-                RespCommand.PEXPIRE => NetworkEXPIRE<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.PEXPIRE, ref storageApi),
-                RespCommand.TTL => NetworkTTL<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.TTL, ref storageApi),
-                RespCommand.PTTL => NetworkTTL<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.PTTL, ref storageApi),
-                RespCommand.PERSIST => NetworkPERSIST<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
-                RespCommand.GETRANGE => NetworkGetRange<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
-                RespCommand.SETRANGE => NetworkSetRange<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
-                RespCommand.GETDEL => NetworkGETDEL<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
-                RespCommand.APPEND => NetworkAppend<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
-                RespCommand.STRLEN => NetworkSTRLEN<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
-                RespCommand.INCR => NetworkIncrement<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.INCR, ref storageApi),
-                RespCommand.INCRBY => NetworkIncrement<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.INCRBY, ref storageApi),
-                RespCommand.DECR => NetworkIncrement<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.DECR, ref storageApi),
-                RespCommand.DECRBY => NetworkIncrement<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.DECRBY, ref storageApi),
-                RespCommand.SETBIT => NetworkStringSetBit<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
-                RespCommand.GETBIT => NetworkStringGetBit<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
-                RespCommand.BITCOUNT => NetworkStringBitCount<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
-                RespCommand.BITPOS => NetworkStringBitPosition<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.GET => NetworkGET<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
+                RespCommand.SET => NetworkSET<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
+                RespCommand.SETEX => NetworkSETEX<TKeyLocker, GarnetSafeEpochGuard>(false, ref garnetApi),
+                RespCommand.PSETEX => NetworkSETEX<TKeyLocker, GarnetSafeEpochGuard>(true, ref garnetApi),
+                RespCommand.SETEXNX => NetworkSETEXNX<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
+                RespCommand.DEL => NetworkDEL<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
+                RespCommand.RENAME => NetworkRENAME(ref garnetApi),
+                RespCommand.RENAMENX => NetworkRENAMENX(ref garnetApi),
+                RespCommand.EXISTS => NetworkEXISTS<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
+                RespCommand.EXPIRE => NetworkEXPIRE<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.EXPIRE, ref garnetApi),
+                RespCommand.PEXPIRE => NetworkEXPIRE<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.PEXPIRE, ref garnetApi),
+                RespCommand.TTL => NetworkTTL<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.TTL, ref garnetApi),
+                RespCommand.PTTL => NetworkTTL<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.PTTL, ref garnetApi),
+                RespCommand.PERSIST => NetworkPERSIST<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
+                RespCommand.GETRANGE => NetworkGetRange<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
+                RespCommand.SETRANGE => NetworkSetRange<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
+                RespCommand.GETDEL => NetworkGETDEL<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
+                RespCommand.APPEND => NetworkAppend<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
+                RespCommand.STRLEN => NetworkSTRLEN<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
+                RespCommand.INCR => NetworkIncrement<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.INCR, ref garnetApi),
+                RespCommand.INCRBY => NetworkIncrement<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.INCRBY, ref garnetApi),
+                RespCommand.DECR => NetworkIncrement<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.DECR, ref garnetApi),
+                RespCommand.DECRBY => NetworkIncrement<TKeyLocker, GarnetSafeEpochGuard>(RespCommand.DECRBY, ref garnetApi),
+                RespCommand.SETBIT => NetworkStringSetBit<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
+                RespCommand.GETBIT => NetworkStringGetBit<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
+                RespCommand.BITCOUNT => NetworkStringBitCount<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
+                RespCommand.BITPOS => NetworkStringBitPosition<TKeyLocker, GarnetSafeEpochGuard>(ref garnetApi),
                 RespCommand.PUBLISH => NetworkPUBLISH(),
                 RespCommand.PING => parseState.Count == 0 ? NetworkPING() : NetworkArrayPING(),
                 RespCommand.ASKING => NetworkASKING(),
@@ -529,14 +528,14 @@ namespace Garnet.server
                 RespCommand.RUNTXP => NetworkRUNTXP(),
                 RespCommand.READONLY => NetworkREADONLY(),
                 RespCommand.READWRITE => NetworkREADWRITE(),
-                _ => ProcessArrayCommands(cmd, ref storageApi)
+                _ => ProcessArrayCommands<TKeyLocker>(cmd, ref garnetApi)
             };
 
             return true;
         }
 
-        private bool ProcessArrayCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
-           where TGarnetApi : IGarnetApi
+        private bool ProcessArrayCommands<TKeyLocker>(RespCommand cmd, ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker       // TODO remove IGarnetApi?
         {
             /*
              * WARNING: Do not add any command here classified as @slow!
@@ -544,109 +543,109 @@ namespace Garnet.server
              */
             var success = cmd switch
             {
-                RespCommand.MGET => NetworkMGET(ref storageApi),
-                RespCommand.MSET => NetworkMSET(ref storageApi),
-                RespCommand.MSETNX => NetworkMSETNX(ref storageApi),
-                RespCommand.UNLINK => NetworkDEL(ref storageApi),
+                RespCommand.MGET => NetworkMGET<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.MSET => NetworkMSET<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.MSETNX => NetworkMSETNX<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.UNLINK => NetworkDEL<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
                 RespCommand.SELECT => NetworkSELECT(),
-                RespCommand.WATCH => NetworkWATCH(),
-                RespCommand.WATCH_MS => NetworkWATCH_MS(),
-                RespCommand.WATCH_OS => NetworkWATCH_OS(),
-                RespCommand.MEMORY_USAGE => NetworkMemoryUsage(ref storageApi),
-                RespCommand.TYPE => NetworkTYPE(ref storageApi),
+                RespCommand.WATCH => NetworkWATCH<TKeyLocker, GarnetSafeEpochGuard>(),
+                RespCommand.WATCH_MS => NetworkWATCH_MS<TKeyLocker, GarnetSafeEpochGuard>(),
+                RespCommand.WATCH_OS => NetworkWATCH_OS<TKeyLocker, GarnetSafeEpochGuard>(),
+                RespCommand.MEMORY_USAGE => NetworkMemoryUsage<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.TYPE => NetworkTYPE<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
                 // Pub/sub commands
                 RespCommand.SUBSCRIBE => NetworkSUBSCRIBE(),
                 RespCommand.PSUBSCRIBE => NetworkPSUBSCRIBE(),
                 RespCommand.UNSUBSCRIBE => NetworkUNSUBSCRIBE(),
                 RespCommand.PUNSUBSCRIBE => NetworkPUNSUBSCRIBE(),
                 // Custom Object Commands
-                RespCommand.COSCAN => ObjectScan(GarnetObjectType.All, ref storageApi),
+                RespCommand.COSCAN => ObjectScan<TKeyLocker, GarnetSafeEpochGuard>(GarnetObjectType.All, ref storageApi),
                 // Sorted Set commands
-                RespCommand.ZADD => SortedSetAdd(ref storageApi),
-                RespCommand.ZREM => SortedSetRemove(ref storageApi),
-                RespCommand.ZCARD => SortedSetLength(ref storageApi),
-                RespCommand.ZPOPMAX => SortedSetPop(cmd, ref storageApi),
-                RespCommand.ZSCORE => SortedSetScore(ref storageApi),
-                RespCommand.ZMSCORE => SortedSetScores(ref storageApi),
-                RespCommand.ZCOUNT => SortedSetCount(ref storageApi),
-                RespCommand.ZINCRBY => SortedSetIncrement(ref storageApi),
-                RespCommand.ZRANK => SortedSetRank(cmd, ref storageApi),
-                RespCommand.ZRANGE => SortedSetRange(cmd, ref storageApi),
-                RespCommand.ZRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
-                RespCommand.ZREVRANK => SortedSetRank(cmd, ref storageApi),
-                RespCommand.ZREMRANGEBYLEX => SortedSetLengthByValue(cmd, ref storageApi),
-                RespCommand.ZREMRANGEBYRANK => SortedSetRemoveRange(cmd, ref storageApi),
-                RespCommand.ZREMRANGEBYSCORE => SortedSetRemoveRange(cmd, ref storageApi),
-                RespCommand.ZLEXCOUNT => SortedSetLengthByValue(cmd, ref storageApi),
-                RespCommand.ZPOPMIN => SortedSetPop(cmd, ref storageApi),
-                RespCommand.ZRANDMEMBER => SortedSetRandomMember(ref storageApi),
+                RespCommand.ZADD => SortedSetAdd<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.ZREM => SortedSetRemove<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.ZCARD => SortedSetLength<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.ZPOPMAX => SortedSetPop<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.ZSCORE => SortedSetScore<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.ZMSCORE => SortedSetScores<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.ZCOUNT => SortedSetCount<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.ZINCRBY => SortedSetIncrement<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.ZRANK => SortedSetRank<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.ZRANGE => SortedSetRange<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.ZRANGEBYSCORE => SortedSetRange<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.ZREVRANK => SortedSetRank<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.ZREMRANGEBYLEX => SortedSetLengthByValue<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.ZREMRANGEBYRANK => SortedSetRemoveRange<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.ZREMRANGEBYSCORE => SortedSetRemoveRange<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.ZLEXCOUNT => SortedSetLengthByValue<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.ZPOPMIN => SortedSetPop<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.ZRANDMEMBER => SortedSetRandomMember<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
                 RespCommand.ZDIFF => SortedSetDifference(ref storageApi),
-                RespCommand.ZREVRANGE => SortedSetRange(cmd, ref storageApi),
-                RespCommand.ZREVRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
-                RespCommand.ZSCAN => ObjectScan(GarnetObjectType.SortedSet, ref storageApi),
+                RespCommand.ZREVRANGE => SortedSetRange<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.ZREVRANGEBYSCORE => SortedSetRange<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.ZSCAN => ObjectScan<TKeyLocker, GarnetSafeEpochGuard>(GarnetObjectType.SortedSet, ref storageApi),
                 //SortedSet for Geo Commands
-                RespCommand.GEOADD => GeoAdd(ref storageApi),
-                RespCommand.GEOHASH => GeoCommands(cmd, ref storageApi),
-                RespCommand.GEODIST => GeoCommands(cmd, ref storageApi),
-                RespCommand.GEOPOS => GeoCommands(cmd, ref storageApi),
-                RespCommand.GEOSEARCH => GeoCommands(cmd, ref storageApi),
+                RespCommand.GEOADD => GeoAdd<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.GEOHASH => GeoCommands<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.GEODIST => GeoCommands<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.GEOPOS => GeoCommands<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.GEOSEARCH => GeoCommands<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
                 //HLL Commands
-                RespCommand.PFADD => HyperLogLogAdd(ref storageApi),
+                RespCommand.PFADD => HyperLogLogAdd<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
                 RespCommand.PFMERGE => HyperLogLogMerge(ref storageApi),
-                RespCommand.PFCOUNT => HyperLogLogLength(ref storageApi),
+                RespCommand.PFCOUNT => HyperLogLogLength<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
                 //Bitmap Commands
                 RespCommand.BITOP_AND => NetworkStringBitOperation(BitmapOperation.AND, ref storageApi),
                 RespCommand.BITOP_OR => NetworkStringBitOperation(BitmapOperation.OR, ref storageApi),
                 RespCommand.BITOP_XOR => NetworkStringBitOperation(BitmapOperation.XOR, ref storageApi),
                 RespCommand.BITOP_NOT => NetworkStringBitOperation(BitmapOperation.NOT, ref storageApi),
-                RespCommand.BITFIELD => StringBitField(ref storageApi),
-                RespCommand.BITFIELD_RO => StringBitFieldReadOnly(ref storageApi),
+                RespCommand.BITFIELD => StringBitField<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.BITFIELD_RO => StringBitFieldReadOnly<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
                 // List Commands
-                RespCommand.LPUSH => ListPush(cmd, ref storageApi),
-                RespCommand.LPUSHX => ListPush(cmd, ref storageApi),
-                RespCommand.LPOP => ListPop(cmd, ref storageApi),
-                RespCommand.RPUSH => ListPush(cmd, ref storageApi),
-                RespCommand.RPUSHX => ListPush(cmd, ref storageApi),
-                RespCommand.RPOP => ListPop(cmd, ref storageApi),
-                RespCommand.LLEN => ListLength(ref storageApi),
-                RespCommand.LTRIM => ListTrim(ref storageApi),
-                RespCommand.LRANGE => ListRange(ref storageApi),
-                RespCommand.LINDEX => ListIndex(ref storageApi),
-                RespCommand.LINSERT => ListInsert(ref storageApi),
-                RespCommand.LREM => ListRemove(ref storageApi),
+                RespCommand.LPUSH => ListPush<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.LPUSHX => ListPush<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.LPOP => ListPop<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.RPUSH => ListPush<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.RPUSHX => ListPush<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.RPOP => ListPop<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.LLEN => ListLength<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.LTRIM => ListTrim<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.LRANGE => ListRange<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.LINDEX => ListIndex<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.LINSERT => ListInsert<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.LREM => ListRemove<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
                 RespCommand.RPOPLPUSH => ListRightPopLeftPush(ref storageApi),
                 RespCommand.LMOVE => ListMove(ref storageApi),
-                RespCommand.LMPOP => ListPopMultiple(ref storageApi),
-                RespCommand.LSET => ListSet(ref storageApi),
+                RespCommand.LMPOP => ListPopMultiple<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.LSET => ListSet<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
                 RespCommand.BLPOP => ListBlockingPop(cmd),
                 RespCommand.BRPOP => ListBlockingPop(cmd),
                 RespCommand.BLMOVE => ListBlockingMove(cmd),
                 // Hash Commands
-                RespCommand.HSET => HashSet(cmd, ref storageApi),
-                RespCommand.HMSET => HashSet(cmd, ref storageApi),
-                RespCommand.HGET => HashGet(cmd, ref storageApi),
-                RespCommand.HMGET => HashGetMultiple(cmd, ref storageApi),
-                RespCommand.HGETALL => HashGetAll(cmd, ref storageApi),
-                RespCommand.HDEL => HashDelete(ref storageApi),
-                RespCommand.HLEN => HashLength(ref storageApi),
-                RespCommand.HSTRLEN => HashStrLength(ref storageApi),
-                RespCommand.HEXISTS => HashExists(ref storageApi),
-                RespCommand.HKEYS => HashKeys(cmd, ref storageApi),
-                RespCommand.HVALS => HashKeys(cmd, ref storageApi),
-                RespCommand.HINCRBY => HashIncrement(cmd, ref storageApi),
-                RespCommand.HINCRBYFLOAT => HashIncrement(cmd, ref storageApi),
-                RespCommand.HSETNX => HashSet(cmd, ref storageApi),
-                RespCommand.HRANDFIELD => HashRandomField(cmd, ref storageApi),
-                RespCommand.HSCAN => ObjectScan(GarnetObjectType.Hash, ref storageApi),
+                RespCommand.HSET => HashSet<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.HMSET => HashSet<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.HGET => HashGet<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.HMGET => HashGetMultiple<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.HGETALL => HashGetAll<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.HDEL => HashDelete<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.HLEN => HashLength<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.HSTRLEN => HashStrLength<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.HEXISTS => HashExists<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.HKEYS => HashKeys<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.HVALS => HashKeys<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.HINCRBY => HashIncrement<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.HINCRBYFLOAT => HashIncrement<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.HSETNX => HashSet<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.HRANDFIELD => HashRandomField<TKeyLocker, GarnetSafeEpochGuard>(cmd, ref storageApi),
+                RespCommand.HSCAN => ObjectScan<TKeyLocker, GarnetSafeEpochGuard>(GarnetObjectType.Hash, ref storageApi),
                 // Set Commands
-                RespCommand.SADD => SetAdd(ref storageApi),
-                RespCommand.SMEMBERS => SetMembers(ref storageApi),
-                RespCommand.SISMEMBER => SetIsMember(ref storageApi),
-                RespCommand.SREM => SetRemove(ref storageApi),
-                RespCommand.SCARD => SetLength(ref storageApi),
-                RespCommand.SPOP => SetPop(ref storageApi),
-                RespCommand.SRANDMEMBER => SetRandomMember(ref storageApi),
-                RespCommand.SSCAN => ObjectScan(GarnetObjectType.Set, ref storageApi),
+                RespCommand.SADD => SetAdd<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.SMEMBERS => SetMembers<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.SISMEMBER => SetIsMember<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.SREM => SetRemove<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.SCARD => SetLength<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.SPOP => SetPop<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.SRANDMEMBER => SetRandomMember<TKeyLocker, GarnetSafeEpochGuard>(ref storageApi),
+                RespCommand.SSCAN => ObjectScan<TKeyLocker, GarnetSafeEpochGuard>(GarnetObjectType.Set, ref storageApi),
                 RespCommand.SMOVE => SetMove(ref storageApi),
                 RespCommand.SINTER => SetIntersect(ref storageApi),
                 RespCommand.SINTERSTORE => SetIntersectStore(ref storageApi),
@@ -659,8 +658,7 @@ namespace Garnet.server
             return success;
         }
 
-        private bool ProcessOtherCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private bool ProcessOtherCommands(RespCommand command, ref GarnetApi storageApi)
         {
             /*
              * WARNING: Here is safe to add @slow commands (check how containsSlowCommand is used).
@@ -704,9 +702,7 @@ namespace Garnet.server
             bool NetworkCLIENTID()
             {
                 if (parseState.Count != 0)
-                {
                     return AbortWithWrongNumberOfArguments("client|id");
-                }
 
                 while (!RespWriteUtils.WriteInteger(Id, ref dcurr, dend))
                     SendAndReset();

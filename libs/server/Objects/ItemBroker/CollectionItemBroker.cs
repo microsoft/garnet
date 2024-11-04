@@ -5,7 +5,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Tsavorite.core;
@@ -26,7 +25,7 @@ namespace Garnet.server
         // Queue of events to be handled by the main loops
         private AsyncQueue<BrokerEventBase> BrokerEventsQueue => brokerEventsQueueLazy.Value;
 
-        // Mapping of RespServerSession ID (ObjectStoreSessionID) to observer instance
+        // Mapping of RespServerSession ID (StoreSessionID) to observer instance
         private ConcurrentDictionary<int, CollectionItemObserver> SessionIdToObserver => sessionIdToObserverLazy.Value;
 
         // Mapping of observed keys to queue of observers, by order of subscription
@@ -83,7 +82,7 @@ namespace Garnet.server
             double timeoutInSeconds)
         {
             // Add the session ID to observer mapping
-            SessionIdToObserver.TryAdd(observer.Session.ObjectStoreSessionID, observer);
+            SessionIdToObserver.TryAdd(observer.Session.StoreSessionID, observer);
 
             // Add a new observer event to the event queue
             BrokerEventsQueue.Enqueue(new NewObserverEvent(observer, keys));
@@ -127,7 +126,7 @@ namespace Garnet.server
             {
             }
 
-            SessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
+            SessionIdToObserver.TryRemove(observer.Session.StoreSessionID, out _);
 
             // Check if observer is still waiting for result
             if (observer.Status == ObserverStatus.WaitingForResult)
@@ -182,7 +181,7 @@ namespace Garnet.server
         internal void HandleSessionDisposed(RespServerSession session)
         {
             // Try to remove session ID from mapping & get the observer object for the specified session, if exists
-            if (!SessionIdToObserver.TryRemove(session.ObjectStoreSessionID, out var observer))
+            if (!SessionIdToObserver.TryRemove(session.StoreSessionID, out var observer))
                 return;
 
             // Change observer status to reflect that its session has been disposed
@@ -227,7 +226,7 @@ namespace Garnet.server
                             out _, out var nextItem)) continue;
 
                     // An item was found - set the observer result and return
-                    SessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
+                    SessionIdToObserver.TryRemove(observer.Session.StoreSessionID, out _);
                     observer.HandleSetResult(new CollectionItemResult(key, nextItem));
                     return;
                 }
@@ -291,7 +290,7 @@ namespace Garnet.server
                     // Dequeue the observer, and set the observer's result
                     observers.TryDequeue(out observer);
 
-                    SessionIdToObserver.TryRemove(observer!.Session.ObjectStoreSessionID, out _);
+                    SessionIdToObserver.TryRemove(observer!.Session.StoreSessionID, out _);
                     observer.HandleSetResult(new CollectionItemResult(key, nextItem));
 
                     return true;
@@ -317,7 +316,8 @@ namespace Garnet.server
             nextItem = default;
 
             // If object has no items, return
-            if (listObj.LnkList.Count == 0) return false;
+            if (listObj.LnkList.Count == 0) 
+                return false;
 
             // Get the next object according to operation type
             switch (command)
@@ -345,7 +345,8 @@ namespace Garnet.server
             nextItem = default;
 
             // If object has no items, return
-            if (srcListObj.LnkList.Count == 0) return false;
+            if (srcListObj.LnkList.Count == 0) 
+                return false;
 
             // Get the next object according to source direction
             switch (srcDirection)
@@ -394,7 +395,8 @@ namespace Garnet.server
             nextItem = default;
 
             // If object has no items, return
-            if (sortedSetObj.Dictionary.Count == 0) return false;
+            if (sortedSetObj.Dictionary.Count == 0) 
+                return false;
 
             // Get the next object according to operation type
             switch (command)
@@ -428,9 +430,7 @@ namespace Garnet.server
 
             ArgSlice dstKey = default;
             if (command == RespCommand.BLMOVE)
-            {
                 dstKey = cmdArgs[0];
-            }
 
             // Create a transaction if not currently in a running transaction
             if (storageSession.txnManager.state != TxnState.Running)
@@ -445,21 +445,30 @@ namespace Garnet.server
                 _ = storageSession.txnManager.Run(internal_txn: true);
             }
 
-            var objectLockableContext = storageSession.txnManager.ObjectStoreLockableContext;
-
             try
             {
+                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
+                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                GarnetSafeEpochGuard.BeginUnsafe(ref storageSession.KernelSession);
+
+                var heiSrcKey = storageSession.CreateHei(key);
+
                 // Get the object stored at key
-                var statusOp = storageSession.GET(key, out var osObject, ref objectLockableContext);
+                GarnetObjectStoreOutput osObject = new();
+                var statusOp = storageSession.GET<TransactionalSessionLocker>(ref heiSrcKey, key, ref osObject);
                 if (statusOp == GarnetStatus.NOTFOUND) return false;
 
                 IGarnetObject dstObj = null;
                 byte[] arrDstKey = default;
+                HashEntryInfo heiDstKey = default;
                 if (command == RespCommand.BLMOVE)
                 {
                     arrDstKey = dstKey.ToArray();
-                    var dstStatusOp = storageSession.GET(arrDstKey, out var osDstObject, ref objectLockableContext);
-                    if (dstStatusOp != GarnetStatus.NOTFOUND) dstObj = osDstObject.garnetObject;
+                    heiDstKey = storageSession.CreateHei(arrDstKey);
+                    GarnetObjectStoreOutput osDstObject = new();
+                    var dstStatusOp = storageSession.GET<TransactionalSessionLocker>(ref heiDstKey, arrDstKey, ref osDstObject);
+                    if (dstStatusOp != GarnetStatus.NOTFOUND) 
+                        dstObj = osDstObject.garnetObject;
                 }
 
                 // Check for type match between the observer and the actual object type
@@ -492,10 +501,7 @@ namespace Garnet.server
                                     (OperationDirection)cmdArgs[2].ReadOnlySpan[0], out nextItem);
 
                                 if (isSuccessful && newObj)
-                                {
-                                    isSuccessful = storageSession.SET(arrDstKey, dstList, ref objectLockableContext) ==
-                                                   GarnetStatus.OK;
-                                }
+                                    isSuccessful = storageSession.SET<TransactionalSessionLocker>(ref heiDstKey, arrDstKey, dstList) == GarnetStatus.OK;
 
                                 return isSuccessful;
                             default:
@@ -511,6 +517,7 @@ namespace Garnet.server
             }
             finally
             {
+                GarnetSafeEpochGuard.EndUnsafe(ref storageSession.KernelSession);
                 if (createTransaction)
                     storageSession.txnManager.Commit(true);
             }
@@ -560,8 +567,7 @@ namespace Garnet.server
             cts.Cancel();
             foreach (var observer in SessionIdToObserver.Values)
             {
-                if (observer.Status == ObserverStatus.WaitingForResult &&
-                    !observer.CancellationTokenSource.IsCancellationRequested)
+                if (observer.Status == ObserverStatus.WaitingForResult && !observer.CancellationTokenSource.IsCancellationRequested)
                 {
                     try
                     {

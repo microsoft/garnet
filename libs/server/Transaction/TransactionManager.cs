@@ -266,7 +266,9 @@ namespace Garnet.server
             Reset(true);
         }
 
-        internal void Watch(ArgSlice key, StoreType type)
+        internal void Watch<TKeyLocker, TEpochGuard>(ArgSlice key, StoreType type)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             // Update watch type if object store is disabled
             if (type == StoreType.All && objectStoreBasicContext.IsNull)
@@ -275,7 +277,7 @@ namespace Garnet.server
             UpdateTransactionStoreType(type);
             watchContainer.AddWatch(key, type);
 
-            _ = respSession.storageSession.Watch(key, type, in dualContext, in objectStoreDualContext);
+            _ = respSession.storageSession.Watch<TKeyLocker, TEpochGuard>(key, type);
         }
 
         void UpdateTransactionStoreType(StoreType type)

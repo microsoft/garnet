@@ -150,5 +150,8 @@ namespace Tsavorite.core
                 return KeyHashComparerImpl(key1, key2, size_mask);
             }
         }
+
+        /// <inheritdoc/>
+        public void Dispose() { }
     }
 }

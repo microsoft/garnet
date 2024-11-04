@@ -170,9 +170,7 @@ namespace Garnet.server
             => storageSession.SortedSetRange<TKeyLocker, TEpochGuard>(key, min, max, sortedSetOrderOperation, out elements, out error, withScores, reverse, limit);
 
         /// <inheritdoc />
-        public readonly GarnetStatus SortedSetDifference<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out Dictionary<byte[], double> pairs)
-            where TKeyLocker : struct, ISessionLocker
-            where TEpochGuard : struct, IGarnetEpochGuard
+        public readonly GarnetStatus SortedSetDifference(ArgSlice[] keys, out Dictionary<byte[], double> pairs)
             => storageSession.SortedSetDifference(keys, out pairs);
 
         /// <inheritdoc />
@@ -302,9 +300,7 @@ namespace Garnet.server
             => storageSession.ListLength<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
         /// <inheritdoc />
-        public readonly GarnetStatus ListMove<TKeyLocker, TEpochGuard>(ArgSlice source, ArgSlice destination, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element)
-            where TKeyLocker : struct, ISessionLocker
-            where TEpochGuard : struct, IGarnetEpochGuard
+        public readonly GarnetStatus ListMove(ArgSlice source, ArgSlice destination, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element)
             => storageSession.ListMove(source, destination, sourceDirection, destinationDirection, out element);
 
         /// <inheritdoc />
@@ -450,9 +446,7 @@ namespace Garnet.server
             => storageSession.ObjectScan<TKeyLocker, TEpochGuard>(GarnetObjectType.Set, key, cursor, match, count, out items);
 
         /// <inheritdoc />
-        public readonly GarnetStatus SetMove<TKeyLocker, TEpochGuard>(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult)
-            where TKeyLocker : struct, ISessionLocker
-            where TEpochGuard : struct, IGarnetEpochGuard
+        public readonly GarnetStatus SetMove(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult)
             => storageSession.SetMove(sourceKey, destinationKey, member, out smoveResult);
 
         public readonly GarnetStatus SetUnion(ArgSlice[] keys, out HashSet<byte[]> output)

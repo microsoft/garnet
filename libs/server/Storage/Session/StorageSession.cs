@@ -28,6 +28,9 @@ namespace Garnet.server
         internal DualContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator,
                                  byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator, GarnetDualInputConverter> dualContext;
 
+        internal ref DualKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator,
+                                 byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> KernelSession => ref dualContext.KernelSession;
+
         private DualItemContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> MainContext => dualContext.ItemContext1;
         private ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> MainSession => dualContext.Session1;
         private DualItemContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> ObjectContext => dualContext.ItemContext2;
@@ -74,6 +77,9 @@ namespace Garnet.server
 
         internal long GetMainStoreKeyHashCode64(ref SpanByte key) => SpanByteComparer.StaticGetHashCode64(ref key);
         internal long GetObjectStoreKeyHashCode64(ref byte[] key) => ByteArrayKeyComparer.StaticGetHashCode64(ref key);
+
+        public HashEntryInfo CreateHei(SpanByte key) => dualContext.CreateHei1(GetMainStoreKeyHashCode64(ref key));
+        public HashEntryInfo CreateHei(byte[] key) => dualContext.CreateHei2(GetObjectStoreKeyHashCode64(ref key));
 
         public void Dispose()
         {

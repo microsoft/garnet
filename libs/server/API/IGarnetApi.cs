@@ -253,7 +253,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="storeType"></param>
         /// <returns></returns>
-        GarnetStatus DELETE(ArgSlice key, StoreType storeType = StoreType.All);
+        GarnetStatus DELETE<TKeyLocker, TEpochGuard>(ArgSlice key, StoreType storeType = StoreType.All)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// DELETE
@@ -261,7 +263,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="storeType"></param>
         /// <returns></returns>
-        GarnetStatus DELETE(ref SpanByte key, StoreType storeType = StoreType.All);
+        GarnetStatus DELETE<TKeyLocker, TEpochGuard>(ref SpanByte key, StoreType storeType = StoreType.All)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
 
         /// <summary>
         /// DELETE
@@ -269,7 +273,9 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="storeType"></param>
         /// <returns></returns>
-        GarnetStatus DELETE(byte[] key, StoreType storeType = StoreType.All);
+        GarnetStatus DELETE<TKeyLocker, TEpochGuard>(byte[] key, StoreType storeType = StoreType.All)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
         #endregion
 
         #region GETDEL
@@ -1066,9 +1072,7 @@ namespace Garnet.server
         /// <param name="bitop"></param>
         /// <param name="result"></param>
         /// <returns></returns>
-        GarnetStatus StringBitOperation<TKeyLocker, TEpochGuard>(Span<ArgSlice> keys, BitmapOperation bitop, out long result)
-            where TKeyLocker : struct, ISessionLocker
-            where TEpochGuard : struct, IGarnetEpochGuard;
+        GarnetStatus StringBitOperation(Span<ArgSlice> keys, BitmapOperation bitop, out long result);
 
         /// <summary>
         /// Perform a bitwise operation between multiple keys
@@ -1132,10 +1136,7 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogMerge<TKeyLocker, TEpochGuard>(Span<ArgSlice> keys, out bool error)
-            where TKeyLocker : struct, ISessionLocker
-            where TEpochGuard : struct, IGarnetEpochGuard;
-
+        GarnetStatus HyperLogLogMerge(Span<ArgSlice> keys, out bool error);
         #endregion
     }
 
@@ -1368,9 +1369,7 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="pairs"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetDifference<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out Dictionary<byte[], double> pairs)
-            where TKeyLocker : struct, ISessionLocker
-            where TEpochGuard : struct, IGarnetEpochGuard;
+        GarnetStatus SortedSetDifference(ArgSlice[] keys, out Dictionary<byte[], double> pairs);
 
         /// <summary>
         /// Iterates members of SortedSet key and their associated scores using a cursor,
@@ -1848,7 +1847,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="pattern">Expression to match the keys name</param>
         /// <returns></returns>
-        List<byte[]> GetDbKeys<TKeyLocker, TEpochGuard>(ArgSlice pattern);
+        List<byte[]> GetDbKeys(ArgSlice pattern);
 
         /// <summary>
         /// Gets the number of existing keys in both stores

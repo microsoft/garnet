@@ -18,7 +18,7 @@ namespace Garnet.server
                 /* MainStoreAllocator */ SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>,
                 byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions,
                 /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-                /* ObjectStoreAllocator */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>
+                /* ObjectStoreAllocator */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>;
     #endregion Aliases
 
     public interface IGarnetEpochGuard : IEpochGuard<GarnetDualKernelSession>;

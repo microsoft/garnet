@@ -19,7 +19,7 @@ namespace Garnet.cluster
         private int CountKeysInSessionStore(int slot)
         {
             ClusterKeyIterationFunctions.MainStoreCountKeys iterFuncs = new(slot);
-            _ = basicGarnetApi.IterateMainStore(ref iterFuncs);
+            _ = garnetApi.IterateMainStore(ref iterFuncs);
             return iterFuncs.KeyCount;
         }
 
@@ -28,7 +28,7 @@ namespace Garnet.cluster
             if (!clusterProvider.serverOptions.DisableObjects)
             {
                 ClusterKeyIterationFunctions.ObjectStoreCountKeys iterFuncs = new(slot);
-                _ = basicGarnetApi.IterateObjectStore(ref iterFuncs);
+                _ = garnetApi.IterateObjectStore(ref iterFuncs);
                 return iterFuncs.KeyCount;
             }
             return 0;
@@ -40,12 +40,12 @@ namespace Garnet.cluster
         {
             List<byte[]> keys = [];
             ClusterKeyIterationFunctions.MainStoreGetKeysInSlot mainIterFuncs = new(keys, slot, keyCount);
-            _ = basicGarnetApi.IterateMainStore(ref mainIterFuncs);
+            _ = garnetApi.IterateMainStore(ref mainIterFuncs);
 
             if (!clusterProvider.serverOptions.DisableObjects)
             {
                 ClusterKeyIterationFunctions.ObjectStoreGetKeysInSlot objectIterFuncs = new(keys, slot);
-                _ = basicGarnetApi.IterateObjectStore(ref objectIterFuncs);
+                _ = garnetApi.IterateObjectStore(ref objectIterFuncs);
             }
             return keys;
         }

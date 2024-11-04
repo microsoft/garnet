@@ -8,6 +8,13 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using GarnetDualKernelSession = DualKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+                /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+                /* MainStoreAllocator */ SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>,
+                byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions,
+                /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+                /* ObjectStoreAllocator */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>;
+
     /// <summary>
     /// Entry for a key to lock and unlock in transactions
     /// </summary>
@@ -105,7 +112,7 @@ namespace Garnet.server
             return keyHash;
         }
 
-        internal void LockAllKeys(ref KernelSession kernelSession)
+        internal void LockAllKeys(ref GarnetDualKernelSession kernelSession)
         {
             lockPhase = LockPhase.Locking;
 
@@ -118,7 +125,7 @@ namespace Garnet.server
             lockPhase = LockPhase.Rest;
         }
 
-        internal bool TryLockAllKeys(ref KernelSession kernelSession, TimeSpan lock_timeout)
+        internal bool TryLockAllKeys(ref GarnetDualKernelSession kernelSession, TimeSpan lock_timeout)
         {
             lockPhase = LockPhase.Locking;
 
@@ -132,7 +139,7 @@ namespace Garnet.server
             return success;
         }
 
-        internal void UnlockAllKeys(ref KernelSession kernelSession)
+        internal void UnlockAllKeys(ref GarnetDualKernelSession kernelSession)
         {
             lockPhase = LockPhase.Unlocking;
             kernel.Unlock(ref kernelSession, keys, 0, keyCount);

@@ -16,25 +16,21 @@ namespace Garnet.server
         /// Adds all the specified members with the specified scores to the sorted set stored at key.
         /// Current members get the score updated and reordered.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetAdd<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private unsafe bool SortedSetAdd<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count < 3)
-            {
                 return AbortWithWrongNumberOfArguments("ZADD");
-            }
 
             // Get the key for SortedSet
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
                 return true;
-            }
 
             var input = new ObjectInput
             {
@@ -48,8 +44,7 @@ namespace Garnet.server
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-            var status = storageApi.SortedSetAdd(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetAdd<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -58,7 +53,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
             }
 
@@ -69,25 +64,21 @@ namespace Garnet.server
         /// Removes the specified members from the sorted set stored at key.
         /// Non existing members are ignored.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRemove<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private unsafe bool SortedSetRemove<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count < 2)
-            {
                 return AbortWithWrongNumberOfArguments("ZREM");
-            }
 
             // Get the key for SortedSet
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
                 return true;
-            }
 
             var input = new ObjectInput
             {
@@ -100,7 +91,7 @@ namespace Garnet.server
                 parseStateStartIdx = 1,
             };
 
-            var status = storageApi.SortedSetRemove(keyBytes, ref input, out var rmwOutput);
+            var status = storageApi.SortedSetRemove<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var rmwOutput);
 
             switch (status)
             {
@@ -123,25 +114,21 @@ namespace Garnet.server
         /// <summary>
         /// Returns the sorted set cardinality (number of elements) of the sorted set
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetLength<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private unsafe bool SortedSetLength<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count != 1)
-            {
                 return AbortWithWrongNumberOfArguments("ZCARD");
-            }
 
             // Get the key for SortedSet
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
                 return true;
-            }
 
             var input = new ObjectInput
             {
@@ -152,7 +139,7 @@ namespace Garnet.server
                 },
             };
 
-            var status = storageApi.SortedSetLength(keyBytes, ref input, out var output);
+            var status = storageApi.SortedSetLength<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -179,36 +166,31 @@ namespace Garnet.server
         /// Min and max are range boundaries, where 0 is the first element, 1 is the next element and so on.
         /// There can also be negative numbers indicating offsets from the end of the sorted set, with -1 being the last element of the sorted set, -2 the penultimate element and so on.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRange<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private unsafe bool SortedSetRange<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             // ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
             if (parseState.Count < 3)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZRANGE));
-            }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
                 return true;
-            }
 
-            var op =
-                command switch
-                {
-                    RespCommand.ZRANGE => SortedSetOperation.ZRANGE,
-                    RespCommand.ZREVRANGE => SortedSetOperation.ZREVRANGE,
-                    RespCommand.ZRANGEBYSCORE => SortedSetOperation.ZRANGEBYSCORE,
-                    RespCommand.ZREVRANGEBYSCORE => SortedSetOperation.ZREVRANGEBYSCORE,
-                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
-                };
+            var op = command switch
+            {
+                RespCommand.ZRANGE => SortedSetOperation.ZRANGE,
+                RespCommand.ZREVRANGE => SortedSetOperation.ZREVRANGE,
+                RespCommand.ZRANGEBYSCORE => SortedSetOperation.ZRANGEBYSCORE,
+                RespCommand.ZREVRANGEBYSCORE => SortedSetOperation.ZREVRANGEBYSCORE,
+                _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+            };
 
             var input = new ObjectInput
             {
@@ -223,13 +205,12 @@ namespace Garnet.server
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-            var status = storageApi.SortedSetRange(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetRange<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
@@ -248,26 +229,22 @@ namespace Garnet.server
         /// Returns the score of member in the sorted set at key.
         /// If member does not exist in the sorted set, or key does not exist, nil is returned.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetScore<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private unsafe bool SortedSetScore<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             //validation if minimum args
             if (parseState.Count != 2)
-            {
                 return AbortWithWrongNumberOfArguments("ZSCORE");
-            }
 
             // Get the key for SortedSet
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
                 return true;
-            }
 
             // Prepare input
             var input = new ObjectInput
@@ -283,13 +260,12 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-            var status = storageApi.SortedSetScore(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetScore<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
@@ -308,26 +284,22 @@ namespace Garnet.server
         /// Returns the score of member in the sorted set at key.
         /// If member does not exist in the sorted set, or key does not exist, nil is returned.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetScores<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private unsafe bool SortedSetScores<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             //validation if minimum args
             if (parseState.Count < 2)
-            {
                 return AbortWithWrongNumberOfArguments("ZMSCORE");
-            }
 
             // Get the key for SortedSet
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
                 return true;
-            }
 
             // Prepare input
             var input = new ObjectInput
@@ -343,13 +315,12 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-            var status = storageApi.SortedSetScores(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetScores<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteArrayWithNullElements(parseState.Count - 1, ref dcurr, dend))
@@ -368,26 +339,22 @@ namespace Garnet.server
         /// Removes and returns the first element from the sorted set stored at key,
         /// with the scores ordered from low to high (min) or high to low (max).
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetPop<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+        private unsafe bool SortedSetPop<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            if (parseState.Count < 1 || parseState.Count > 2)
-            {
+            if (parseState.Count is < 1 or > 2)
                 return AbortWithWrongNumberOfArguments(command.ToString());
-            }
 
             // Get the key for SortedSet
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
                 return true;
-            }
 
             var popCount = 1;
 
@@ -398,18 +365,16 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE, ref dcurr, dend))
                         SendAndReset();
-
                     return true;
                 }
             }
 
-            var op =
-                command switch
-                {
-                    RespCommand.ZPOPMIN => SortedSetOperation.ZPOPMIN,
-                    RespCommand.ZPOPMAX => SortedSetOperation.ZPOPMAX,
-                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
-                };
+            var op = command switch
+            {
+                RespCommand.ZPOPMIN => SortedSetOperation.ZPOPMIN,
+                RespCommand.ZPOPMAX => SortedSetOperation.ZPOPMAX,
+                _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+            };
 
             // Prepare input
             var input = new ObjectInput
@@ -424,13 +389,12 @@ namespace Garnet.server
 
             // Prepare output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))) };
-
-            var status = storageApi.SortedSetPop(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetPop<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
@@ -448,25 +412,21 @@ namespace Garnet.server
         /// <summary>
         /// Returns the number of elements in the sorted set at key with a score between min and max.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetCount<TGarnetApi>(ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+        private unsafe bool SortedSetCount<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count != 3)
-            {
                 return AbortWithWrongNumberOfArguments("ZCOUNT");
-            }
 
             // Get the key for the Sorted Set
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
                 return true;
-            }
 
             // Prepare input
             var input = new ObjectInput
@@ -482,13 +442,12 @@ namespace Garnet.server
 
             // Prepare output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))) };
-
-            var status = storageApi.SortedSetCount(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetCount<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -510,34 +469,29 @@ namespace Garnet.server
         /// ZREMRANGEBYLEX: Removes all elements in the sorted set between the
         /// lexicographical range specified by min and max.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetLengthByValue<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+        private unsafe bool SortedSetLengthByValue<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count != 3)
-            {
                 return AbortWithWrongNumberOfArguments(command.ToString());
-            }
 
             // Get the key
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, command != RespCommand.ZREMRANGEBYLEX))
-            {
                 return true;
-            }
 
-            var op =
-                command switch
-                {
-                    RespCommand.ZREMRANGEBYLEX => SortedSetOperation.ZREMRANGEBYLEX,
-                    RespCommand.ZLEXCOUNT => SortedSetOperation.ZLEXCOUNT,
-                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
-                };
+            var op = command switch
+            {
+                RespCommand.ZREMRANGEBYLEX => SortedSetOperation.ZREMRANGEBYLEX,
+                RespCommand.ZLEXCOUNT => SortedSetOperation.ZLEXCOUNT,
+                _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+            };
 
             // Prepare input
             var input = new ObjectInput
@@ -552,8 +506,8 @@ namespace Garnet.server
             };
 
             var status = op == SortedSetOperation.ZREMRANGEBYLEX ?
-                storageApi.SortedSetRemoveRangeByLex(keyBytes, ref input, out var output) :
-                storageApi.SortedSetLengthByValue(keyBytes, ref input, out output);
+                storageApi.SortedSetRemoveRangeByLex<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var output) :
+                storageApi.SortedSetLengthByValue<TKeyLocker, TEpochGuard>(keyBytes, ref input, out output);
 
             switch (status)
             {
@@ -588,26 +542,22 @@ namespace Garnet.server
         /// Increments the score of member in the sorted set stored at key by increment.
         /// If member does not exist in the sorted set, it is added with increment as its score (as if its previous score was 0.0).
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetIncrement<TGarnetApi>(ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+        private unsafe bool SortedSetIncrement<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             //validation of required args
             if (parseState.Count != 3)
-            {
                 return AbortWithWrongNumberOfArguments("ZINCRBY");
-            }
 
             // Get the key for the Sorted Set
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
                 return true;
-            }
 
             // Prepare input
             var input = new ObjectInput
@@ -623,14 +573,13 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-            var status = storageApi.SortedSetIncrement(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetIncrement<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.NOTFOUND:
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -645,26 +594,22 @@ namespace Garnet.server
         /// ZRANK: Returns the rank of member in the sorted set, the scores in the sorted set are ordered from low to high
         /// ZREVRANK: Returns the rank of member in the sorted set, with the scores ordered from high to low
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRank<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+        private unsafe bool SortedSetRank<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count < 2)
-            {
                 return AbortWithWrongNumberOfArguments(command.ToString());
-            }
 
             // Get the key for SortedSet
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
                 return true;
-            }
 
             var includeWithScore = false;
 
@@ -677,20 +622,17 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
                         SendAndReset();
-
                     return true;
                 }
-
                 includeWithScore = true;
             }
 
-            var op =
-                command switch
-                {
-                    RespCommand.ZRANK => SortedSetOperation.ZRANK,
-                    RespCommand.ZREVRANK => SortedSetOperation.ZREVRANK,
-                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
-                };
+            var op = command switch
+            {
+                RespCommand.ZRANK => SortedSetOperation.ZRANK,
+                RespCommand.ZREVRANK => SortedSetOperation.ZREVRANK,
+                _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+            };
 
             // Prepare input
             var input = new ObjectInput
@@ -707,13 +649,12 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-            var status = storageApi.SortedSetRank(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetRank<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
@@ -733,34 +674,29 @@ namespace Garnet.server
         /// Both start and stop are 0 -based indexes with 0 being the element with the lowest score.
         /// ZREMRANGEBYSCORE: Removes all elements in the sorted set stored at key with a score between min and max (inclusive by default).
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRemoveRange<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+        private unsafe bool SortedSetRemoveRange<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count != 3)
-            {
                 return AbortWithWrongNumberOfArguments(command.ToString());
-            }
 
             // Get the key
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
                 return true;
-            }
 
-            var op =
-                command switch
-                {
-                    RespCommand.ZREMRANGEBYRANK => SortedSetOperation.ZREMRANGEBYRANK,
-                    RespCommand.ZREMRANGEBYSCORE => SortedSetOperation.ZREMRANGEBYSCORE,
-                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
-                };
+            var op = command switch
+            {
+                RespCommand.ZREMRANGEBYRANK => SortedSetOperation.ZREMRANGEBYRANK,
+                RespCommand.ZREMRANGEBYSCORE => SortedSetOperation.ZREMRANGEBYSCORE,
+                _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+            };
 
             // Prepare input
             var input = new ObjectInput
@@ -776,13 +712,12 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-            var status = storageApi.SortedSetRemoveRange(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetRemoveRange<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -799,25 +734,21 @@ namespace Garnet.server
         /// <summary>
         /// Returns a random element from the sorted set key.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRandomMember<TGarnetApi>(ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+        private unsafe bool SortedSetRandomMember<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
-            if (parseState.Count < 1 || parseState.Count > 3)
-            {
+            if (parseState.Count is < 1 or > 3)
                 return AbortWithWrongNumberOfArguments("ZRANDMEMBER");
-            }
 
             // Get the key for the Sorted Set
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
                 return true;
-            }
 
             var paramCount = 1;
             var includeWithScores = false;
@@ -830,7 +761,6 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
-
                     return true;
                 }
 
@@ -845,10 +775,8 @@ namespace Garnet.server
                     {
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
                             SendAndReset();
-
                         return true;
                     }
-
                     includeWithScores = true;
                 }
             }
@@ -876,13 +804,13 @@ namespace Garnet.server
             {
                 // Prepare GarnetObjectStore output
                 outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-                status = storageApi.SortedSetRandomMember(keyBytes, ref input, ref outputFooter);
+                status = storageApi.SortedSetRandomMember<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
             }
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     var respBytes = includedCount ? CmdStrings.RESP_EMPTYLIST : CmdStrings.RESP_ERRNOTFOUND;
@@ -909,10 +837,8 @@ namespace Garnet.server
              where TGarnetApi : IGarnetApi
         {
             if (parseState.Count < 2)
-            {
                 return AbortWithWrongNumberOfArguments("ZDIFF");
-            }
-
+ 
             //number of keys
             if (!parseState.TryGetInt(0, out var nKeys))
             {
@@ -925,7 +851,6 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
                     SendAndReset();
-
                 return true;
             }
 
@@ -937,29 +862,22 @@ namespace Garnet.server
                 //return empty array
                 while (!RespWriteUtils.WriteArrayLength(0, ref dcurr, dend))
                     SendAndReset();
-
                 return true;
             }
 
             var keys = new ArgSlice[nKeys];
-
             for (var i = 1; i < nKeys + 1; i++)
-            {
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
-            }
 
             if (parseState.Count - 1 > nKeys)
             {
                 var withScores = parseState.GetArgSliceByRef(parseState.Count - 1).ReadOnlySpan;
-
                 if (!withScores.SequenceEqual(CmdStrings.WITHSCORES))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
                         SendAndReset();
-
                     return true;
                 }
-
                 includeWithScores = true;
             }
 

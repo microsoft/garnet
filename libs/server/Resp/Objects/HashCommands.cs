@@ -17,12 +17,12 @@ namespace Garnet.server
         /// If field exists the operation has no effect.
         /// HMSET key field value [field value ...](deprecated) Same effect as HSET
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashSet<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private unsafe bool HashSet<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (((command == RespCommand.HSET || command == RespCommand.HMSET)
                   && (parseState.Count == 1 || parseState.Count % 2 != 1)) ||
@@ -35,18 +35,15 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
                 return true;
-            }
 
-            var hop =
-                command switch
-                {
-                    RespCommand.HSET => HashOperation.HSET,
-                    RespCommand.HMSET => HashOperation.HMSET,
-                    RespCommand.HSETNX => HashOperation.HSETNX,
-                    _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
-                };
+            var hop = command switch
+            {
+                RespCommand.HSET => HashOperation.HSET,
+                RespCommand.HMSET => HashOperation.HMSET,
+                RespCommand.HSETNX => HashOperation.HSETNX,
+                _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
+            };
 
             // Prepare input
             var input = new ObjectInput
@@ -60,7 +57,7 @@ namespace Garnet.server
                 parseStateStartIdx = 1,
             };
 
-            var status = storageApi.HashSet(keyBytes, ref input, out var output);
+            var status = storageApi.HashSet<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -88,12 +85,12 @@ namespace Garnet.server
         /// <summary>
         /// Returns the value associated with field in the hash stored at key.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool HashGet<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private bool HashGet<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -102,9 +99,7 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
                 return true;
-            }
 
             // Prepare input
             var input = new ObjectInput
@@ -120,13 +115,12 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-            var status = storageApi.HashGet(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.HashGet<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
@@ -144,12 +138,12 @@ namespace Garnet.server
         /// <summary>
         /// Returns all fields and values of the hash stored at key.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool HashGetAll<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private bool HashGetAll<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count != 1)
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -159,9 +153,7 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
                 return true;
-            }
 
             // Prepare input
             var input = new ObjectInput
@@ -176,13 +168,12 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-            var status = storageApi.HashGetAll(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.HashGetAll<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
@@ -200,12 +191,12 @@ namespace Garnet.server
         /// <summary>
         /// HashGetMultiple: Returns the values associated with the specified fields in the hash stored at key.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool HashGetMultiple<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private bool HashGetMultiple<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count < 2)
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -233,7 +224,7 @@ namespace Garnet.server
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.HashGetMultiple(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.HashGetMultiple<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -257,12 +248,12 @@ namespace Garnet.server
         /// <summary>
         /// HashRandomField: Returns a random field from the hash value stored at key.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool HashRandomField<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private bool HashRandomField<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count < 1 || parseState.Count > 3)
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -271,9 +262,7 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
                 return true;
-            }
 
             var paramCount = 1;
             var withValues = false;
@@ -301,7 +290,6 @@ namespace Garnet.server
                             SendAndReset();
                         return true;
                     }
-
                     withValues = true;
                 }
             }
@@ -325,7 +313,6 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
             var status = GarnetStatus.NOTFOUND;
 
             // This prevents going to the backend if HRANDFIELD is called with a count of 0
@@ -333,13 +320,13 @@ namespace Garnet.server
             {
                 // Prepare GarnetObjectStore output
                 outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-                status = storageApi.HashRandomField(keyBytes, ref input, ref outputFooter);
+                status = storageApi.HashRandomField<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
             }
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     var respBytes = includedCount ? CmdStrings.RESP_EMPTYLIST : CmdStrings.RESP_ERRNOTFOUND;
@@ -358,11 +345,11 @@ namespace Garnet.server
         /// <summary>
         /// Returns the number of fields contained in the hash key.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashLength<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private unsafe bool HashLength<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count != 1)
             {
@@ -388,7 +375,7 @@ namespace Garnet.server
                 },
             };
 
-            var status = storageApi.HashLength(keyBytes, ref input, out var output);
+            var status = storageApi.HashLength<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -414,23 +401,19 @@ namespace Garnet.server
         /// Returns the string length of the value associated with field in the hash stored at key. If the key or the field do not exist, 0 is returned.
         /// </summary>
         /// <param name="storageApi"></param>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <returns></returns>
-        private unsafe bool HashStrLength<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private unsafe bool HashStrLength<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count != 2)
-            {
                 return AbortWithWrongNumberOfArguments("HSTRLEN");
-            }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
                 return true;
-            }
 
             // Prepare input
             var input = new ObjectInput
@@ -444,7 +427,7 @@ namespace Garnet.server
                 parseStateStartIdx = 1,
             };
 
-            var status = storageApi.HashStrLength(keyBytes, ref input, out var output);
+            var status = storageApi.HashStrLength<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -468,25 +451,21 @@ namespace Garnet.server
         /// <summary>
         /// Removes the specified fields from the hash stored at key.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashDelete<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private unsafe bool HashDelete<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count < 1)
-            {
                 return AbortWithWrongNumberOfArguments("HDEL");
-            }
 
             // Get the key for Hash
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
                 return true;
-            }
 
             // Prepare input
             var input = new ObjectInput
@@ -500,7 +479,7 @@ namespace Garnet.server
                 parseStateStartIdx = 1,
             };
 
-            var status = storageApi.HashDelete(keyBytes, ref input, out var output);
+            var status = storageApi.HashDelete<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -523,24 +502,20 @@ namespace Garnet.server
         /// <summary>
         /// Returns if field exists in the hash stored at key.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashExists<TGarnetApi>(ref TGarnetApi storageApi)
-           where TGarnetApi : IGarnetApi
+        private unsafe bool HashExists<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count != 2)
-            {
                 return AbortWithWrongNumberOfArguments("HEXISTS");
-            }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
                 return true;
-            }
 
             // Prepare input
             var input = new ObjectInput
@@ -554,7 +529,7 @@ namespace Garnet.server
                 parseStateStartIdx = 1,
             };
 
-            var status = storageApi.HashExists(keyBytes, ref input, out var output);
+            var status = storageApi.HashExists<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -578,34 +553,29 @@ namespace Garnet.server
         /// HashKeys: Returns all field names in the hash key.
         /// HashVals: Returns all values in the hash key.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashKeys<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
-          where TGarnetApi : IGarnetApi
+        private unsafe bool HashKeys<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count != 1)
-            {
                 return AbortWithWrongNumberOfArguments(command.ToString());
-            }
 
             // Get the key for Hash
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
                 return true;
-            }
 
-            var op =
-                command switch
-                {
-                    RespCommand.HKEYS => HashOperation.HKEYS,
-                    RespCommand.HVALS => HashOperation.HVALS,
-                    _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
-                };
+            var op = command switch
+            {
+                RespCommand.HKEYS => HashOperation.HKEYS,
+                RespCommand.HVALS => HashOperation.HVALS,
+                _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
+            };
 
             // Prepare input
             var input = new ObjectInput
@@ -621,13 +591,13 @@ namespace Garnet.server
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = command == RespCommand.HKEYS
-                ? storageApi.HashKeys(keyBytes, ref input, ref outputFooter)
-                : storageApi.HashVals(keyBytes, ref input, ref outputFooter);
+                ? storageApi.HashKeys<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter)
+                : storageApi.HashVals<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
@@ -645,36 +615,30 @@ namespace Garnet.server
         /// HashIncrement: Increments the number stored at field in the hash stored at key by increment.
         /// HashIncrementByFloat: Increment the specified field of a hash stored at key, and representing a floating point number, by the specified increment. 
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashIncrement<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private unsafe bool HashIncrement<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             // Check if parameters number is right
             if (parseState.Count != 3)
-            {
-                // Send error to output
                 return AbortWithWrongNumberOfArguments(command == RespCommand.HINCRBY ? "HINCRBY" : "HINCRBYFLOAT");
-            }
 
             // Get the key for Hash
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
                 return true;
-            }
 
-            var op =
-                command switch
-                {
-                    RespCommand.HINCRBY => HashOperation.HINCRBY,
-                    RespCommand.HINCRBYFLOAT => HashOperation.HINCRBYFLOAT,
-                    _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
-                };
+            var op = command switch
+            {
+                RespCommand.HINCRBY => HashOperation.HINCRBY,
+                RespCommand.HINCRBYFLOAT => HashOperation.HINCRBYFLOAT,
+                _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
+            };
 
             // Prepare input
             var input = new ObjectInput
@@ -690,8 +654,7 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-            var status = storageApi.HashIncrement(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.HashIncrement<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {

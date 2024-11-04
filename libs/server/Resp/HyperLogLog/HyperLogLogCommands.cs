@@ -14,16 +14,14 @@ namespace Garnet.server
         /// <summary>
         /// Adds one element to the HyperLogLog data structure stored at the variable name specified.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool HyperLogLogAdd<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private bool HyperLogLogAdd<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count < 1)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD));
-            }
 
             // 4 byte length of input
             // 1 byte RespCommand
@@ -40,8 +38,8 @@ namespace Garnet.server
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
             //1. header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.PFADD;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
+            (*(RespInputHeader*)pcurr).cmd = RespCommand.PFADD;
+            (*(RespInputHeader*)pcurr).flags = 0;
             pcurr += RespInputHeader.Size;
             //2. cmd args
             *(int*)pcurr = 1; pcurr += sizeof(int);
@@ -55,7 +53,7 @@ namespace Garnet.server
                 *(long*)pcurr = (long)HashUtils.MurmurHash2x64A(currSlice.ptr, currSlice.Length);
 
                 var o = new SpanByteAndMemory(output, 1);
-                storageApi.HyperLogLogAdd(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+                _ = storageApi.HyperLogLogAdd<TKeyLocker, TEpochGuard>(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
                 //Invalid HLL Type
                 if (*output == (byte)0xFF)
@@ -85,12 +83,12 @@ namespace Garnet.server
         /// Returns the approximated cardinality computed by the HyperLogLog data structure stored at the specified key,
         /// or 0 if the key does not exist.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        private bool HyperLogLogLength<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        private bool HyperLogLogLength<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (parseState.Count < 1)
             {
@@ -112,7 +110,7 @@ namespace Garnet.server
             (*(RespInputHeader*)pcurr).cmd = RespCommand.PFCOUNT;
             (*(RespInputHeader*)pcurr).flags = 0;
 
-            var status = storageApi.HyperLogLogLength(parseState.Parameters, ref Unsafe.AsRef<SpanByte>(pbCmdInput), out long cardinality, out bool error);
+            var status = storageApi.HyperLogLogLength<TKeyLocker, TEpochGuard>(parseState.Parameters, ref Unsafe.AsRef<SpanByte>(pbCmdInput), out var cardinality, out var error);
             if (error)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
@@ -131,15 +129,12 @@ namespace Garnet.server
         /// Merge multiple HyperLogLog values into an unique value that will approximate the cardinality 
         /// of the union of the observed Sets of the source HyperLogLog structures.
         /// </summary>
-        private bool HyperLogLogMerge<TGarnetApi>(ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+        private bool HyperLogLogMerge(ref GarnetApi storageApi)
         {
             if (parseState.Count < 1)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE));
-            }
 
-            var status = storageApi.HyperLogLogMerge(parseState.Parameters, out bool error);
+            var status = storageApi.HyperLogLogMerge(parseState.Parameters, out var error);
             // Invalid Type
             if (error)
             {

@@ -26,9 +26,6 @@ namespace Tsavorite.core
 
         internal CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs;
 
-        readonly UnsafeContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> uContext;
-        readonly LockableUnsafeContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> luContext;
-        readonly LockableContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> lContext;
         readonly BasicContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> bContext;
         readonly DualItemContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> dualContext;
 
@@ -71,9 +68,6 @@ namespace Tsavorite.core
             ILoggerFactory loggerFactory = null)
         {
             bContext = new(this);
-            uContext = new(this);
-            lContext = new(this);
-            luContext = new(this);
             dualContext = new(this);
 
             Store = store;
@@ -104,21 +98,6 @@ namespace Tsavorite.core
             _ = CompletePending<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, NoKeyLocker>(bContext.sessionFunctions, true);
             Store.DisposeClientSession(ID, ExecutionCtx.phase);
         }
-
-        /// <summary>
-        /// Return a new interface to Tsavorite operations that supports manual epoch control.
-        /// </summary>
-        public UnsafeContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> UnsafeContext => uContext;
-
-        /// <summary>
-        /// Return a new interface to Tsavorite operations that supports manual locking and epoch control.
-        /// </summary>
-        public LockableUnsafeContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> LockableUnsafeContext => luContext;
-
-        /// <summary>
-        /// Return a session wrapper that supports manual locking.
-        /// </summary>
-        public LockableContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> LockableContext => lContext;
 
         /// <summary>
         /// Return a session wrapper struct that does transient locking and epoch safety
