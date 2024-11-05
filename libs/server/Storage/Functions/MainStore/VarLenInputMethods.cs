@@ -206,6 +206,7 @@ namespace Garnet.server
 
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
+                    case RespCommand.SETEXNX:
                         break;
                     case RespCommand.PERSIST:
                         return sizeof(int) + t.LengthWithoutMetadata;

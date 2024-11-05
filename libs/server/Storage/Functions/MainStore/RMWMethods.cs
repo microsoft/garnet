@@ -558,21 +558,6 @@ namespace Garnet.server
         {
             switch (input.header.cmd)
             {
-                case RespCommand.SETEXNX:
-                    // Expired data, return false immediately
-                    // ExpireAndStop ensures that caller sees a NOTFOUND status
-                    if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
-                    {
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                        return false;
-                    }
-                    // Check if SetGet flag is set
-                    if (input.header.CheckSetGetFlag())
-                    {
-                        // Copy value to output for the GET part of the command.
-                        CopyRespTo(ref oldValue, ref output);
-                    }
-                    return false;
                 default:
                     if ((ushort)input.header.cmd >= CustomCommandManager.StartOffset)
                     {

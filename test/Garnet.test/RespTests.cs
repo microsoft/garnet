@@ -323,15 +323,75 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
+            var key = "mykey";
             string origValue = "abcdefghij";
-            db.StringSet("mykey", origValue, TimeSpan.FromSeconds(3), When.NotExists, CommandFlags.None);
+            var newLongerValue = "abcdefghijk"; // Longer value to test non in-place update
+            var newShorterValue = "abcdefghi"; // Shorter value to test in-place update
+            var expireTime = TimeSpan.FromSeconds(1);
+            var ok = db.StringSet(key, origValue, expireTime, When.NotExists, CommandFlags.None);
+            ClassicAssert.IsTrue(ok);
 
-            string retValue = db.StringGet("mykey");
+            string retValue = db.StringGet(key);
             ClassicAssert.AreEqual(origValue, retValue);
 
-            Thread.Sleep(4000);
-            retValue = db.StringGet("mykey");
+            Thread.Sleep(expireTime * 1.1);
+            retValue = db.StringGet(key);
             ClassicAssert.AreEqual(null, retValue);
+
+            // Test non in-place update
+            ok = db.StringSet(key, newLongerValue, expireTime, When.NotExists, CommandFlags.None);
+            ClassicAssert.IsTrue(ok);
+
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newLongerValue, retValue);
+
+            Thread.Sleep(expireTime * 1.1);
+
+            // Test in-place update
+            ok = db.StringSet(key, newShorterValue, expireTime, When.NotExists, CommandFlags.None);
+            ClassicAssert.IsTrue(ok);
+
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newShorterValue, retValue);
+        }
+
+        [Test]
+        public void SetAndGetExpiryNx()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            string origValue = "abcdefghij";
+            var newValue = "xyz"; // New value that shouldn't be written
+            var newLongerValue = "abcdefghijk"; // Longer value to test non in-place update
+            var newShorterValue = "abcdefghi"; // Shorter value to test in-place update
+            var expireTime = TimeSpan.FromSeconds(1);
+            string actualValue = db.StringSetAndGet(key, origValue, expireTime, when: When.NotExists, CommandFlags.None);
+            ClassicAssert.IsNull(actualValue);
+
+            string retValue = db.StringSetAndGet(key, newValue, expireTime, when: When.NotExists, CommandFlags.None);
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            Thread.Sleep(expireTime * 1.1);
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(null, retValue);
+
+            // Test non in-place update
+            actualValue = db.StringSetAndGet(key, newLongerValue, expireTime, when: When.NotExists, CommandFlags.None);
+            ClassicAssert.IsNull(actualValue);
+
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newLongerValue, retValue);
+
+            Thread.Sleep(expireTime * 1.1);
+
+            // Test in-place update
+            actualValue = db.StringSetAndGet(key, newShorterValue, expireTime, when: When.NotExists, CommandFlags.None);
+            ClassicAssert.IsNull(actualValue);
+
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newShorterValue, retValue);
         }
 
         [Test]
