@@ -31,8 +31,8 @@ namespace Garnet.cluster
             index_size = -1;
             try
             {
-                hlog_size = storeWrapper.store.GetLogFileSize(entry.storeHlogToken);
-                index_size = storeWrapper.store.GetIndexFileSize(entry.storeIndexToken);
+                hlog_size = storeWrapper.Store.GetLogFileSize(entry.storeHlogToken);
+                index_size = storeWrapper.Store.GetIndexFileSize(entry.storeIndexToken);
                 return true;
             }
             catch
@@ -54,8 +54,8 @@ namespace Garnet.cluster
             index_size = -1;
             try
             {
-                hlog_size = storeWrapper.objectStore.GetLogFileSize(entry.objectStoreHlogToken);
-                index_size = storeWrapper.objectStore.GetIndexFileSize(entry.objectStoreIndexToken);
+                hlog_size = storeWrapper.ObjectStore.GetLogFileSize(entry.objectStoreHlogToken);
+                index_size = storeWrapper.ObjectStore.GetIndexFileSize(entry.objectStoreIndexToken);
                 return true;
             }
             catch

@@ -47,7 +47,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void BeginTransaction()
+        public void BeginTransaction()
         {
             CheckTransactionIsNotStarted();
             isTxnStarted = true;
@@ -59,7 +59,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void EndTransaction()
+        public void EndTransaction()
         {
             CheckTransactionIsStarted();
 
@@ -95,8 +95,8 @@ namespace Tsavorite.core
             Kernel.Epoch.ProtectAndDrain();
 
             // These must use session to be aware of per-session SystemState.
-            clientSession1.Refresh<TKeyLocker>(ref hei);
-            clientSession2?.Refresh<TKeyLocker>(ref hei);
+            clientSession1.Refresh(ref hei);
+            clientSession2?.Refresh(ref hei);
         }
 
         /// <inheritdoc/>

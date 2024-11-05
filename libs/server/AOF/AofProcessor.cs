@@ -72,8 +72,8 @@ namespace Garnet.server
                 storeWrapper.redisProtocolVersion,
                 storeWrapper.TsavoriteKernel,
                 null,
-                storeWrapper.store,
-                storeWrapper.objectStore,
+                storeWrapper.Store,
+                storeWrapper.ObjectStore,
                 storeWrapper.objectStoreSizeTracker,
                 storeWrapper.customCommandManager,
                 recordToAof ? storeWrapper.appendOnlyFile : null,
@@ -201,14 +201,14 @@ namespace Garnet.server
                 case AofEntryType.MainStoreCheckpointCommit:
                     if (asReplica)
                     {
-                        if (header.version > storeWrapper.store.CurrentVersion)
+                        if (header.version > storeWrapper.Store.CurrentVersion)
                             storeWrapper.TakeCheckpoint(false, StoreType.Main, logger);
                     }
                     break;
                 case AofEntryType.ObjectStoreCheckpointCommit:
                     if (asReplica)
                     {
-                        if (header.version > storeWrapper.objectStore.CurrentVersion)
+                        if (header.version > storeWrapper.ObjectStore.CurrentVersion)
                             storeWrapper.TakeCheckpoint(false, StoreType.Object, logger);
                     }
                     break;
@@ -372,8 +372,8 @@ namespace Garnet.server
 
             return storeType switch
             {
-                AofStoreType.MainStoreType => header.version <= storeWrapper.store.CurrentVersion - 1,
-                AofStoreType.ObjectStoreType => header.version <= storeWrapper.objectStore.CurrentVersion - 1,
+                AofStoreType.MainStoreType => header.version <= storeWrapper.Store.CurrentVersion - 1,
+                AofStoreType.ObjectStoreType => header.version <= storeWrapper.ObjectStore.CurrentVersion - 1,
                 AofStoreType.TxnType => false,
                 AofStoreType.ReplicationType => false,
                 AofStoreType.CheckpointType => false,

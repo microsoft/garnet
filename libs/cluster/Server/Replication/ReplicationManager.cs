@@ -66,8 +66,8 @@ namespace Garnet.cluster
         {
             return storeType switch
             {
-                StoreType.Main => (ReplicationLogCheckpointManager)storeWrapper.store.CheckpointManager,
-                StoreType.Object => (ReplicationLogCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
+                StoreType.Main => (ReplicationLogCheckpointManager)storeWrapper.Store.CheckpointManager,
+                StoreType.Object => (ReplicationLogCheckpointManager)storeWrapper.ObjectStore?.CheckpointManager,
                 _ => throw new Exception($"GetCkptManager: unexpected state {storeType}")
             };
         }
@@ -103,7 +103,7 @@ namespace Garnet.cluster
 
             // Set the appendOnlyFile field for all stores
             clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShift = CheckpointVersionShift;
-            if (storeWrapper.objectStore != null)
+            if (storeWrapper.ObjectStore != null)
                 clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShift = CheckpointVersionShift;
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary

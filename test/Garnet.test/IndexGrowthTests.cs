@@ -35,7 +35,7 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, indexSize: "64", indexMaxSize: "128", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
             server.Start();
 
-            var store = server.Provider.StoreWrapper.store;
+            var store = server.Provider.StoreWrapper.Store;
 
             RedisKey[] keys = ["abcdkey", "bcdekey", "cdefkey", "defgkey", "efghkey", "fghikey", "ghijkey", "hijkkey"];
             RedisValue[] values = ["abcdval", "bcdeval", "cdefval", "defgval", "efghval", "fghival", "ghijval", "hijkval"];
@@ -73,7 +73,7 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, indexSize: "512", indexMaxSize: "1k", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
             server.Start();
 
-            var store = server.Provider.StoreWrapper.store;
+            var store = server.Provider.StoreWrapper.Store;
 
             RedisKey[] keys = ["abcdkey", "bcdekey", "cdefkey", "defgkey", "efghkey", "fghikey", "ghijkey", "hijkkey"];
             RedisValue[] values = ["abcdval", "bcdeval", "cdefval", "defgval", "efghval", "fghival", "ghijval", "hijkval"];

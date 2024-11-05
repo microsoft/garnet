@@ -28,7 +28,7 @@ namespace Garnet.server
         internal DualContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator,
                                  byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator, GarnetDualInputConverter> dualContext;
 
-        internal ref DualKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator,
+        private ref DualKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator,
                                  byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> KernelSession => ref dualContext.KernelSession;
 
         private DualItemContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> MainContext => dualContext.ItemContext1;
@@ -47,9 +47,10 @@ namespace Garnet.server
         readonly ILogger logger;
         private readonly CollectionItemBroker itemBroker;
 
-        internal TsavoriteKernel Kernel => txnManager.TsavoriteKernel;
+        internal TsavoriteKernel Kernel => dualContext.Store2.Kernel;
 
         public int SessionID => dualContext.Session1.ID;
+        public long SessionVersion => dualContext.Session1.Version;
 
         public readonly int ObjectScanCountLimit;
 
@@ -69,9 +70,9 @@ namespace Garnet.server
 
             var functions = new MainSessionFunctions(functionsState);
             var objstorefunctions = new ObjectSessionFunctions(functionsState);
-            dualContext = new(storeWrapper.store, functions, storeWrapper.objectStore, objstorefunctions, new GarnetDualInputConverter(), pendingMetrics: this);
+            dualContext = new(storeWrapper.Store, functions, storeWrapper.ObjectStore, objstorefunctions, new GarnetDualInputConverter(), pendingMetrics: this);
 
-            HeadAddress = storeWrapper.store.Log.HeadAddress;
+            HeadAddress = storeWrapper.Store.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
         }
 
@@ -80,6 +81,29 @@ namespace Garnet.server
 
         public HashEntryInfo CreateHei(SpanByte key) => dualContext.CreateHei1(GetMainStoreKeyHashCode64(ref key));
         public HashEntryInfo CreateHei(byte[] key) => dualContext.CreateHei2(GetObjectStoreKeyHashCode64(ref key));
+
+        public bool IsDual => dualContext.IsDual;
+
+        public void BeginUnsafe() => KernelSession.BeginUnsafe();
+        public void EndUnsafe() => KernelSession.EndUnsafe();
+        public bool EnsureBeginUnsafe() => KernelSession.EnsureBeginUnsafe();
+        public void BeginTransaction() => KernelSession.BeginTransaction();
+        public void EndTransaction() => KernelSession.EndTransaction();
+
+        public void SortAndLockAllKeys(TxnKeyEntry[] keys, int keyCount)
+        {
+            Kernel.SortKeyHashes(keys, 0, keyCount);
+            Kernel.Lock(ref dualContext.KernelSession, keys, 0, keyCount);
+        }
+
+        public bool SortAndTryLockAllKeys(TxnKeyEntry[] keys, int keyCount, TimeSpan lock_timeout)
+        {
+            Kernel.SortKeyHashes(keys, 0, keyCount);
+            return Kernel.TryLock(ref dualContext.KernelSession, keys, 0, keyCount, lock_timeout);
+        }
+
+        public void UnlockAllKeys(TxnKeyEntry[] keys, int keyCount)
+            => Kernel.Unlock(ref dualContext.KernelSession, keys, 0, keyCount);
 
         public void Dispose()
         {

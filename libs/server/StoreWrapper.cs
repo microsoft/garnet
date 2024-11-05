@@ -33,15 +33,17 @@ namespace Garnet.server
         readonly IGarnetServer server;
         internal readonly long startupTime;
 
+        private readonly DualTsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator, byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> DualStore;
+
         /// <summary>
         /// Store
         /// </summary>
-        public readonly TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
+        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> Store => DualStore.Store1;
 
         /// <summary>
         /// Object store
         /// </summary>
-        public readonly TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
+        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore;
 
         /// <summary>
         /// Server options
@@ -130,8 +132,7 @@ namespace Garnet.server
             this.TsavoriteKernel = tsavoriteKernel;
             this.server = server;
             this.startupTime = DateTimeOffset.UtcNow.Ticks;
-            this.store = store;
-            this.objectStore = objectStore;
+            this.DualStore = new(store, objectStore);
             this.appendOnlyFile = appendOnlyFile;
             this.serverOptions = serverOptions;
             lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
@@ -247,8 +248,8 @@ namespace Garnet.server
             long storeVersion = -1, objectStoreVersion = -1;
             try
             {
-                storeVersion = !recoverMainStoreFromToken ? store.Recover() : store.Recover(storeIndexToken, storeHlogToken);
-                if (objectStore != null) objectStoreVersion = !recoverObjectStoreFromToken ? objectStore.Recover() : objectStore.Recover(objectStoreIndexToken, objectStoreHlogToken);
+                storeVersion = !recoverMainStoreFromToken ? Store.Recover() : Store.Recover(storeIndexToken, storeHlogToken);
+                if (ObjectStore != null) objectStoreVersion = !recoverObjectStoreFromToken ? ObjectStore.Recover() : ObjectStore.Recover(objectStoreIndexToken, objectStoreHlogToken);
                 if (storeVersion > 0 || objectStoreVersion > 0)
                     lastSaveTime = DateTimeOffset.UtcNow;
             }
@@ -275,10 +276,10 @@ namespace Garnet.server
         {
             try
             {
-                if (store.Log.TailAddress > 64)
-                    store.Reset();
-                if (objectStore?.Log.TailAddress > 64)
-                    objectStore?.Reset();
+                if (Store.Log.TailAddress > 64)
+                    Store.Reset();
+                if (ObjectStore?.Log.TailAddress > 64)
+                    ObjectStore?.Reset();
                 appendOnlyFile?.Reset();
                 lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
             }
@@ -416,34 +417,34 @@ namespace Garnet.server
 
             long mainStoreMaxLogSize = (1L << serverOptions.SegmentSizeBits()) * mainStoreMaxSegments;
 
-            if (store.Log.ReadOnlyAddress - store.Log.BeginAddress > mainStoreMaxLogSize)
+            if (Store.Log.ReadOnlyAddress - Store.Log.BeginAddress > mainStoreMaxLogSize)
             {
-                long readOnlyAddress = store.Log.ReadOnlyAddress;
+                long readOnlyAddress = Store.Log.ReadOnlyAddress;
                 long compactLength = (1L << serverOptions.SegmentSizeBits()) * (mainStoreMaxSegments - numSegmentsToCompact);
                 long untilAddress = readOnlyAddress - compactLength;
-                logger?.LogInformation("Begin main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, store.Log.BeginAddress, readOnlyAddress, store.Log.TailAddress);
+                logger?.LogInformation("Begin main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, Store.Log.BeginAddress, readOnlyAddress, Store.Log.TailAddress);
 
                 switch (compactionType)
                 {
                     case LogCompactionType.Shift:
-                        store.Log.ShiftBeginAddress(untilAddress, true, compactionForceDelete);
+                        Store.Log.ShiftBeginAddress(untilAddress, true, compactionForceDelete);
                         break;
 
                     case LogCompactionType.Scan:
-                        store.Log.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Scan);
+                        Store.Log.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Scan);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof();
-                            store.Log.Truncate();
+                            Store.Log.Truncate();
                         }
                         break;
 
                     case LogCompactionType.Lookup:
-                        store.Log.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Lookup);
+                        Store.Log.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Lookup);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof();
-                            store.Log.Truncate();
+                            Store.Log.Truncate();
                         }
                         break;
 
@@ -451,43 +452,43 @@ namespace Garnet.server
                         break;
                 }
 
-                logger?.LogInformation("End main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, store.Log.BeginAddress, readOnlyAddress, store.Log.TailAddress);
+                logger?.LogInformation("End main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, Store.Log.BeginAddress, readOnlyAddress, Store.Log.TailAddress);
             }
 
-            if (objectStore == null) return;
+            if (ObjectStore == null) return;
 
             long objectStoreMaxLogSize = (1L << serverOptions.ObjectStoreSegmentSizeBits()) * objectStoreMaxSegments;
 
-            if (objectStore.Log.ReadOnlyAddress - objectStore.Log.BeginAddress > objectStoreMaxLogSize)
+            if (ObjectStore.Log.ReadOnlyAddress - ObjectStore.Log.BeginAddress > objectStoreMaxLogSize)
             {
-                long readOnlyAddress = objectStore.Log.ReadOnlyAddress;
+                long readOnlyAddress = ObjectStore.Log.ReadOnlyAddress;
                 long compactLength = (1L << serverOptions.ObjectStoreSegmentSizeBits()) * (objectStoreMaxSegments - numSegmentsToCompact);
                 long untilAddress = readOnlyAddress - compactLength;
-                logger?.LogInformation("Begin object store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, objectStore.Log.BeginAddress, readOnlyAddress, objectStore.Log.TailAddress);
+                logger?.LogInformation("Begin object store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, ObjectStore.Log.BeginAddress, readOnlyAddress, ObjectStore.Log.TailAddress);
 
                 switch (compactionType)
                 {
                     case LogCompactionType.Shift:
-                        objectStore.Log.ShiftBeginAddress(untilAddress, compactionForceDelete);
+                        ObjectStore.Log.ShiftBeginAddress(untilAddress, compactionForceDelete);
                         break;
 
                     case LogCompactionType.Scan:
-                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
+                        ObjectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
                             new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Scan);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof();
-                            objectStore.Log.Truncate();
+                            ObjectStore.Log.Truncate();
                         }
                         break;
 
                     case LogCompactionType.Lookup:
-                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
+                        ObjectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
                             new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Lookup);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof();
-                            objectStore.Log.Truncate();
+                            ObjectStore.Log.Truncate();
                         }
                         break;
 
@@ -495,7 +496,7 @@ namespace Garnet.server
                         break;
                 }
 
-                logger?.LogInformation("End object store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, store.Log.BeginAddress, readOnlyAddress, store.Log.TailAddress);
+                logger?.LogInformation("End object store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, Store.Log.BeginAddress, readOnlyAddress, Store.Log.TailAddress);
             }
         }
 
@@ -563,12 +564,12 @@ namespace Garnet.server
                     await Task.Delay(TimeSpan.FromSeconds(serverOptions.IndexResizeFrequencySecs), token);
 
                     if (!indexMaxedOut)
-                        indexMaxedOut = GrowIndexIfNeeded(StoreType.Main, serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
-                            () => store.IndexSize, () => store.GrowIndex());
+                        indexMaxedOut = GrowIndexIfNeeded(StoreType.Main, serverOptions.AdjustedIndexMaxCacheLines, Store.OverflowBucketAllocations,
+                            () => Store.IndexSize, () => Store.GrowIndex());
 
                     if (!objectStoreIndexMaxedOut)
-                        objectStoreIndexMaxedOut = GrowIndexIfNeeded(StoreType.Object, serverOptions.AdjustedObjectStoreIndexMaxCacheLines, objectStore.OverflowBucketAllocations,
-                            () => objectStore.IndexSize, () => objectStore.GrowIndex());
+                        objectStoreIndexMaxedOut = GrowIndexIfNeeded(StoreType.Object, serverOptions.AdjustedObjectStoreIndexMaxCacheLines, ObjectStore.OverflowBucketAllocations,
+                            () => ObjectStore.IndexSize, () => ObjectStore.GrowIndex());
                 }
             }
             catch (Exception ex)
@@ -682,19 +683,19 @@ namespace Garnet.server
             try
             {
                 DoCompaction();
-                var lastSaveStoreTailAddress = store.Log.TailAddress;
-                var lastSaveObjectStoreTailAddress = (objectStore?.Log.TailAddress).GetValueOrDefault();
+                var lastSaveStoreTailAddress = Store.Log.TailAddress;
+                var lastSaveObjectStoreTailAddress = (ObjectStore?.Log.TailAddress).GetValueOrDefault();
 
                 var full = false;
                 if (this.lastSaveStoreTailAddress == 0 || lastSaveStoreTailAddress - this.lastSaveStoreTailAddress >= serverOptions.FullCheckpointLogInterval)
                     full = true;
-                if (objectStore != null && (this.lastSaveObjectStoreTailAddress == 0 || lastSaveObjectStoreTailAddress - this.lastSaveObjectStoreTailAddress >= serverOptions.FullCheckpointLogInterval))
+                if (ObjectStore != null && (this.lastSaveObjectStoreTailAddress == 0 || lastSaveObjectStoreTailAddress - this.lastSaveObjectStoreTailAddress >= serverOptions.FullCheckpointLogInterval))
                     full = true;
 
                 var tryIncremental = serverOptions.EnableIncrementalSnapshots;
-                if (store.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
+                if (Store.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
                     tryIncremental = false;
-                if (objectStore?.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
+                if (ObjectStore?.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
                     tryIncremental = false;
 
                 var checkpointType = serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
@@ -739,18 +740,18 @@ namespace Garnet.server
             if (full)
             {
                 if (storeType is StoreType.Main or StoreType.All)
-                    storeCheckpointResult = await store.TakeFullCheckpointAsync(checkpointType);
+                    storeCheckpointResult = await Store.TakeFullCheckpointAsync(checkpointType);
 
-                if (objectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
-                    objectStoreCheckpointResult = await objectStore.TakeFullCheckpointAsync(checkpointType);
+                if (ObjectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                    objectStoreCheckpointResult = await ObjectStore.TakeFullCheckpointAsync(checkpointType);
             }
             else
             {
                 if (storeType is StoreType.Main or StoreType.All)
-                    storeCheckpointResult = await store.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
+                    storeCheckpointResult = await Store.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
 
-                if (objectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
-                    objectStoreCheckpointResult = await objectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
+                if (ObjectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                    objectStoreCheckpointResult = await ObjectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
             }
 
             // If cluster is enabled the replication manager is responsible for truncating AOF
@@ -764,11 +765,11 @@ namespace Garnet.server
                 appendOnlyFile?.Commit();
             }
 
-            if (objectStore != null)
+            if (ObjectStore != null)
             {
                 // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
                 // We can now safely remove these serialized versions as they are no longer needed.
-                using (var iter1 = objectStore.Log.Scan(objectStore.Log.ReadOnlyAddress, objectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering, includeSealedRecords: true))
+                using (var iter1 = ObjectStore.Log.Scan(ObjectStore.Log.ReadOnlyAddress, ObjectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering, includeSealedRecords: true))
                 {
                     while (iter1.GetNext(out _, out _, out var value))
                     {
@@ -787,7 +788,7 @@ namespace Garnet.server
             {
                 bool hasKeyInSlots = false;
                 {
-                    using var iter = store.Iterate<SpanByte, SpanByte, Empty, SimpleSessionFunctions<SpanByte, SpanByte, Empty>>(new SimpleSessionFunctions<SpanByte, SpanByte, Empty>());
+                    using var iter = Store.Iterate<SpanByte, SpanByte, Empty, SimpleSessionFunctions<SpanByte, SpanByte, Empty>>(new SimpleSessionFunctions<SpanByte, SpanByte, Empty>());
                     while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
                     {
                         ref var key = ref iter.GetKey();
@@ -799,11 +800,11 @@ namespace Garnet.server
                     }
                 }
 
-                if (!hasKeyInSlots && objectStore != null)
+                if (!hasKeyInSlots && ObjectStore != null)
                 {
                     var functionsState = CreateFunctionsState();
                     var objstorefunctions = new ObjectSessionFunctions(functionsState);
-                    var objectStoreSession = objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
+                    var objectStoreSession = ObjectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
                     var iter = objectStoreSession.Iterate();
                     while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
                     {

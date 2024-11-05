@@ -447,9 +447,9 @@ namespace Garnet.server
 
             try
             {
-                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
-                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
-                GarnetSafeEpochGuard.BeginUnsafe(ref storageSession.KernelSession);
+                // We're in a Transaction so use TransactionalSessionLocker. Obtain the epoch once then use GarnetUnsafeEpochGuard for called operations.
+                // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
+                storageSession.BeginUnsafe();
 
                 var heiSrcKey = storageSession.CreateHei(key);
 
@@ -517,7 +517,7 @@ namespace Garnet.server
             }
             finally
             {
-                GarnetSafeEpochGuard.EndUnsafe(ref storageSession.KernelSession);
+                storageSession.EndUnsafe();
                 if (createTransaction)
                     storageSession.txnManager.Commit(true);
             }

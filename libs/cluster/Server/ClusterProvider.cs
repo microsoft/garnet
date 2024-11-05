@@ -135,8 +135,8 @@ namespace Garnet.cluster
         /// <inheritdoc />
         public void FlushDB(bool unsafeTruncateLog = false)
         {
-            storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            storeWrapper.Store.Log.ShiftBeginAddress(storeWrapper.Store.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            storeWrapper.ObjectStore?.Log.ShiftBeginAddress(storeWrapper.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
 
         /// <inheritdoc />
@@ -146,7 +146,7 @@ namespace Garnet.cluster
 
             if (storeType is StoreType.Main or StoreType.All)
             {
-                entry.storeVersion = storeWrapper.store.CurrentVersion;
+                entry.storeVersion = storeWrapper.Store.CurrentVersion;
                 entry.storeHlogToken = storeCheckpointToken;
                 entry.storeIndexToken = storeCheckpointToken;
                 entry.storeCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
@@ -155,7 +155,7 @@ namespace Garnet.cluster
 
             if (storeType is StoreType.Object or StoreType.All)
             {
-                entry.objectStoreVersion = serverOptions.DisableObjects ? -1 : storeWrapper.objectStore.CurrentVersion;
+                entry.objectStoreVersion = serverOptions.DisableObjects ? -1 : storeWrapper.ObjectStore.CurrentVersion;
                 entry.objectStoreHlogToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
                 entry.objectStoreIndexToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
                 entry.objectCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
@@ -283,8 +283,8 @@ namespace Garnet.cluster
             Debug.Assert(serverOptions.EnableCluster);
             return storeType switch
             {
-                StoreType.Main => (ReplicationLogCheckpointManager)storeWrapper.store.CheckpointManager,
-                StoreType.Object => (ReplicationLogCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
+                StoreType.Main => (ReplicationLogCheckpointManager)storeWrapper.Store.CheckpointManager,
+                StoreType.Object => (ReplicationLogCheckpointManager)storeWrapper.ObjectStore?.CheckpointManager,
                 _ => throw new Exception($"GetCkptManager: unexpected state {storeType}")
             };
         }

@@ -57,8 +57,6 @@ namespace Garnet.server
         int keyCount;
         TxnKeyEntry[] keys;
 
-        internal TsavoriteKernel kernel;
-
         enum LockPhase
         {
             /// <summary>No lock operation is in progress</summary>
@@ -75,7 +73,6 @@ namespace Garnet.server
         internal TxnKeyEntries(TsavoriteKernel kernel, int capacity)
         {
             keys = new TxnKeyEntry[capacity];
-            this.kernel = kernel;
         }
 
         public bool IsReadOnly
@@ -93,8 +90,8 @@ namespace Garnet.server
         public long AddKey(StoreWrapper storeWrapper, ArgSlice keyArgSlice, bool isObject, LockType type)
         {
             var keyHash = !isObject
-                ? storeWrapper.store.GetKeyHash(keyArgSlice.SpanByte)
-                : storeWrapper.objectStore.GetKeyHash(keyArgSlice.ToArray());
+                ? storeWrapper.Store.GetKeyHash(keyArgSlice.SpanByte)
+                : storeWrapper.ObjectStore.GetKeyHash(keyArgSlice.ToArray());
 
             // Grow the buffer if needed
             if (keyCount >= keys.Length)
@@ -106,43 +103,35 @@ namespace Garnet.server
 
             // Populate the new key slot.
             keys[keyCount].keyHash = keyHash;
-            keys[keyCount].partitionId = !isObject ? storeWrapper.store.PartitionId : storeWrapper.objectStore.PartitionId;
+            keys[keyCount].partitionId = !isObject ? storeWrapper.Store.PartitionId : storeWrapper.ObjectStore.PartitionId;
             keys[keyCount].lockType = type;
             ++keyCount;
             return keyHash;
         }
 
-        internal void LockAllKeys(ref GarnetDualKernelSession kernelSession)
+        internal void LockAllKeys(StorageSession storageSession)
         {
-            lockPhase = LockPhase.Locking;
-
             // Note: Sort happens inside the transaction because we must have a stable Tsavorite hash table (not in GROW phase)
             // during sorting as well as during locking itself. This should not be a significant impact on performance.
-
-            kernel.SortKeyHashes(keys, 0, keyCount);
-            kernel.Lock(ref kernelSession, keys, 0, keyCount);
-
+            lockPhase = LockPhase.Locking;
+            storageSession.SortAndLockAllKeys(keys, keyCount);
             lockPhase = LockPhase.Rest;
         }
 
-        internal bool TryLockAllKeys(ref GarnetDualKernelSession kernelSession, TimeSpan lock_timeout)
+        internal bool TryLockAllKeys(StorageSession storageSession, TimeSpan lock_timeout)
         {
-            lockPhase = LockPhase.Locking;
-
             // Note: Sort happens inside the transaction because we must have a stable Tsavorite hash table (not in GROW phase)
             // during sorting as well as during locking itself. This should not be a significant impact on performance.
-
-            kernel.SortKeyHashes(keys, 0, keyCount);
-
-            var success = kernel.TryLock(ref kernelSession, keys, 0, keyCount, lock_timeout);
+            lockPhase = LockPhase.Locking;
+            var success = storageSession.SortAndTryLockAllKeys(keys, keyCount, lock_timeout);
             lockPhase = LockPhase.Rest;
             return success;
         }
 
-        internal void UnlockAllKeys(ref GarnetDualKernelSession kernelSession)
+        internal void UnlockAllKeys(StorageSession storageSession)
         {
             lockPhase = LockPhase.Unlocking;
-            kernel.Unlock(ref kernelSession, keys, 0, keyCount);
+            storageSession.UnlockAllKeys(keys, keyCount);
             keyCount = 0;
             lockPhase = LockPhase.Rest;
         }

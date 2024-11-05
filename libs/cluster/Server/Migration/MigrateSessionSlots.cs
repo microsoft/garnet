@@ -15,7 +15,7 @@ namespace Garnet.cluster
         public bool MigrateSlotsDriver()
         {
             logger?.LogTrace("Initializing MainStore Iterator");
-            var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
+            var storeTailAddress = clusterProvider.storeWrapper.Store.Log.TailAddress;
             var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
             MigrationKeyIterationFunctions.MainStoreGetKeysInSlots mainStoreGetKeysInSlots = new(this, _sslots, bufferSize: bufferSize);
 
@@ -55,7 +55,7 @@ namespace Garnet.cluster
             if (!clusterProvider.serverOptions.DisableObjects)
             {
                 logger?.LogTrace("Initializing ObjectStore Iterator");
-                var objectStoreTailAddress = clusterProvider.storeWrapper.objectStore.Log.TailAddress;
+                var objectStoreTailAddress = clusterProvider.storeWrapper.ObjectStore.Log.TailAddress;
                 var objectBufferSize = 1 << clusterProvider.serverOptions.ObjectStorePageSizeBits();
                 MigrationKeyIterationFunctions.ObjectStoreGetKeysInSlots objectStoreGetKeysInSlots = new(this, _sslots, bufferSize: objectBufferSize);
 

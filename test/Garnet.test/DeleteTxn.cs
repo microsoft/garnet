@@ -8,7 +8,7 @@ using Tsavorite.core;
 namespace Garnet
 {
     /// <summary>
-    /// Functions to implement custom tranasction Delete key/object
+    /// Functions to implement custom tranasactional Delete key/object
     /// 
     /// Format: DeleteTxn 1 key
     /// 

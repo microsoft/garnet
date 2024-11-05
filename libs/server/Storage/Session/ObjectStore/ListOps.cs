@@ -196,7 +196,6 @@ namespace Garnet.server
         public GarnetStatus ListMove(ArgSlice sourceKey, ArgSlice destinationKey, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element)
         {
             element = default;
-            var objectLockableContext = txnManager.ObjectStoreLockableContext;
 
             if (itemBroker == null)
                 ThrowObjectStoreUninitializedException();
@@ -213,12 +212,10 @@ namespace Garnet.server
                 createTransaction = txnManager.Run(internal_txn: true);
             }
 
-            var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
-
             try
             {
-                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
-                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                // We're in a Transaction so use TransactionalSessionLocker. Obtain the epoch once then use GarnetUnsafeEpochGuard for called operations.
+                // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
                 // Get the source key

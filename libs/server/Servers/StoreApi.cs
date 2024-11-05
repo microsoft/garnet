@@ -50,8 +50,8 @@ namespace Garnet.server
         /// </summary>
         public void FlushDB(bool unsafeTruncateLog = false)
         {
-            storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            storeWrapper.Store.Log.ShiftBeginAddress(storeWrapper.Store.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            storeWrapper.ObjectStore?.Log.ShiftBeginAddress(storeWrapper.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
     }
 }

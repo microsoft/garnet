@@ -276,8 +276,8 @@ namespace Garnet.server
 
             try
             {
-                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
-                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                // We're in a Transaction so use TransactionalSessionLocker. Obtain the epoch once then use GarnetUnsafeEpochGuard for called operations.
+                // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
                 var arrDstKey = destinationKey.ToArray();
@@ -365,8 +365,8 @@ namespace Garnet.server
 
             try
             {
-                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
-                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                // We're in a Transaction so use TransactionalSessionLocker. Obtain the epoch once then use GarnetUnsafeEpochGuard for called operations.
+                // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
                 return SetIntersect<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out output);
@@ -405,8 +405,8 @@ namespace Garnet.server
 
             try
             {
-                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
-                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                // We're in a Transaction so use TransactionalSessionLocker. Obtain the epoch once then use GarnetUnsafeEpochGuard for called operations.
+                // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
                 var status = SetIntersect<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out var members);
@@ -517,8 +517,8 @@ namespace Garnet.server
 
             try
             {
-                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
-                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                // We're in a Transaction so use TransactionalSessionLocker. Obtain the epoch once then use GarnetUnsafeEpochGuard for called operations.
+                // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
                 return SetUnion<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out output);
@@ -561,8 +561,8 @@ namespace Garnet.server
 
             try
             {
-                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
-                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                // We're in a Transaction so use TransactionalSessionLocker. Obtain the epoch once then use GarnetUnsafeEpochGuard for called operations.
+                // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
                 var status = SetUnion<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out var members);
@@ -707,8 +707,8 @@ namespace Garnet.server
 
             try
             {
-                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
-                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                // We're in a Transaction so use TransactionalSessionLocker. Obtain the epoch once then use GarnetUnsafeEpochGuard for called operations.
+                // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
                 return InternalSetDiff<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out members);
@@ -751,8 +751,8 @@ namespace Garnet.server
 
             try
             {
-                // Perform Store operation under unsafe epoch control for pointer safety with speed, and always use TransactionalSessionLocker as we're in a transaction.
-                // We have already locked via TransactionManager.Run so we only need to acquire the epoch here; operations within the transaction can use GarnetUnsafeEpochGuard.
+                // We're in a Transaction so use TransactionalSessionLocker. Obtain the epoch once then use GarnetUnsafeEpochGuard for called operations.
+                // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
                 var status = InternalSetDiff<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out var diffSet);

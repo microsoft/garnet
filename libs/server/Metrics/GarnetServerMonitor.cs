@@ -198,8 +198,8 @@ namespace Garnet.server
 
                 storeWrapper.clusterProvider?.ResetGossipStats();
 
-                storeWrapper.store.ResetRevivificationStats();
-                storeWrapper.objectStore?.ResetRevivificationStats();
+                storeWrapper.Store.ResetRevivificationStats();
+                storeWrapper.ObjectStore?.ResetRevivificationStats();
 
                 resetEventFlags[InfoMetricsType.STATS] = false;
             }

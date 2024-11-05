@@ -272,20 +272,20 @@ namespace Garnet.cluster
         {
             Guid objectStoreHLogToken = default;
             Guid objectStoreIndexToken = default;
-            storeWrapper.store.GetLatestCheckpointTokens(out var storeHLogToken, out var storeIndexToken);
-            storeWrapper.objectStore?.GetLatestCheckpointTokens(out objectStoreHLogToken, out objectStoreIndexToken);
+            storeWrapper.Store.GetLatestCheckpointTokens(out var storeHLogToken, out var storeIndexToken);
+            storeWrapper.ObjectStore?.GetLatestCheckpointTokens(out objectStoreHLogToken, out objectStoreIndexToken);
             var (storeCheckpointCoveredAofAddress, storePrimaryReplId) = GetCheckpointCookieMetadata(StoreType.Main, storeHLogToken);
             var (objectCheckpointCoveredAofAddress, objectStorePrimaryReplId) = objectStoreHLogToken == default ? (long.MaxValue, null) : GetCheckpointCookieMetadata(StoreType.Object, objectStoreHLogToken);
 
             CheckpointEntry entry = new()
             {
-                storeVersion = storeHLogToken == default ? -1 : storeWrapper.store.GetLatestCheckpointVersion(),
+                storeVersion = storeHLogToken == default ? -1 : storeWrapper.Store.GetLatestCheckpointVersion(),
                 storeHlogToken = storeHLogToken,
                 storeIndexToken = storeIndexToken,
                 storeCheckpointCoveredAofAddress = storeCheckpointCoveredAofAddress,
                 storePrimaryReplId = storePrimaryReplId,
 
-                objectStoreVersion = objectStoreHLogToken == default ? -1 : storeWrapper.objectStore.GetLatestCheckpointVersion(),
+                objectStoreVersion = objectStoreHLogToken == default ? -1 : storeWrapper.ObjectStore.GetLatestCheckpointVersion(),
                 objectStoreHlogToken = objectStoreHLogToken,
                 objectStoreIndexToken = objectStoreIndexToken,
                 objectCheckpointCoveredAofAddress = objectCheckpointCoveredAofAddress,

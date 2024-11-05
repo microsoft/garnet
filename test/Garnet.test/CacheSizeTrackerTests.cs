@@ -29,7 +29,7 @@ namespace Garnet.test
             // ObjectStoreIndexSize is no longer considered as the indexes have been combined into Kernel
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, MemorySize: "2k", PageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreTotalMemorySize: "6k");
             server.Start();
-            objStore = server.Provider.StoreWrapper.objectStore;
+            objStore = server.Provider.StoreWrapper.ObjectStore;
             cacheSizeTracker = server.Provider.StoreWrapper.objectStoreSizeTracker;
         }
 

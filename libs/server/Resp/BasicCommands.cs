@@ -1471,8 +1471,8 @@ namespace Garnet.server
 
         void ExecuteFlushDb(bool unsafeTruncateLog)
         {
-            storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            storeWrapper.Store.Log.ShiftBeginAddress(storeWrapper.Store.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            storeWrapper.ObjectStore?.Log.ShiftBeginAddress(storeWrapper.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
 
         /// <summary>
