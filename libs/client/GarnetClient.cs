@@ -188,7 +188,7 @@ namespace Garnet.client
         /// </summary>
         public void Connect(CancellationToken token = default)
         {
-            socket = GetSendSocket(timeoutMilliseconds);
+            socket = CreateSendSocket(timeoutMilliseconds);
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
             networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
@@ -221,7 +221,7 @@ namespace Garnet.client
         /// </summary>
         public async Task ConnectAsync(CancellationToken token = default)
         {
-            socket = GetSendSocket(timeoutMilliseconds);
+            socket = CreateSendSocket(timeoutMilliseconds);
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
             await networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false);
             networkSender = networkHandler.GetNetworkSender();
@@ -249,7 +249,13 @@ namespace Garnet.client
             }
         }
 
-        Socket GetSendSocket(int millisecondsTimeout = 0)
+        /// <summary>
+        /// Create client send socket
+        /// </summary>
+        /// <param name="millisecondsTimeout"></param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
+        Socket CreateSendSocket(int millisecondsTimeout = 0)
         {
             if (!IPAddress.TryParse(address, out var ip))
             {
@@ -279,6 +285,13 @@ namespace Garnet.client
             }
         }
 
+        /// <summary>
+        /// Try to establish connection for socket using endPoint
+        /// </summary>
+        /// <param name="endPoint"></param>
+        /// <param name="millisecondsTimeout"></param>
+        /// <param name="socket"></param>
+        /// <returns></returns>
         bool TryConnectSocket(IPEndPoint endPoint, int millisecondsTimeout, out Socket socket)
         {
             socket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
@@ -317,7 +330,6 @@ namespace Garnet.client
 
             return true;
         }
-
 
         async Task TimeoutChecker()
         {
