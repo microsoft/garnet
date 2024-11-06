@@ -65,20 +65,26 @@ namespace Garnet.server
         /// <summary>
         /// Prepare phase: define read/write set
         /// </summary>
-        public abstract bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
-            where TGarnetReadApi : IGarnetReadApi;
+        public abstract bool Prepare<TKeyLocker, TEpochGuard, TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetReadApi : IGarnetReadApi<TKeyLocker, TEpochGuard>;
 
         /// <summary>
         /// Main transaction: allowed to read and write (locks are already taken) and produce output
         /// </summary>
-        public abstract void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
-            where TGarnetApi : IGarnetApi;
+        public abstract void Main<TKeyLocker, TEpochGuard, TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>;
 
         /// <summary>
         /// Finalize transaction: runs after the transactions commits/aborts, allowed to read and write (non-transactionally) with per-key locks and produce output
         /// </summary>
-        public virtual void Finalize<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
-            where TGarnetApi : IGarnetApi
+        public virtual void Finalize<TKeyLocker, TEpochGuard, TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         { }
     }
 }

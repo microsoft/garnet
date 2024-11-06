@@ -7,9 +7,13 @@ using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NLua;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using BasicGarnetApi = GarnetApi<TransientSessionLocker, GarnetSafeEpochGuard>;
+    using LockableGarnetApi = GarnetApi<TransactionalSessionLocker, GarnetSafeEpochGuard>;
+
     /// <summary>
     /// Creates the instance to run Lua scripts
     /// </summary>
@@ -39,19 +43,19 @@ namespace Garnet.server
             this.txnMode = txnMode;
             this.respServerSession = respServerSession;
             this.scratchBufferNetworkSender = scratchBufferNetworkSender;
-            this.scratchBufferManager = respServerSession?.scratchBufferManager;
+            scratchBufferManager = respServerSession?.scratchBufferManager;
             this.logger = logger;
 
             state = new Lua();
             state.State.Encoding = Encoding.UTF8;
             if (txnMode)
             {
-                this.txnKeyEntries = new TxnKeyEntries(respServerSession.TsavoriteKernel, 16);
-                garnetCall = state.RegisterFunction("garnet_call", this, this.GetType().GetMethod(nameof(garnet_call_txn)));
+                txnKeyEntries = new TxnKeyEntries(respServerSession.TsavoriteKernel, 16);
+                garnetCall = state.RegisterFunction("garnet_call", this, GetType().GetMethod(nameof(garnet_call_txn)));
             }
             else
             {
-                garnetCall = state.RegisterFunction("garnet_call", this, this.GetType().GetMethod("garnet_call"));
+                garnetCall = state.RegisterFunction("garnet_call", this, GetType().GetMethod("garnet_call"));
             }
             _ = state.DoString(@"
                 import = function () end
@@ -159,7 +163,7 @@ namespace Garnet.server
         /// <param name="args">Parameters</param>
         /// <returns></returns>
         public object garnet_call(string cmd, params object[] args)
-            => respServerSession == null ? null : ProcessCommandFromScripting(respServerSession.basicGarnetApi, cmd, args);
+            => respServerSession == null ? null : ProcessCommandFromScripting<TransientSessionLocker, GarnetSafeEpochGuard, BasicGarnetApi>(respServerSession.basicGarnetApi, cmd, args);
 
         /// <summary>
         /// Entry point for redis.call method from a Lua script (transactional mode)
@@ -168,13 +172,15 @@ namespace Garnet.server
         /// <param name="args">Parameters</param>
         /// <returns></returns>
         public object garnet_call_txn(string cmd, params object[] args)
-            => respServerSession == null ? null : ProcessCommandFromScripting(respServerSession.lockableGarnetApi, cmd, args);
+            => respServerSession == null ? null : ProcessCommandFromScripting<TransactionalSessionLocker, GarnetSafeEpochGuard, LockableGarnetApi>(respServerSession.lockableGarnetApi, cmd, args);
 
         /// <summary>
         /// Entry point method for executing commands from a Lua Script
         /// </summary>
-        unsafe object ProcessCommandFromScripting<TGarnetApi>(TGarnetApi api, string cmd, params object[] args)
-            where TGarnetApi : IGarnetApi
+        unsafe object ProcessCommandFromScripting<TKeyLocker, TEpochGuard, TGarnetApi>(TGarnetApi api, string cmd, params object[] args)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             switch (cmd)
             {
@@ -270,21 +276,21 @@ namespace Garnet.server
         {
             scratchBufferManager.Reset();
 
-            int offset = 1;
-            int nKeys = parseState.GetInt(offset++);
+            var offset = 1;
+            var nKeys = parseState.GetInt(offset++);
             count--;
             ResetParameters(nKeys, count - nKeys);
 
             if (nKeys > 0)
             {
-                for (int i = 0; i < nKeys; i++)
+                for (var i = 0; i < nKeys; i++)
                 {
                     if (txnMode)
                     {
                         var key = parseState.GetArgSliceByRef(offset);
-                        txnKeyEntries.AddKey(respServerSession.storeWrapper, key, false, Tsavorite.core.LockType.Exclusive);
-                        if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                            txnKeyEntries.AddKey(respServerSession.storeWrapper, key, true, Tsavorite.core.LockType.Exclusive);
+                        _ = txnKeyEntries.AddKey(respServerSession.storeWrapper, key, isObject: false, Tsavorite.core.LockType.Exclusive);
+                        if (!respServerSession.storageSession.IsDual)
+                            _ = txnKeyEntries.AddKey(respServerSession.storeWrapper, key, isObject: true, Tsavorite.core.LockType.Exclusive);
                     }
                     keyTable[i + 1] = parseState.GetString(offset++);
                 }
@@ -299,20 +305,11 @@ namespace Garnet.server
 
             if (count > 0)
             {
-                for (int i = 0; i < count; i++)
-                {
+                for (var i = 0; i < count; i++)
                     argvTable[i + 1] = parseState.GetString(offset++);
-                }
             }
 
-            if (txnMode && nKeys > 0)
-            {
-                return RunTransaction();
-            }
-            else
-            {
-                return Run();
-            }
+            return txnMode && nKeys > 0 ? RunTransaction() : Run();
         }
 
         /// <summary>
@@ -328,9 +325,9 @@ namespace Garnet.server
                 foreach (var key in keys)
                 {
                     var _key = scratchBufferManager.CreateArgSlice(key);
-                    txnKeyEntries.AddKey(respServerSession.storeWrapper, _key, false, Tsavorite.core.LockType.Exclusive);
-                    if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                        txnKeyEntries.AddKey(respServerSession.storeWrapper, _key, true, Tsavorite.core.LockType.Exclusive);
+                    _ = txnKeyEntries.AddKey(respServerSession.storeWrapper, _key, isObject: false, Tsavorite.core.LockType.Exclusive);
+                    if (respServerSession.storageSession.IsDual)
+                        _ = txnKeyEntries.AddKey(respServerSession.storeWrapper, _key, isObject: true, Tsavorite.core.LockType.Exclusive);
                 }
                 return RunTransaction();
             }
@@ -344,20 +341,16 @@ namespace Garnet.server
         {
             try
             {
-                respServerSession.storageSession.lockableContext.BeginTransaction();
-                if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                    respServerSession.storageSession.objectStoreLockableContext.EndTransaction();
+                respServerSession.storageSession.BeginTransaction();
                 respServerSession.SetTransactionMode(true);
-                txnKeyEntries.LockAllKeys(ref respServerSession.KernelSession);
+                txnKeyEntries.LockAllKeys(respServerSession.storageSession);
                 return Run();
             }
             finally
             {
-                txnKeyEntries.UnlockAllKeys(ref respServerSession.KernelSession);
+                txnKeyEntries.UnlockAllKeys(respServerSession.storageSession);
                 respServerSession.SetTransactionMode(false);
-                respServerSession.storageSession.lockableContext.EndTransaction();
-                if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                    respServerSession.storageSession.objectStoreLockableContext.EndTransaction();
+                respServerSession.storageSession.EndTransaction();
             }
         }
 
@@ -380,12 +373,12 @@ namespace Garnet.server
             ResetParameters(keys?.Length ?? 0, argv?.Length ?? 0);
             if (keys != null)
             {
-                for (int i = 0; i < keys.Length; i++)
+                for (var i = 0; i < keys.Length; i++)
                     keyTable[i + 1] = keys[i];
             }
             if (argv != null)
             {
-                for (int i = 0; i < argv.Length; i++)
+                for (var i = 0; i < argv.Length; i++)
                     argvTable[i + 1] = argv[i];
             }
         }

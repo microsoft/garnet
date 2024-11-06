@@ -466,7 +466,7 @@ namespace Garnet.server
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
-            txnManager.Watch(key, type);
+            txnManager.Watch<TKeyLocker, TEpochGuard>(key, type);
             txnManager.VerifyKeyOwnership(key, LockType.Shared);
         }
 

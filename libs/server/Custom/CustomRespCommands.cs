@@ -84,7 +84,7 @@ namespace Garnet.server
         /// <summary>
         /// Custom command
         /// </summary>
-        private bool TryCustomRawStringCommand<TKeyLocker, TEpochGuard, TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
+        private bool TryCustomRawStringCommand<TKeyLocker, TEpochGuard, TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetAdvancedApi<TKeyLocker, TEpochGuard>
@@ -129,7 +129,7 @@ namespace Garnet.server
             GarnetStatus status;
             if (type == CommandType.ReadModifyWrite)
             {
-                status = storageApi.RMW_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref output);
+                status = garnetApi.RMW_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref output);
                 Debug.Assert(!output.IsSpanByte);
 
                 if (output.Memory != null)
@@ -140,7 +140,7 @@ namespace Garnet.server
             }
             else
             {
-                status = storageApi.Read_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref output);
+                status = garnetApi.Read_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref output);
                 Debug.Assert(!output.IsSpanByte);
 
                 if (status == GarnetStatus.OK)
@@ -165,7 +165,7 @@ namespace Garnet.server
         /// <summary>
         /// Custom object command
         /// </summary>
-        private bool TryCustomObjectCommand<TKeyLocker, TEpochGuard, TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, byte subid, CommandType type, ref TGarnetApi storageApi)
+        private bool TryCustomObjectCommand<TKeyLocker, TEpochGuard, TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, byte subid, CommandType type, ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetAdvancedApi<TKeyLocker, TEpochGuard>
@@ -190,7 +190,7 @@ namespace Garnet.server
 
             if (type == CommandType.ReadModifyWrite)
             {
-                status = storageApi.RMW_ObjectStore(ref keyBytes, ref input, ref output);
+                status = garnetApi.RMW_ObjectStore(ref keyBytes, ref input, ref output);
                 Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
 
                 switch (status)
@@ -210,7 +210,7 @@ namespace Garnet.server
             }
             else
             {
-                status = storageApi.Read_ObjectStore(ref keyBytes, ref input, ref output);
+                status = garnetApi.Read_ObjectStore(ref keyBytes, ref input, ref output);
                 Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
 
                 switch (status)

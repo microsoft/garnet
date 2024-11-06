@@ -106,7 +106,7 @@ namespace Garnet.server
         // Lua script cache
         public readonly ConcurrentDictionary<byte[], byte[]> storeScriptCache;
 
-        public readonly TimeSpan loggingFrequncy;
+        public readonly TimeSpan loggingFrequency;
 
         /// <summary>
         /// Constructor
@@ -146,7 +146,7 @@ namespace Garnet.server
             this.versionMap = new WatchVersionMap(1 << 16);
             this.accessControlList = accessControlList;
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
-            this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
+            this.loggingFrequency = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
 
             if (!serverOptions.DisableObjects)
                 this.itemBroker = new CollectionItemBroker();

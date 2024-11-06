@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Perform epoch safety operations when entering/exiting an API 
     /// </summary>
-    public struct GarnetSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> 
+    public struct BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> 
         : IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
@@ -30,7 +30,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Do not perform epoch safety operations when entering/exiting an API (assumes a higher code region has done so)
     /// </summary>
-    public struct GarnetUnsafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
+    public struct BasicUnsafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         : IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>

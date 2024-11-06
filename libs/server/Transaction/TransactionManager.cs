@@ -12,6 +12,7 @@ namespace Garnet.server
 {
     using BasicGarnetApi = GarnetApi<TransientSessionLocker, GarnetSafeEpochGuard>;
     using LockableGarnetApi = GarnetApi<TransactionalSessionLocker, GarnetSafeEpochGuard>;
+    using PrepareGarnetApi = GarnetWatchApi<TransientSessionLocker, GarnetSafeEpochGuard, /* BasicGarnetApi */ GarnetApi<TransientSessionLocker, GarnetSafeEpochGuard>>;
 
     /// <summary>
     /// Transaction manager
@@ -19,7 +20,7 @@ namespace Garnet.server
     public sealed unsafe partial class TransactionManager
     {
         // Not readonly to avoid defensive copy
-        GarnetWatchApi<TransientSessionLocker, GarnetSafeEpochGuard, BasicGarnetApi> garnetTxPrepareApi;
+        PrepareGarnetApi garnetTxPrepareApi;
 
         // Not readonly to avoid defensive copy
         LockableGarnetApi garnetTxMainApi;
@@ -71,8 +72,9 @@ namespace Garnet.server
             keyEntries = new TxnKeyEntries(kernel, InitialSliceBufferSize);
             this.scratchBufferManager = scratchBufferManager;
 
-            garnetApi = respSession.garnetApi;
-            garnetTxPrepareApi = new GarnetWatchApi(respSession.garnetApi);
+            garnetTxMainApi = respSession.lockableGarnetApi;
+            garnetTxPrepareApi = new GarnetWatchApi<TransientSessionLocker, GarnetSafeEpochGuard, BasicGarnetApi>(respSession.basicGarnetApi);
+            garnetTxFinalizeApi = respSession.basicGarnetApi;
 
             this.clusterEnabled = clusterEnabled;
             if (clusterEnabled)
@@ -116,7 +118,7 @@ namespace Garnet.server
             {
                 functionsState.StoredProcMode = true;
                 // Prepare phase
-                if (!proc.Prepare(garnetTxPrepareApi, input))
+                if (!proc.Prepare<TransientSessionLocker, GarnetSafeEpochGuard, PrepareGarnetApi>(garnetTxPrepareApi, input))
                 {
                     Reset(running);
                     return false;
@@ -132,7 +134,7 @@ namespace Garnet.server
                 running = true;
 
                 // Run main procedure on locked data
-                proc.Main(garnetTxMainApi, input, ref output);
+                proc.Main<TransactionalSessionLocker, GarnetSafeEpochGuard, LockableGarnetApi>(garnetTxMainApi, input, ref output);
 
                 // Log the transaction to AOF
                 Log(id, input);
@@ -150,7 +152,7 @@ namespace Garnet.server
                 try
                 {
                     // Run finalize procedure at the end
-                    proc.Finalize(garnetTxFinalizeApi, input, ref output);
+                    proc.Finalize<TransientSessionLocker, GarnetSafeEpochGuard, BasicGarnetApi>(garnetTxFinalizeApi, input, ref output);
                 }
                 catch { }
 

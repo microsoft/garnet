@@ -31,6 +31,7 @@ namespace Tsavorite.core
         internal OperationStatus ContinuePendingRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(AsyncIOContext<TKey, TValue> request,
                                                         ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, ISessionLocker
         {
             ref RecordInfo srcRecordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
             srcRecordInfo.ClearBitsForDiskImages();
@@ -41,6 +42,7 @@ namespace Tsavorite.core
 
                 // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
                 ref TKey key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
+                HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
                 OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
 
                 while (true)
@@ -48,7 +50,7 @@ namespace Tsavorite.core
                     if (!FindTagAndTryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out var status))
                     {
                         Debug.Assert(status != OperationStatus.NOTFOUND, "Expected to FindTag in InternalContinuePendingRead");
-                        if (HandleImmediateRetryStatus(status, sessionFunctions.ExecutionCtx, ref pendingContext))
+                        if (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref hei, status, sessionFunctions.ExecutionCtx, ref pendingContext))
                             continue;
                         return status;
                     }
@@ -57,6 +59,9 @@ namespace Tsavorite.core
 
                     try
                     {
+                        var status = Kernel.EnterForRead<BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker,
+                                                         BasicSafeEpochGuard<BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>>(ref kernelSession, keyHash, partitionId, out hei);
+
                         ref var value = ref hlog.GetContextRecordValue(ref request);
 
                         // During the pending operation, a record for the key may have been added to the log or readcache. Don't look for this if we are reading at address (rather than key).
@@ -86,10 +91,10 @@ namespace Tsavorite.core
                                     OperationStatus internalStatus;
                                     do
                                     {
-                                        internalStatus = InternalRead(ref key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
+                                        internalStatus = InternalRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
                                             pendingContext.userContext, ref pendingContext, sessionFunctions);
                                     }
-                                    while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pendingContext));
+                                    while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx.hei, internalStatus, sessionFunctions.ExecutionCtx, ref pendingContext));
                                     return internalStatus;
                                 }
                             }

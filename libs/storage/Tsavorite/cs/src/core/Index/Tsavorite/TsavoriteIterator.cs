@@ -225,11 +225,11 @@ namespace Tsavorite.core
             if (recordInfo.Tombstone)
             {
                 // Check if it's in-memory first so we don't spuriously create a tombstone record.
-                if (tempbContext.ContainsKeyInMemory(ref key, out _).Found)
-                    _ = tempbContext.Delete(ref key);
+                if (tempbContext.ContainsKeyInMemory<BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>(ref key, out _).Found)
+                    _ = tempbContext.Delete<TransientSessionLocker, BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>(ref key);
             }
             else
-                _ = tempbContext.Upsert(ref key, ref mainKvIter.GetValue());
+                _ = tempbContext.Upsert<TransientSessionLocker, BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>(ref key, ref mainKvIter.GetValue());
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -248,8 +248,8 @@ namespace Tsavorite.core
                     if (mainKvRecordInfo.PreviousAddress >= store.Log.BeginAddress)
                     {
                         // Check if it's in-memory first so we don't spuriously create a tombstone record.
-                        if (tempbContext.ContainsKeyInMemory(ref key, out _).Found)
-                            tempbContext.Delete(ref key);
+                        if (tempbContext.ContainsKeyInMemory<BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>(ref key, out _).Found)
+                            tempbContext.Delete<TransientSessionLocker, BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>(ref key);
                     }
 
                     // If the record is not deleted, we can let the caller process it directly within mainKvIter.

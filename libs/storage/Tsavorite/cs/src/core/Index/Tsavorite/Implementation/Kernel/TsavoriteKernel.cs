@@ -51,7 +51,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Enter the kernel for a read operation on a single Tsavorite configuration or the first TsavoriteKV of a dual configuration.
+        /// Enter the kernel for a read operation on a single Tsavorite configuration or the first TsavoriteKV of a dual configuration, where epoch may or may not need to be acquired.
         /// </summary>
         /// <remarks>
         /// This does epoch entry and the hash bucket lookup and transient lock (which is the only hash bucket lock unless a RETRY is needed, in which case transient locks are released then reacquired by the TsavoriteKV instance).
@@ -115,7 +115,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Enter the kernel for an update operation on a single Tsavorite configuration or on the first TsavoriteKV of a dual configuration.
+        /// Enter the kernel for an update operation on a single Tsavorite configuration or on the first TsavoriteKV of a dual configuration, where the epoch may or may not need to be acquired.
         /// </summary>
         /// <remarks>
         /// This does epoch entry and the hash bucket lookup and transient lock (which is the only hash bucket lock unless a RETRY is needed, in which case transient locks are released then reacquired by the TsavoriteKV instance).
