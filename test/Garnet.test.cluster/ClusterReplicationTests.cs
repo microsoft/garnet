@@ -89,7 +89,7 @@ namespace Garnet.test.cluster
 
         public Dictionary<string, LogLevel> monitorTests = new()
         {
-            {"ClusterReplicationSimpleFailover", LogLevel.Warning}
+            {"ClusterReplicationSimpleFailover", LogLevel.Warning},
         };
 
         [SetUp]
@@ -301,13 +301,15 @@ namespace Garnet.test.cluster
         [Test, Order(6), CancelAfter(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterSRPrimaryCheckpointRetrieve([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory, [Values] bool manySegments)
-            => ClusterSRPrimaryCheckpointRetrieve(performRMW, disableObjects, lowMemory, manySegments, false, false);
+            => ClusterSRPrimaryCheckpointRetrieve(performRMW: performRMW, disableObjects: disableObjects, lowMemory: lowMemory, manySegments: manySegments, false, false);
 
         void ClusterSRPrimaryCheckpointRetrieve(bool performRMW, bool disableObjects, bool lowMemory, bool manySegments, bool disableStorageTier, bool incrementalSnapshots)
         {
             // Test many segments on or off with lowMemory
             manySegments = lowMemory && manySegments;
 
+            var primaryIndex = 0;
+            var replicaIndex = 1;
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + primary_count * replica_count;
@@ -341,23 +343,25 @@ namespace Garnet.test.cluster
             if (disableObjects)
             {
                 if (!performRMW)
-                    context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0, null, incrementalSnapshots, 0);
+                    context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null, incrementalSnapshots, primaryIndex);
                 else
-                    context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, 0, addCount, null, incrementalSnapshots, 0);
+                    context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, addCount, null, incrementalSnapshots, primaryIndex);
             }
             else
             {
                 if (disableStorageTier)
-                    context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, 0, 1, 8);
+                    context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, primaryIndex, 1, 8);
                 else
-                    context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, 0);
+                    context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, primaryIndex);
             }
 
-            context.clusterTestUtils.Checkpoint(0, logger: context.logger);
+            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
+            var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
 
             // Restart secondary
-            context.nodes[1] = context.CreateInstance(
-                context.clusterTestUtils.GetEndPoint(1).Port,
+            context.nodes[replicaIndex] = context.CreateInstance(
+                context.clusterTestUtils.GetEndPoint(replicaIndex).Port,
                 disableObjects: disableObjects,
                 tryRecover: true,
                 enableAOF: true,
@@ -367,14 +371,14 @@ namespace Garnet.test.cluster
                 lowMemory: lowMemory,
                 SegmentSize: manySegments ? "4k" : "1g",
                 DisableStorageTier: disableStorageTier);
-            context.nodes[1].Start();
+            context.nodes[replicaIndex].Start();
             context.CreateConnection(useTLS: useTLS);
 
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
             if (disableObjects)
-                context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
+                context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
             else
-                context.ValidateNodeObjects(ref context.kvPairsObj, 1);
+                context.ValidateNodeObjects(ref context.kvPairsObj, replicaIndex);
         }
 
         [Test, Order(7), CancelAfter(testTimeout)]
@@ -978,7 +982,6 @@ namespace Garnet.test.cluster
             // Re-assign slots to replica manually since failover option was not            
             _ = context.clusterTestUtils.AddDelSlotsRange(newPrimaryIndex, new List<(int, int)>() { (0, 16383) }, addslot: false, context.logger);
             _ = context.clusterTestUtils.AddDelSlotsRange(replicaIndex, new List<(int, int)>() { (0, 16383) }, addslot: false, context.logger);
-
             _ = context.clusterTestUtils.AddDelSlotsRange(newPrimaryIndex, new List<(int, int)>() { (0, 16383) }, addslot: true, context.logger);
             context.clusterTestUtils.BumpEpoch(newPrimaryIndex, logger: context.logger);
 
@@ -989,7 +992,8 @@ namespace Garnet.test.cluster
                 if (!performRMW) context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex: newPrimaryIndex, randomSeed: 1234);
                 else context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, primaryIndex: newPrimaryIndex, addCount, randomSeed: 1234);
             }
-            else context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, primaryIndex: newPrimaryIndex, randomSeed: 1234, set: set);
+            else
+                context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, primaryIndex: newPrimaryIndex, randomSeed: 1234, set: set);
 
             if (!ckptBeforeDivergence || multiCheckpointAfterDivergence) context.clusterTestUtils.Checkpoint(newPrimaryIndex, logger: context.logger);
 
