@@ -136,9 +136,7 @@ namespace Tsavorite.core
                 // TryConsumeNext returns false if we have to wait for the next record.
                 while (!TryBulkConsumeNext(consumer, maxChunkSize))
                 {
-                    if (throttleMs > 0) await Task.Delay(throttleMs, token).ConfigureAwait(false);
-                    if (!await WaitAsync(token).ConfigureAwait(false))
-                        return;
+                    await Task.Delay(throttleMs, token).ConfigureAwait(false);
                 }
             }
         }
@@ -472,6 +470,20 @@ namespace Tsavorite.core
             {
                 while (true)
                 {
+                    // If initializing wait for completion
+                    while (tsavoriteLog.Initializing)
+                    {
+                        Thread.Yield();
+                        try
+                        {
+                            epoch.Suspend();
+                        }
+                        finally
+                        {
+                            epoch.Resume();
+                        }
+                    }
+
                     var hasNext = GetNextInternal(out long startPhysicalAddress, out int newEntryLength, out long startLogicalAddress, out long endLogicalAddress, out bool isCommitRecord, out bool onFrame);
 
                     if (!hasNext)
@@ -497,7 +509,7 @@ namespace Tsavorite.core
                         epoch.Suspend();
                         try
                         {
-                            consumer.Consume((byte*)startPhysicalAddress, totalLength, startLogicalAddress, endLogicalAddress);
+                            consumer.Consume((byte*)startPhysicalAddress, totalLength, startLogicalAddress, endLogicalAddress, isProtected: false);
                             consumer.Throttle();
                         }
                         finally
@@ -508,7 +520,7 @@ namespace Tsavorite.core
                     else
                     {
                         // Consume the chunk (warning: we are under epoch protection here, as we are consuming directly from main memory log buffer)
-                        consumer.Consume((byte*)startPhysicalAddress, totalLength, startLogicalAddress, endLogicalAddress);
+                        consumer.Consume((byte*)startPhysicalAddress, totalLength, startLogicalAddress, endLogicalAddress, isProtected: true);
 
                         epoch.Suspend();
                         try

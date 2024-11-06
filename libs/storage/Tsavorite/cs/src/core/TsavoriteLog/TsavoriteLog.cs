@@ -35,6 +35,8 @@ namespace Tsavorite.core
         internal readonly bool fastCommitMode;
         internal readonly bool tolerateDeviceFailure;
 
+        public bool Initializing { get; private set; }
+
         TaskCompletionSource<LinkedCommitInfo> commitTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource<Empty> refreshUncommittedTcs;
 
@@ -372,6 +374,31 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Initialize new log instance safely by notifying readers that initialization is in progress.
+        /// </summary>
+        /// <param name="beginAddress"></param>
+        /// <param name="committedUntilAddress"></param>
+        /// <param name="lastCommitNum"></param>
+        public void SafeInitialize(long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
+        {
+            try
+            {
+                epoch.Resume();
+                // Signal initialization in progress
+                Initializing = true;
+                epoch.BumpCurrentEpoch(() => Initialize(beginAddress, committedUntilAddress, lastCommitNum));
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
+
+            // Wait for initialization to complete
+            while (Initializing)
+                Thread.Yield();
+        }
+
+        /// <summary>
         /// Initialize new log instance with specific begin address and (optional) last commit number
         /// </summary>
         /// <param name="beginAddress"></param>
@@ -381,30 +408,37 @@ namespace Tsavorite.core
         {
             Debug.Assert(!readOnlyMode);
 
-            if (beginAddress == 0)
-                beginAddress = allocator.GetFirstValidLogicalAddress(0);
-
-            if (committedUntilAddress == 0)
-                committedUntilAddress = beginAddress;
-
             try
             {
-                allocator.Reset();
-                allocator.RestoreHybridLog(beginAddress, committedUntilAddress, committedUntilAddress, committedUntilAddress);
+                if (beginAddress == 0)
+                    beginAddress = allocator.GetFirstValidLogicalAddress(0);
+
+                if (committedUntilAddress == 0)
+                    committedUntilAddress = beginAddress;
+
+                try
+                {
+                    allocator.Reset();
+                    allocator.RestoreHybridLog(beginAddress, committedUntilAddress, committedUntilAddress, committedUntilAddress);
+                }
+                catch
+                {
+                    if (!tolerateDeviceFailure) throw;
+                }
+
+                CommittedUntilAddress = committedUntilAddress;
+                CommittedBeginAddress = beginAddress;
+                SafeTailAddress = committedUntilAddress;
+
+                commitNum = lastCommitNum;
+                this.beginAddress = beginAddress;
+
+                if (lastCommitNum > 0) logCommitManager.OnRecovery(lastCommitNum);
             }
-            catch
+            finally
             {
-                if (!tolerateDeviceFailure) throw;
+                Initializing = false;
             }
-
-            CommittedUntilAddress = committedUntilAddress;
-            CommittedBeginAddress = beginAddress;
-            SafeTailAddress = committedUntilAddress;
-
-            commitNum = lastCommitNum;
-            this.beginAddress = beginAddress;
-
-            if (lastCommitNum > 0) logCommitManager.OnRecovery(lastCommitNum);
         }
 
         /// <summary>
@@ -541,7 +575,8 @@ namespace Tsavorite.core
         /// Commit metadata only (no records added to main log)
         /// </summary>
         /// <param name="info"></param>
-        public void UnsafeCommitMetadataOnly(TsavoriteLogRecoveryInfo info)
+        /// <param name="isProtected"></param>
+        public void UnsafeCommitMetadataOnly(TsavoriteLogRecoveryInfo info, bool isProtected)
         {
             lock (ongoingCommitRequests)
             {
@@ -549,13 +584,13 @@ namespace Tsavorite.core
             }
             try
             {
-                epoch.Resume();
+                if (!isProtected) epoch.Resume();
                 if (!allocator.ShiftReadOnlyToTail(out _, out _))
                     CommitMetadataOnly(ref info);
             }
             finally
             {
-                epoch.Suspend();
+                if (!isProtected) epoch.Suspend();
             }
         }
 
