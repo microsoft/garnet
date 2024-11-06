@@ -9,7 +9,7 @@ namespace Garnet.server
     sealed partial class StorageSession
     {
         void CompletePending<TKeyLocker>(out Status status, out GarnetObjectStoreOutput output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             // Object store
             var suspended = Kernel.Epoch.ThisInstanceProtected();

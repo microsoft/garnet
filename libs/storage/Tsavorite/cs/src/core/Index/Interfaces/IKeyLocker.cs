@@ -7,10 +7,9 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Provides thread management and all callbacks. A wrapper for ISessionFunctions and additional methods called by TsavoriteImpl; the wrapped
-    /// ISessionFunctions methods provide additional parameters to support the wrapper functionality, then call through to the user implementations. 
+    /// Interface for key locking for a session.
     /// </summary>
-    public interface ISessionLocker
+    public interface IKeyLocker
     {
         static abstract bool IsTransactional { get; }
 
@@ -26,7 +25,7 @@ namespace Tsavorite.core
     /// <remarks>
     /// This struct contains no data fields; SessionFunctionsWrapper redirects with its ClientSession.
     /// </remarks>
-    public struct TransientSessionLocker : ISessionLocker
+    public struct TransientKeyLocker : IKeyLocker
     {
         public static bool IsTransactional => false;
 
@@ -82,7 +81,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Lockable sessions are manual locking and thus must have already locked the record prior to an operation on it, so assert that.
     /// </summary>
-    public struct TransactionalSessionLocker : ISessionLocker
+    public struct TransactionalKeyLocker : IKeyLocker
     {
         public static bool IsTransactional => true;
 
@@ -124,7 +123,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Does no locking
     /// </summary>
-    internal struct NoKeyLocker : ISessionLocker
+    internal struct NoKeyLocker : IKeyLocker
     {
         public static bool IsTransactional => false;
 

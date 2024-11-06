@@ -18,7 +18,7 @@ namespace Tsavorite.core
                 OperationStatus internalStatus,
                 ExecutionContext<TInput, TOutput, TContext> executionCtx,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE
                 && HandleRetryStatus<TInput, TOutput, TContext, TKeyLocker>(internalStatus, ref hei, executionCtx, ref pendingContext);
 
@@ -28,7 +28,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TKeyLocker>(
                 ref HashEntryInfo hei, OperationStatus internalStatus, ExecutionContext<TInput, TOutput, TContext> executionCtx)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "Epoch should be protected in HandleImmediateNonPendingRetryStatus");
             switch (internalStatus)
@@ -50,7 +50,7 @@ namespace Tsavorite.core
                 ref HashEntryInfo hei,
                 ExecutionContext<TInput, TOutput, TContext> executionCtx,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "Epoch should be protected in HandleRetryStatus");
             switch (internalStatus)

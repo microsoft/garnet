@@ -31,7 +31,7 @@ namespace Tsavorite.core
                 ref TKey key, ref TInput input, ref TValue value, ref TOutput output, TContext userContext,
                 ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, WriteReason writeReason, bool wantIO = true)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             var callerHasTransientLock = stackCtx.hei.HasTransientSLock;
 
@@ -95,7 +95,7 @@ namespace Tsavorite.core
         internal Status CompactionConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, ref TKey key, ref TInput input, ref TValue value,
                 ref TOutput output, long currentAddress, long minAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
             PendingContext<TInput, TOutput, TContext> pendingContext = new();

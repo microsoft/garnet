@@ -20,7 +20,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private unsafe bool SetAdd<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -71,7 +71,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private bool SetIntersect<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -124,7 +124,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private bool SetIntersectStore<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -164,7 +164,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private bool SetUnion<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -207,7 +207,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private bool SetUnionStore<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -245,7 +245,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private unsafe bool SetRemove<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -299,7 +299,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private unsafe bool SetLength<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -351,7 +351,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private unsafe bool SetMembers<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -399,7 +399,7 @@ namespace Garnet.server
         }
 
         private unsafe bool SetIsMember<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -454,7 +454,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private unsafe bool SetPop<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -529,7 +529,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private unsafe bool SetMove<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -575,7 +575,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private unsafe bool SetRandomMember<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -660,7 +660,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private bool SetDiff<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -701,7 +701,7 @@ namespace Garnet.server
         }
 
         private bool SetDiffStore<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {

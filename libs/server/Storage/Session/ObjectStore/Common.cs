@@ -15,7 +15,7 @@ namespace Garnet.server
         #region Common ObjectStore Methods
 
         unsafe GarnetStatus RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (!dualContext.IsDual)
@@ -34,7 +34,7 @@ namespace Garnet.server
         }
 
         unsafe GarnetStatus RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (!dualContext.IsDual)
@@ -49,7 +49,7 @@ namespace Garnet.server
         /// use this method in commands that return an array
         /// </summary>
         GarnetStatus RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (!dualContext.IsDual)
@@ -65,7 +65,7 @@ namespace Garnet.server
         /// use this method in commands that return an array
         /// </summary>
         GarnetStatus ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (!dualContext.IsDual)
@@ -81,7 +81,7 @@ namespace Garnet.server
         /// use this method in commands that return an array
         /// </summary>
         unsafe GarnetStatus ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (!dualContext.IsDual)
@@ -101,7 +101,7 @@ namespace Garnet.server
         /// <param name="count">Limit number for the response</param>
         /// <param name="items">The list of items for the response</param>
         public unsafe GarnetStatus ObjectScan<TKeyLocker, TEpochGuard>(GarnetObjectType objectType, ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             Debug.Assert(objectType is GarnetObjectType.Hash or GarnetObjectType.Set or GarnetObjectType.SortedSet);
@@ -388,7 +388,7 @@ namespace Garnet.server
         /// Gets the value of the key store in the Object Store
         /// </summary>
         unsafe GarnetStatus ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (!dualContext.IsDual)
@@ -418,7 +418,7 @@ namespace Garnet.server
         /// Gets the value of the key store in the Object Store
         /// </summary>
         unsafe GarnetStatus ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (!dualContext.IsDual)
@@ -451,7 +451,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         public GarnetStatus ObjectScan<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
           => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -465,7 +465,7 @@ namespace Garnet.server
         /// Complete operation if pending and get GarnetStatus based on status returned from the Object Store
         /// </summary>
         private GarnetStatus CompletePendingAndGetGarnetStatus<TKeyLocker>(Status status, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             if (status.IsPending)
                 CompletePending<TKeyLocker>(out status, out outputFooter);

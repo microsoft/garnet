@@ -12,7 +12,7 @@ namespace Garnet.server
     sealed partial class StorageSession : IDisposable
     {
         public GarnetStatus GET<TKeyLocker, TEpochGuard>(byte[] key, ref GarnetObjectStoreOutput output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var status = dualContext.Read<TKeyLocker, TEpochGuard>(key, ref output, default);
@@ -29,7 +29,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus GET<TKeyLocker>(ref HashEntryInfo hei, byte[] key, ref GarnetObjectStoreOutput output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             ObjectInput input = default;
             ReadOptions readOptions = default;
@@ -47,7 +47,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus SET<TKeyLocker, TEpochGuard>(byte[] key, IGarnetObject value)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             dualContext.Upsert<TKeyLocker, TEpochGuard>(key, value);
@@ -55,7 +55,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus SET<TKeyLocker>(ref HashEntryInfo hei, byte[] key, IGarnetObject value)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             ObjectInput input = default;
             GarnetObjectStoreOutput output = default;

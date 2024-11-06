@@ -17,7 +17,7 @@ namespace Garnet.server
         /// <param name="garnetApi">The garnetApi object</param>
         /// <returns></returns>
         private unsafe bool ObjectScan<TKeyLocker, TEpochGuard, TGarnetApi>(GarnetObjectType objectType, ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {

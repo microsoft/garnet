@@ -12,7 +12,7 @@ namespace Garnet.server
     /// Garnet API implementation for watch purposes
     /// </summary>
     struct GarnetWatchApi<TKeyLocker, TEpochGuard, TGarnetApi> : IGarnetReadApi<TKeyLocker, TEpochGuard>
-        where TKeyLocker : struct, ISessionLocker
+        where TKeyLocker : struct, IKeyLocker
         where TEpochGuard : struct, IGarnetEpochGuard
         where TGarnetApi : IGarnetReadApi<TKeyLocker, TEpochGuard>, IGarnetWatchApi<TKeyLocker, TEpochGuard>
     {

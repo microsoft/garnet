@@ -113,7 +113,7 @@ namespace Garnet.server
         /// When key does not exist, a new key is created.The key is grown to make sure it can hold a bit at offset.
         /// </summary>
         private bool NetworkStringSetBit<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -173,7 +173,7 @@ namespace Garnet.server
         /// Returns the bit value at offset in the key stored.
         /// </summary>
         private bool NetworkStringGetBit<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -228,7 +228,7 @@ namespace Garnet.server
         /// It can be specified an interval for counting, passing the start and end arguments.
         /// </summary>
         private bool NetworkStringBitCount<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -308,7 +308,7 @@ namespace Garnet.server
         /// Returns the position of the first bit set to 1 or 0 in a key.
         /// </summary>
         private bool NetworkStringBitPosition<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -397,7 +397,7 @@ namespace Garnet.server
         /// Performs bitwise operations on multiple strings and store the result.
         /// </summary>
         private bool NetworkStringBitOperation<TKeyLocker, TEpochGuard, TGarnetApi>(BitmapOperation bitop, ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -428,7 +428,7 @@ namespace Garnet.server
         /// Performs arbitrary bitfield integer operations on strings.
         /// </summary>
         private bool StringBitField<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -593,7 +593,7 @@ namespace Garnet.server
         /// Performs arbitrary read-only bitfield integer operations
         /// </summary>
         private bool StringBitFieldReadOnly<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {

@@ -90,7 +90,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Refresh<TKeyLocker>(ref HashEntryInfo hei)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             Kernel.Epoch.ProtectAndDrain();
 

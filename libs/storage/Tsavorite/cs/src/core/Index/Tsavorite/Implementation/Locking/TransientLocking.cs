@@ -12,7 +12,7 @@ namespace Tsavorite.core
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryTransientXLock<TInput, TOutput, TContext, TKeyLocker>(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, out OperationStatus status)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             if (TKeyLocker.TryLockTransientExclusive(Kernel, ref stackCtx.hei))
             {
@@ -28,12 +28,12 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void TransientXUnlock<TInput, TOutput, TContext, TKeyLocker>(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             => TKeyLocker.UnlockTransientExclusive(Kernel, ref stackCtx.hei);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryTransientSLock<TInput, TOutput, TContext, TKeyLocker>(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, out OperationStatus status)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             if (TKeyLocker.TryLockTransientShared(Kernel, ref stackCtx.hei))
             {
@@ -49,7 +49,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void TransientSUnlock<TInput, TOutput, TContext, TKeyLocker>(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             => TKeyLocker.UnlockTransientShared(Kernel, ref stackCtx.hei);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

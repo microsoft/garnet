@@ -12,7 +12,7 @@ namespace Garnet.server
     /// Garnet API implementation
     /// </summary>
     public partial struct GarnetApi<TKeyLocker, TEpochGuard> : IGarnetApi<TKeyLocker, TEpochGuard>, IGarnetWatchApi<TKeyLocker, TEpochGuard>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
     {
         readonly StorageSession storageSession;

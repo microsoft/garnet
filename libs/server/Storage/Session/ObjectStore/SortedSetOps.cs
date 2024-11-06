@@ -18,7 +18,7 @@ namespace Garnet.server
         /// Adds the specified member and score to the sorted set stored at key.
         /// </summary>
         public unsafe GarnetStatus SortedSetAdd<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice score, ArgSlice member, out int zaddCount)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             zaddCount = 0;
@@ -59,7 +59,7 @@ namespace Garnet.server
         /// Current members get the score updated and reordered.
         /// </summary>
         public unsafe GarnetStatus SortedSetAdd<TKeyLocker, TEpochGuard>(ArgSlice key, (ArgSlice score, ArgSlice member)[] inputs, out int zaddCount)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             zaddCount = 0;
@@ -105,7 +105,7 @@ namespace Garnet.server
         /// Non existing members are ignored.
         /// </summary>
         public GarnetStatus SortedSetRemove<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice member, out int zremCount)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             zremCount = 0;
@@ -141,7 +141,7 @@ namespace Garnet.server
         /// Non existing members are ignored.
         /// </summary>
         public GarnetStatus SortedSetRemove<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice[] members, out int zremCount)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             zremCount = 0;
@@ -178,7 +178,7 @@ namespace Garnet.server
         /// Removes all elements in the range specified by min and max, having the same score.
         /// </summary>
         public unsafe GarnetStatus SortedSetRemoveRangeByLex<TKeyLocker, TEpochGuard>(ArgSlice key, string min, string max, out int countRemoved)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             countRemoved = 0;
@@ -225,7 +225,7 @@ namespace Garnet.server
         /// Removes all elements that have a score in the range specified by min and max.
         /// </summary>
         public unsafe GarnetStatus SortedSetRemoveRangeByScore<TKeyLocker, TEpochGuard>(ArgSlice key, string min, string max, out int countRemoved)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             countRemoved = 0;
@@ -274,7 +274,7 @@ namespace Garnet.server
         /// Removes all elements with the index in the range specified by start and stop.
         /// </summary>
         public unsafe GarnetStatus SortedSetRemoveRangeByRank<TKeyLocker, TEpochGuard>(ArgSlice key, int start, int stop, out int countRemoved)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             countRemoved = 0;
@@ -323,7 +323,7 @@ namespace Garnet.server
         /// Removes and returns up to count members with the highest or lowest scores in the sorted set stored at key.
         /// </summary>
         public unsafe GarnetStatus SortedSetPop<TKeyLocker, TEpochGuard>(ArgSlice key, int count, bool lowScoresFirst, out (ArgSlice member, ArgSlice score)[] pairs)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             pairs = default;
@@ -356,7 +356,7 @@ namespace Garnet.server
         /// If member does not exist in the sorted set, it is added with increment as its score (as if its previous score was 0.0).
         /// </summary>
         public unsafe GarnetStatus SortedSetIncrement<TKeyLocker, TEpochGuard>(ArgSlice key, double increment, ArgSlice member, out double newScore)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             newScore = 0;
@@ -407,7 +407,7 @@ namespace Garnet.server
         /// Returns the length of the sorted set
         /// </summary>
         public GarnetStatus SortedSetLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int zcardCount)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             zcardCount = 0;
@@ -438,7 +438,7 @@ namespace Garnet.server
         /// <returns></returns>
         public unsafe GarnetStatus SortedSetRange<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice min, ArgSlice max, SortedSetOrderOperation sortedSetOrderOperation,
                 out ArgSlice[] elements, out string error, bool withScores = false, bool reverse = false, (string, int) limit = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             elements = default;
@@ -579,7 +579,7 @@ namespace Garnet.server
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
                 GarnetObjectStoreOutput firstObj = new();
-                var statusOp = GET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys[0].ToArray(), ref firstObj);
+                var statusOp = GET<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(keys[0].ToArray(), ref firstObj);
                 if (statusOp == GarnetStatus.OK)
                 {
                     if (firstObj.garnetObject is not SortedSetObject firstSortedSet)
@@ -589,7 +589,7 @@ namespace Garnet.server
                     for (var item = 1; item < keys.Length; item++)
                     {
                         GarnetObjectStoreOutput nextObj = new();
-                        statusOp = GET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys[item].ToArray(), ref nextObj);
+                        statusOp = GET<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(keys[item].ToArray(), ref nextObj);
                         if (statusOp != GarnetStatus.OK)
                             continue;
 
@@ -624,7 +624,7 @@ namespace Garnet.server
         /// <param name="rank">The rank of the member (null if the member does not exist)</param>
         /// </summary>
         public unsafe GarnetStatus SortedSetRank<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice member, bool reverse, out long? rank)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             rank = null;
@@ -652,7 +652,7 @@ namespace Garnet.server
             var outputContainer = stackalloc byte[outputContainerSize];
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(outputContainer, outputContainerSize) };
 
-            var status = ReadObjectStoreOperationWithOutput<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(key.ToArray(), ref input, ref outputFooter);
+            var status = ReadObjectStoreOperationWithOutput<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(key.ToArray(), ref input, ref outputFooter);
 
             if (status == GarnetStatus.OK)
             {
@@ -675,7 +675,7 @@ namespace Garnet.server
         /// Current members get the score updated and reordered.
         /// </summary>
         public GarnetStatus SortedSetAdd<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         => RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref output);
 
@@ -684,7 +684,7 @@ namespace Garnet.server
         /// Non existing members are ignored.
         /// </summary>
         public GarnetStatus SortedSetRemove<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
@@ -692,7 +692,7 @@ namespace Garnet.server
         /// Returns the number of members of the sorted set.
         /// </summary>
         public GarnetStatus SortedSetLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
@@ -702,7 +702,7 @@ namespace Garnet.server
         /// There can also be negative numbers indicating offsets from the end of the sorted set, with -1 being the last element of the sorted set, -2 the penultimate element and so on.
         /// </summary>
         public GarnetStatus SortedSetRange<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -711,7 +711,7 @@ namespace Garnet.server
         /// If member does not exist in the sorted set, or key does not exist, nil is returned.
         /// </summary>
         public GarnetStatus SortedSetScore<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -720,7 +720,7 @@ namespace Garnet.server
         /// For every member that does not exist in the sorted set, or if the key does not exist, nil is returned.
         /// </summary>
         public GarnetStatus SortedSetScores<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -729,7 +729,7 @@ namespace Garnet.server
         /// with the scores ordered from low to high (min) or high to low (max).
         /// </summary>
         public GarnetStatus SortedSetPop<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -737,7 +737,7 @@ namespace Garnet.server
         /// Returns the number of elements in the sorted set at key with a score between min and max.
         /// </summary>
         public GarnetStatus SortedSetCount<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -746,7 +746,7 @@ namespace Garnet.server
         /// lexicographical range specified by min and max.
         /// </summary>
         public GarnetStatus SortedSetRemoveRangeByLex<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
@@ -756,7 +756,7 @@ namespace Garnet.server
         /// this command forces lexicographical ordering.
         /// </summary>
         public GarnetStatus SortedSetLengthByValue<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
@@ -765,7 +765,7 @@ namespace Garnet.server
         /// If member does not exist in the sorted set, it is added with increment as its score (as if its previous score was 0.0).
         /// </summary>
         public GarnetStatus SortedSetIncrement<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -775,7 +775,7 @@ namespace Garnet.server
         /// ZREMRANGEBYSCORE: Removes all elements in the sorted set stored at key with a score between min and max (inclusive by default).
         /// </summary>
         public GarnetStatus SortedSetRemoveRange<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -783,7 +783,7 @@ namespace Garnet.server
         /// Returns the rank of member in the sorted set, the scores in the sorted set are ordered from low to high
         /// </summary>
         public GarnetStatus SortedSetRank<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -791,7 +791,7 @@ namespace Garnet.server
         /// Returns a random member from the sorted set key.
         /// </summary>
         public GarnetStatus SortedSetRandomMember<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -800,7 +800,7 @@ namespace Garnet.server
         /// a match pattern and count parameters.
         /// </summary>
         public GarnetStatus SortedSetScan<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
            => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
     }

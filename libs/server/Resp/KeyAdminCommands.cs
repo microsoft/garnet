@@ -15,7 +15,7 @@ namespace Garnet.server
         /// TryRENAME
         /// </summary>
         private bool NetworkRENAME<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -44,7 +44,7 @@ namespace Garnet.server
         /// TryRENAMENX
         /// </summary>
         private bool NetworkRENAMENX<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -77,7 +77,7 @@ namespace Garnet.server
         /// <param name="garnetApi"> Garnet API reference </param>
         /// <returns> True if successful, false otherwise </returns>
         private bool NetworkGETDEL<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -113,7 +113,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private bool NetworkEXISTS<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -170,7 +170,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private bool NetworkEXPIRE<TKeyLocker, TEpochGuard, TGarnetApi>(RespCommand command, ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -228,7 +228,7 @@ namespace Garnet.server
         /// <param name="garnetApi">The Garnet API instance</param>
         /// <returns></returns>
         private bool NetworkPERSIST<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -258,7 +258,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private bool NetworkTTL<TKeyLocker, TEpochGuard, TGarnetApi>(RespCommand command, ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {

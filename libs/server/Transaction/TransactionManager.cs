@@ -10,9 +10,9 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<TransientSessionLocker, GarnetSafeEpochGuard>;
-    using LockableGarnetApi = GarnetApi<TransactionalSessionLocker, GarnetSafeEpochGuard>;
-    using PrepareGarnetApi = GarnetWatchApi<TransientSessionLocker, GarnetSafeEpochGuard, /* BasicGarnetApi */ GarnetApi<TransientSessionLocker, GarnetSafeEpochGuard>>;
+    using BasicGarnetApi = GarnetApi<TransientKeyLocker, GarnetSafeEpochGuard>;
+    using LockableGarnetApi = GarnetApi<TransactionalKeyLocker, GarnetSafeEpochGuard>;
+    using PrepareGarnetApi = GarnetWatchApi<TransientKeyLocker, GarnetSafeEpochGuard, /* BasicGarnetApi */ GarnetApi<TransientKeyLocker, GarnetSafeEpochGuard>>;
 
     /// <summary>
     /// Transaction manager
@@ -73,7 +73,7 @@ namespace Garnet.server
             this.scratchBufferManager = scratchBufferManager;
 
             garnetTxMainApi = respSession.lockableGarnetApi;
-            garnetTxPrepareApi = new GarnetWatchApi<TransientSessionLocker, GarnetSafeEpochGuard, BasicGarnetApi>(respSession.basicGarnetApi);
+            garnetTxPrepareApi = new GarnetWatchApi<TransientKeyLocker, GarnetSafeEpochGuard, BasicGarnetApi>(respSession.basicGarnetApi);
             garnetTxFinalizeApi = respSession.basicGarnetApi;
 
             this.clusterEnabled = clusterEnabled;
@@ -118,7 +118,7 @@ namespace Garnet.server
             {
                 functionsState.StoredProcMode = true;
                 // Prepare phase
-                if (!proc.Prepare<TransientSessionLocker, GarnetSafeEpochGuard, PrepareGarnetApi>(garnetTxPrepareApi, input))
+                if (!proc.Prepare<TransientKeyLocker, GarnetSafeEpochGuard, PrepareGarnetApi>(garnetTxPrepareApi, input))
                 {
                     Reset(running);
                     return false;
@@ -134,7 +134,7 @@ namespace Garnet.server
                 running = true;
 
                 // Run main procedure on locked data
-                proc.Main<TransactionalSessionLocker, GarnetSafeEpochGuard, LockableGarnetApi>(garnetTxMainApi, input, ref output);
+                proc.Main<TransactionalKeyLocker, GarnetSafeEpochGuard, LockableGarnetApi>(garnetTxMainApi, input, ref output);
 
                 // Log the transaction to AOF
                 Log(id, input);
@@ -152,7 +152,7 @@ namespace Garnet.server
                 try
                 {
                     // Run finalize procedure at the end
-                    proc.Finalize<TransientSessionLocker, GarnetSafeEpochGuard, BasicGarnetApi>(garnetTxFinalizeApi, input, ref output);
+                    proc.Finalize<TransientKeyLocker, GarnetSafeEpochGuard, BasicGarnetApi>(garnetTxFinalizeApi, input, ref output);
                 }
                 catch { }
 
@@ -186,7 +186,7 @@ namespace Garnet.server
         }
 
         internal void Watch<TKeyLocker, TEpochGuard>(ArgSlice key, StoreType type)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             // Update watch type if object store is disabled

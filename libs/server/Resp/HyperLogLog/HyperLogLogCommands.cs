@@ -17,7 +17,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private bool HyperLogLogAdd<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -88,7 +88,7 @@ namespace Garnet.server
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
         private bool HyperLogLogLength<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -132,7 +132,7 @@ namespace Garnet.server
         /// of the union of the observed Sets of the source HyperLogLog structures.
         /// </summary>
         private bool HyperLogLogMerge<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-             where TKeyLocker : struct, ISessionLocker
+             where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {

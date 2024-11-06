@@ -11,8 +11,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<TransientSessionLocker, GarnetSafeEpochGuard>;
-    using LockableGarnetApi = GarnetApi<TransactionalSessionLocker, GarnetSafeEpochGuard>;
+    using BasicGarnetApi = GarnetApi<TransientKeyLocker, GarnetSafeEpochGuard>;
+    using LockableGarnetApi = GarnetApi<TransactionalKeyLocker, GarnetSafeEpochGuard>;
 
     /// <summary>
     /// Creates the instance to run Lua scripts
@@ -163,7 +163,7 @@ namespace Garnet.server
         /// <param name="args">Parameters</param>
         /// <returns></returns>
         public object garnet_call(string cmd, params object[] args)
-            => respServerSession == null ? null : ProcessCommandFromScripting<TransientSessionLocker, GarnetSafeEpochGuard, BasicGarnetApi>(respServerSession.basicGarnetApi, cmd, args);
+            => respServerSession == null ? null : ProcessCommandFromScripting<TransientKeyLocker, GarnetSafeEpochGuard, BasicGarnetApi>(respServerSession.basicGarnetApi, cmd, args);
 
         /// <summary>
         /// Entry point for redis.call method from a Lua script (transactional mode)
@@ -172,13 +172,13 @@ namespace Garnet.server
         /// <param name="args">Parameters</param>
         /// <returns></returns>
         public object garnet_call_txn(string cmd, params object[] args)
-            => respServerSession == null ? null : ProcessCommandFromScripting<TransactionalSessionLocker, GarnetSafeEpochGuard, LockableGarnetApi>(respServerSession.lockableGarnetApi, cmd, args);
+            => respServerSession == null ? null : ProcessCommandFromScripting<TransactionalKeyLocker, GarnetSafeEpochGuard, LockableGarnetApi>(respServerSession.lockableGarnetApi, cmd, args);
 
         /// <summary>
         /// Entry point method for executing commands from a Lua Script
         /// </summary>
         unsafe object ProcessCommandFromScripting<TKeyLocker, TEpochGuard, TGarnetApi>(TGarnetApi api, string cmd, params object[] args)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {

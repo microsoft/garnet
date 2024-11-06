@@ -16,7 +16,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private unsafe bool GeoAdd<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -70,7 +70,7 @@ namespace Garnet.server
         /// <param name="garnetApi"></param>
         /// <returns></returns>
         private unsafe bool GeoCommands<TKeyLocker, TEpochGuard, TGarnetApi>(RespCommand command, ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {

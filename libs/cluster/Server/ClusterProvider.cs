@@ -15,7 +15,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicGarnetApi = GarnetApi<TransientSessionLocker, GarnetSafeEpochGuard>;
+    using BasicGarnetApi = GarnetApi<TransientKeyLocker, GarnetSafeEpochGuard>;
 
     /// <summary>
     /// Cluster provider

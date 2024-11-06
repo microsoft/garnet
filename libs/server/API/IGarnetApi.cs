@@ -12,7 +12,7 @@ namespace Garnet.server
     /// Interface for Garnet API
     /// </summary>
     public interface IGarnetApi<TKeyLocker, TEpochGuard> : IGarnetReadApi<TKeyLocker, TEpochGuard>, IGarnetAdvancedApi<TKeyLocker, TEpochGuard>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
     {
         #region SET
@@ -974,7 +974,7 @@ namespace Garnet.server
     /// Interface for Garnet API
     /// </summary>
     public interface IGarnetReadApi<TKeyLocker, TEpochGuard>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
     {
         #region GET
@@ -1643,7 +1643,7 @@ namespace Garnet.server
     /// Garnet Watch API
     /// </summary>
     public interface IGarnetWatchApi<TKeyLocker, TEpochGuard>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
     {
         /// <summary>

@@ -16,7 +16,7 @@ namespace Garnet.server
         /// Adds all the element arguments to the HyperLogLog data structure stored at the variable name specified as key.
         /// </summary>
         public unsafe GarnetStatus HyperLogLogAdd<TKeyLocker, TEpochGuard>(ArgSlice key, string[] elements, out bool updated)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             updated = false;
@@ -64,7 +64,7 @@ namespace Garnet.server
         /// Adds one element to the HyperLogLog data structure stored at the variable name specified.
         /// </summary>
         public GarnetStatus HyperLogLogAdd<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMW_MainStore<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
 
@@ -73,7 +73,7 @@ namespace Garnet.server
         /// or 0 if the key does not exist.
         /// </summary>
         public unsafe GarnetStatus HyperLogLogLength<TKeyLocker, TEpochGuard>(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             count = 0;
@@ -104,7 +104,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus HyperLogLogLength<TKeyLocker, TEpochGuard>(Span<ArgSlice> keys, out long count)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             //4 byte length of input
@@ -171,7 +171,7 @@ namespace Garnet.server
 
                     SpanByteAndMemory mergeBuffer = new (readBuffer, hllBufferSize);
                     var srcKey = keys[i].SpanByte;
-                    var status = GET<TransactionalSessionLocker, GarnetSafeEpochGuard>(ref srcKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref mergeBuffer);
+                    var status = GET<TransactionalKeyLocker, GarnetSafeEpochGuard>(ref srcKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref mergeBuffer);
                     //Handle case merging source key does not exist
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
@@ -191,7 +191,7 @@ namespace Garnet.server
                     (*(RespInputHeader*)pcurr).flags = 0;
                     pcurr += RespInputHeader.Size;
                     *(int*)pcurr = mergeBuffer.Length;
-                    SET_Conditional<TransactionalSessionLocker, GarnetSafeEpochGuard>(ref dstKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref mergeBuffer);
+                    SET_Conditional<TransactionalKeyLocker, GarnetSafeEpochGuard>(ref dstKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref mergeBuffer);
                     #endregion
                 }
             }

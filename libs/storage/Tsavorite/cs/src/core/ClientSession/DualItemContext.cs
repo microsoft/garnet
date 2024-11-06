@@ -39,7 +39,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public readonly bool CompletePending<TKeyLocker>(bool wait = false, bool spinWaitForCommit = false)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             Debug.Assert(ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             return ClientSession.UnsafeCompletePending<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
@@ -48,7 +48,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public readonly bool CompletePendingWithOutputs<TKeyLocker>(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             Debug.Assert(ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             return ClientSession.UnsafeCompletePendingWithOutputs<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
@@ -59,7 +59,7 @@ namespace Tsavorite.core
         /// Utility function to return the single pending result immediately after detecting status.IsPending
         /// </summary>
         public readonly (Status, TOutput output) GetSinglePendingResult<TKeyLocker>(IPendingMetrics pendingMetrics)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             pendingMetrics?.StartPendingMetrics();
             _ = CompletePendingWithOutputs<TKeyLocker>(out var completedOutputs, wait: true);
@@ -76,18 +76,18 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public readonly ValueTask CompletePendingAsync<TKeyLocker>(bool waitForCommit = false, CancellationToken token = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             => ClientSession.CompletePendingAsync<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
         public readonly ValueTask<CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext>> CompletePendingWithOutputsAsync<TKeyLocker>(bool waitForCommit = false, CancellationToken token = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             => ClientSession.CompletePendingWithOutputsAsync<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly Status Read<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             Debug.Assert(ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             return ClientSession.Store.ContextRead<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
@@ -97,7 +97,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly Status ReadAtAddress<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, bool isNoKey, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             Debug.Assert(ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             return ClientSession.Store.ContextReadAtAddress<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
@@ -107,7 +107,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly Status Upsert<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             Debug.Assert(ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             return ClientSession.Store.ContextUpsert<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
@@ -117,7 +117,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly Status RMW<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             Debug.Assert(ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             return ClientSession.Store.ContextRMW<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
@@ -127,13 +127,13 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly Status Delete<TKeyLocker>(ref HashEntryInfo hei, TKey key, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             => Delete<TKeyLocker>(ref hei, ref key, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly Status Delete<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             Debug.Assert(ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             return ClientSession.Store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
@@ -143,7 +143,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void ResetModified<TKeyLocker>(ref HashEntryInfo hei, ref TKey key)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             => ClientSession.UnsafeResetModified<TKeyLocker>(ref hei, sessionFunctions.ExecutionCtx, ref key);
     }
 }

@@ -12,7 +12,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicGarnetApi = GarnetApi<TransientSessionLocker, GarnetSafeEpochGuard>;
+    using BasicGarnetApi = GarnetApi<TransientKeyLocker, GarnetSafeEpochGuard>;
 
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {

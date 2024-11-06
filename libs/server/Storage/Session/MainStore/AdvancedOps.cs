@@ -11,7 +11,7 @@ namespace Garnet.server
     sealed partial class StorageSession : IDisposable
     {
         public GarnetStatus GET_WithPending<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, long ctx, out bool pending)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var status = dualContext.Read<TKeyLocker, TEpochGuard>(ref key, ref input, ref output, ctx);
@@ -34,7 +34,7 @@ namespace Garnet.server
         }
 
         public bool GET_CompletePending<TKeyLocker, TEpochGuard>((GarnetStatus, SpanByteAndMemory)[] outputArr, bool wait)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             Debug.Assert(outputArr != null);
@@ -58,7 +58,7 @@ namespace Garnet.server
         }
 
         public bool GET_CompletePending<TKeyLocker>(out CompletedOutputIterator<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long> completedOutputs, bool wait)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             latencyMetrics?.Start(LatencyMetricsType.PENDING_LAT);
             var ret = MainContext.CompletePendingWithOutputs<TKeyLocker>(out completedOutputs, wait);
@@ -67,7 +67,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus RMW_MainStore<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var status = dualContext.RMW<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
@@ -79,7 +79,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus Read_MainStore<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var status = dualContext.Read<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);

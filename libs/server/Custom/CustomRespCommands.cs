@@ -85,7 +85,7 @@ namespace Garnet.server
         /// Custom command
         /// </summary>
         private bool TryCustomRawStringCommand<TKeyLocker, TEpochGuard, TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetAdvancedApi<TKeyLocker, TEpochGuard>
         {
@@ -166,7 +166,7 @@ namespace Garnet.server
         /// Custom object command
         /// </summary>
         private bool TryCustomObjectCommand<TKeyLocker, TEpochGuard, TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, byte subid, CommandType type, ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetAdvancedApi<TKeyLocker, TEpochGuard>
         {

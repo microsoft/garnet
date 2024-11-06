@@ -30,7 +30,7 @@ namespace Tsavorite.core
         internal async ValueTask CompletePendingAsync<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions,
                                       CancellationToken token, CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             while (true)
             {

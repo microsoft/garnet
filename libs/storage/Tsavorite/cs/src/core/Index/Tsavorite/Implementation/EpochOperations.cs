@@ -16,7 +16,7 @@ namespace Tsavorite.core
                 ref HashEntryInfo hei,
                 ExecutionContext<TInput, TOutput, TContext> executionCtx,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             var version = executionCtx.version;
             Debug.Assert(executionCtx.version == version, $"sessionCtx.version ({executionCtx.version}) should == version ({version})");

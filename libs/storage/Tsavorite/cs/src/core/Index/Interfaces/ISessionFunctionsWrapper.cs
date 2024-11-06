@@ -59,7 +59,7 @@ namespace Tsavorite.core
         #endregion Utilities
 
         bool CompletePendingWithOutputs<TKeyLocker>(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-            where TKeyLocker : struct, ISessionLocker;
+            where TKeyLocker : struct, IKeyLocker;
 
         TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> ExecutionCtx { get; }
 

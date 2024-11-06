@@ -17,8 +17,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<TransientSessionLocker, GarnetSafeEpochGuard>;
-    using LockableGarnetApi = GarnetApi<TransactionalSessionLocker, GarnetSafeEpochGuard>;
+    using BasicGarnetApi = GarnetApi<TransientKeyLocker, GarnetSafeEpochGuard>;
+    using LockableGarnetApi = GarnetApi<TransactionalKeyLocker, GarnetSafeEpochGuard>;
 
     /// <summary>
     /// RESP server session
@@ -405,7 +405,7 @@ namespace Garnet.server
                         {
                             if (txnManager.state == TxnState.Running)
                             {
-                                _ = ProcessBasicCommands<TransactionalSessionLocker, GarnetSafeEpochGuard, LockableGarnetApi>(cmd, ref lockableGarnetApi);
+                                _ = ProcessBasicCommands<TransactionalKeyLocker, GarnetSafeEpochGuard, LockableGarnetApi>(cmd, ref lockableGarnetApi);
                             }
                             else _ = cmd switch
                             {
@@ -419,7 +419,7 @@ namespace Garnet.server
                         else
                         {
                             if (clusterSession == null || CanServeSlot(cmd))
-                                _ = ProcessBasicCommands<TransientSessionLocker, GarnetSafeEpochGuard, BasicGarnetApi>(cmd, ref basicGarnetApi);
+                                _ = ProcessBasicCommands<TransientKeyLocker, GarnetSafeEpochGuard, BasicGarnetApi>(cmd, ref basicGarnetApi);
                         }
                     }
                     else
@@ -487,7 +487,7 @@ namespace Garnet.server
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ProcessBasicCommands<TKeyLocker, TEpochGuard, TGarnetApi>(RespCommand cmd, ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -542,7 +542,7 @@ namespace Garnet.server
         }
 
         private bool ProcessArrayCommands<TKeyLocker, TEpochGuard, TGarnetApi>(RespCommand cmd, ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -668,7 +668,7 @@ namespace Garnet.server
         }
 
         private bool ProcessOtherCommands<TKeyLocker, TEpochGuard, TGarnetApi>(RespCommand cmd, ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -762,7 +762,7 @@ namespace Garnet.server
         }
 
         private bool NetworkCustomRawStringCmd<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -780,7 +780,7 @@ namespace Garnet.server
         }
 
         bool NetworkCustomObjCmd<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {

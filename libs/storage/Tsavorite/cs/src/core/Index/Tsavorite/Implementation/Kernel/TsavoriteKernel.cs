@@ -59,7 +59,7 @@ namespace Tsavorite.core
         /// <returns><see cref="Status.Found"/> if the tag was found, else <see cref="Status.NotFound"/></returns>
         public Status EnterForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref TKernelSession kernelSession, long keyHash, ushort partitionId, out HashEntryInfo hei)
             where TKernelSession : IKernelSession
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             TEpochGuard.BeginUnsafe(ref kernelSession);
@@ -106,7 +106,7 @@ namespace Tsavorite.core
         /// </remarks>
         public void ExitForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref TKernelSession kernelSession, ref HashEntryInfo hei)
             where TKernelSession : IKernelSession
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             TKeyLocker.UnlockTransientShared(this, ref hei);
@@ -126,7 +126,7 @@ namespace Tsavorite.core
         /// <returns><see cref="Status.Found"/> if the tag was found, else <see cref="Status.NotFound"/></returns>
         public Status EnterForUpdate<TKernelSession, TKeyLocker, TEpochGuard>(ref TKernelSession kernelSession, long keyHash, ushort partitionId, long createIfNotFoundBeginAddress, out HashEntryInfo hei)
             where TKernelSession : IKernelSession
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             TEpochGuard.BeginUnsafe(ref kernelSession);
@@ -174,7 +174,7 @@ namespace Tsavorite.core
         /// </remarks>
         public void ExitForUpdate<TKernelSession, TKeyLocker, TEpochGuard>(ref TKernelSession kernelSession, ref HashEntryInfo hei)
             where TKernelSession : IKernelSession
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             TKeyLocker.UnlockTransientShared(this, ref hei);

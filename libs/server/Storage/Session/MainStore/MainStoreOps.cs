@@ -12,7 +12,7 @@ namespace Garnet.server
     sealed partial class StorageSession : IDisposable
     {
         public GarnetStatus GET<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var status = dualContext.Read<TKeyLocker, TEpochGuard>(ref key, ref input, ref output, userContext: default);
@@ -30,7 +30,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus GET<TKeyLocker>(ref HashEntryInfo hei, ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             ReadOptions readOptions = default;
             var status = MainContext.Read<TKeyLocker>(ref hei, ref key, ref input, ref output, ref readOptions, recordMetadata: out _, userContext: default);
@@ -48,7 +48,7 @@ namespace Garnet.server
 
 
         public unsafe GarnetStatus ReadWithUnsafeContext<TKeyLocker, TEpochGuard>(ArgSlice key, ref SpanByte input, ref SpanByteAndMemory output, long localHeadAddress, out bool epochChanged)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var _key = key.SpanByte;
@@ -77,7 +77,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus GET<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice value)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var inputSize = sizeof(int) + RespInputHeader.Size;
@@ -109,7 +109,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus GET<TKeyLocker, TEpochGuard>(ArgSlice key, out MemoryResult<byte> value)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var inputSize = sizeof(int) + RespInputHeader.Size;
@@ -135,7 +135,7 @@ namespace Garnet.server
         /// <param name="output">Span to allocate the output of the operation</param>
         /// <returns> Operation status </returns>
         public GarnetStatus GETDEL<TKeyLocker, TEpochGuard>(ArgSlice key, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var _key = key.SpanByte;
@@ -149,7 +149,7 @@ namespace Garnet.server
         /// <param name="output">Span to allocate the output of the operation</param>
         /// <returns> Operation status </returns>
         public unsafe GarnetStatus GETDEL<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             // size data + header
@@ -174,7 +174,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus GETRANGE<TKeyLocker, TEpochGuard>(ref SpanByte key, int sliceStart, int sliceLength, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var inputSize = sizeof(int) + RespInputHeader.Size + (sizeof(int) * 2);
@@ -204,7 +204,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus SET<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte value)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             _ = dualContext.Upsert<TKeyLocker, TEpochGuard>(ref key, ref value);
@@ -212,7 +212,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus SET<TKeyLocker>(ref HashEntryInfo hei, ref SpanByte key, ref SpanByte value)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             SpanByte input = default;
             SpanByteAndMemory output = default;
@@ -221,7 +221,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus SET_Conditional<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var pbOutput = stackalloc byte[8];
@@ -230,7 +230,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus SET_Conditional<TKeyLocker>(ref HashEntryInfo hei, ref SpanByte key, ref SpanByte input)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             var pbOutput = stackalloc byte[8];
             var output = new SpanByteAndMemory(pbOutput, 8);
@@ -238,7 +238,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus SET_Conditional<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var status = dualContext.RMW<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
@@ -255,7 +255,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus SET_Conditional<TKeyLocker>(ref HashEntryInfo hei, ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             var status = MainContext.RMW<TKeyLocker>(ref hei, ref key, ref input, ref output, recordMetadata: out _, userContext: default);
             if (status.IsPending)
@@ -271,7 +271,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus SET<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice value)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var _key = key.SpanByte;
@@ -280,7 +280,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus SET<TKeyLocker, TEpochGuard>(ArgSlice key, Memory<byte> value)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var _key = key.SpanByte;
@@ -295,12 +295,12 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus SETEX<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice value, ArgSlice expiryMs)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => SETEX<TKeyLocker, TEpochGuard>(key, value, TimeSpan.FromMilliseconds(NumUtils.BytesToLong(expiryMs.Length, expiryMs.ptr)));
 
         public GarnetStatus SETEX<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice value, TimeSpan expiry)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var _key = key.SpanByte;
@@ -310,7 +310,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus SETEX<TKeyLocker>(ref HashEntryInfo hei, ArgSlice key, ArgSlice value, TimeSpan expiry)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             var _key = key.SpanByte;
             var valueSB = scratchBufferManager.FormatScratch(sizeof(long), value).SpanByte;
@@ -326,7 +326,7 @@ namespace Garnet.server
         /// <param name="output">Length of updated value</param>
         /// <returns>Operation status</returns>
         public unsafe GarnetStatus APPEND<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice value, ref ArgSlice output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var _key = key.SpanByte;
@@ -344,7 +344,7 @@ namespace Garnet.server
         /// <param name="output">Length of updated value</param>
         /// <returns>Operation status</returns>
         public unsafe GarnetStatus APPEND<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte value, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(int) + sizeof(long);
@@ -379,7 +379,7 @@ namespace Garnet.server
         /// <param name="output">The length of the updated string</param>
         /// <returns></returns>
         public unsafe GarnetStatus SETRANGE<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice value, int offset, ref ArgSlice output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var sbKey = key.SpanByte;
@@ -411,7 +411,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus Increment<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice input, ref ArgSlice output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var _key = key.SpanByte;
@@ -427,7 +427,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus Increment<TKeyLocker, TEpochGuard>(ArgSlice key, out long output, long increment)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var cmd = RespCommand.INCRBY;
@@ -463,7 +463,7 @@ namespace Garnet.server
         }
 
         public void WATCH<TKeyLocker, TEpochGuard>(ArgSlice key, StoreType type)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             txnManager.Watch<TKeyLocker, TEpochGuard>(key, type);
@@ -471,7 +471,7 @@ namespace Garnet.server
         }
 
         public unsafe void WATCH<TKeyLocker, TEpochGuard>(byte[] key, StoreType type)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             fixed (byte* ptr = key)

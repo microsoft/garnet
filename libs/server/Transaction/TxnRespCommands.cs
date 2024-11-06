@@ -180,7 +180,7 @@ namespace Garnet.server
         /// <param name="type">Store type that's bein gwatch</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool CommonWATCH<TKeyLocker, TEpochGuard>(StoreType type)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var count = parseState.Count;
@@ -212,7 +212,7 @@ namespace Garnet.server
         /// WATCH MS key [key ..]
         /// </summary>
         private bool NetworkWATCH_MS<TKeyLocker, TEpochGuard>()
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => CommonWATCH<TKeyLocker, TEpochGuard>(StoreType.Main);
 
@@ -220,7 +220,7 @@ namespace Garnet.server
         /// WATCH OS key [key ..]
         /// </summary>
         private bool NetworkWATCH_OS<TKeyLocker, TEpochGuard>()
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => CommonWATCH<TKeyLocker, TEpochGuard>(StoreType.Object);
 
@@ -228,7 +228,7 @@ namespace Garnet.server
         /// Watch key [key ...]
         /// </summary>
         private bool NetworkWATCH<TKeyLocker, TEpochGuard>()
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => CommonWATCH<TKeyLocker, TEpochGuard>(StoreType.All);
 

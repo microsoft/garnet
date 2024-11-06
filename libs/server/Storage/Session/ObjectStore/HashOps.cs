@@ -19,7 +19,7 @@ namespace Garnet.server
         /// If field exists the operation has no effect.
         /// </summary>
         public GarnetStatus HashSet<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, ArgSlice value, out int itemsDoneCount, bool nx = false)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             itemsDoneCount = 0;
@@ -56,7 +56,7 @@ namespace Garnet.server
         /// If key doesn't exist, a new hash is created.
         /// </summary>
         public GarnetStatus HashSet<TKeyLocker, TEpochGuard>(ArgSlice key, (ArgSlice field, ArgSlice value)[] elements, out int itemsDoneCount)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             itemsDoneCount = 0;
@@ -97,7 +97,7 @@ namespace Garnet.server
         /// Removes the specified field from the hash key.
         /// </summary>
         public GarnetStatus HashDelete<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, out int itemsDoneCount, bool nx = false)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
          => HashDelete<TKeyLocker, TEpochGuard>(key, [field], out itemsDoneCount);
 
@@ -105,7 +105,7 @@ namespace Garnet.server
         /// Removes the specified fields from the hash key.
         /// </summary>
         public GarnetStatus HashDelete<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] fields, out int itemsDoneCount)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             itemsDoneCount = 0;
@@ -140,7 +140,7 @@ namespace Garnet.server
         /// Returns the value associated with the field in the hash key.
         /// </summary>
         public GarnetStatus HashGet<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, out ArgSlice value)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             value = default;
@@ -176,7 +176,7 @@ namespace Garnet.server
         /// Returns the values associated with the fields in the hash key.
         /// </summary>
         public GarnetStatus HashGetMultiple<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             values = default;
@@ -212,7 +212,7 @@ namespace Garnet.server
         /// Returns all fields and values of the hash key.
         /// </summary>
         public GarnetStatus HashGetAll<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice[] values)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             values = default;
@@ -239,7 +239,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus HashLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int items, bool nx = false)   // TODO implement nx
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             items = 0;
@@ -266,7 +266,7 @@ namespace Garnet.server
         /// Returns if field exists in the hash stored at key.
         /// </summary>
         public GarnetStatus HashExists<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice field, out bool exists)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             exists = false;
@@ -299,7 +299,7 @@ namespace Garnet.server
         /// Returns a random field from the hash value stored at key.
         /// </summary>
         public GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice field)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             field = default;
@@ -338,7 +338,7 @@ namespace Garnet.server
         /// in this case the fields returned is the absolute value of count.
         /// </summary>
         public GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(ArgSlice key, int count, bool withValues, out ArgSlice[] fields)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             fields = default;
@@ -377,7 +377,7 @@ namespace Garnet.server
         /// If key doesn't exist, a new hash is created.
         /// </summary>
         public GarnetStatus HashSet<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
@@ -388,7 +388,7 @@ namespace Garnet.server
         /// HashRandomField: Returns a random field from the hash value stored at key.
         /// </summary>
         public GarnetStatus HashGet<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -396,7 +396,7 @@ namespace Garnet.server
         /// Returns all fields and values of the hash stored at key.
         /// </summary>
         public GarnetStatus HashGetAll<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -404,7 +404,7 @@ namespace Garnet.server
         /// Returns the values associated with the specified fields in the hash stored at key.
         /// </summary>
         public GarnetStatus HashGetMultiple<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -412,7 +412,7 @@ namespace Garnet.server
         /// Returns a random field from the hash value stored at key.
         /// </summary>
         public GarnetStatus HashRandomField<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -420,7 +420,7 @@ namespace Garnet.server
         /// Returns the number of fields contained in the hash key.
         /// </summary>
         public GarnetStatus HashLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
@@ -428,7 +428,7 @@ namespace Garnet.server
         /// Returns the string length of the value associated with field in the hash stored at key. If the key or the field do not exist, 0 is returned.
         /// </summary>
         public GarnetStatus HashStrLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
@@ -436,7 +436,7 @@ namespace Garnet.server
         /// Removes the specified fields from the hash key.
         /// </summary>
         public GarnetStatus HashDelete<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
@@ -444,7 +444,7 @@ namespace Garnet.server
         /// Returns if field exists in the hash stored at key.
         /// </summary>
         public GarnetStatus HashExists<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
@@ -452,7 +452,7 @@ namespace Garnet.server
         /// Returns all field names in the hash key.
         /// </summary>
         public GarnetStatus HashKeys<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -460,7 +460,7 @@ namespace Garnet.server
         /// Returns all values in the hash key.
         /// </summary>
         public GarnetStatus HashVals<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -468,7 +468,7 @@ namespace Garnet.server
         /// Increments the number stored at field in the hash stored at key by increment.
         /// </summary>
         public GarnetStatus HashIncrement<TKeyLocker, TEpochGuard>(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, input, out output);
 
@@ -477,7 +477,7 @@ namespace Garnet.server
         /// and representing a floating point number, by the specified increment.
         /// </summary>
         public GarnetStatus HashIncrement<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
     }

@@ -40,28 +40,28 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public bool CompletePending<TKeyLocker>(bool wait = false, bool spinWaitForCommit = false)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             => KernelSession.ClientSession.CompletePending<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, wait, spinWaitForCommit);
 
         /// <inheritdoc/>
         public bool CompletePendingWithOutputs<TKeyLocker>(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             => KernelSession.ClientSession.CompletePendingWithOutputs<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, out completedOutputs, wait, spinWaitForCommit);
 
         /// <inheritdoc/>
         public ValueTask CompletePendingAsync<TKeyLocker>(bool waitForCommit = false, CancellationToken token = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             => KernelSession.ClientSession.CompletePendingAsync<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
         public ValueTask<CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext>> CompletePendingWithOutputsAsync<TKeyLocker>(bool waitForCommit = false, CancellationToken token = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             => KernelSession.ClientSession.CompletePendingWithOutputsAsync<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             ReadOptions readOptions = new();
@@ -71,14 +71,14 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => Read<TKeyLocker, TEpochGuard>(ref key, ref input, ref output, ref readOptions, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read<TKeyLocker, TEpochGuard>(TKey key, TInput input, out TOutput output, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             output = default;
@@ -88,7 +88,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read<TKeyLocker, TEpochGuard>(TKey key, TInput input, out TOutput output, ref ReadOptions readOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             output = default;
@@ -98,7 +98,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read<TKeyLocker, TEpochGuard>(ref TKey key, ref TOutput output, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             TInput input = default;
@@ -108,7 +108,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read<TKeyLocker, TEpochGuard>(ref TKey key, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             TInput input = default;
@@ -118,7 +118,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read<TKeyLocker, TEpochGuard>(TKey key, out TOutput output, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             TInput input = default;
@@ -129,7 +129,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read<TKeyLocker, TEpochGuard>(TKey key, out TOutput output, ref ReadOptions readOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             TInput input = default;
@@ -140,7 +140,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (Status status, TOutput output) Read<TKeyLocker, TEpochGuard>(TKey key, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             TInput input = default;
@@ -151,7 +151,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (Status status, TOutput output) Read<TKeyLocker, TEpochGuard>(TKey key, ref ReadOptions readOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             TInput input = default;
@@ -162,7 +162,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly Status Read<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             return KernelSession.Store.ContextRead<TInput, TOutput, TContext,
@@ -175,7 +175,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress<TKeyLocker, TEpochGuard>(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             KernelSession.BeginUnsafe();
@@ -196,7 +196,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress<TKeyLocker, TEpochGuard>(long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             KernelSession.BeginUnsafe();
@@ -216,7 +216,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TKeyLocker, TEpochGuard>(ref TKey key, ref TValue desiredValue, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             TInput input = default;
@@ -227,7 +227,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TKeyLocker, TEpochGuard>(ref TKey key, ref TValue desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             TInput input = default;
@@ -238,42 +238,42 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => Upsert<TKeyLocker, TEpochGuard>(ref key, Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => Upsert<TKeyLocker, TEpochGuard>(ref key, upsertOptions.KeyHash ?? Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Upsert<TKeyLocker, TEpochGuard>(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => Upsert<TKeyLocker, TEpochGuard>(ref key, keyHash, ref input, ref desiredValue, ref output, recordMetadata: out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => Upsert<TKeyLocker, TEpochGuard>(ref key, Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => Upsert<TKeyLocker, TEpochGuard>(ref key, upsertOptions.KeyHash ?? Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Upsert<TKeyLocker, TEpochGuard>(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             KernelSession.BeginUnsafe();
@@ -293,54 +293,54 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TKeyLocker, TEpochGuard>(TKey key, TValue desiredValue, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => Upsert<TKeyLocker, TEpochGuard>(ref key, ref desiredValue, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TKeyLocker, TEpochGuard>(TKey key, TValue desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => Upsert<TKeyLocker, TEpochGuard>(ref key, ref desiredValue, ref upsertOptions, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TKeyLocker, TEpochGuard>(TKey key, TInput input, TValue desiredValue, ref TOutput output, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => Upsert<TKeyLocker, TEpochGuard>(ref key, ref input, ref desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TKeyLocker, TEpochGuard>(TKey key, TInput input, TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => Upsert<TKeyLocker, TEpochGuard>(ref key, ref input, ref desiredValue, ref output, ref upsertOptions, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => RMW<TKeyLocker, TEpochGuard>(ref key, Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => RMW<TKeyLocker, TEpochGuard>(ref key, rmwOptions.KeyHash ?? Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out _, userContext);
 
         /// <inheritdoc/>
         public Status RMW<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => RMW<TKeyLocker, TEpochGuard>(ref key, Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         public Status RMW<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             var keyHash = rmwOptions.KeyHash ?? Store.storeFunctions.GetKeyHashCode64(ref key);
@@ -350,7 +350,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status RMW<TKeyLocker, TEpochGuard>(ref TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             KernelSession.BeginUnsafe();
@@ -370,7 +370,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW<TKeyLocker, TEpochGuard>(TKey key, TInput input, out TOutput output, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             output = default;
@@ -380,7 +380,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW<TKeyLocker, TEpochGuard>(TKey key, TInput input, out TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             output = default;
@@ -390,7 +390,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             TOutput output = default;
@@ -400,7 +400,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref RMWOptions rmwOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             TOutput output = default;
@@ -410,35 +410,35 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW<TKeyLocker, TEpochGuard>(TKey key, TInput input, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => RMW<TKeyLocker, TEpochGuard>(ref key, ref input, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW<TKeyLocker, TEpochGuard>(TKey key, TInput input, ref RMWOptions rmwOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => RMW<TKeyLocker, TEpochGuard>(ref key, ref input, ref rmwOptions, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete<TKeyLocker, TEpochGuard>(ref TKey key, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => Delete<TKeyLocker, TEpochGuard>(ref key, Store.storeFunctions.GetKeyHashCode64(ref key), userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete<TKeyLocker, TEpochGuard>(ref TKey key, ref DeleteOptions deleteOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => Delete<TKeyLocker, TEpochGuard>(ref key, deleteOptions.KeyHash ?? Store.storeFunctions.GetKeyHashCode64(ref key), userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Delete<TKeyLocker, TEpochGuard>(ref TKey key, long keyHash, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             KernelSession.BeginUnsafe();
@@ -458,28 +458,28 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete<TKeyLocker, TEpochGuard>(TKey key, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => Delete<TKeyLocker, TEpochGuard>(ref key, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete<TKeyLocker, TEpochGuard>(TKey key, ref DeleteOptions deleteOptions, TContext userContext = default)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => Delete<TKeyLocker, TEpochGuard>(ref key, ref deleteOptions, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResetModified<TKeyLocker, TEpochGuard>(TKey key)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
             => ResetModified<TKeyLocker, TEpochGuard>(ref key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResetModified<TKeyLocker, TEpochGuard>(ref TKey key)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             TEpochGuard.BeginUnsafe(ref KernelSession);
@@ -508,7 +508,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status CompactionCopyToTail<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, long currentAddress, long untilAddress)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
             TEpochGuard.BeginUnsafe(ref KernelSession);

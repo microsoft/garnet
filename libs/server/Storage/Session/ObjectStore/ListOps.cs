@@ -21,7 +21,7 @@ namespace Garnet.server
         /// <param name="itemsDoneCount">The length of the list after the push operations.</param>
         /// <returns></returns>
         public GarnetStatus ListPush<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] elements, ListOperation lop, out int itemsDoneCount)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             itemsDoneCount = 0;
@@ -61,7 +61,7 @@ namespace Garnet.server
         /// and holds a list.
         /// </summary>
         public GarnetStatus ListPush<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice element, ListOperation lop, out int itemsDoneCount)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             // Prepare the parse state
@@ -94,7 +94,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>The popped element</returns>
         public GarnetStatus ListPop<TKeyLocker, TEpochGuard>(ArgSlice key, ListOperation lop, out ArgSlice element)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
 
         {
@@ -109,7 +109,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>The count elements popped from the list</returns>
         public GarnetStatus ListPop<TKeyLocker, TEpochGuard>(ArgSlice key, int count, ListOperation lop, out ArgSlice[] elements)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             // Prepare the input
@@ -136,7 +136,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>The count elements popped from the list</returns>
         public GarnetStatus ListPopMultiple<TKeyLocker, TEpochGuard>(ArgSlice[] keys, OperationDirection direction, int count, out ArgSlice key, out ArgSlice[] elements)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             foreach (var k in keys)
@@ -160,7 +160,7 @@ namespace Garnet.server
         /// Gets the current count of elements in the List at Key
         /// </summary>
         public GarnetStatus ListLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int count)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             count = 0;
@@ -220,7 +220,7 @@ namespace Garnet.server
 
                 // Get the source key
                 GarnetObjectStoreOutput sourceList = new();
-                var statusOp = GET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(sourceKey.ToArray(), ref sourceList);
+                var statusOp = GET<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(sourceKey.ToArray(), ref sourceList);
 
                 if (statusOp == GarnetStatus.NOTFOUND)
                     return GarnetStatus.OK;
@@ -238,7 +238,7 @@ namespace Garnet.server
                         // Read destination key
                         var arrDestKey = destinationKey.ToArray();
                         GarnetObjectStoreOutput destinationList = new();
-                        statusOp = GET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(arrDestKey, ref destinationList);
+                        statusOp = GET<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(arrDestKey, ref destinationList);
 
                         if (statusOp == GarnetStatus.NOTFOUND)
                             destinationList.garnetObject = new ListObject();
@@ -267,7 +267,7 @@ namespace Garnet.server
                     if (!sameKey)
                     {
                         if (srcListObject.LnkList.Count == 0)
-                            _ = EXPIRE<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(sourceKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None);
+                            _ = EXPIRE<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(sourceKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None);
 
                         // Left push (addfirst) to destination
                         if (destinationDirection == OperationDirection.Left)
@@ -279,7 +279,7 @@ namespace Garnet.server
                         newListValue = new ListObject(dstListObject.LnkList, dstListObject.Expiration, dstListObject.Size);
 
                         // Upsert
-                        _ = SET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(destinationKey.ToArray(), newListValue);
+                        _ = SET<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(destinationKey.ToArray(), newListValue);
                     }
                     else
                     {
@@ -309,7 +309,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>true when successful</returns>
         public bool ListTrim<TKeyLocker, TEpochGuard>(ArgSlice key, int start, int stop)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             // Prepare the input
@@ -332,7 +332,7 @@ namespace Garnet.server
         /// Adds new elements at the head(right) or tail(left)
         /// </summary>
         public GarnetStatus ListPush<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var status = RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
@@ -344,7 +344,7 @@ namespace Garnet.server
         /// Trim an existing list so it only contains the specified range of elements.
         /// </summary>
         public GarnetStatus ListTrim<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out _);
 
@@ -352,7 +352,7 @@ namespace Garnet.server
         /// Gets the specified elements of the list stored at key.
         /// </summary>
         public GarnetStatus ListRange<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -360,7 +360,7 @@ namespace Garnet.server
         /// Inserts a new element in the list stored at key either before or after a value pivot
         /// </summary>
         public GarnetStatus ListInsert<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var status = RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
@@ -372,7 +372,7 @@ namespace Garnet.server
         /// Returns the element at index.
         /// </summary>
         public GarnetStatus ListIndex<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -381,7 +381,7 @@ namespace Garnet.server
         /// LREM key count element
         /// </summary>
         public GarnetStatus ListRemove<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
@@ -390,7 +390,7 @@ namespace Garnet.server
         /// If the list contains less than count elements, removes and returns the number of elements in the list.
         /// </summary>
         public GarnetStatus ListPop<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -399,7 +399,7 @@ namespace Garnet.server
         /// If the list contains less than count elements, removes and returns the number of elements in the list.
         /// </summary>
         public GarnetStatus ListLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
              => ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
@@ -407,7 +407,7 @@ namespace Garnet.server
         /// Sets the list element at index to element.
         /// </summary>
         public GarnetStatus ListSet<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
     }

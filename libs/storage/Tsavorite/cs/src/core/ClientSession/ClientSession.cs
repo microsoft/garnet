@@ -147,7 +147,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         internal void ResetModified<TKeyLocker>(ref HashEntryInfo hei, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> executionCtx, ref TKey key)
-            where TKeyLocker: struct, ISessionLocker
+            where TKeyLocker: struct, IKeyLocker
         {
             UnsafeResumeThread();
             try
@@ -167,13 +167,13 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal bool CompletePending<TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, bool wait = false, bool spinWaitForCommit = false)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             => CompletePending<TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, getOutputs: false, wait, spinWaitForCommit);
 
         /// <inheritdoc/>
         internal bool CompletePendingWithOutputs<TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             InitializeCompletedOutputs();
             var result = CompletePending<TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, getOutputs: true, wait, spinWaitForCommit);
@@ -187,7 +187,7 @@ namespace Tsavorite.core
         /// </summary>
         internal bool UnsafeCompletePendingWithOutputs<TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             InitializeCompletedOutputs();
             var result = UnsafeCompletePending<TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, getOutputs: true, wait, spinWaitForCommit);
@@ -205,7 +205,7 @@ namespace Tsavorite.core
 
         internal bool CompletePending<TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool wait, bool spinWaitForCommit)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             UnsafeResumeThread();
             try
@@ -220,7 +220,7 @@ namespace Tsavorite.core
 
         internal bool UnsafeCompletePending<TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool wait, bool spinWaitForCommit)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             var requestedOutputs = getOutputs ? completedOutputs : default;
             var result = Store.InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, wait, requestedOutputs);
@@ -244,14 +244,14 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal ValueTask CompletePendingAsync<TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, bool waitForCommit = false, CancellationToken token = default)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             => CompletePendingAsync<TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, getOutputs: false, waitForCommit, token);
 
         /// <inheritdoc/>
         internal async ValueTask<CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext>> CompletePendingWithOutputsAsync<TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions,
                 bool waitForCommit = false, CancellationToken token = default)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             InitializeCompletedOutputs();
             await CompletePendingAsync<TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, getOutputs: true, waitForCommit, token).ConfigureAwait(false);
@@ -260,7 +260,7 @@ namespace Tsavorite.core
 
         private async ValueTask CompletePendingAsync<TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool waitForCommit = false, CancellationToken token = default)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             token.ThrowIfCancellationRequested();
 
@@ -296,7 +296,7 @@ namespace Tsavorite.core
         #region Other Operations
 
         internal void UnsafeResetModified<TKeyLocker>(ref HashEntryInfo hei, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> executionCtx, ref TKey key)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             OperationStatus status;
             do
@@ -306,7 +306,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         internal unsafe void ResetModified<TKeyLocker>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> executionCtx, TKey key)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             => ResetModified<TKeyLocker>(executionCtx, ref key);
 
         /// <summary>
@@ -316,7 +316,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         private async ValueTask WaitForCommitAsync<TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, CancellationToken token = default)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             token.ThrowIfCancellationRequested();
 

@@ -47,7 +47,7 @@ namespace Tsavorite.core
                             ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref TKey key, ref TInput input, ref TValue value, ref TOutput output,
                             ref TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "Epoch should be protected in InternalUpsert");
             Debug.Assert(TKeyLocker.IsTransactional || stackCtx.hei.HasTransientXLock, "Should have an XLock in InternalUpsert");

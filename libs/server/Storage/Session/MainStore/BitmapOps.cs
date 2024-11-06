@@ -13,7 +13,7 @@ namespace Garnet.server
     sealed partial class StorageSession : IDisposable
     {
         public unsafe GarnetStatus StringSetBit<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice offset, bool bit, out bool previous)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             previous = false;
@@ -48,7 +48,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus StringGetBit<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice offset, out bool bValue)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             bValue = false;
@@ -142,7 +142,7 @@ namespace Garnet.server
                     var srcKey = keys[i];
                     //Read srcKey
                     var outputBitmap = new SpanByteAndMemory(output, 12);
-                    status = ReadWithUnsafeContext<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(srcKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref outputBitmap, localHeadAddress, out var epochChanged);
+                    status = ReadWithUnsafeContext<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(srcKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref outputBitmap, localHeadAddress, out var epochChanged);
                     if (epochChanged)
                         goto readFromScratch;
 
@@ -192,7 +192,7 @@ namespace Garnet.server
                         var valPtr = dstBitmapPtr;
                         valPtr -= sizeof(int);
                         *(int*)valPtr = maxBitmapLen;
-                        status = SET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(ref dstKey, ref Unsafe.AsRef<SpanByte>(valPtr));
+                        status = SET<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(ref dstKey, ref Unsafe.AsRef<SpanByte>(valPtr));
                     }
                 }
                 else
@@ -224,7 +224,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus StringBitCount<TKeyLocker, TEpochGuard>(ArgSlice key, long start, long end, bool useBitInterval, out long result)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             result = 0;
@@ -271,7 +271,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus StringBitField<TKeyLocker, TEpochGuard>(ArgSlice key, List<BitFieldCmdArgs> commandArguments, out List<long?> result)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(byte) + sizeof(byte) + sizeof(long) + sizeof(long) + sizeof(byte);
@@ -344,34 +344,34 @@ namespace Garnet.server
         }
 
         public GarnetStatus StringSetBit<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMW_MainStore<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
 
         public GarnetStatus StringGetBit<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => Read_MainStore<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
 
         public unsafe GarnetStatus StringBitCount<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
              => Read_MainStore<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
 
         public unsafe GarnetStatus StringBitPosition<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
              => Read_MainStore<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
 
         public GarnetStatus StringBitField<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => secondaryCommand == (byte)RespCommand.GET
                 ? Read_MainStore<TKeyLocker, TEpochGuard>(ref key, ref input, ref output)
                 : RMW_MainStore<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
 
         public GarnetStatus StringBitFieldReadOnly<TKeyLocker, TEpochGuard>(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard 
             => (secondaryCommand == (byte)RespCommand.GET)
                 ? Read_MainStore<TKeyLocker, TEpochGuard>(ref key, ref input, ref output)

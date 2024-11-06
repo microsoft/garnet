@@ -9,7 +9,7 @@ namespace Garnet.server
     sealed partial class StorageSession : IDisposable
     {
         public GarnetStatus RMW_ObjectStore<TKeyLocker, TEpochGuard>(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var status = dualContext.RMW<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);
@@ -23,7 +23,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus Read_ObjectStore<TKeyLocker, TEpochGuard>(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var status = dualContext.Read<TKeyLocker, TEpochGuard>(ref key, ref input, ref output);

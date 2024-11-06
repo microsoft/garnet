@@ -226,10 +226,10 @@ namespace Tsavorite.core
             {
                 // Check if it's in-memory first so we don't spuriously create a tombstone record.
                 if (tempbContext.ContainsKeyInMemory<BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>(ref key, out _).Found)
-                    _ = tempbContext.Delete<TransientSessionLocker, BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>(ref key);
+                    _ = tempbContext.Delete<TransientKeyLocker, BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>(ref key);
             }
             else
-                _ = tempbContext.Upsert<TransientSessionLocker, BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>(ref key, ref mainKvIter.GetValue());
+                _ = tempbContext.Upsert<TransientKeyLocker, BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>(ref key, ref mainKvIter.GetValue());
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -249,7 +249,7 @@ namespace Tsavorite.core
                     {
                         // Check if it's in-memory first so we don't spuriously create a tombstone record.
                         if (tempbContext.ContainsKeyInMemory<BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>(ref key, out _).Found)
-                            tempbContext.Delete<TransientSessionLocker, BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>(ref key);
+                            tempbContext.Delete<TransientKeyLocker, BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>(ref key);
                     }
 
                     // If the record is not deleted, we can let the caller process it directly within mainKvIter.

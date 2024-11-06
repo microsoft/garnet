@@ -455,7 +455,7 @@ namespace Garnet.server
 
                 // Get the object stored at key
                 GarnetObjectStoreOutput osObject = new();
-                var statusOp = storageSession.GET<TransactionalSessionLocker>(ref heiSrcKey, key, ref osObject);
+                var statusOp = storageSession.GET<TransactionalKeyLocker>(ref heiSrcKey, key, ref osObject);
                 if (statusOp == GarnetStatus.NOTFOUND) return false;
 
                 IGarnetObject dstObj = null;
@@ -466,7 +466,7 @@ namespace Garnet.server
                     arrDstKey = dstKey.ToArray();
                     heiDstKey = storageSession.CreateHei(arrDstKey);
                     GarnetObjectStoreOutput osDstObject = new();
-                    var dstStatusOp = storageSession.GET<TransactionalSessionLocker>(ref heiDstKey, arrDstKey, ref osDstObject);
+                    var dstStatusOp = storageSession.GET<TransactionalKeyLocker>(ref heiDstKey, arrDstKey, ref osDstObject);
                     if (dstStatusOp != GarnetStatus.NOTFOUND) 
                         dstObj = osDstObject.garnetObject;
                 }
@@ -501,7 +501,7 @@ namespace Garnet.server
                                     (OperationDirection)cmdArgs[2].ReadOnlySpan[0], out nextItem);
 
                                 if (isSuccessful && newObj)
-                                    isSuccessful = storageSession.SET<TransactionalSessionLocker>(ref heiDstKey, arrDstKey, dstList) == GarnetStatus.OK;
+                                    isSuccessful = storageSession.SET<TransactionalKeyLocker>(ref heiDstKey, arrDstKey, dstList) == GarnetStatus.OK;
 
                                 return isSuccessful;
                             default:

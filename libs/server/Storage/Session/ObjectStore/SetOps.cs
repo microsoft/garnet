@@ -19,7 +19,7 @@ namespace Garnet.server
         ///  If key does not exist, a new set is created.
         /// </summary>
         internal GarnetStatus SetAdd<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice member, out int saddCount)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             // Prepare the parse state
@@ -51,7 +51,7 @@ namespace Garnet.server
         ///  If key does not exist, a new set is created.
         /// </summary>
         internal GarnetStatus SetAdd<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] members, out int saddCount)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             saddCount = 0;
@@ -90,7 +90,7 @@ namespace Garnet.server
         /// Members that are not in the set are ignored.
         /// </summary>
         internal GarnetStatus SetRemove<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice member, out int sremCount)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             // Prepare the parse state
@@ -123,7 +123,7 @@ namespace Garnet.server
         /// If key does not exist, this command returns 0.
         /// </summary>
         internal GarnetStatus SetRemove<TKeyLocker, TEpochGuard>(ArgSlice key, ArgSlice[] members, out int sremCount)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             sremCount = 0;
@@ -158,7 +158,7 @@ namespace Garnet.server
         /// Returns the number of elements of the set.
         /// </summary>
         internal GarnetStatus SetLength<TKeyLocker, TEpochGuard>(ArgSlice key, out int count)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             count = 0;
@@ -186,7 +186,7 @@ namespace Garnet.server
         /// Returns all members of the set at key.
         /// </summary>
         internal GarnetStatus SetMembers<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice[] members)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             members = default;
@@ -215,7 +215,7 @@ namespace Garnet.server
         /// Removes and returns one random member from the set at key.
         /// </summary>
         internal GarnetStatus SetPop<TKeyLocker, TEpochGuard>(ArgSlice key, out ArgSlice element)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             var status = SetPop<TKeyLocker, TEpochGuard>(key, int.MinValue, out var elements);
@@ -230,7 +230,7 @@ namespace Garnet.server
         /// Removes and returns up to count random members from the set at key.
         /// </summary>
         internal GarnetStatus SetPop<TKeyLocker, TEpochGuard>(ArgSlice key, int count, out ArgSlice[] elements)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             elements = default;
@@ -284,7 +284,7 @@ namespace Garnet.server
                 var arrSrcKey = sourceKey.ToArray();
 
                 GarnetObjectStoreOutput srcObject = new();
-                var srcGetStatus = GET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(arrSrcKey, ref srcObject);
+                var srcGetStatus = GET<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(arrSrcKey, ref srcObject);
 
                 if (srcGetStatus == GarnetStatus.NOTFOUND)
                     return GarnetStatus.NOTFOUND;
@@ -298,7 +298,7 @@ namespace Garnet.server
                     return GarnetStatus.OK;
 
                 GarnetObjectStoreOutput dstObject = new();
-                var dstGetStatus = GET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(arrDstKey, ref dstObject);
+                var dstGetStatus = GET<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(arrDstKey, ref dstObject);
 
                 SetObject dstSetObject;
                 if (dstGetStatus == GarnetStatus.OK)
@@ -317,14 +317,14 @@ namespace Garnet.server
 
                 srcSetObject.UpdateSize(arrMember, false);
                 if (srcSetObject.Set.Count == 0)
-                    _ = EXPIRE<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(sourceKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None);
+                    _ = EXPIRE<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(sourceKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None);
 
                 _ = dstSetObject.Set.Add(arrMember);
                 dstSetObject.UpdateSize(arrMember);
 
                 if (dstGetStatus == GarnetStatus.NOTFOUND)
                 {
-                    var setStatus = SET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(arrDstKey, dstSetObject);
+                    var setStatus = SET<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(arrDstKey, dstSetObject);
                     if (setStatus == GarnetStatus.OK)
                         smoveResult = 1;
                 }
@@ -369,7 +369,7 @@ namespace Garnet.server
                 // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
-                return SetIntersect<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out output);
+                return SetIntersect<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(keys, out output);
             }
             finally
             {
@@ -409,7 +409,7 @@ namespace Garnet.server
                 // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
-                var status = SetIntersect<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out var members);
+                var status = SetIntersect<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(keys, out var members);
                 if (status == GarnetStatus.OK)
                 {
                     if (members.Count > 0)
@@ -420,10 +420,10 @@ namespace Garnet.server
                             _ = newSetObject.Set.Add(item);
                             newSetObject.UpdateSize(item);
                         }
-                        _ = SET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(key, newSetObject);
+                        _ = SET<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(key, newSetObject);
                     }
                     else
-                        _ = EXPIRE<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None);
+                        _ = EXPIRE<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None);
 
                     count = members.Count;
                 }
@@ -440,7 +440,7 @@ namespace Garnet.server
 
 
         private GarnetStatus SetIntersect<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out HashSet<byte[]> output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             output = new HashSet<byte[]>(ByteArrayComparer.Instance);
@@ -521,7 +521,7 @@ namespace Garnet.server
                 // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
-                return SetUnion<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out output);
+                return SetUnion<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(keys, out output);
             }
             finally
             {
@@ -565,7 +565,7 @@ namespace Garnet.server
                 // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
-                var status = SetUnion<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out var members);
+                var status = SetUnion<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(keys, out var members);
 
                 if (status == GarnetStatus.OK)
                 {
@@ -577,10 +577,10 @@ namespace Garnet.server
                             _ = newSetObject.Set.Add(item);
                             newSetObject.UpdateSize(item);
                         }
-                        _ = SET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(key, newSetObject);
+                        _ = SET<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(key, newSetObject);
                     }
                     else
-                        _ = EXPIRE<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None);
+                        _ = EXPIRE<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None);
 
                     count = members.Count;
                 }
@@ -596,7 +596,7 @@ namespace Garnet.server
         }
 
         private GarnetStatus SetUnion<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out HashSet<byte[]> output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             output = new HashSet<byte[]>(ByteArrayComparer.Instance);
@@ -626,7 +626,7 @@ namespace Garnet.server
         ///  If key does not exist, a new set is created.
         /// </summary>
         public GarnetStatus SetAdd<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
            => RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
@@ -636,7 +636,7 @@ namespace Garnet.server
         /// If key does not exist, this command returns 0.
         /// </summary>
         public GarnetStatus SetRemove<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
@@ -644,7 +644,7 @@ namespace Garnet.server
         /// Returns the number of elements of the set.
         /// </summary>
         public GarnetStatus SetLength<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperation<TKeyLocker, TEpochGuard>(key, ref input, out output);
 
@@ -652,7 +652,7 @@ namespace Garnet.server
         /// Returns all members of the set at key.
         /// </summary>
         public GarnetStatus SetMembers<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -660,7 +660,7 @@ namespace Garnet.server
         /// Returns if member is a member of the set stored at key.
         /// </summary>
         public GarnetStatus SetIsMember<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -668,7 +668,7 @@ namespace Garnet.server
         /// Removes and returns one or more random members from the set at key.
         /// </summary>
         public GarnetStatus SetPop<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => RMWObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -680,7 +680,7 @@ namespace Garnet.server
         /// In this case, the number of returned elements is the absolute value of the specified count.
         /// </summary>
         public GarnetStatus SetRandomMember<TKeyLocker, TEpochGuard>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             => ReadObjectStoreOperationWithOutput<TKeyLocker, TEpochGuard>(key, ref input, ref outputFooter);
 
@@ -711,7 +711,7 @@ namespace Garnet.server
                 // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
-                return InternalSetDiff<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out members);
+                return InternalSetDiff<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(keys, out members);
             }
             finally
             {
@@ -755,7 +755,7 @@ namespace Garnet.server
                 // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
-                var status = InternalSetDiff<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(keys, out var diffSet);
+                var status = InternalSetDiff<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(keys, out var diffSet);
 
                 if (status == GarnetStatus.OK)
                 {
@@ -767,11 +767,11 @@ namespace Garnet.server
                             _ = newSetObject.Set.Add(item);
                             newSetObject.UpdateSize(item);
                         }
-                        _ = SET<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(key, newSetObject);
+                        _ = SET<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(key, newSetObject);
                     }
                     else
                     {
-                        _ = EXPIRE<TransactionalSessionLocker, GarnetUnsafeEpochGuard>(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None);
+                        _ = EXPIRE<TransactionalKeyLocker, GarnetUnsafeEpochGuard>(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None);
                     }
 
                     count = diffSet.Count;
@@ -788,7 +788,7 @@ namespace Garnet.server
         }
 
         private GarnetStatus InternalSetDiff<TKeyLocker, TEpochGuard>(ArgSlice[] keys, out HashSet<byte[]> output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             output = [];

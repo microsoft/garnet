@@ -45,7 +45,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="garnetApi"></param>
         void NetworkGETPending<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
@@ -78,7 +78,7 @@ namespace Garnet.server
         /// Note that async responses are not guaranteed to be in the same order that they are issued.
         /// </summary>
         async Task AsyncGetProcessor<TKeyLocker, TEpochGuard, TGarnetApi>(TGarnetApi garnetApi)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
             where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {

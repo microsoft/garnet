@@ -35,7 +35,7 @@ namespace Tsavorite.core
         public void CheckTransactionIsNotStarted() => throw new NotImplementedException("CheckTransactionIsNotStarted()");
 
         /// <inheritdoc/>
-        public void Refresh<TKeyLocker>(ref HashEntryInfo hei) where TKeyLocker : struct, ISessionLocker
+        public void Refresh<TKeyLocker>(ref HashEntryInfo hei) where TKeyLocker : struct, IKeyLocker
             => _clientSession.Refresh<TKeyLocker>(ref hei);
 
         /// <inheritdoc/>

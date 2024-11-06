@@ -9,7 +9,7 @@ namespace Garnet.server
     /// Advanced API calls, not to be used by normal clients
     /// </summary>
     public interface IGarnetAdvancedApi<TKeyLocker, TEpochGuard>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard
     {
         /// <summary>

@@ -20,7 +20,7 @@ namespace Tsavorite.core
                 TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKernelSession : IKernelSession
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             // Called by Single Tsavorite instance configurations, so we must do Kernel entry, lock, etc. here
@@ -51,7 +51,7 @@ namespace Tsavorite.core
                 ref HashEntryInfo hei, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
                 TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
@@ -69,7 +69,7 @@ namespace Tsavorite.core
         internal Status EnterKernelForReadAtAddress<TKernelSession, TKeyLocker, TEpochGuard>(
                 ref TKernelSession kernelSession, ushort partitionId, long address, ref TKey expectedKey, long keyHash, bool isNoKey, out HashEntryInfo hei)
             where TKernelSession : IKernelSession
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : IEpochGuard<TKernelSession>
         {
             // The procedure for ReadAtAddress is complicated by the NoKey option (read at an address without knowing its key), because we must lock the bucket
@@ -135,7 +135,7 @@ namespace Tsavorite.core
                 TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKernelSession : IKernelSession
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             // Called by Single Tsavorite instance configurations (this API is called only for specific store instances)
@@ -163,7 +163,7 @@ namespace Tsavorite.core
                 ref HashEntryInfo hei, ref TKey key, bool isNoKey, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
                 TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
@@ -183,7 +183,7 @@ namespace Tsavorite.core
                 ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKernelSession : IKernelSession
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             // Called by Single Tsavorite instance configurations, so we must do Kernel entry, lock, etc. here
@@ -213,7 +213,7 @@ namespace Tsavorite.core
                 ref HashEntryInfo hei, ref TKey key, ref TInput input, ref TValue value,
                 ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
@@ -234,7 +234,7 @@ namespace Tsavorite.core
                 ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKernelSession : IKernelSession
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             // Called by Single Tsavorite instance configurations, so we must do Kernel entry, lock, etc. here
@@ -263,7 +263,7 @@ namespace Tsavorite.core
                 ref HashEntryInfo hei, ref TKey key, ref TInput input,
                 ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
@@ -283,7 +283,7 @@ namespace Tsavorite.core
                 ref TKey key, long keyHash, TContext context, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TKernelSession : IKernelSession
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
             // Called by Single Tsavorite instance configurations, so we must do Kernel entry, lock, etc. here
@@ -307,7 +307,7 @@ namespace Tsavorite.core
         internal Status ContextDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(
                 ref HashEntryInfo hei, ref TKey key, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);

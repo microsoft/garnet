@@ -17,7 +17,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="garnetApi"></param>
         public abstract bool Execute<TKeyLocker, TEpochGuard>(IGarnetApi<TKeyLocker, TEpochGuard> garnetApi, ArgSlice input, ref MemoryResult<byte> output)
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IGarnetEpochGuard;
     }
 

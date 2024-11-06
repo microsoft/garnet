@@ -31,7 +31,7 @@ namespace Tsavorite.core
         internal OperationStatus ContinuePendingRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(AsyncIOContext<TKey, TValue> request,
                                                         ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyLocker : struct, ISessionLocker
+            where TKeyLocker : struct, IKeyLocker
         {
             ref RecordInfo srcRecordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
             srcRecordInfo.ClearBitsForDiskImages();
