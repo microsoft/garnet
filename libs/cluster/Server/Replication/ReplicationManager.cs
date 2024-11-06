@@ -137,6 +137,7 @@ namespace Garnet.cluster
 
             // After initializing replication history propagate replicationId to ReplicationLogCheckpointManager
             SetPrimaryReplicationId();
+            replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token);
         }
 
         /// <summary>
@@ -189,6 +190,9 @@ namespace Garnet.cluster
 
             checkpointStore.WaitForReplicas();
             replicaSyncSessionTaskStore.Dispose();
+            replicaReplayTaskCts.Cancel();
+            activeReplay.WriteLock();
+            replicaReplayTaskCts.Dispose();
             ctsRepManager.Cancel();
             ctsRepManager.Dispose();
             aofTaskStore.Dispose();

@@ -1,0 +1,118 @@
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Threading;
+using Garnet.common;
+using Microsoft.Extensions.Logging;
+using Tsavorite.core;
+
+namespace Garnet.cluster
+{
+    internal sealed partial class ReplicationManager : IBulkLogEntryConsumer, IDisposable
+    {
+        TsavoriteLogScanSingleIterator replayIterator = null;
+        CancellationTokenSource replicaReplayTaskCts;
+        SingleWriterMultiReaderLock activeReplay;
+
+        void ResetReplayIterator()
+        {
+            ResetReplayCts();
+            replayIterator?.Dispose();
+            replayIterator = null;
+
+            void ResetReplayCts()
+            {
+                if (replicaReplayTaskCts == null)
+                {
+                    replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token);
+                }
+                else
+                {
+                    replicaReplayTaskCts.Cancel();
+                    try
+                    {
+                        activeReplay.WriteLock();
+                        replicaReplayTaskCts.Dispose();
+                        replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token);
+                    }
+                    finally
+                    {
+                        activeReplay.WriteUnlock();
+                    }
+                }
+            }
+        }
+
+        public void Throttle() { }
+
+        public unsafe void Consume(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
+        {
+            replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
+
+            if (ReplicationOffset != currentAddress)
+            {
+                logger?.LogError("ReplicaReplayTask.Consume Begin Address Mismatch {recordLength}; {currentAddress}; {nextAddress}; {ReplicationOffset}", recordLength, currentAddress, nextAddress, ReplicationOffset);
+                throw new GarnetException($"ReplicaReplayTask.Consume Begin Address Mismatch {recordLength}; {currentAddress}; {nextAddress}; {ReplicationOffset}", LogLevel.Warning, clientResponse: false);
+            }
+
+            ReplicationOffset = currentAddress;
+            var ptr = record;
+            while (ptr < record + recordLength)
+            {
+                var entryLength = storeWrapper.appendOnlyFile.HeaderSize;
+                var payloadLength = storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
+                if (payloadLength > 0)
+                {
+                    aofProcessor.ProcessAofRecordInternal(ptr + entryLength, payloadLength, true);
+                    entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
+                }
+                else if (payloadLength < 0)
+                {
+                    if (!clusterProvider.serverOptions.EnableFastCommit)
+                    {
+                        throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
+                    }
+                    TsavoriteLogRecoveryInfo info = new();
+                    info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
+                    //TODO: Verify again that this does not write into the AOF
+                    storeWrapper.appendOnlyFile?.UnsafeCommitMetadataOnly(info, isProtected);
+                    entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
+                }
+                ptr += entryLength;
+                ReplicationOffset += entryLength;
+            }
+
+            if (ReplicationOffset != nextAddress)
+            {
+                logger?.LogError("ReplicaReplayTask.Consume Begin Address Mismatch {recordLength}; {currentAddress}; {nextAddress}; {ReplicationOffset}", recordLength, currentAddress, nextAddress, ReplicationOffset);
+                throw new GarnetException($"ReplicaReplayTask.Consume Begin Address Mismatch {recordLength}; {currentAddress}; {nextAddress}; {ReplicationOffset}", LogLevel.Warning, clientResponse: false);
+            }
+        }
+
+        public async void ReplicaReplayTask()
+        {
+            try
+            {
+                activeReplay.ReadLock();
+                while (true)
+                {
+                    replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
+                    await replayIterator.BulkConsumeAllAsync(
+                        this,
+                        clusterProvider.serverOptions.ReplicaSyncDelayMs,
+                        maxChunkSize: 1 << 20,
+                        replicaReplayTaskCts.Token);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "An exception occurred at ReplicationManager.ReplicaReplayTask - terminating");
+            }
+            finally
+            {
+                activeReplay.ReadUnlock();
+            }
+        }
+    }
+}
