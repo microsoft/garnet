@@ -287,9 +287,9 @@ namespace Garnet.cluster
             }
 
             var slots = new HashSet<int> { slot };
-            ClusterManager.DeleteKeysInSlotsFromMainStore(garnetApi, slots);
+            ClusterManager.DeleteKeysInSlotsFromMainStore(basicGarnetApi, slots);
             if (!clusterProvider.serverOptions.DisableObjects)
-                ClusterManager.DeleteKeysInSlotsFromObjectStore(garnetApi, slots);
+                ClusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -324,9 +324,9 @@ namespace Garnet.cluster
                 return true;
             }
 
-            ClusterManager.DeleteKeysInSlotsFromMainStore(garnetApi, slots);
+            ClusterManager.DeleteKeysInSlotsFromMainStore(basicGarnetApi, slots);
             if (!clusterProvider.serverOptions.DisableObjects)
-                ClusterManager.DeleteKeysInSlotsFromObjectStore(garnetApi, slots);
+                ClusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();

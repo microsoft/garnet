@@ -17,11 +17,12 @@ namespace Garnet.server
         ///  Specified members that are already a member of this set are ignored. 
         ///  If key does not exist, a new set is created.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private unsafe bool SetAdd<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private unsafe bool SetAdd<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count < 2)
                 return AbortWithWrongNumberOfArguments("SADD");
@@ -45,7 +46,7 @@ namespace Garnet.server
                 parseStateStartIdx = 1,
             };
 
-            var status = storageApi.SetAdd<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var output);
+            var status = garnetApi.SetAdd(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -67,9 +68,12 @@ namespace Garnet.server
         /// Returns the members of the set resulting from the intersection of all the given sets.
         /// Keys that do not exist are considered to be empty sets.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool SetIntersect(ref GarnetApi storageApi)
+        private bool SetIntersect<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count < 1)
                 return AbortWithWrongNumberOfArguments("SINTER");
@@ -79,7 +83,7 @@ namespace Garnet.server
             for (var i = 0; i < keys.Length; i++)
                 keys[i] = parseState.GetArgSliceByRef(i);
 
-            var status = storageApi.SetIntersect(keys, out var result);
+            var status = garnetApi.SetIntersect(keys, out var result);
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -117,9 +121,12 @@ namespace Garnet.server
         /// This command is equal to SINTER, but instead of returning the resulting set, it is stored in destination.
         /// If destination already exists, it is overwritten.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool SetIntersectStore(ref GarnetApi storageApi)
+        private bool SetIntersectStore<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count < 2)
                 return AbortWithWrongNumberOfArguments("SINTERSTORE");
@@ -133,7 +140,7 @@ namespace Garnet.server
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
             }
 
-            var status = storageApi.SetIntersectStore(keyBytes, keys, out var output);
+            var status = garnetApi.SetIntersectStore(keyBytes, keys, out var output);
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -154,9 +161,12 @@ namespace Garnet.server
         /// Returns the members of the set resulting from the union of all the given sets.
         /// Keys that do not exist are considered to be empty sets.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool SetUnion(ref GarnetApi storageApi)
+        private bool SetUnion<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count < 1)
                 return AbortWithWrongNumberOfArguments("SUNION");
@@ -166,7 +176,7 @@ namespace Garnet.server
             for (var i = 0; i < keys.Length; i++)
                 keys[i] = parseState.GetArgSliceByRef(i);
 
-            var status = storageApi.SetUnion(keys, out var result);
+            var status = garnetApi.SetUnion(keys, out var result);
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -194,9 +204,12 @@ namespace Garnet.server
         /// This command is equal to SUNION, but instead of returning the resulting set, it is stored in destination.
         /// If destination already exists, it is overwritten.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool SetUnionStore(ref GarnetApi storageApi)
+        private bool SetUnionStore<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count < 2)
                 return AbortWithWrongNumberOfArguments("SUNIONSTORE");
@@ -208,7 +221,7 @@ namespace Garnet.server
             for (var i = 1; i < parseState.Count; i++)
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
 
-            var status = storageApi.SetUnionStore(keyBytes, keys, out var output);
+            var status = garnetApi.SetUnionStore(keyBytes, keys, out var output);
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -229,11 +242,12 @@ namespace Garnet.server
         /// Specified members that are not a member of this set are ignored. 
         /// If key does not exist, this command returns 0.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private unsafe bool SetRemove<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private unsafe bool SetRemove<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count < 2)
                 return AbortWithWrongNumberOfArguments("SREM");
@@ -257,7 +271,7 @@ namespace Garnet.server
                 parseStateStartIdx = 1,
             };
 
-            var status = storageApi.SetRemove<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var output);
+            var status = garnetApi.SetRemove(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -282,11 +296,12 @@ namespace Garnet.server
         /// <summary>
         /// Returns the number of elements of the set.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private unsafe bool SetLength<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private unsafe bool SetLength<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 1)
                 return AbortWithWrongNumberOfArguments("SCARD");
@@ -308,7 +323,7 @@ namespace Garnet.server
                 },
             };
 
-            var status = storageApi.SetLength<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var output);
+            var status = garnetApi.SetLength(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -333,11 +348,12 @@ namespace Garnet.server
         /// <summary>
         /// Returns all members of the set at key.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private unsafe bool SetMembers<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private unsafe bool SetMembers<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 1)
                 return AbortWithWrongNumberOfArguments("SMEMBERS");
@@ -361,7 +377,7 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-            var status = storageApi.SetMembers<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
+            var status = garnetApi.SetMembers(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -382,9 +398,10 @@ namespace Garnet.server
             return true;
         }
 
-        private unsafe bool SetIsMember<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private unsafe bool SetIsMember<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments("SISMEMBER");
@@ -410,7 +427,7 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-            var status = storageApi.SetIsMember<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
+            var status = garnetApi.SetIsMember(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -434,11 +451,12 @@ namespace Garnet.server
         /// <summary>
         /// Removes and returns one or more random members from the set at key.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private unsafe bool SetPop<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private unsafe bool SetPop<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count is < 1 or > 2)
                 return AbortWithWrongNumberOfArguments("SPOP");
@@ -482,7 +500,7 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-            var status = storageApi.SetPop<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
+            var status = garnetApi.SetPop(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -508,9 +526,12 @@ namespace Garnet.server
         /// If the move was performed, this command returns 1.
         /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private unsafe bool SetMove(ref GarnetApi storageApi)
+        private unsafe bool SetMove<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 3)
                 return AbortWithWrongNumberOfArguments("SMOVE");
@@ -523,7 +544,7 @@ namespace Garnet.server
 
             // Get the member to move
             var sourceMember = parseState.GetArgSliceByRef(2);
-            var status = storageApi.SetMove(sourceKey, destinationKey, sourceMember, out var output);
+            var status = garnetApi.SetMove(sourceKey, destinationKey, sourceMember, out var output);
 
             switch (status)
             {
@@ -551,11 +572,12 @@ namespace Garnet.server
         /// If called with a negative count, the behavior changes and the command is allowed to return the same element multiple times. 
         /// In this case, the number of returned elements is the absolute value of the specified count.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private unsafe bool SetRandomMember<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private unsafe bool SetRandomMember<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count is < 1 or > 2)
                 return AbortWithWrongNumberOfArguments("SRANDMEMBER");
@@ -603,7 +625,7 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-            var status = storageApi.SetRandomMember<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
+            var status = garnetApi.SetRandomMember(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -635,9 +657,12 @@ namespace Garnet.server
         /// <summary>
         /// Returns the members of the set resulting from the difference between the first set and all the successive sets.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool SetDiff(ref GarnetApi storageApi)
+        private bool SetDiff<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count < 1)
                 return AbortWithWrongNumberOfArguments("SDIFF");
@@ -646,7 +671,7 @@ namespace Garnet.server
             for (var i = 0; i < parseState.Count; i++)
                 keys[i] = parseState.GetArgSliceByRef(i);
 
-            var status = storageApi.SetDiff(keys, out var output);
+            var status = garnetApi.SetDiff(keys, out var output);
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -675,7 +700,10 @@ namespace Garnet.server
             return true;
         }
 
-        private bool SetDiffStore(ref GarnetApi storageApi)
+        private bool SetDiffStore<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count < 2)
                 return AbortWithWrongNumberOfArguments("SDIFFSTORE");
@@ -687,7 +715,7 @@ namespace Garnet.server
             for (var i = 1; i < parseState.Count; i++)
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
 
-            var status = storageApi.SetDiffStore(keyBytes, keys, out var output);
+            var status = garnetApi.SetDiffStore(keyBytes, keys, out var output);
             switch (status)
             {
                 case GarnetStatus.OK:

@@ -94,7 +94,7 @@ namespace Garnet.cluster
                     // Set if key replace flag is set or key does not exist
                     var keySlice = new ArgSlice(key.ToPointer(), key.Length);
                     if (replaceOption || !Exists(ref keySlice))
-                        _ = garnetApi.SET(ref key, ref value);
+                        _ = basicGarnetApi.SET(ref key, ref value);
                     i++;
                 }
             }
@@ -125,7 +125,7 @@ namespace Garnet.cluster
 
                     // Set if key replace flag is set or key does not exist
                     if (replaceOption || !CheckIfKeyExists(key))
-                        _ = garnetApi.SET(key, value);
+                        _ = basicGarnetApi.SET(key, value);
 
                     i++;
                 }

@@ -8,15 +8,18 @@ using Garnet.server;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
+    using BasicGarnetApi = GarnetApi<TransientSessionLocker, GarnetSafeEpochGuard>;
+
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
         readonly ClusterProvider clusterProvider;
         readonly TransactionManager txnManager;
         readonly GarnetSessionMetrics sessionMetrics;
-        GarnetApi garnetApi;
+        BasicGarnetApi basicGarnetApi;
         readonly INetworkSender networkSender;
         readonly ILogger logger;
 
@@ -42,14 +45,15 @@ namespace Garnet.cluster
         public void SetReadOnlySession() => readWriteSession = false;
         public void SetReadWriteSession() => readWriteSession = true;
 
-        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, User user, GarnetSessionMetrics sessionMetrics, GarnetApi garnetApi, INetworkSender networkSender, ILogger logger = null)
+        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, User user, GarnetSessionMetrics sessionMetrics, 
+                BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             this.authenticator = authenticator;
             this.user = user;
             this.txnManager = txnManager;
             this.sessionMetrics = sessionMetrics;
-            this.garnetApi = garnetApi;
+            this.basicGarnetApi = basicGarnetApi;
             this.networkSender = networkSender;
             this.logger = logger;
         }

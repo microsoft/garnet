@@ -14,11 +14,12 @@ namespace Garnet.server
         /// using a pattern to match and count to limit how many items to return.
         /// </summary>
         /// <param name="objectType">SortedSet, Hash or Set type</param>
-        /// <param name="storageApi">The storageAPI object</param>
+        /// <param name="garnetApi">The garnetApi object</param>
         /// <returns></returns>
-        private unsafe bool ObjectScan<TKeyLocker, TEpochGuard>(GarnetObjectType objectType, ref GarnetApi storageApi)
+        private unsafe bool ObjectScan<TKeyLocker, TEpochGuard, TGarnetApi>(GarnetObjectType objectType, ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             // Check number of required parameters
             if (parseState.Count < 2)
@@ -82,7 +83,7 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-            var status = storageApi.ObjectScan<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
+            var status = garnetApi.ObjectScan(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {

@@ -15,6 +15,8 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
+    using BasicGarnetApi = GarnetApi<TransientSessionLocker, GarnetSafeEpochGuard>;
+
     /// <summary>
     /// Cluster provider
     /// </summary>
@@ -81,8 +83,8 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
-        public IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, User user, GarnetSessionMetrics garnetSessionMetrics, GarnetApi garnetApi, INetworkSender networkSender, ILogger logger = null)
-            => new ClusterSession(this, txnManager, authenticator, user, garnetSessionMetrics, garnetApi, networkSender, logger);
+        public IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, User user, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null)
+            => new ClusterSession(this, txnManager, authenticator, user, garnetSessionMetrics, basicGarnetApi, networkSender, logger);
 
         /// <inheritdoc />
         public void UpdateClusterAuth(string clusterUsername, string clusterPassword)

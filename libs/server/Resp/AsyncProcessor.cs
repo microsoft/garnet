@@ -43,10 +43,11 @@ namespace Garnet.server
         /// <summary>
         /// Handle a async network GET command that goes pending
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="storageApi"></param>
-        void NetworkGETPending<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        /// <param name="garnetApi"></param>
+        void NetworkGETPending<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             unsafe
             {
@@ -61,8 +62,8 @@ namespace Garnet.server
                 {
                     RunContinuationsAsynchronously = true
                 };
-                var _storageApi = storageApi;
-                _ = Task.Run(async () => await AsyncGetProcessor(_storageApi));
+                var _storageApi = garnetApi;
+                _ = Task.Run(async () => await AsyncGetProcessor<TKeyLocker, TEpochGuard, TGarnetApi>(_storageApi));
             }
             else
             {
@@ -76,8 +77,10 @@ namespace Garnet.server
         /// It handles all the IO completions and takes over the network sender to send async responses when ready.
         /// Note that async responses are not guaranteed to be in the same order that they are issued.
         /// </summary>
-        async Task AsyncGetProcessor<TGarnetApi>(TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
+        async Task AsyncGetProcessor<TKeyLocker, TEpochGuard, TGarnetApi>(TGarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             while (!asyncWaiterCancel.Token.IsCancellationRequested)
             {

@@ -12,7 +12,7 @@ namespace Garnet.cluster
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool Exists(ref ArgSlice keySlice)
-            => garnetApi.EXISTS(keySlice, StoreType.All) == GarnetStatus.OK;
+            => basicGarnetApi.EXISTS(keySlice, StoreType.All) == GarnetStatus.OK;
 
         private bool CheckIfKeyExists(byte[] key)
         {

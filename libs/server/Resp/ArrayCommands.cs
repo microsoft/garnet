@@ -18,12 +18,13 @@ namespace Garnet.server
         /// <summary>
         /// MGET
         /// </summary>
-        private bool NetworkMGET<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool NetworkMGET<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
-                return NetworkMGET_SG<TKeyLocker, TEpochGuard>(ref storageApi);
+                return NetworkMGET_SG<TKeyLocker, TEpochGuard, TGarnetApi>(ref garnetApi);
 
             SpanByte input = default;
 
@@ -34,7 +35,7 @@ namespace Garnet.server
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.GET<TKeyLocker, TEpochGuard>(ref key, ref input, ref o);
+                var status = garnetApi.GET(ref key, ref input, ref o);
 
                 switch (status)
                 {
@@ -57,9 +58,10 @@ namespace Garnet.server
         /// <summary>
         /// MGET - scatter gather version
         /// </summary>
-        private bool NetworkMGET_SG<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool NetworkMGET_SG<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             SpanByte input = default;
             long ctx = default;
@@ -79,7 +81,7 @@ namespace Garnet.server
                 // Store index in context, since completions are not in order
                 ctx = c;
 
-                var status = storageApi.GET_WithPending<TKeyLocker, TEpochGuard>(ref key, ref input, ref o, ctx, out bool isPending);
+                var status = garnetApi.GET_WithPending(ref key, ref input, ref o, ctx, out bool isPending);
 
                 if (isPending)
                 {
@@ -131,7 +133,7 @@ namespace Garnet.server
             if (firstPending != -1)
             {
                 // First complete all pending ops
-                storageApi.GET_CompletePending<TKeyLocker, TEpochGuard>(outputArr, true);
+                garnetApi.GET_CompletePending(outputArr, true);
 
                 // Write the outputs to network buffer
                 for (var i = firstPending; i < parseState.Count; i++)
@@ -158,9 +160,10 @@ namespace Garnet.server
         /// <summary>
         /// MSET
         /// </summary>
-        private bool NetworkMSET<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool NetworkMSET<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             Debug.Assert(parseState.Count % 2 == 0);
 
@@ -168,7 +171,7 @@ namespace Garnet.server
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var val = parseState.GetArgSliceByRef(c + 1).SpanByte;
-                _ = storageApi.SET<TKeyLocker, TEpochGuard>(ref key, ref val);
+                _ = garnetApi.SET(ref key, ref val);
             }
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -178,9 +181,10 @@ namespace Garnet.server
         /// <summary>
         /// MSETNX
         /// </summary>
-        private bool NetworkMSETNX<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool NetworkMSETNX<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             var hPtr = stackalloc byte[RespInputHeader.Size];
 
@@ -209,7 +213,7 @@ namespace Garnet.server
                 ((RespInputHeader*)(valPtr + sizeof(int)))->cmd = RespCommand.SETEXNX;
                 ((RespInputHeader*)(valPtr + sizeof(int)))->flags = 0;
 
-                var status = storageApi.SET_Conditional<TKeyLocker, TEpochGuard>(ref key, ref Unsafe.AsRef<SpanByte>(valPtr));
+                var status = garnetApi.SET_Conditional(ref key, ref Unsafe.AsRef<SpanByte>(valPtr));
 
                 // Status tells us whether an old image was found during RMW or not
                 // For a "set if not exists", NOTFOUND means that the operation succeeded
@@ -227,15 +231,16 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkDEL<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool NetworkDEL<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             var keysDeleted = 0;
             for (var c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var status = storageApi.DELETE<TKeyLocker, TEpochGuard>(ref key, StoreType.All);
+                var status = garnetApi.DELETE(ref key, StoreType.All);
 
                 // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
                 if (status == GarnetStatus.OK)
@@ -288,18 +293,24 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkDBSIZE(ref GarnetApi storageApi)
+        private bool NetworkDBSIZE<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 0)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.DBSIZE));
 
-            while (!RespWriteUtils.WriteInteger(storageApi.GetDbSize(), ref dcurr, dend))
+            while (!RespWriteUtils.WriteInteger(garnetApi.GetDbSize(), ref dcurr, dend))
                 SendAndReset();
 
             return true;
         }
 
-        private bool NetworkKEYS(ref GarnetApi storageApi)
+        private bool NetworkKEYS<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 1)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.KEYS));
@@ -307,7 +318,7 @@ namespace Garnet.server
             // Read pattern for keys filter
             var patternSlice = parseState.GetArgSliceByRef(0);
 
-            var keys = storageApi.GetDbKeys(patternSlice);
+            var keys = garnetApi.GetDbKeys(patternSlice);
 
             if (keys.Count > 0)
             {
@@ -331,7 +342,10 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSCAN(ref GarnetApi storageApi)
+        private bool NetworkSCAN<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count < 1)
                 return AbortWithWrongNumberOfArguments("SCAN");
@@ -378,7 +392,7 @@ namespace Garnet.server
                 }
             }
 
-            _ = storageApi.DbScan(patternArgSlice, allKeys, cursorFromInput, out var cursor, out var keys,
+            _ = garnetApi.DbScan(patternArgSlice, allKeys, cursorFromInput, out var cursor, out var keys,
                     !typeParameterValue.IsEmpty ? long.MaxValue : countValue, typeParameterValue);
 
             // Prepare values for output
@@ -408,9 +422,10 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkTYPE<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool NetworkTYPE<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 1)
                 return AbortWithWrongNumberOfArguments("TYPE");
@@ -418,7 +433,7 @@ namespace Garnet.server
             // TYPE key
             var keySlice = parseState.GetArgSliceByRef(0);
 
-            var status = storageApi.GetKeyType<TKeyLocker, TEpochGuard>(keySlice, out var typeName);
+            var status = garnetApi.GetKeyType(keySlice, out var typeName);
 
             if (status == GarnetStatus.OK)
             {

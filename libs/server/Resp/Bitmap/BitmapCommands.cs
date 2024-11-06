@@ -112,9 +112,10 @@ namespace Garnet.server
         /// The bit is either set or cleared depending on value, which can be either 0 or 1.
         /// When key does not exist, a new key is created.The key is grown to make sure it can hold a bit at offset.
         /// </summary>
-        private bool NetworkStringSetBit<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool NetworkStringSetBit<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 3)
             {
@@ -160,7 +161,7 @@ namespace Garnet.server
             #endregion
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.StringSetBit<TKeyLocker, TEpochGuard>(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+            var status = garnetApi.StringSetBit(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
             if (status == GarnetStatus.OK)
                 dcurr += o.Length;
@@ -171,9 +172,10 @@ namespace Garnet.server
         /// <summary>
         /// Returns the bit value at offset in the key stored.
         /// </summary>
-        private bool NetworkStringGetBit<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool NetworkStringGetBit<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETBIT));
@@ -210,7 +212,7 @@ namespace Garnet.server
             #endregion
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.StringGetBit<TKeyLocker, TEpochGuard>(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+            var status = garnetApi.StringGetBit(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
             if (status == GarnetStatus.NOTFOUND)
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -225,9 +227,10 @@ namespace Garnet.server
         /// Count the number of set bits in a key. 
         /// It can be specified an interval for counting, passing the start and end arguments.
         /// </summary>
-        private bool NetworkStringBitCount<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool NetworkStringBitCount<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             var count = parseState.Count;
             if (count is < 1 or > 4)
@@ -283,7 +286,7 @@ namespace Garnet.server
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.StringBitCount<TKeyLocker, TEpochGuard>(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+            var status = garnetApi.StringBitCount(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -304,9 +307,10 @@ namespace Garnet.server
         /// <summary>
         /// Returns the position of the first bit set to 1 or 0 in a key.
         /// </summary>
-        private bool NetworkStringBitPosition<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool NetworkStringBitPosition<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             var count = parseState.Count;
             if (count is < 2 or > 5)
@@ -370,7 +374,7 @@ namespace Garnet.server
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.StringBitPosition<TKeyLocker, TEpochGuard>(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+            var status = garnetApi.StringBitPosition(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -392,7 +396,10 @@ namespace Garnet.server
         /// <summary>
         /// Performs bitwise operations on multiple strings and store the result.
         /// </summary>
-        private bool NetworkStringBitOperation(BitmapOperation bitop, ref GarnetApi storageApi)
+        private bool NetworkStringBitOperation<TKeyLocker, TEpochGuard, TGarnetApi>(BitmapOperation bitop, ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             // Too few keys
             if (parseState.Count < 2)
@@ -410,7 +417,7 @@ namespace Garnet.server
                 return true;
             }
 
-            _ = storageApi.StringBitOperation(parseState.Parameters, bitop, out var result);
+            _ = garnetApi.StringBitOperation(parseState.Parameters, bitop, out var result);
             while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))
                 SendAndReset();
 
@@ -420,9 +427,10 @@ namespace Garnet.server
         /// <summary>
         /// Performs arbitrary bitfield integer operations on strings.
         /// </summary>
-        private bool StringBitField<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool StringBitField<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count < 1)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITFIELD));
@@ -562,7 +570,7 @@ namespace Garnet.server
                 *pcurr = bitfieldArgs[i].overflowType;
 
                 var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.StringBitField<TKeyLocker, TEpochGuard>(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), bitfieldArgs[i].secondaryOpCode, ref output);
+                var status = garnetApi.StringBitField(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), bitfieldArgs[i].secondaryOpCode, ref output);
 
                 if (status == GarnetStatus.NOTFOUND && bitfieldArgs[i].secondaryOpCode == (byte)RespCommand.GET)
                 {
@@ -584,9 +592,10 @@ namespace Garnet.server
         /// <summary>
         /// Performs arbitrary read-only bitfield integer operations
         /// </summary>
-        private bool StringBitFieldReadOnly<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool StringBitFieldReadOnly<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             //BITFIELD key [GET encoding offset] [SET encoding offset value] [INCRBY encoding offset increment] [OVERFLOW WRAP| SAT | FAIL]
             //Extract Key//
@@ -724,7 +733,7 @@ namespace Garnet.server
 
                 var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-                var status = storageApi.StringBitFieldReadOnly<TKeyLocker, TEpochGuard>(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), bitfieldArgs[i].secondaryOpCode, ref output);
+                var status = garnetApi.StringBitFieldReadOnly(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), bitfieldArgs[i].secondaryOpCode, ref output);
 
                 if (status == GarnetStatus.NOTFOUND && bitfieldArgs[i].secondaryOpCode == (byte)RespCommand.GET)
                 {

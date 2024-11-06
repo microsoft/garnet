@@ -15,11 +15,12 @@ namespace Garnet.server
         /// RPUSH key element [element ...]
         /// </summary>
         /// <param name="command"></param>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private unsafe bool ListPush<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+        private unsafe bool ListPush<TKeyLocker, TEpochGuard, TGarnetApi>(RespCommand command, ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count < 2)
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -52,8 +53,8 @@ namespace Garnet.server
             };
 
             var status = command == RespCommand.LPUSH || command == RespCommand.LPUSHX
-                ? storageApi.ListLeftPush<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var output)
-                : storageApi.ListRightPush<TKeyLocker, TEpochGuard>(keyBytes, ref input, out output);
+                ? garnetApi.ListLeftPush(keyBytes, ref input, out var output)
+                : garnetApi.ListRightPush(keyBytes, ref input, out output);
 
             if (status == GarnetStatus.WRONGTYPE)
             {
@@ -74,11 +75,12 @@ namespace Garnet.server
         /// RPOP key [count]
         /// </summary>
         /// <param name="command"></param>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private unsafe bool ListPop<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+        private unsafe bool ListPop<TKeyLocker, TEpochGuard, TGarnetApi>(RespCommand command, ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count < 1)
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -125,8 +127,8 @@ namespace Garnet.server
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = command == RespCommand.LPOP
-                ? storageApi.ListLeftPop<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter)
-                : storageApi.ListRightPop<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
+                ? garnetApi.ListLeftPop(keyBytes, ref input, ref outputFooter)
+                : garnetApi.ListRightPop(keyBytes, ref input, ref outputFooter);
 
             switch (statusOp)
             {
@@ -151,11 +153,12 @@ namespace Garnet.server
         /// <summary>
         /// LMPOP numkeys key [key ...] LEFT | RIGHT [COUNT count]
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private unsafe bool ListPopMultiple<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private unsafe bool ListPopMultiple<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count < 3)
                 return AbortWithWrongNumberOfArguments("LMPOP");
@@ -204,8 +207,8 @@ namespace Garnet.server
             }
 
             var statusOp = popDirection == OperationDirection.Left
-                ? storageApi.ListLeftPop<TKeyLocker, TEpochGuard>(keys, popCount, out var key, out var elements)
-                : storageApi.ListRightPop<TKeyLocker, TEpochGuard>(keys, popCount, out key, out elements);
+                ? garnetApi.ListLeftPop(keys, popCount, out var key, out var elements)
+                : garnetApi.ListRightPop(keys, popCount, out key, out elements);
 
             switch (statusOp)
             {
@@ -343,11 +346,12 @@ namespace Garnet.server
         /// LLEN key
         /// Gets the length of the list stored at key.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool ListLength<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool ListLength<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 1)
                 return AbortWithWrongNumberOfArguments("LLEN");
@@ -368,7 +372,7 @@ namespace Garnet.server
                 },
             };
 
-            var status = storageApi.ListLength<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var output);
+            var status = garnetApi.ListLength(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -394,11 +398,12 @@ namespace Garnet.server
         /// LTRIM key start stop
         /// Trim an existing list so it only contains the specified range of elements.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool ListTrim<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool ListTrim<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 3)
                 return AbortWithWrongNumberOfArguments("LTRIM");
@@ -431,7 +436,7 @@ namespace Garnet.server
                 arg2 = stop,
             };
 
-            var status = storageApi.ListTrim<TKeyLocker, TEpochGuard>(keyBytes, ref input);
+            var status = garnetApi.ListTrim(keyBytes, ref input);
 
             switch (status)
             {
@@ -454,11 +459,12 @@ namespace Garnet.server
         /// Gets the specified elements of the list stored at key.
         /// LRANGE key start stop
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool ListRange<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool ListRange<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 3)
                 return AbortWithWrongNumberOfArguments("LRANGE");
@@ -493,7 +499,7 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-            var statusOp = storageApi.ListRange<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
+            var statusOp = garnetApi.ListRange(keyBytes, ref input, ref outputFooter);
 
             switch (statusOp)
             {
@@ -517,11 +523,12 @@ namespace Garnet.server
         /// Returns the element at index.
         /// LINDEX key index
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool ListIndex<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool ListIndex<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments("LINDEX");
@@ -554,7 +561,7 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-            var statusOp = storageApi.ListIndex<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
+            var statusOp = garnetApi.ListIndex(keyBytes, ref input, ref outputFooter);
 
             ReadOnlySpan<byte> error = default;
 
@@ -588,11 +595,12 @@ namespace Garnet.server
         /// Inserts a new element in the list stored at key either before or after a value pivot
         /// LINSERT key BEFORE|AFTER pivot element
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool ListInsert<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool ListInsert<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 4)
                 return AbortWithWrongNumberOfArguments("LINSERT");
@@ -616,7 +624,7 @@ namespace Garnet.server
                 parseStateStartIdx = 1,
             };
 
-            var statusOp = storageApi.ListInsert<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var output);
+            var statusOp = garnetApi.ListInsert(keyBytes, ref input, out var output);
 
             switch (statusOp)
             {
@@ -644,11 +652,12 @@ namespace Garnet.server
         /// <summary>
         /// LREM key count element
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool ListRemove<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool ListRemove<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             // if params are missing return error
             if (parseState.Count != 3)
@@ -682,7 +691,7 @@ namespace Garnet.server
                 parseStateStartIdx = 2,
             };
 
-            var statusOp = storageApi.ListRemove<TKeyLocker, TEpochGuard>(keyBytes, ref input, out var output);
+            var statusOp = garnetApi.ListRemove(keyBytes, ref input, out var output);
 
             switch (statusOp)
             {
@@ -711,9 +720,12 @@ namespace Garnet.server
         /// <summary>
         /// LMOVE source destination [LEFT | RIGHT] [LEFT | RIGHT]
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool ListMove(ref GarnetApi storageApi)
+        private bool ListMove<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 4)
                 return AbortWithWrongNumberOfArguments("LMOVE");
@@ -733,7 +745,7 @@ namespace Garnet.server
             if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
-            if (!ListMove(srcKey, dstKey, sourceDirection, destinationDirection, out var node, ref storageApi, out var garnetStatus))
+            if (!ListMove<TKeyLocker, TEpochGuard, TGarnetApi>(srcKey, dstKey, sourceDirection, destinationDirection, out var node, ref garnetApi, out var garnetStatus))
                 return false;
 
             switch (garnetStatus)
@@ -763,9 +775,12 @@ namespace Garnet.server
         /// <summary>
         /// RPOPLPUSH source destination
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool ListRightPopLeftPush(ref GarnetApi storageApi)
+        private bool ListRightPopLeftPush<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments("RPOPLPUSH");
@@ -776,7 +791,7 @@ namespace Garnet.server
             if (NetworkSingleKeySlotVerify(srcKey.ReadOnlySpan, false) || NetworkSingleKeySlotVerify(dstKey.ReadOnlySpan, false))
                 return true;
 
-            if (!ListMove(srcKey, dstKey, OperationDirection.Right, OperationDirection.Left, out var node, ref storageApi, out var garnetStatus))
+            if (!ListMove<TKeyLocker, TEpochGuard, TGarnetApi>(srcKey, dstKey, OperationDirection.Right, OperationDirection.Left, out var node, ref garnetApi, out var garnetStatus))
                 return false;
 
             switch (garnetStatus)
@@ -812,14 +827,17 @@ namespace Garnet.server
         /// <param name="sourceDirection"></param>
         /// <param name="destinationDirection"></param>
         /// <param name="node"></param>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <param name="garnetStatus"></param>
         /// <returns></returns>
-        private bool ListMove(ArgSlice sourceKey, ArgSlice destinationKey,
-            OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] node,
-            ref GarnetApi storageApi, out GarnetStatus garnetStatus)
+        private bool ListMove<TKeyLocker, TEpochGuard, TGarnetApi>(ArgSlice sourceKey, ArgSlice destinationKey,
+                OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] node,
+                ref TGarnetApi garnetApi, out GarnetStatus garnetStatus)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
-            garnetStatus = storageApi.ListMove(sourceKey, destinationKey, sourceDirection, destinationDirection, out node);
+            garnetStatus = garnetApi.ListMove(sourceKey, destinationKey, sourceDirection, destinationDirection, out node);
             return true;
         }
 
@@ -827,11 +845,12 @@ namespace Garnet.server
         /// Sets the list element at index to element
         /// LSET key index element
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        public bool ListSet<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        public bool ListSet<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 3)
                 return AbortWithWrongNumberOfArguments("LSET");
@@ -857,7 +876,7 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-            var statusOp = storageApi.ListSet<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
+            var statusOp = garnetApi.ListSet(keyBytes, ref input, ref outputFooter);
 
             switch (statusOp)
             {

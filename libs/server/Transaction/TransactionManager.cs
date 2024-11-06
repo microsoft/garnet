@@ -10,14 +10,22 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using BasicGarnetApi = GarnetApi<TransientSessionLocker, GarnetSafeEpochGuard>;
+    using LockableGarnetApi = GarnetApi<TransactionalSessionLocker, GarnetSafeEpochGuard>;
+
     /// <summary>
     /// Transaction manager
     /// </summary>
     public sealed unsafe partial class TransactionManager
     {
         // Not readonly to avoid defensive copy
-        GarnetWatchApi garnetTxPrepareApi;
-        GarnetApi garnetApi;
+        GarnetWatchApi<TransientSessionLocker, GarnetSafeEpochGuard, BasicGarnetApi> garnetTxPrepareApi;
+
+        // Not readonly to avoid defensive copy
+        LockableGarnetApi garnetTxMainApi;
+
+        // Not readonly to avoid defensive copy
+        BasicGarnetApi garnetTxFinalizeApi;
 
         // Cluster session
         readonly IClusterSession clusterSession;

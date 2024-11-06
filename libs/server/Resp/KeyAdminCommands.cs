@@ -14,14 +14,17 @@ namespace Garnet.server
         /// <summary>
         /// TryRENAME
         /// </summary>
-        private bool NetworkRENAME(ref GarnetApi storageApi)
+        private bool NetworkRENAME<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME));
 
             var oldKeySlice = parseState.GetArgSliceByRef(0);
             var newKeySlice = parseState.GetArgSliceByRef(1);
-            var status = storageApi.RENAME(oldKeySlice, newKeySlice);
+            var status = garnetApi.RENAME(oldKeySlice, newKeySlice);
 
             switch (status)
             {
@@ -40,14 +43,17 @@ namespace Garnet.server
         /// <summary>
         /// TryRENAMENX
         /// </summary>
-        private bool NetworkRENAMENX(ref GarnetApi storageApi)
+        private bool NetworkRENAMENX<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAMENX));
 
             var oldKeySlice = parseState.GetArgSliceByRef(0);
             var newKeySlice = parseState.GetArgSliceByRef(1);
-            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice, out var result);
+            var status = garnetApi.RENAMENX(oldKeySlice, newKeySlice, out var result);
 
             if (status == GarnetStatus.OK)
             {
@@ -70,9 +76,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="garnetApi"> Garnet API reference </param>
         /// <returns> True if successful, false otherwise </returns>
-        private bool NetworkGETDEL<TKeyLocker, TEpochGuard>(ref GarnetApi garnetApi)
+        private bool NetworkGETDEL<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 1)
             {
@@ -81,7 +88,7 @@ namespace Garnet.server
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = garnetApi.GETDEL<TKeyLocker, TEpochGuard>(ref sbKey, ref o);
+            var status = garnetApi.GETDEL(ref sbKey, ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -103,11 +110,12 @@ namespace Garnet.server
         /// <summary>
         /// EXISTS multiple keys
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool NetworkEXISTS<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool NetworkEXISTS<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             var count = parseState.Count;
             if (count < 1)
@@ -118,7 +126,7 @@ namespace Garnet.server
             for (var i = 0; i < parseState.Count; i++)
             {
                 var key = parseState.GetArgSliceByRef(i);
-                var status = storageApi.EXISTS<TKeyLocker, TEpochGuard>(key);
+                var status = garnetApi.EXISTS(key);
                 if (status == GarnetStatus.OK)
                     exists++;
             }
@@ -159,11 +167,12 @@ namespace Garnet.server
         /// Set a timeout on a key.
         /// </summary>
         /// <param name="command">Indicates which command to use, expire or pexpire.</param>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool NetworkEXPIRE<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+        private bool NetworkEXPIRE<TKeyLocker, TEpochGuard, TGarnetApi>(RespCommand command, ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             var count = parseState.Count;
             if (count is < 2 or > 3)
@@ -196,8 +205,8 @@ namespace Garnet.server
             }
 
             var status = command == RespCommand.EXPIRE ?
-                        storageApi.EXPIRE<TKeyLocker, TEpochGuard>(key, expiryMs, out var timeoutSet, StoreType.All, expireOption) :
-                        storageApi.PEXPIRE<TKeyLocker, TEpochGuard>(key, expiryMs, out timeoutSet, StoreType.All, expireOption);
+                        garnetApi.EXPIRE(key, expiryMs, out var timeoutSet, StoreType.All, expireOption) :
+                        garnetApi.PEXPIRE(key, expiryMs, out timeoutSet, StoreType.All, expireOption);
 
             if (status == GarnetStatus.OK && timeoutSet)
             {
@@ -216,19 +225,18 @@ namespace Garnet.server
         /// <summary>
         /// PERSIST command
         /// </summary>
-        /// <param name="storageApi">The Garnet API instance</param>
+        /// <param name="garnetApi">The Garnet API instance</param>
         /// <returns></returns>
-        private bool NetworkPERSIST<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private bool NetworkPERSIST<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 1)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST));
-            }
 
             var key = parseState.GetArgSliceByRef(0);
-            var status = storageApi.PERSIST<TKeyLocker, TEpochGuard>(key);
+            var status = garnetApi.PERSIST(key);
 
             if (status == GarnetStatus.OK)
             {
@@ -247,11 +255,12 @@ namespace Garnet.server
         /// Returns the remaining time to live of a key that has a timeout.
         /// </summary>
         /// <param name="command">either if the call is for tll or pttl command</param>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private bool NetworkTTL<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+        private bool NetworkTTL<TKeyLocker, TEpochGuard, TGarnetApi>(RespCommand command, ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             if (parseState.Count != 1)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST));
@@ -259,8 +268,8 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = command == RespCommand.TTL ?
-                        storageApi.TTL<TKeyLocker, TEpochGuard>(ref sbKey, StoreType.All, ref o) :
-                        storageApi.PTTL<TKeyLocker, TEpochGuard>(ref sbKey, StoreType.All, ref o);
+                        garnetApi.TTL(ref sbKey, StoreType.All, ref o) :
+                        garnetApi.PTTL(ref sbKey, StoreType.All, ref o);
 
             if (status == GarnetStatus.OK)
             {

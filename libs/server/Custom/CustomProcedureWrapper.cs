@@ -3,6 +3,7 @@
 
 using System;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -15,7 +16,9 @@ namespace Garnet.server
         /// Custom command implementation
         /// </summary>
         /// <param name="garnetApi"></param>
-        public abstract bool Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output);
+        public abstract bool Execute<TKeyLocker, TEpochGuard>(IGarnetApi<TKeyLocker, TEpochGuard> garnetApi, ArgSlice input, ref MemoryResult<byte> output)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard;
     }
 
     class CustomProcedureWrapper

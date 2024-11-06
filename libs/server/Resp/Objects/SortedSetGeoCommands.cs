@@ -13,26 +13,23 @@ namespace Garnet.server
         /// Adds the specified geospatial items (longitude, latitude, name) to the specified key.
         /// Data is stored into the key as a sorted set.
         /// </summary>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private unsafe bool GeoAdd<TKeyLocker, TEpochGuard>(ref GarnetApi storageApi)
+        private unsafe bool GeoAdd<TKeyLocker, TEpochGuard, TGarnetApi>(ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             // validate the number of parameters
             if (parseState.Count < 4)
-            {
                 return AbortWithWrongNumberOfArguments("GEOADD");
-            }
 
             // Get the key for SortedSet
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
                 return true;
-            }
 
             // Prepare input
             var input = new ObjectInput
@@ -47,8 +44,7 @@ namespace Garnet.server
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-            var status = storageApi.GeoAdd<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
+            var status = garnetApi.GeoAdd(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -71,11 +67,12 @@ namespace Garnet.server
         /// GEOSEARCH: Returns the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
         /// </summary>
         /// <param name="command"></param>
-        /// <param name="storageApi"></param>
+        /// <param name="garnetApi"></param>
         /// <returns></returns>
-        private unsafe bool GeoCommands<TKeyLocker, TEpochGuard>(RespCommand command, ref GarnetApi storageApi)
+        private unsafe bool GeoCommands<TKeyLocker, TEpochGuard, TGarnetApi>(RespCommand command, ref TGarnetApi garnetApi)
             where TKeyLocker : struct, ISessionLocker
             where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             var paramsRequiredInCommand = 0;
             var cmd = nameof(command);
@@ -130,7 +127,7 @@ namespace Garnet.server
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-            var status = storageApi.GeoCommands<TKeyLocker, TEpochGuard>(keyBytes, ref input, ref outputFooter);
+            var status = garnetApi.GeoCommands(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {

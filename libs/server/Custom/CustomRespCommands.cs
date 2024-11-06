@@ -84,8 +84,10 @@ namespace Garnet.server
         /// <summary>
         /// Custom command
         /// </summary>
-        private bool TryCustomRawStringCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetAdvancedApi
+        private bool TryCustomRawStringCommand<TKeyLocker, TEpochGuard, TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetAdvancedApi<TKeyLocker, TEpochGuard>
         {
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyPtr = sbKey.ToPointer();
@@ -163,8 +165,10 @@ namespace Garnet.server
         /// <summary>
         /// Custom object command
         /// </summary>
-        private bool TryCustomObjectCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, byte subid, CommandType type, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetAdvancedApi
+        private bool TryCustomObjectCommand<TKeyLocker, TEpochGuard, TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, byte subid, CommandType type, ref TGarnetApi storageApi)
+            where TKeyLocker : struct, ISessionLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetAdvancedApi<TKeyLocker, TEpochGuard>
         {
             var keyBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 

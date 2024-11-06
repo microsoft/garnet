@@ -7,9 +7,12 @@ using Garnet.networking;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using BasicGarnetApi = GarnetApi<TransientSessionLocker, GarnetSafeEpochGuard>;
+
     /// <summary>
     /// Cluster provider
     /// </summary>
@@ -18,7 +21,7 @@ namespace Garnet.server
         /// <summary>
         /// Create cluster session
         /// </summary>
-        IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, User user, GarnetSessionMetrics garnetSessionMetrics, GarnetApi garnetApi, INetworkSender networkSender, ILogger logger = null);
+        IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, User user, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi garnetApi, INetworkSender networkSender, ILogger logger = null);
 
         /// <summary>
         /// Flush config
