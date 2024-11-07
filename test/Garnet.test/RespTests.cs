@@ -425,6 +425,50 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SetAndGetExpiryXx()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            string origValue = "abcdefghij";
+            var newValue = "xyz"; // New value that shouldn't be written
+            var newLongerValue = "abcdefghijk"; // Longer value to test non in-place update
+            var newShorterValue = "abcdefghi"; // Shorter value to test in-place update
+            var expireTime = TimeSpan.FromSeconds(1);
+            string actualValue = db.StringSetAndGet(key, newValue, expireTime, when: When.Exists, CommandFlags.None);
+            ClassicAssert.IsNull(actualValue);
+
+            string retValue = db.StringGet(key);
+            ClassicAssert.IsNull(retValue);
+
+            db.StringSet(key, origValue);
+            // Test non in-place update
+            actualValue = db.StringSetAndGet(key, newLongerValue, expireTime, when: When.Exists, CommandFlags.None);
+            ClassicAssert.AreEqual(origValue, actualValue);
+
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newLongerValue, retValue);
+
+            Thread.Sleep(expireTime * 1.1);
+            retValue = db.StringGet(key);
+            ClassicAssert.IsNull(retValue);
+
+
+            db.StringSet(key, origValue);
+            // Test in-place update
+            actualValue = db.StringSetAndGet(key, newShorterValue, expireTime, when: When.Exists, CommandFlags.None);
+            ClassicAssert.AreEqual(origValue, actualValue);
+
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newShorterValue, retValue);
+
+            Thread.Sleep(expireTime * 1.1);
+            retValue = db.StringGet(key);
+            ClassicAssert.IsNull(retValue);
+        }
+
+        [Test]
         public void SetGet()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
