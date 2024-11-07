@@ -81,7 +81,7 @@ namespace Tsavorite.core
             if (RevivificationManager.UseFreeRecordPool)
             {
                 // The TransientSLock here is necessary only for the tag chain to avoid record elision/revivification during traceback.
-                if (!TryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out internalStatus))
+                if (!TryTransientSLock<TInput, TOutput, TContext, TransientKeyLocker>(ref stackCtx, out internalStatus))
                     return needIO = false;
             }
             else
@@ -102,7 +102,7 @@ namespace Tsavorite.core
             }
             finally
             {
-                TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, OperationStatusUtils.IsRetry(internalStatus));
+                TransientSUnlock<TInput, TOutput, TContext, TransientKeyLocker>(ref stackCtx);
             }
         }
 
