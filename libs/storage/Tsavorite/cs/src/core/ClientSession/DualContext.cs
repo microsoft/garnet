@@ -795,13 +795,13 @@ namespace Tsavorite.core
 
         #region ResetModified
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetModified<TKeyLocker, TEpochGuard>(TKey1 key1)
+        public void ResetModified<TKeyLocker, TEpochGuard>(TKey1 key1, out RecordInfo modifiedInfo, bool reset = true)
             where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
-            => ResetModified<TKeyLocker, TEpochGuard>(ref key1);
+            => ResetModified<TKeyLocker, TEpochGuard>(ref key1, out modifiedInfo, reset);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetModified<TKeyLocker, TEpochGuard>(ref TKey1 key1)
+        public void ResetModified<TKeyLocker, TEpochGuard>(ref TKey1 key1, out RecordInfo modifiedInfo, bool reset = true)
             where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
@@ -811,7 +811,9 @@ namespace Tsavorite.core
                 // Reset doesn't go to disk, so we will just Reset it in both stores blindly. If the key slot is not found, then there is nothing to reset.
                 var status = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(GetKeyHash(ref key1), PartitionId1, TsavoriteKernel.DoNotCreateSlotAddress, out hei);
                 if (status.Found)
-                    ItemContext1.ResetModified<TKeyLocker>(ref hei, ref key1);
+                    ItemContext1.ResetModified<TKeyLocker>(ref hei, ref key1, out modifiedInfo, reset);
+                else
+                    modifiedInfo = default;
             }
             finally
             {
@@ -820,13 +822,13 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetModified<TKeyLocker, TEpochGuard>(TKey2 key2)
+        public void ResetModified<TKeyLocker, TEpochGuard>(TKey2 key2, out RecordInfo modifiedInfo, bool reset = true)
             where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
-            => ResetModified<TKeyLocker, TEpochGuard>(ref key2);
+            => ResetModified<TKeyLocker, TEpochGuard>(ref key2, out modifiedInfo, reset);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetModified<TKeyLocker, TEpochGuard>(ref TKey2 key2)
+        public void ResetModified<TKeyLocker, TEpochGuard>(ref TKey2 key2, out RecordInfo modifiedInfo, bool reset = true)
             where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
@@ -836,7 +838,9 @@ namespace Tsavorite.core
                 // Reset doesn't go to disk, so we will just Reset it in both stores blindly. If the key slot is not found, then there is nothing to reset.
                 var status = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(GetKeyHash(ref key2), PartitionId1, TsavoriteKernel.DoNotCreateSlotAddress, out hei);
                 if (status.Found)
-                    ItemContext2.ResetModified<TKeyLocker>(ref hei, ref key2);
+                    ItemContext2.ResetModified<TKeyLocker>(ref hei, ref key2, out modifiedInfo, reset);
+                else
+                    modifiedInfo = default;
             }
             finally
             {
@@ -845,24 +849,25 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DualResetModified<TKeyLocker, TEpochGuard>(ref TKey1 key1)
+        public void DualResetModified<TKeyLocker, TEpochGuard>(ref TKey1 key1, out RecordInfo modifiedInfo, bool reset = true)
             where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>>
         {
             HashEntryInfo hei = default;
+            modifiedInfo = default;
             try
             {
                 // Reset doesn't go to disk, so we will just Reset it in both stores blindly. If the key slot is not found, then there is nothing to reset.
                 var status = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(GetKeyHash(ref key1), PartitionId1, TsavoriteKernel.DoNotCreateSlotAddress, out hei);
                 if (status.Found)
-                    ItemContext1.ResetModified<TKeyLocker>(ref hei, ref key1);
+                    ItemContext1.ResetModified<TKeyLocker>(ref hei, ref key1, out modifiedInfo, reset);
 
                 // Create key for to the second store.
                 inputConverter.ConvertKey(ref key1, out var key2);
                 Debug.Assert(hei.HashCodeEquals(GetKeyHash(ref key2)), "Main and Object hash codes are not the same");
                 status = Kernel.EnterForReadDual2(PartitionId2, ref hei);
                 if (status.Found)
-                    ItemContext2.ResetModified<TKeyLocker>(ref hei, ref key2);
+                    ItemContext2.ResetModified<TKeyLocker>(ref hei, ref key2, out modifiedInfo, reset);
             }
             finally
             {

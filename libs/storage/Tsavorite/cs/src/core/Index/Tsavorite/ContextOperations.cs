@@ -320,5 +320,48 @@ namespace Tsavorite.core
 
             return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextResetModified<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker, TEpochGuard>(ref TKey key, TSessionFunctionsWrapper sessionFunctions,
+                ref TKernelSession kernelSession, out RecordInfo modifiedInfo, bool reset = true)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, IKeyLocker
+            where TEpochGuard : struct, IEpochGuard<TKernelSession>
+        {
+            // Called by Single Tsavorite instance configurations, so we must do Kernel entry, lock, etc. here
+            HashEntryInfo hei = default;
+
+            try
+            {
+                var status = Kernel.EnterForUpdate<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, GetKeyHash(ref key), partitionId, Log.BeginAddress, out hei);
+                if (status.NotFound)
+                {
+                    modifiedInfo = default;
+                    return status;
+                }
+
+                return ContextResetModified<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, ref hei, ref key, out modifiedInfo, reset);
+            }
+            finally
+            {
+                Kernel.ExitForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref kernelSession, ref hei);
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextResetModified<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions, ref HashEntryInfo hei, ref TKey key,
+                out RecordInfo modifiedInfo, bool reset = true)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyLocker : struct, IKeyLocker
+        {
+            // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
+            OperationStatus internalStatus;
+            do
+                internalStatus = InternalModifiedBitOperation(ref hei, ref key, out modifiedInfo, reset);
+            while (HandleImmediateNonPendingRetryStatus(ref hei, internalStatus, sessionFunctions.ExecutionCtx));
+
+            return new(StatusCode.Found);
+        }
     }
 }

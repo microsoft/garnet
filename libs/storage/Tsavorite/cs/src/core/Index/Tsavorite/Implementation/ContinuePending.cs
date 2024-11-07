@@ -16,6 +16,7 @@ namespace Tsavorite.core
         /// <param name="request">Async response from disk.</param>
         /// <param name="pendingContext">Pending context corresponding to operation.</param>
         /// <param name="sessionFunctions">Callback functions.</param>
+        /// <param name="kernelSession">The kernel session (basic or dual)</param>
         /// <returns>
         /// <list type = "table" >
         ///     <listheader>
@@ -28,12 +29,13 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus ContinuePendingRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(AsyncIOContext<TKey, TValue> request,
-                                                        ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+        internal OperationStatus ContinuePendingRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker>(AsyncIOContext<TKey, TValue> request,
+                                                        ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKernelSession : IKernelSession
             where TKeyLocker : struct, IKeyLocker
         {
-            ref RecordInfo srcRecordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
+            ref var srcRecordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
             srcRecordInfo.ClearBitsForDiskImages();
 
             if (request.logicalAddress >= hlogBase.BeginAddress && request.logicalAddress >= pendingContext.minAddress)
@@ -41,26 +43,19 @@ namespace Tsavorite.core
                 SpinWaitUntilClosed(request.logicalAddress);
 
                 // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
-                ref TKey key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
-                HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
-                OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
+                ref var key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
 
                 while (true)
                 {
-                    if (!FindTagAndTryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out var status))
-                    {
-                        Debug.Assert(status != OperationStatus.NOTFOUND, "Expected to FindTag in InternalContinuePendingRead");
-                        if (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref hei, status, sessionFunctions.ExecutionCtx, ref pendingContext))
-                            continue;
-                        return status;
-                    }
-
-                    stackCtx.SetRecordSourceToHashEntry(hlogBase);
+                    HashEntryInfo hei = default;
+                    OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
+                    OperationStatus status = default;
 
                     try
                     {
-                        var status = Kernel.EnterForRead<BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker,
-                                                         BasicSafeEpochGuard<BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>>>(ref kernelSession, keyHash, partitionId, out hei);
+                        var kstatus = Kernel.UnsafeEnterForRead<TKernelSession, TKeyLocker>(ref kernelSession, storeFunctions.GetKeyHashCode64(ref key), partitionId, out hei);
+                        Debug.Assert(kstatus.Found, "Expected to FindTag in InternalContinuePendingRead");
+                        stackCtx.SetRecordSourceToHashEntry(hlogBase);
 
                         ref var value = ref hlog.GetContextRecordValue(ref request);
 
@@ -91,7 +86,7 @@ namespace Tsavorite.core
                                     OperationStatus internalStatus;
                                     do
                                     {
-                                        internalStatus = InternalRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
+                                        internalStatus = InternalRead<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref stackCtx, ref key, ref pendingContext.input.Get(), ref pendingContext.output,
                                             pendingContext.userContext, ref pendingContext, sessionFunctions);
                                     }
                                     while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx.hei, internalStatus, sessionFunctions.ExecutionCtx, ref pendingContext));
@@ -111,7 +106,7 @@ namespace Tsavorite.core
                         };
                         readInfo.SetRecordInfo(ref srcRecordInfo);
 
-                        bool success = false;
+                        var success = false;
                         if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
                         {
                             // If this succeeds, we don't need to copy to tail or readcache, so return success.
@@ -138,7 +133,7 @@ namespace Tsavorite.core
                         if (pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.None)
                         {
                             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
-                                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
+                                status = ConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
                                                                pendingContext.userContext, ref stackCtx, WriteReason.CopyToTail);
                             else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc
                                     && TryCopyToReadCache(sessionFunctions, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref stackCtx))
@@ -153,11 +148,11 @@ namespace Tsavorite.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnException(this);
-                        TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, OperationStatusUtils.IsRetry(status));
+                        TKeyLocker.UnlockTransientExclusive(Kernel, ref hei);       // Epoch management is done above this
                     }
 
                     // Must do this *after* Unlocking. Status was set by InternalTryCopyToTail.
-                    if (!HandleImmediateRetryStatus(status, sessionFunctions.ExecutionCtx, ref pendingContext))
+                    if (!HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref hei, status, sessionFunctions.ExecutionCtx, ref pendingContext))
                         return status;
                 } // end while (true)
             }
@@ -173,6 +168,7 @@ namespace Tsavorite.core
         /// <param name="request">record read from the disk.</param>
         /// <param name="pendingContext">internal context for the pending RMW operation</param>
         /// <param name="sessionFunctions">Callback functions.</param>
+        /// <param name="kernelSession">The kernel session (basic or dual)</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -189,29 +185,34 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus ContinuePendingRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(AsyncIOContext<TKey, TValue> request,
-                                                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+        internal OperationStatus ContinuePendingRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker>(AsyncIOContext<TKey, TValue> request,
+                                                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, IKeyLocker
         {
-            ref TKey key = ref pendingContext.key.Get();
+            ref var key = ref pendingContext.key.Get();
 
             SpinWaitUntilClosed(request.logicalAddress);
 
-            byte* recordPointer = request.record.GetValidPointer();
+            var recordPointer = request.record.GetValidPointer();
             var requestRecordInfo = hlog.GetInfoFromBytePointer(recordPointer); // Not ref, as we don't want to write into request.record
             ref var srcRecordInfo = ref requestRecordInfo;
             srcRecordInfo.ClearBitsForDiskImages();
 
-            OperationStatus status;
+            OperationStatus status = default;
+            HashEntryInfo hei = default;
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
 
             while (true)
             {
-                OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash, partitionId);
-                if (!FindOrCreateTagAndTryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out status))
-                    goto CheckRetry;
 
                 try
                 {
+                    var kstatus = Kernel.UnsafeEnterForUpdate<TKernelSession, TKeyLocker>(ref kernelSession, storeFunctions.GetKeyHashCode64(ref key), partitionId, hlogBase.BeginAddress, out hei);
+                    Debug.Assert(kstatus.Found, "Expected to FindTag in InternalContinuePendingRead");
+                    stackCtx.SetRecordSourceToHashEntry(hlogBase);
+
                     // During the pending operation a record for the key may have been added to the log. If so, break and go through the full InternalRMW sequence;
                     // the record in 'request' is stale. We only lock for tag-chain stability during search.
                     if (TryFindRecordForPendingOperation(ref key, ref stackCtx, hlogBase.HeadAddress, out status, ref pendingContext))
@@ -241,20 +242,21 @@ namespace Tsavorite.core
                 finally
                 {
                     stackCtx.HandleNewRecordOnException(this);
-                    TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, OperationStatusUtils.IsRetry(status));
+                    TKeyLocker.UnlockTransientExclusive(Kernel, ref hei);
                 }
 
             // Must do this *after* Unlocking.
             CheckRetry:
-                if (!HandleImmediateRetryStatus(status, sessionFunctions.ExecutionCtx, ref pendingContext))
+                if (!HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref hei, status, sessionFunctions.ExecutionCtx, ref pendingContext))
                     return status;
             } // end while (true)
 
             // Unfortunately, InternalRMW will go through the lookup process again. But we're only here in the case another record was added or we went below
             // HeadAddress, and this should be rare.
             do
-                status = InternalRMW(ref key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, sessionFunctions);
-            while (HandleImmediateRetryStatus(status, sessionFunctions.ExecutionCtx, ref pendingContext));
+                status = InternalRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(ref stackCtx, ref key, ref pendingContext.input.Get(), ref pendingContext.output,
+                        pendingContext.userContext, ref pendingContext, sessionFunctions);
+            while (HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref hei, status, sessionFunctions.ExecutionCtx, ref pendingContext));
             return status;
         }
 
@@ -265,6 +267,7 @@ namespace Tsavorite.core
         /// <param name="request">record read from the disk.</param>
         /// <param name="pendingContext">internal context for the pending RMW operation</param>
         /// <param name="sessionFunctions">Callback functions.</param>
+        /// <param name="kernelSession">The kernel session (basic or dual)</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -281,24 +284,28 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus ContinuePendingConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(AsyncIOContext<TKey, TValue> request,
-                                                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+        internal OperationStatus ContinuePendingConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker>(AsyncIOContext<TKey, TValue> request,
+                                                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref TKernelSession kernelSession)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, IKeyLocker
         {
             // If the key was found at or above minAddress, do nothing.
             if (request.logicalAddress >= pendingContext.minAddress)
                 return OperationStatus.SUCCESS;
 
             // Prepare to copy to tail. Use data from pendingContext, not request; we're only made it to this line if the key was not found, and thus the request was not populated.
-            ref TKey key = ref pendingContext.key.Get();
-            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
+            // Locking is done, if necessary, in ConditionalCopyToTail
+            ref var key = ref pendingContext.key.Get();
+            HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
 
             // See if the record was added above the highest address we checked before issuing the IO.
             var minAddress = pendingContext.InitialLatestLogicalAddress + 1;
             OperationStatus internalStatus;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, currentAddress: request.logicalAddress, minAddress, out internalStatus, out bool needIO))
+                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, currentAddress: request.logicalAddress, minAddress, out internalStatus, out var needIO))
                     return OperationStatus.SUCCESS;
                 if (!OperationStatusUtils.IsRetry(internalStatus))
                 {
@@ -306,11 +313,11 @@ namespace Tsavorite.core
                     internalStatus = needIO
                         ? PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref pendingContext.input.Get(), ref pendingContext.value.Get(),
                                                             ref pendingContext.output, pendingContext.userContext, ref stackCtx, minAddress, WriteReason.Compaction)
-                        : ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref key, ref pendingContext.input.Get(), ref pendingContext.value.Get(),
+                        : ConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, ref pendingContext, ref key, ref pendingContext.input.Get(), ref pendingContext.value.Get(),
                                                             ref pendingContext.output, pendingContext.userContext, ref stackCtx, pendingContext.writeReason);
                 }
             }
-            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus(internalStatus, sessionFunctions.ExecutionCtx));
+            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus(ref hei, internalStatus, sessionFunctions.ExecutionCtx));
             return internalStatus;
         }
 

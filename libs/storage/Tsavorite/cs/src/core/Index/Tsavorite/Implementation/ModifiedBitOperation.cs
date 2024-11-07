@@ -18,14 +18,11 @@ namespace Tsavorite.core
         /// <param name="modifiedInfo">RecordInfo of the key for checkModified.</param>
         /// <param name="reset">Operation Type, whether it is reset or check</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalModifiedBitOperation(ref TKey key, out RecordInfo modifiedInfo, bool reset = true)
+        internal OperationStatus InternalModifiedBitOperation(ref HashEntryInfo hei, ref TKey key, out RecordInfo modifiedInfo, bool reset = true)
         {
             Debug.Assert(Kernel.Epoch.ThisInstanceProtected());
 
-            HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
-
             #region Trace back for record in in-memory HybridLog
-            _ = Kernel.hashTable.FindTag(ref hei);
             var logicalAddress = hei.Address;
             var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
 

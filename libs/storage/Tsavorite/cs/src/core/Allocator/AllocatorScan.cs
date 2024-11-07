@@ -33,7 +33,8 @@ namespace Tsavorite.core
         internal bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref TKey key, ref TScanFunctions scanFunctions)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
         {
-            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(_storeFunctions.GetKeyHashCode64(ref key), store.partitionId);
+            HashEntryInfo hei = new(_storeFunctions.GetKeyHashCode64(ref key), store.partitionId);
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
             if (!store.Kernel.hashTable.FindTag(ref stackCtx.hei))
                 return false;
             stackCtx.SetRecordSourceToHashEntry(store.hlogBase);
@@ -123,7 +124,7 @@ namespace Tsavorite.core
                 finally
                 {
                     store.UnlockForScan(ref hei);
-                    iter.EndGetPrevInMemory();
+                    _ = iter.EndGetPrevInMemory();
                 }
             }
 
@@ -169,7 +170,7 @@ namespace Tsavorite.core
             if (completionEvent.request.logicalAddress < BeginAddress)
                 return false;
 
-            RecordInfo recordInfo = _wrapper.GetInfoFromBytePointer(completionEvent.request.record.GetValidPointer());
+            var recordInfo = _wrapper.GetInfoFromBytePointer(completionEvent.request.record.GetValidPointer());
             recordInfo.ClearBitsForDiskImages();
             stop = !scanFunctions.SingleReader(ref key, ref _wrapper.GetContextRecordValue(ref completionEvent.request), new RecordMetadata(recordInfo, completionEvent.request.logicalAddress), numRecords, out _);
             logicalAddress = recordInfo.PreviousAddress;
@@ -202,7 +203,7 @@ namespace Tsavorite.core
             if (cursor < BeginAddress) // This includes 0, which means to start the Scan
                 cursor = BeginAddress;
             else if (validateCursor)
-                iter.SnapCursorToLogicalAddress(ref cursor);
+                _ = iter.SnapCursorToLogicalAddress(ref cursor);
 
             scanCursorState.Initialize(scanFunctions);
 
@@ -219,7 +220,7 @@ namespace Tsavorite.core
                         ++numPending;
                         if (numPending == count - scanCursorState.acceptedCount || numPending > 256)
                         {
-                            bContext.CompletePending(wait: true);
+                            _ = bContext.CompletePending<TransientKeyLocker>(wait: true);
                             numPending = 0;
                         }
                     }
@@ -237,7 +238,7 @@ namespace Tsavorite.core
 
             // Drain any pending pushes. We have ended the iteration; there are no more records, so drop through to end it.
             if (numPending > 0)
-                bContext.CompletePending(wait: true);
+                _ = bContext.CompletePending<TransientKeyLocker>(wait: true);
 
             IterationComplete:
             cursor = 0;
@@ -253,7 +254,8 @@ namespace Tsavorite.core
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext = new(_storeFunctions.GetKeyHashCode64(ref key));
 
             OperationStatus internalStatus;
-            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash, partitionId);
+            HashEntryInfo hei = new(pendingContext.keyHash, partitionId);
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
             bool needIO;
             do
             {
@@ -261,7 +263,7 @@ namespace Tsavorite.core
                 if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, currentAddress, minAddress, out internalStatus, out needIO))
                     return Status.CreateFound();
             }
-            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus(internalStatus, sessionFunctions.ExecutionCtx));
+            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus(ref hei, internalStatus, sessionFunctions.ExecutionCtx));
 
             TInput input = default;
             TOutput output = default;
@@ -284,7 +286,7 @@ namespace Tsavorite.core
                 else
                 {
                     if ((cursorRecordResult & CursorRecordResult.Accept) != 0)
-                        Interlocked.Increment(ref scanCursorState.acceptedCount);
+                        _ = Interlocked.Increment(ref scanCursorState.acceptedCount);
                     if ((cursorRecordResult & CursorRecordResult.EndBatch) != 0)
                         scanCursorState.endBatch = true;
                 }
@@ -309,34 +311,34 @@ namespace Tsavorite.core
 
         internal struct LogScanCursorFunctions<TInput, TOutput> : ISessionFunctions<TKey, TValue, TInput, TOutput, Empty>
         {
-            public bool SingleReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo) => true;
-            public bool ConcurrentReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo) => true;
-            public void ReadCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
+            public readonly bool SingleReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo) => true;
+            public readonly bool ConcurrentReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo) => true;
+            public readonly void ReadCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
 
-            public bool SingleDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
-            public void PostSingleDeleter(ref TKey key, ref DeleteInfo deleteInfo) { }
-            public bool ConcurrentDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
+            public readonly bool SingleDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
+            public readonly void PostSingleDeleter(ref TKey key, ref DeleteInfo deleteInfo) { }
+            public readonly bool ConcurrentDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
 
-            public bool SingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo) => true;
-            public void PostSingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
-            public bool ConcurrentWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) => true;
+            public readonly bool SingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo) => true;
+            public readonly void PostSingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+            public readonly bool ConcurrentWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) => true;
 
-            public bool InPlaceUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
+            public readonly bool InPlaceUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
 
-            public bool NeedCopyUpdate(ref TKey key, ref TInput input, ref TValue oldValue, ref TOutput output, ref RMWInfo rmwInfo) => true;
-            public bool CopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
-            public bool PostCopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo) => true;
+            public readonly bool NeedCopyUpdate(ref TKey key, ref TInput input, ref TValue oldValue, ref TOutput output, ref RMWInfo rmwInfo) => true;
+            public readonly bool CopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
+            public readonly bool PostCopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo) => true;
 
-            public bool NeedInitialUpdate(ref TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
-            public bool InitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
-            public void PostInitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo) { }
+            public readonly bool NeedInitialUpdate(ref TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
+            public readonly bool InitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
+            public readonly void PostInitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo) { }
 
-            public void RMWCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
+            public readonly void RMWCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
 
-            public int GetRMWModifiedValueLength(ref TValue value, ref TInput input) => 0;
-            public int GetRMWInitialValueLength(ref TInput input) => 0;
+            public readonly int GetRMWModifiedValueLength(ref TValue value, ref TInput input) => 0;
+            public readonly int GetRMWInitialValueLength(ref TInput input) => 0;
 
-            public void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
+            public readonly void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

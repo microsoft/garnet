@@ -17,9 +17,6 @@ namespace Tsavorite.core
     {
         internal readonly SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> sessionFunctions;
 
-        /// <inheritdoc/>
-        private TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> Store => KernelSession.Store;
-
         internal BasicContext(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession)
         {
             sessionFunctions = new(clientSession, isDual: false);
@@ -28,35 +25,37 @@ namespace Tsavorite.core
         #region ITsavoriteContext
 
         /// <inheritdoc/>
-        public ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> Session => KernelSession.ClientSession;
+        public ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> Session => sessionFunctions.ClientSession;
+
+        private TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> Store => Session.Store;
 
         private ref BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> KernelSession => ref Session.BasicKernelSession;
 
         /// <inheritdoc/>
-        public long GetKeyHash(TKey key) => KernelSession.Store.GetKeyHash(ref key);
+        public long GetKeyHash(TKey key) => Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
-        public long GetKeyHash(ref TKey key) => KernelSession.Store.GetKeyHash(ref key);
+        public long GetKeyHash(ref TKey key) => Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
         public bool CompletePending<TKeyLocker>(bool wait = false, bool spinWaitForCommit = false)
             where TKeyLocker : struct, IKeyLocker
-            => KernelSession.ClientSession.CompletePending<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, wait, spinWaitForCommit);
+            => Session.CompletePending<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, wait, spinWaitForCommit);
 
         /// <inheritdoc/>
         public bool CompletePendingWithOutputs<TKeyLocker>(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
             where TKeyLocker : struct, IKeyLocker
-            => KernelSession.ClientSession.CompletePendingWithOutputs<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, out completedOutputs, wait, spinWaitForCommit);
+            => Session.CompletePendingWithOutputs<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, out completedOutputs, wait, spinWaitForCommit);
 
         /// <inheritdoc/>
         public ValueTask CompletePendingAsync<TKeyLocker>(bool waitForCommit = false, CancellationToken token = default)
             where TKeyLocker : struct, IKeyLocker
-            => KernelSession.ClientSession.CompletePendingAsync<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, waitForCommit, token);
+            => Session.CompletePendingAsync<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
         public ValueTask<CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext>> CompletePendingWithOutputsAsync<TKeyLocker>(bool waitForCommit = false, CancellationToken token = default)
             where TKeyLocker : struct, IKeyLocker
-            => KernelSession.ClientSession.CompletePendingWithOutputsAsync<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, waitForCommit, token);
+            => Session.CompletePendingWithOutputsAsync<SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -165,7 +164,7 @@ namespace Tsavorite.core
             where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
-            return KernelSession.Store.ContextRead<TInput, TOutput, TContext,
+            return Store.ContextRead<TInput, TOutput, TContext,
                     SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>,
                     BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>,
                     TKeyLocker, TEpochGuard>
@@ -471,28 +470,21 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetModified<TKeyLocker, TEpochGuard>(TKey key)
+        public void ResetModified<TKeyLocker, TEpochGuard>(TKey key, out RecordInfo modifiedInfo, bool reset = true)
             where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
-            => ResetModified<TKeyLocker, TEpochGuard>(ref key);
+            => ResetModified<TKeyLocker, TEpochGuard>(ref key, out modifiedInfo, reset);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetModified<TKeyLocker, TEpochGuard>(ref TKey key)
+        public void ResetModified<TKeyLocker, TEpochGuard>(ref TKey key, out RecordInfo modifiedInfo, bool reset = true)
             where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
-            TEpochGuard.BeginUnsafe(ref KernelSession);
-            try
-            { 
-                HashEntryInfo hei = new(GetKeyHash(ref key), Store.PartitionId);
-                if (Store.Kernel.hashTable.FindTag(ref hei))
-                    KernelSession.ClientSession.UnsafeResetModified<TKeyLocker>(ref hei, sessionFunctions.ExecutionCtx, ref key);
-            }
-            finally
-            {
-                TEpochGuard.EndUnsafe(ref KernelSession);
-            }
+            _ = Store.ContextResetModified<TInput, TOutput, TContext,
+                    SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>,
+                    BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>,
+                    TKeyLocker, TEpochGuard>(ref key, sessionFunctions, ref KernelSession, out modifiedInfo, reset);
         }
 
         #endregion ITsavoriteContext
@@ -507,11 +499,10 @@ namespace Tsavorite.core
         /// <param name="currentAddress">LogicalAddress of the record to be copied</param>
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status CompactionCopyToTail<TKeyLocker, TEpochGuard>(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, long currentAddress, long untilAddress)
+        internal Status CompactionCopyToTail<TKeyLocker>(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, long currentAddress, long untilAddress)
             where TKeyLocker : struct, IKeyLocker
-            where TEpochGuard : struct, IBasicEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         {
-            TEpochGuard.BeginUnsafe(ref KernelSession);
+            BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>.BeginUnsafe(ref KernelSession);
             try
             {
                 return Store.CompactionConditionalCopyToTail<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
@@ -519,7 +510,7 @@ namespace Tsavorite.core
             }
             finally
             {
-                TEpochGuard.EndUnsafe(ref KernelSession);
+                BasicSafeEpochGuard<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>.EndUnsafe(ref KernelSession);
             }
         }
 

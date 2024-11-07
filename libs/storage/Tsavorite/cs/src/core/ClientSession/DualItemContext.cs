@@ -9,8 +9,7 @@ using System.Threading;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Tsavorite Operations implementation for dual-store configuration. Taken from <see cref="UnsafeContext{TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator}"/>
-    /// with Dual-specific locking considerations. Requires manual control of epoch management.
+    /// Tsavorite Operations implementation for dual-store configuration. Requires control of epoch management above this Context.
     /// </summary>
     public readonly struct DualItemContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
@@ -142,8 +141,9 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void ResetModified<TKeyLocker>(ref HashEntryInfo hei, ref TKey key)
+        public readonly void ResetModified<TKeyLocker>(ref HashEntryInfo hei, ref TKey key, out RecordInfo modifiedInfo, bool reset = true)
             where TKeyLocker : struct, IKeyLocker
-            => ClientSession.UnsafeResetModified<TKeyLocker>(ref hei, sessionFunctions.ExecutionCtx, ref key);
+            => ClientSession.Store.ContextResetModified<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
+                    sessionFunctions, ref hei, ref key, out modifiedInfo, reset);
     }
 }

@@ -75,6 +75,31 @@ namespace Tsavorite.core
 
             while (!TKeyLocker.TryLockTransientShared(this, ref hei))
             {
+                // The kernelSession may be basic or dual; if dual, we want both stores to execute the Refresh ThreadStateMachineStep
+                kernelSession.Refresh<TKeyLocker>(ref hei);
+                _ = Thread.Yield();
+            }
+            return new(StatusCode.Found);
+        }
+
+        /// <summary>
+        /// Enter the kernel for a read operation on a single Tsavorite configuration or the first TsavoriteKV of a dual configuration, where epoch has already been acquired.
+        /// </summary>
+        /// <remarks>
+        /// This does epoch entry and the hash bucket lookup and transient lock (which is the only hash bucket lock unless a RETRY is needed, in which case transient locks are released then reacquired by the TsavoriteKV instance).
+        /// </remarks>
+        /// <returns><see cref="Status.Found"/> if the tag was found, else <see cref="Status.NotFound"/></returns>
+        public Status UnsafeEnterForRead<TKernelSession, TKeyLocker>(ref TKernelSession kernelSession, long keyHash, ushort partitionId, out HashEntryInfo hei)
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, IKeyLocker
+        {
+            hei = new(keyHash, partitionId);
+            if (!hashTable.FindTag(ref hei))
+                return new(StatusCode.NotFound);
+
+            while (!TKeyLocker.TryLockTransientShared(this, ref hei))
+            {
+                // The kernelSession may be basic or dual; if dual, we want both stores to execute the Refresh ThreadStateMachineStep
                 kernelSession.Refresh<TKeyLocker>(ref hei);
                 _ = Thread.Yield();
             }
@@ -99,7 +124,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Exits the kernel for this Read operation.
+        /// Exits the kernel for this Read operation when the epoch may or may not be released
         /// </summary>
         /// <remarks>
         /// Releases the read lock on the hash bucket and releases the epoch.
@@ -112,6 +137,19 @@ namespace Tsavorite.core
             TKeyLocker.UnlockTransientShared(this, ref hei);
             if (Epoch.ThisInstanceProtected())
                 TEpochGuard.EndUnsafe(ref kernelSession);
+        }
+
+        /// <summary>
+        /// Exits the kernel for this Read operation when the epoch is not to be released
+        /// </summary>
+        /// <remarks>
+        /// Releases the read lock on the hash bucket and releases the epoch.
+        /// </remarks>
+        public void UnsafeExitForRead<TKernelSession, TKeyLocker>(ref TKernelSession kernelSession, ref HashEntryInfo hei)
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, IKeyLocker
+        {
+            TKeyLocker.UnlockTransientShared(this, ref hei);
         }
 
         /// <summary>
@@ -139,10 +177,45 @@ namespace Tsavorite.core
             if (createIfNotFoundBeginAddress == DoNotCreateSlotAddress)
                 hashTable.FindOrCreateTag(ref hei, createIfNotFoundBeginAddress);
             else if (!hashTable.FindTag(ref hei))
+            {
+                TEpochGuard.EndUnsafe(ref kernelSession);
+                return new(StatusCode.NotFound);
+            }
+
+            while (!TKeyLocker.TryLockTransientExclusive(this, ref hei))
+            {
+                // The kernelSession may be basic or dual; if dual, we want both stores to execute the Refresh ThreadStateMachineStep
+                kernelSession.Refresh<TKeyLocker>(ref hei);
+                _ = Thread.Yield();
+            }
+            return new(StatusCode.Found);
+        }
+
+        /// <summary>
+        /// Enter the kernel for an update operation on a single Tsavorite configuration or on the first TsavoriteKV of a dual configuration, where the epoch has already been acquired.
+        /// </summary>
+        /// <remarks>
+        /// This does epoch entry and the hash bucket lookup and transient lock (which is the only hash bucket lock unless a RETRY is needed, in which case transient locks are released then reacquired by the TsavoriteKV instance).
+        /// <para/>
+        /// This is a strict update operation from the HashBucket perspective; if the tag is not found, we do not create it. It is used for operations like Delete or Expire. Operations that do in-place updates or RCU will know
+        /// which store they are operating on and will call a different method.
+        /// </remarks>
+        /// <returns><see cref="Status.Found"/> if the tag was found, else <see cref="Status.NotFound"/></returns>
+        public Status UnsafeEnterForUpdate<TKernelSession, TKeyLocker>(ref TKernelSession kernelSession, long keyHash, ushort partitionId, long createIfNotFoundBeginAddress, out HashEntryInfo hei)
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, IKeyLocker
+        {
+            hei = new(keyHash, partitionId);
+
+            // We may do FindTag rather than FindOrCreateTag here because we don't want to create the slot if the tag is not found.
+            if (createIfNotFoundBeginAddress == DoNotCreateSlotAddress)
+                hashTable.FindOrCreateTag(ref hei, createIfNotFoundBeginAddress);
+            else if (!hashTable.FindTag(ref hei))
                 return new(StatusCode.NotFound);
 
             while (!TKeyLocker.TryLockTransientExclusive(this, ref hei))
             {
+                // The kernelSession may be basic or dual; if dual, we want both stores to execute the Refresh ThreadStateMachineStep
                 kernelSession.Refresh<TKeyLocker>(ref hei);
                 _ = Thread.Yield();
             }
@@ -167,7 +240,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Exits the kernel for this Update operation.
+        /// Exits the kernel for this Update operation when epoch may or may not be released
         /// </summary>
         /// <remarks>
         /// Releases the read lock on the hash bucket and releases the epoch.
@@ -177,8 +250,22 @@ namespace Tsavorite.core
             where TKeyLocker : struct, IKeyLocker
             where TEpochGuard : struct, IEpochGuard<TKernelSession>
         {
-            TKeyLocker.UnlockTransientShared(this, ref hei);
-            TEpochGuard.EndUnsafe(ref kernelSession);
+            TKeyLocker.UnlockTransientExclusive(this, ref hei);
+            if (Epoch.ThisInstanceProtected())
+                TEpochGuard.EndUnsafe(ref kernelSession);
+        }
+
+        /// <summary>
+        /// Exits the kernel for this Update operation when epoch is not to be released
+        /// </summary>
+        /// <remarks>
+        /// Releases the read lock on the hash bucket and releases the epoch.
+        /// </remarks>
+        public void UnsafeExitForUpdate<TKernelSession, TKeyLocker>(ref TKernelSession kernelSession, ref HashEntryInfo hei)
+            where TKernelSession : IKernelSession
+            where TKeyLocker : struct, IKeyLocker
+        {
+            TKeyLocker.UnlockTransientExclusive(this, ref hei);
         }
 
         internal void Dispose()

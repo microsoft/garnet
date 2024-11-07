@@ -27,9 +27,10 @@ namespace Tsavorite.core
         /// Async operations (e.g., ReadAsync) need to be completed individually
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask CompletePendingAsync<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions,
-                                      CancellationToken token, CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
+        internal async ValueTask CompletePendingAsync<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker>(TSessionFunctionsWrapper sessionFunctions,
+                                      ref TKernelSession kernelSession, CancellationToken token, CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKernelSession : IKernelSession
             where TKeyLocker : struct, IKeyLocker
         {
             while (true)
@@ -37,7 +38,7 @@ namespace Tsavorite.core
                 sessionFunctions.UnsafeResumeThread();
                 try
                 {
-                    InternalCompletePendingRequests<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, completedOutputs);
+                    InternalCompletePendingRequests<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKernelSession, TKeyLocker>(sessionFunctions, ref kernelSession, completedOutputs);
                 }
                 finally
                 {
@@ -46,7 +47,8 @@ namespace Tsavorite.core
 
                 await sessionFunctions.ExecutionCtx.WaitPendingAsync(token).ConfigureAwait(false);
 
-                if (sessionFunctions.ExecutionCtx.HasNoPendingRequests) return;
+                if (sessionFunctions.ExecutionCtx.HasNoPendingRequests)
+                    return;
 
                 InternalRefresh(sessionFunctions.ExecutionCtx);
 

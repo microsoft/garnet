@@ -43,8 +43,8 @@ namespace Tsavorite.core
             while (true)
             {
                 // ConditionalCopyToTail is different from the usual procedures, in that if we find a source record we don't lock--we exit with success.
-                // So we only lock for tag-chain stability during search. We must have TKeyLocker in case we are called from InternalRead for CopyToTail
-                // in a transactional context.
+                // So we only lock for tag-chain stability during search. We must have TKeyLocker in case we are called in a transactional context
+                // (e.g. from InternalRead for CopyToTail).
                 var status = OperationStatus.SUCCESS;   // separate initialization for compiler
                 if (callerHasTransientLock || TryTransientSLock<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, out status))
                 {
@@ -62,21 +62,22 @@ namespace Tsavorite.core
                 }
 
                 // If we're here we failed TryCopyToTail, probably a failed CAS due to another record insertion.
-                if (!HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx, status, sessionFunctions.ExecutionCtx, ref pendingContext))
+                if (!HandleImmediateRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx.hei, status, sessionFunctions.ExecutionCtx, ref pendingContext))
                     return status;
 
                 // HandleImmediateRetryStatus may have refreshed the epoch which means HeadAddress etc. may have changed. Re-traverse from the tail to the highest
                 // point we just searched (which may have gone below HeadAddress). +1 to LatestLogicalAddress because we have examined that already. Use stackCtx2 to
                 // preserve stacKCtx, both for retrying the Insert if needed and for preserving the caller's lock status, etc.
                 var minAddress = stackCtx.recSrc.LatestLogicalAddress + 1;
-                OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx2 = new(stackCtx.hei.hash, partitionId);
+                HashEntryInfo hei2 = new(stackCtx.hei.hash, partitionId);
+                OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx2 = new(ref hei2);
                 bool needIO;
                 do
                 {
                     if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx2, stackCtx.recSrc.LogicalAddress, minAddress, out status, out needIO))
                         return OperationStatus.SUCCESS;
                 }
-                while (HandleImmediateNonPendingRetryStatus(status, sessionFunctions.ExecutionCtx));
+                while (HandleImmediateNonPendingRetryStatus(ref hei2, status, sessionFunctions.ExecutionCtx));
 
                 // Issue IO if necessary and desired (for ReadFromImmutable, it isn't; just exit in that case), else loop back up and retry the insert.
                 if (!wantIO)
@@ -100,7 +101,8 @@ namespace Tsavorite.core
             Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
             PendingContext<TInput, TOutput, TContext> pendingContext = new();
 
-            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
+            HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
             OperationStatus status;
             bool needIO;
             do
@@ -108,13 +110,13 @@ namespace Tsavorite.core
                 if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, currentAddress, minAddress, out status, out needIO))
                     return Status.CreateFound();
             }
-            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus(status, sessionFunctions.ExecutionCtx));
+            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus(ref hei, status, sessionFunctions.ExecutionCtx));
 
             if (needIO)
                 status = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default,
                                                     ref stackCtx, minAddress, WriteReason.Compaction);
             else
-                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default, ref stackCtx, WriteReason.Compaction);
+                status = ConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default, ref stackCtx, WriteReason.Compaction);
             return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pendingContext, status, out _);
         }
 

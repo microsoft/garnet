@@ -17,8 +17,7 @@ namespace Tsavorite.core
     {
         private readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> _clientSession;
 
-        public ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> ClientSession => _clientSession;
-        public TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> Store => _clientSession.Store;
+        internal readonly TsavoriteKernel Kernel => _clientSession.Store.Kernel;
 
         internal BasicKernelSession(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession) => _clientSession = clientSession;
 
@@ -36,7 +35,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public void Refresh<TKeyLocker>(ref HashEntryInfo hei) where TKeyLocker : struct, IKeyLocker
-            => _clientSession.Refresh<TKeyLocker>(ref hei);
+            => _clientSession.Refresh(ref hei);
 
         /// <inheritdoc/>
         public void HandleImmediateNonPendingRetryStatus(bool refresh) => _clientSession.HandleImmediateNonPendingRetryStatus(refresh);
@@ -44,7 +43,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void BeginUnsafe()
         {
-            _clientSession.Store.Kernel.Epoch.Resume();
+            Kernel.Epoch.Resume();
             _clientSession.DoThreadStateMachineStep();
         }
 
@@ -61,11 +60,11 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void EndUnsafe()
         {
-            Debug.Assert(_clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            _clientSession.Store.Kernel.Epoch.Suspend();
+            Debug.Assert(Kernel.Epoch.ThisInstanceProtected());
+            Kernel.Epoch.Suspend();
         }
 
         /// <inheritdoc/>
-        public readonly bool IsEpochAcquired => _clientSession.Store.Kernel.Epoch.ThisInstanceProtected();
+        public readonly bool IsEpochAcquired => Kernel.Epoch.ThisInstanceProtected();
     }
 }

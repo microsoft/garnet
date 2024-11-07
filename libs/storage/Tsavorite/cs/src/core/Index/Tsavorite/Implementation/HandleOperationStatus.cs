@@ -23,12 +23,11 @@ namespace Tsavorite.core
                 && HandleRetryStatus<TInput, TOutput, TContext, TKeyLocker>(internalStatus, ref hei, executionCtx, ref pendingContext);
 
         /// <summary>
-        /// Handle retry for operations that will not go pending (e.g., InternalLock)
+        /// Handle retry for operations that will not go pending (e.g., InternalLock) with a specific bucket locked on this session
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TKeyLocker>(
+        internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext>(
                 ref HashEntryInfo hei, OperationStatus internalStatus, ExecutionContext<TInput, TOutput, TContext> executionCtx)
-            where TKeyLocker : struct, IKeyLocker
         {
             Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "Epoch should be protected in HandleImmediateNonPendingRetryStatus");
             switch (internalStatus)
@@ -38,6 +37,28 @@ namespace Tsavorite.core
                     return true;
                 case OperationStatus.RETRY_LATER:
                     InternalRefresh(ref hei, executionCtx);
+                    _ = Thread.Yield();
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Handle retry for operations that will not go pending (e.g., InternalLock) with no bucket locked on this session
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext>(
+                OperationStatus internalStatus, ExecutionContext<TInput, TOutput, TContext> executionCtx)
+        {
+            Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "Epoch should be protected in HandleImmediateNonPendingRetryStatus");
+            switch (internalStatus)
+            {
+                case OperationStatus.RETRY_NOW:
+                    _ = Thread.Yield();
+                    return true;
+                case OperationStatus.RETRY_LATER:
+                    InternalRefresh(executionCtx);
                     _ = Thread.Yield();
                     return true;
                 default:

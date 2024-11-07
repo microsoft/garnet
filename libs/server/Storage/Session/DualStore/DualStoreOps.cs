@@ -659,9 +659,9 @@ namespace Garnet.server
             where TEpochGuard : struct, IGarnetEpochGuard
         {
             if (storeType is StoreType.Main or StoreType.All)
-                dualContext.ResetModified<TKeyLocker, TEpochGuard>(key.SpanByte);
+                dualContext.ResetModified<TKeyLocker, TEpochGuard>(key.SpanByte, out _);
             if ((storeType is StoreType.Object or StoreType.All) && dualContext.IsDual)
-                dualContext.ResetModified<TKeyLocker, TEpochGuard>(key.ToArray());
+                dualContext.ResetModified<TKeyLocker, TEpochGuard>(key.ToArray(), out _);
             return GarnetStatus.OK;
         }
     }

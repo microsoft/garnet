@@ -145,21 +145,6 @@ namespace Tsavorite.core
             }
         }
 
-        /// <inheritdoc/>
-        internal void ResetModified<TKeyLocker>(ref HashEntryInfo hei, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> executionCtx, ref TKey key)
-            where TKeyLocker: struct, IKeyLocker
-        {
-            UnsafeResumeThread();
-            try
-            {
-                UnsafeResetModified<TKeyLocker>(ref hei, executionCtx, ref key);
-            }
-            finally
-            {
-                UnsafeSuspendThread();
-            }
-        }
-
         #endregion ITsavoriteContext
 
         #region Pending Operations
@@ -223,17 +208,20 @@ namespace Tsavorite.core
             where TKeyLocker : struct, IKeyLocker
         {
             var requestedOutputs = getOutputs ? completedOutputs : default;
-            var result = Store.InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, wait, requestedOutputs);
+            var result = Store.InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper, BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
+                    sessionFunctions, ref BasicKernelSession, wait, requestedOutputs);
             if (spinWaitForCommit)
             {
                 if (!wait)
                     throw new TsavoriteException("Can spin-wait for commit (checkpoint completion) only if wait is true");
                 do
                 {
-                    _ = Store.InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, wait, requestedOutputs);
+                    _ = Store.InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper, BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
+                            sessionFunctions, ref BasicKernelSession, wait, requestedOutputs);
                     if (Store.InRestPhase())
                     {
-                        _ = Store.InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, wait, requestedOutputs);
+                        _ = Store.InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper, BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, TKeyLocker>(
+                            sessionFunctions, ref BasicKernelSession, wait, requestedOutputs);
                         return true;
                     }
                 } while (wait);
@@ -294,21 +282,6 @@ namespace Tsavorite.core
         #endregion Pending Operations
 
         #region Other Operations
-
-        internal void UnsafeResetModified<TKeyLocker>(ref HashEntryInfo hei, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> executionCtx, ref TKey key)
-            where TKeyLocker : struct, IKeyLocker
-        {
-            OperationStatus status;
-            do
-                status = Store.InternalModifiedBitOperation(ref key, out _);
-            while (Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TKeyLocker>(ref hei, status, executionCtx));
-        }
-
-        /// <inheritdoc/>
-        internal unsafe void ResetModified<TKeyLocker>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> executionCtx, TKey key)
-            where TKeyLocker : struct, IKeyLocker
-            => ResetModified<TKeyLocker>(executionCtx, ref key);
-
         /// <summary>
         /// Wait for commit of all operations completed until the current point in session.
         /// Does not itself issue checkpoint/commits.
