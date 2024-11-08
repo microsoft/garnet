@@ -198,6 +198,12 @@ namespace Garnet.server
         /// <returns></returns>
         private static unsafe bool IsLegacyFormat(byte* ptr) => (*ptr & MsbMask) == 0;
 
+        public unsafe void ProcessAofRecordInternal(byte* ptr, int length, bool asReplica = false)
+        {
+            AofHeader aofHeader = *(AofHeader*)ptr;
+            ProcessAofRecordInternal(aofHeader.sessionID, aofHeader.opType, aofHeader.version, aofHeader.type, ptr, length, isLegacyFormat: false, asReplica);
+        }
+
         /// <summary>
         /// Process AOF record
         /// </summary>
