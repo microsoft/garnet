@@ -5,32 +5,35 @@ using System.Runtime.InteropServices;
 
 namespace Garnet.server
 {
-    [StructLayout(LayoutKind.Explicit, Size = 18)]
+    [StructLayout(LayoutKind.Explicit, Size = 15)]
     struct AofHeader
     {
         /*
         First byte of AofHeader starts from an int such that the MSB of the int is SET
         We use the MSB to differentiate if we are interacting with a legacy or the new AofHeader  
         Future AOF format updates should increment version from 128.
+        PLEASE UPDATE THIS IF THE LAYOUT OF THIS FILE IS CHANGED
+        
+        Note: When we are removing legacy support for old AOF log we can set the version to start from 0.
         */
-        const int AofFormatVersion = 1 << 7;
+        const byte AofFormatVersion = 1 << 7;
 
         [FieldOffset(0)]
-        public int AofHeaderFormatVersion;
+        public byte AofHeaderFormatVersion;
 
-        [FieldOffset(4)]
+        [FieldOffset(1)]
         public AofEntryType opType;
 
         // Custom trasaction procedure ID
-        [FieldOffset(5)]
+        [FieldOffset(2)]
         public byte type;
 
         // Version for the record, associated with the record
-        [FieldOffset(6)]
+        [FieldOffset(3)]
         public long version;
 
         // Used to map transactions to RespServerSessions that they came from
-        [FieldOffset(14)]
+        [FieldOffset(11)]
         public int sessionID;
 
         public AofHeader(AofEntryType opType, long version, int sessionID)
