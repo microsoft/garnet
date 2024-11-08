@@ -494,7 +494,7 @@ namespace Garnet.server
                 args.Add(new ArgSlice(result, len));
             }
 
-            parseState.InitializeWithArguments(args);
+            parseState.InitializeWithArguments([.. args]);
         }
     }
 
