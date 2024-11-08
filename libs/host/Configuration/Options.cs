@@ -164,10 +164,10 @@ namespace Garnet
         [Option("aad-issuers", Required = false, HelpText = "The issuers of AAD token for AAD authentication. Should be a comma separated string.")]
         public string AadIssuers { get; set; }
 
-        [Option("aad-authorized-app-ids", Required = false, Separator = ',', HelpText = "The authorized client app Ids for AAD authentication. Should be a comma separated string.")]
+        [Option("aad-authorized-app-ids", Required = false, HelpText = "The authorized client app Ids for AAD authentication. Should be a comma separated string.")]
         public string AuthorizedAadApplicationIds { get; set; }
 
-        [Option("aad-validate-acl-username", Required = false, Separator = ',', HelpText = "Only valid for AclWithAAD mode. Validates username -  expected to be OID of client app or a valid group's object id of which the client is part of.")]
+        [Option("aad-validate-acl-username", Required = false, HelpText = "Only valid for AclWithAAD mode. Validates username -  expected to be OID of client app or a valid group's object id of which the client is part of.")]
         public bool? AadValidateUsername { get; set; }
 
         [OptionValidation]
