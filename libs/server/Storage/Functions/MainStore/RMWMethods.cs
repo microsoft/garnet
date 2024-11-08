@@ -560,10 +560,10 @@ namespace Garnet.server
             {
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
-                    // ExpireAndStop ensures that caller sees a NOTFOUND status
+                    // ExpireAndResume ensures that we set as new value, since it does not exist
                     if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
                     {
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
+                        rmwInfo.Action = RMWAction.ExpireAndResume;
                         return false;
                     }
                     // Check if SetGet flag is set
@@ -573,6 +573,15 @@ namespace Garnet.server
                         CopyRespTo(ref oldValue, ref output);
                     }
                     return false;
+                case RespCommand.SETEXXX:
+                    // Expired data, return false immediately so we do not set, since it does not exist
+                    // ExpireAndStop ensures that caller sees a NOTFOUND status
+                    if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
+                    {
+                        rmwInfo.Action = RMWAction.ExpireAndStop;
+                        return false;
+                    }
+                    return true;
                 default:
                     if ((ushort)input.header.cmd >= CustomCommandManager.StartOffset)
                     {

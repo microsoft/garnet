@@ -695,7 +695,7 @@ namespace Garnet.server
                 if (status == GarnetStatus.NOTFOUND)
                 {
                     Debug.Assert(o.IsSpanByte);
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteNull(ref dcurr, dend))
                         SendAndReset();
                 }
                 else
