@@ -35,7 +35,7 @@ namespace Garnet.server
         }
 
         [FieldOffset(0)]
-        byte _aofHeaderFormatVersion;
+        byte _aofHeaderFormatVersion = ONLY_MSB_SET_MASK;
 
         [FieldOffset(1)]
         public AofEntryType opType;
@@ -53,24 +53,42 @@ namespace Garnet.server
         public int sessionID;
 
 
-        // ctors are used for creating an instance when writing, having the field being set in the ctor will not affect the value when reading from disk
+        /// <summary>
+        /// ctors are used for creating an instance when writing, having the MSB being set in the ctor will not affect the value when reading from disk
+        /// </summary>
+        /// <param name="opType"></param>
+        /// <param name="version"></param>
+        /// <param name="sessionID"></param>
         public AofHeader(AofEntryType opType, long version, int sessionID)
         {
-            this._aofHeaderFormatVersion = ONLY_MSB_SET_MASK;
             this.AofHeaderFormatVersion = CURRENT_AOF_FORMAT_VERSION;
             this.opType = opType;
             this.version = version;
             this.sessionID = sessionID;
         }
 
+        /// <summary>
+        /// ctors are used for creating an instance when writing, having the MSB being set in the ctor will not affect the value when reading from disk
+        /// </summary>
+        /// <param name="opType"></param>
+        /// <param name="type"></param>
+        /// <param name="version"></param>
+        /// <param name="sessionID"></param>
         public AofHeader(AofEntryType opType, byte type, long version, int sessionID)
         {
-            this._aofHeaderFormatVersion = ONLY_MSB_SET_MASK;
             this.AofHeaderFormatVersion = CURRENT_AOF_FORMAT_VERSION;
             this.opType = opType;
             this.type = type;
             this.version = version;
             this.sessionID = sessionID;
         }
+
+        /// <summary>
+        /// Checks if the MSB is not set of the first pointer, this indicates it is an older AOF format
+        /// </summary>
+        /// <param name="ptr"></param>
+        /// <returns></returns>
+        public static unsafe bool IsLegacyFormat(byte* ptr) => (*ptr & ONLY_MSB_SET_MASK) == 0;
+
     }
 }

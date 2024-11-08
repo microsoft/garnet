@@ -474,7 +474,7 @@ namespace Garnet.server
             return len;
         }
 
-        public unsafe void DeserializeFromHistoricAof(byte* src)
+        public unsafe void DeserializeFromLegacyAof(byte* src)
         {
             ref SpanByte inputsb = ref Unsafe.AsRef<SpanByte>(src);
             byte* memoryboundary = inputsb.ToPointer() + inputsb.Length;

@@ -229,7 +229,7 @@ namespace Garnet.server
                 {
                     RecoverCheckpoint();
                     RecoverAOF();
-                    bool aofProcessedSuccesfully = ReplayAOF().Item2;
+                    bool aofProcessedSuccesfully = TryReplayAOF(out var _);
                     if (!aofProcessedSuccesfully && serverOptions.ReplayFromLegacyAof)
                     {
                         // By skipping checkpointing in case of an error we encountered while replaying AOF we can make sure taht future replays can still access the Log and dont skip it
@@ -304,12 +304,15 @@ namespace Garnet.server
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
-        public (long, bool) ReplayAOF(long untilAddress = -1)
+        public bool TryReplayAOF(out long offset, long untilAddress = -1)
         {
             if (!serverOptions.EnableAOF)
-                return (-1, true);
+            {
+                offset = -1;
+                return true;
+            }
 
-            long replicationOffset = 0;
+            offset = 0;
             try
             {
                 // When replaying AOF we do not want to write record again to AOF.
@@ -317,14 +320,14 @@ namespace Garnet.server
                 var aofProcessor = new AofProcessor(this, recordToAof: false, logger);
                 bool replayResult = aofProcessor.Recover(untilAddress);
                 aofProcessor.Dispose();
-                replicationOffset = aofProcessor.ReplicationOffset;
+                offset = aofProcessor.ReplicationOffset;
                 lastSaveTime = DateTimeOffset.UtcNow;
-                return (replicationOffset, replayResult);
+                return replayResult;
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Error during recovery of AofProcessor");
-                return (replicationOffset, false);
+                return false;
             }
         }
 

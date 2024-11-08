@@ -56,9 +56,6 @@ namespace Garnet.server
         readonly bool recordToAof;
         readonly bool replayFromLegacyAof;
 
-        // 1000 0000
-        const byte MsbMask = (1 << 7);
-
         /// <summary>
         /// Create new AOF processor
         /// </summary>
@@ -167,7 +164,7 @@ namespace Garnet.server
         {
             fixed (byte* ptr = entry.Memory.Span)
             {
-                if (replayFromLegacyAof && IsLegacyFormat(ptr))
+                if (replayFromLegacyAof && AofHeader.IsLegacyFormat(ptr))
                 {
                     LegacyAofHeader aofHeader = *(LegacyAofHeader*)ptr;
                     ProcessAofRecordInternal(aofHeader.sessionID, aofHeader.opType, aofHeader.version, aofHeader.type, ptr, length, isLegacyFormat: true, asReplica);
@@ -180,13 +177,6 @@ namespace Garnet.server
             }
             entry.Dispose();
         }
-
-        /// <summary>
-        /// Checks if the MSB is not set of the first pointer, this indicates it is an older AOF format
-        /// </summary>
-        /// <param name="ptr"></param>
-        /// <returns></returns>
-        private static unsafe bool IsLegacyFormat(byte* ptr) => (*ptr & MsbMask) == 0;
 
         public unsafe void ProcessAofRecordInternal(byte* ptr, int length, bool asReplica = false)
         {
@@ -270,7 +260,7 @@ namespace Garnet.server
             {
                 fixed (byte* ptr = entry)
                 {
-                    if (!IsLegacyFormat(ptr))
+                    if (!AofHeader.IsLegacyFormat(ptr))
                     {
                         AofHeader aofHeader = *(AofHeader*)ptr;
                         ReplayOp(aofHeader.opType, aofHeader.version, aofHeader.type, ptr);
@@ -310,7 +300,7 @@ namespace Garnet.server
                     ObjectStoreDelete(objectStoreBasicContext, entryPtr);
                     break;
                 case AofEntryType.StoredProcedure:
-                    RunStoredProc(type, customProcInput, entryPtr, isHistoricMode: false);
+                    RunStoredProc(type, customProcInput, entryPtr, isLegacyFormat: false);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {opType}");
@@ -329,7 +319,7 @@ namespace Garnet.server
                     LegacyUpsert(entryPtr, storeInput);
                     break;
                 case AofEntryType.StoredProcedure:
-                    RunStoredProc(type, customProcInput, entryPtr, isHistoricMode: true);
+                    RunStoredProc(type, customProcInput, entryPtr, isLegacyFormat: true);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {opType} for AOF legacy processing");
@@ -361,14 +351,14 @@ namespace Garnet.server
             StoreUpsertPostParsing(basicContext, ref key, storeInput, ref value);
         }
 
-        unsafe void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr, bool isHistoricMode)
+        unsafe void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr, bool isLegacyFormat)
         {
-            var curr = ptr + (isHistoricMode ? sizeof(LegacyAofHeader) : sizeof(AofHeader));
+            var curr = ptr + (isLegacyFormat ? sizeof(LegacyAofHeader) : sizeof(AofHeader));
 
             // Reconstructing CustomProcedureInput
-            if (isHistoricMode)
+            if (isLegacyFormat)
             {
-                customProcInput.DeserializeFromHistoricAof(curr);
+                customProcInput.DeserializeFromLegacyAof(curr);
             }
             else
             {
