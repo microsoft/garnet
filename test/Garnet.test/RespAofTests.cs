@@ -726,7 +726,7 @@ namespace Garnet.test
             // internally in the read write tx, this will be a key that wont already exist
             string newFmtTxnWriteKey2 = "diljit";
 
-            Action checkAllOldDataExists = () => 
+            Action checkAllOldDataExists = () =>
             {
                 using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
                 {
@@ -744,7 +744,7 @@ namespace Garnet.test
                 }
             };
 
-            Action checkAllNewDataExists = () => 
+            Action checkAllNewDataExists = () =>
             {
                 using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
                 {
@@ -798,7 +798,7 @@ namespace Garnet.test
             // restart server and check that all old and new data is there, this tests the compat story of having the earlier portion having the older fmt and the later portion of the AOF having newer fmt
             server = TestUtils.CreateGarnetServer(logCheckpointDir: logDir, tryRecover: true, enableAOF: true, replayFromLegacyAof: true);
             server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = 4 });
-            
+
             // recovery will again be triggered at start
             server.Start();
 

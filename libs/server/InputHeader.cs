@@ -476,14 +476,14 @@ namespace Garnet.server
 
         public unsafe void DeserializeFromHistoricAof(byte* src)
         {
-            ref SpanByte inputsb = ref Unsafe.AsRef<SpanByte>(src); 
+            ref SpanByte inputsb = ref Unsafe.AsRef<SpanByte>(src);
             byte* memoryboundary = inputsb.ToPointer() + inputsb.Length;
             byte* result = null;
             int len = -1;
 
             byte* curr = inputsb.ToPointer();
             List<ArgSlice> args = new List<ArgSlice>();
-            while(curr < memoryboundary)
+            while (curr < memoryboundary)
             {
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref curr, memoryboundary))
                 {

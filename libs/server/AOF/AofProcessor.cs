@@ -102,7 +102,7 @@ namespace Garnet.server
             buffer = new byte[BufferSizeUtils.ServerBufferSize(new MaxSizeSettings())];
             handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
             bufferPtr = (byte*)handle.AddrOfPinnedObject();
-            
+
             replayFromLegacyAof = storeWrapper.serverOptions.ReplayFromLegacyAof;
 
             this.logger = logger;
@@ -184,7 +184,7 @@ namespace Garnet.server
                     else
                     {
                         AofHeader aofHeader = *(AofHeader*)ptr;
-                        ProcessAofRecordInternal(aofHeader.sessionID, aofHeader.opType, aofHeader.version, aofHeader.type, ptr,  length, isLegacyFormat: false, asReplica);
+                        ProcessAofRecordInternal(aofHeader.sessionID, aofHeader.opType, aofHeader.version, aofHeader.type, ptr, length, isLegacyFormat: false, asReplica);
                     }
                 }
             }

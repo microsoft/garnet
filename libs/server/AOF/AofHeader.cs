@@ -12,8 +12,8 @@ namespace Garnet.server
         First byte of AofHeader starts from an int such that the MSB of the int is SET
         We use the MSB to differentiate if we are interacting with a legacy or the new AofHeader  
         Future AOF format updates should increment version from 128.
-        */ 
-        const int AofFormatVersion = 1 << 7; 
+        */
+        const int AofFormatVersion = 1 << 7;
 
         [FieldOffset(0)]
         public int AofHeaderFormatVersion;
