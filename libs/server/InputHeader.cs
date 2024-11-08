@@ -487,7 +487,6 @@ namespace Garnet.server
             {
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref curr, memoryboundary))
                 {
-                    // some fucking exceptional case that I got no clue how to handle, fuck
                     throw new Exception("Historic AOF deserializing expected span byte to have length header with each string");
                 }
 
