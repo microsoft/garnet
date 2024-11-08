@@ -120,7 +120,7 @@ namespace Garnet.server
 
                     // Prepare the parse state for sorted set add
                     parseState.Initialize(foundItems * 2);
-                    
+
                     for (var j = 0; j < foundItems; j++)
                     {
                         RespReadUtils.ReadUnsignedArrayLength(out var innerLength, ref currOutPtr, endOutPtr);
