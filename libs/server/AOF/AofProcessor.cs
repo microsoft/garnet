@@ -273,12 +273,12 @@ namespace Garnet.server
                     if (!IsLegacyFormat(ptr))
                     {
                         AofHeader aofHeader = *(AofHeader*)ptr;
-                        ReplayOp(aofHeader.opType, aofHeader.version,aofHeader.type, ptr);
+                        ReplayOp(aofHeader.opType, aofHeader.version, aofHeader.type, ptr);
                     }
                     else
                     {
                         LegacyAofHeader aofHeader = *(LegacyAofHeader*)ptr;
-                        ReplayOp(aofHeader.opType, aofHeader.version,aofHeader.type, ptr);
+                        ReplayOp(aofHeader.opType, aofHeader.version, aofHeader.type, ptr);
                     }
                 }
             }
