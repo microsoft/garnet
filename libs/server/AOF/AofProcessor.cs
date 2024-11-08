@@ -54,6 +54,10 @@ namespace Garnet.server
 
         readonly ILogger logger;
         readonly bool recordToAof;
+        readonly bool replayFromLegacyAof;
+
+        // 1000 0000
+        const byte MsbMask = (1 << 7);
 
         /// <summary>
         /// Create new AOF processor
@@ -98,6 +102,9 @@ namespace Garnet.server
             buffer = new byte[BufferSizeUtils.ServerBufferSize(new MaxSizeSettings())];
             handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
             bufferPtr = (byte*)handle.AddrOfPinnedObject();
+            
+            replayFromLegacyAof = storeWrapper.serverOptions.ReplayFromLegacyAof;
+
             this.logger = logger;
         }
 
@@ -114,14 +121,14 @@ namespace Garnet.server
         /// <summary>
         /// Recover store using AOF
         /// </summary>
-        public unsafe void Recover(long untilAddress = -1)
+        public unsafe bool Recover(long untilAddress = -1)
         {
             logger?.LogInformation("Begin AOF recovery");
-            RecoverReplay(untilAddress);
+            return RecoverReplay(untilAddress);
         }
 
         MemoryResult<byte> output = default;
-        private unsafe void RecoverReplay(long untilAddress)
+        private unsafe bool RecoverReplay(long untilAddress)
         {
             logger?.LogInformation("Begin AOF replay");
             try
@@ -130,7 +137,7 @@ namespace Garnet.server
                 if (untilAddress == -1) untilAddress = storeWrapper.appendOnlyFile.TailAddress;
                 using var scan = storeWrapper.appendOnlyFile.Scan(storeWrapper.appendOnlyFile.BeginAddress, untilAddress);
 
-                while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))
+                while (scan.GetNext(MemoryPool<byte>.Shared, out IMemoryOwner<byte> entry, out int length, out _, out long nextAofAddress))
                 {
                     count++;
                     ProcessAofRecord(entry, length);
@@ -142,10 +149,12 @@ namespace Garnet.server
                 ReplicationOffset = untilAddress;
 
                 logger?.LogInformation("Completed full AOF log replay of {count} records", count);
+                return true;
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error occurred AofProcessor.RecoverReplay");
+                return false;
             }
             finally
             {
@@ -158,44 +167,68 @@ namespace Garnet.server
         {
             fixed (byte* ptr = entry.Memory.Span)
             {
-                ProcessAofRecordInternal(ptr, length, asReplica);
+                if (!replayFromLegacyAof)
+                {
+                    AofHeader aofHeader = *(AofHeader*)ptr;
+
+                    // Can assume new format of AofHeader
+                    ProcessAofRecordInternal(aofHeader.sessionID, aofHeader.opType, aofHeader.version, aofHeader.type, ptr, length, isLegacyFormat: false, asReplica);
+                }
+                else
+                {
+                    if (IsLegacyFormat(ptr))
+                    {
+                        LegacyAofHeader aofHeader = *(LegacyAofHeader*)ptr;
+                        ProcessAofRecordInternal(aofHeader.sessionID, aofHeader.opType, aofHeader.version, aofHeader.type, ptr, length, isLegacyFormat: true, asReplica);
+                    }
+                    else
+                    {
+                        AofHeader aofHeader = *(AofHeader*)ptr;
+                        ProcessAofRecordInternal(aofHeader.sessionID, aofHeader.opType, aofHeader.version, aofHeader.type, ptr,  length, isLegacyFormat: false, asReplica);
+                    }
+                }
             }
             entry.Dispose();
         }
 
         /// <summary>
+        /// Checks if the MSB is not set of the first pointer, this indicates it is an older AOF format
+        /// </summary>
+        /// <param name="ptr"></param>
+        /// <returns></returns>
+        private static unsafe bool IsLegacyFormat(byte* ptr) => (*ptr & MsbMask) == 0;
+
+        /// <summary>
         /// Process AOF record
         /// </summary>
-        public unsafe void ProcessAofRecordInternal(byte* ptr, int length, bool asReplica = false)
+        internal unsafe void ProcessAofRecordInternal(int sessionID, AofEntryType opType, long aofHeaderRecordVersion, byte type, byte* ptr, int length, bool isLegacyFormat, bool asReplica = false)
         {
-            AofHeader header = *(AofHeader*)ptr;
-
-            if (inflightTxns.ContainsKey(header.sessionID))
+            if (inflightTxns.ContainsKey(sessionID))
             {
-                switch (header.opType)
+                switch (opType)
                 {
                     case AofEntryType.TxnAbort:
-                        inflightTxns[header.sessionID].Clear();
-                        inflightTxns.Remove(header.sessionID);
+                        inflightTxns[sessionID].Clear();
+                        inflightTxns.Remove(sessionID);
                         break;
                     case AofEntryType.TxnCommit:
-                        ProcessTxn(inflightTxns[header.sessionID]);
-                        inflightTxns[header.sessionID].Clear();
-                        inflightTxns.Remove(header.sessionID);
+                        ProcessTxn(opType, aofHeaderRecordVersion, type, inflightTxns[sessionID], isLegacyFormat);
+                        inflightTxns[sessionID].Clear();
+                        inflightTxns.Remove(sessionID);
                         break;
                     case AofEntryType.StoredProcedure:
-                        throw new GarnetException($"Unexpected AOF header operation type {header.opType} within transaction");
+                        throw new GarnetException($"Unexpected AOF header operation type {opType} within transaction");
                     default:
-                        inflightTxns[header.sessionID].Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
+                        inflightTxns[sessionID].Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
                         break;
                 }
                 return;
             }
 
-            switch (header.opType)
+            switch (opType)
             {
                 case AofEntryType.TxnStart:
-                    inflightTxns[header.sessionID] = new List<byte[]>();
+                    inflightTxns[sessionID] = new List<byte[]>();
                     break;
                 case AofEntryType.TxnAbort:
                 case AofEntryType.TxnCommit:
@@ -206,19 +239,26 @@ namespace Garnet.server
                 case AofEntryType.MainStoreCheckpointCommit:
                     if (asReplica)
                     {
-                        if (header.version > storeWrapper.store.CurrentVersion)
+                        if (aofHeaderRecordVersion > storeWrapper.store.CurrentVersion)
                             storeWrapper.TakeCheckpoint(false, StoreType.Main, logger);
                     }
                     break;
                 case AofEntryType.ObjectStoreCheckpointCommit:
                     if (asReplica)
                     {
-                        if (header.version > storeWrapper.objectStore.CurrentVersion)
+                        if (aofHeaderRecordVersion > storeWrapper.objectStore.CurrentVersion)
                             storeWrapper.TakeCheckpoint(false, StoreType.Object, logger);
                     }
                     break;
                 default:
-                    ReplayOp(ptr);
+                    if (isLegacyFormat)
+                    {
+                        ReplayLegacyOp(opType, aofHeaderRecordVersion, type, ptr);
+                    }
+                    else
+                    {
+                        ReplayOp(opType, aofHeaderRecordVersion, type, ptr);
+                    }
                     break;
             }
         }
@@ -228,23 +268,30 @@ namespace Garnet.server
         /// Assumes that operations arg does not contain transaction markers (i.e. TxnStart,TxnCommit,TxnAbort)
         /// </summary>
         /// <param name="operations"></param>
-        private unsafe void ProcessTxn(List<byte[]> operations)
+        private unsafe void ProcessTxn(AofEntryType opType, long aofHeaderRecordVersion, byte type, List<byte[]> operations, bool isLegacy)
         {
             foreach (byte[] entry in operations)
             {
                 fixed (byte* ptr = entry)
-                    ReplayOp(ptr);
+                {
+                    if (!isLegacy)
+                    {
+                        ReplayOp(opType, aofHeaderRecordVersion, type, ptr);
+                    }
+                    else
+                    {
+                        ReplayLegacyOp(opType, aofHeaderRecordVersion, type, ptr);
+                    }
+                }
             }
         }
 
-        private unsafe bool ReplayOp(byte* entryPtr)
+        private unsafe bool ReplayOp(AofEntryType opType, long aofHeaderRecordVersion, byte type, byte* entryPtr)
         {
-            AofHeader header = *(AofHeader*)entryPtr;
-
             // Skips versions that were part of checkpoint
-            if (SkipRecord(header)) return false;
+            if (SkipRecord(opType, aofHeaderRecordVersion)) return false;
 
-            switch (header.opType)
+            switch (opType)
             {
                 case AofEntryType.StoreUpsert:
                     StoreUpsert(basicContext, storeInput, entryPtr);
@@ -265,22 +312,70 @@ namespace Garnet.server
                     ObjectStoreDelete(objectStoreBasicContext, entryPtr);
                     break;
                 case AofEntryType.StoredProcedure:
-                    RunStoredProc(header.type, customProcInput, entryPtr);
+                    RunStoredProc(type, customProcInput, entryPtr);
                     break;
                 default:
-                    throw new GarnetException($"Unknown AOF header operation type {header.opType}");
+                    throw new GarnetException($"Unknown AOF header operation type {opType}");
             }
             return true;
         }
 
-        unsafe void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)
+        private unsafe bool ReplayLegacyOp(AofEntryType opType, long aofHeaderRecordVersion, byte type, byte* entryPtr)
         {
-            var curr = ptr + sizeof(AofHeader);
+            // Skips versions that were part of checkpoint
+            if (SkipRecord(opType, aofHeaderRecordVersion)) return false;
+
+            switch (opType)
+            {
+                case AofEntryType.StoreUpsert:
+                    LegacyUpsert(entryPtr, storeInput);
+                    break;
+                case AofEntryType.StoredProcedure:
+                    RunStoredProc(type, customProcInput, entryPtr, true);
+                    break;
+                default:
+                    throw new GarnetException($"Unknown AOF header operation type {opType} for AOF legacy processing");
+            }
+
+            return true;
+        }
+
+        private unsafe void LegacyUpsert(byte* ptr, RawStringInput storeInput)
+        {
+            ref SpanByte key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(LegacyAofHeader));
+            // input is willingly being ignored from older format
+            ref SpanByte input = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(LegacyAofHeader) + key.TotalSize);
+            ref SpanByte value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(LegacyAofHeader) + key.TotalSize + input.TotalSize);
+
+            /* Reconstructing RawStringInput based on the following invariant:
+               - extra metadata on value tells us there was an expiration
+            */
+            long expiration = value.ExtraMetadata;
+            if (value.MetadataSize == 0)
+            {
+                storeInput = new RawStringInput(RespCommand.SETEX, 0);
+            }
+            else
+            {
+                storeInput = new RawStringInput(RespCommand.SETEX, 0, expiration);
+            }
+
+            StoreUpsertPostParsing(basicContext, ref key, storeInput, ref value);
+        }
+
+        unsafe void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr, bool isHistoricMode = false)
+        {
+            var curr = ptr + (isHistoricMode ? sizeof(LegacyAofHeader) : sizeof(AofHeader));
 
             // Reconstructing CustomProcedureInput
-
-            // input
-            customProcInput.DeserializeFrom(curr);
+            if (isHistoricMode)
+            {
+                customProcInput.DeserializeFromHistoricAof(curr);
+            }
+            else
+            {
+                customProcInput.DeserializeFrom(curr);
+            }
 
             respServerSession.RunTransactionProc(id, ref customProcInput, ref output);
         }
@@ -300,6 +395,12 @@ namespace Garnet.server
             // input
             storeInput.DeserializeFrom(curr);
 
+            StoreUpsertPostParsing(basicContext, ref key, storeInput, ref value);
+        }
+
+        static unsafe void StoreUpsertPostParsing(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+            ref SpanByte key, RawStringInput storeInput, ref SpanByte value)
+        {
             SpanByteAndMemory output = default;
             basicContext.Upsert(ref key, ref storeInput, ref value, ref output);
             if (!output.IsSpanByte)
@@ -379,17 +480,15 @@ namespace Garnet.server
         /// <summary>
         /// On recovery apply records with header.version greater than CurrentVersion.
         /// </summary>
-        /// <param name="header"></param>
-        /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        bool SkipRecord(AofHeader header)
+        bool SkipRecord(AofEntryType opType, long recordVersion)
         {
-            AofStoreType storeType = ToAofStoreType(header.opType);
+            AofStoreType storeType = ToAofStoreType(opType);
 
             return storeType switch
             {
-                AofStoreType.MainStoreType => header.version <= storeWrapper.store.CurrentVersion - 1,
-                AofStoreType.ObjectStoreType => header.version <= storeWrapper.objectStore.CurrentVersion - 1,
+                AofStoreType.MainStoreType => recordVersion <= storeWrapper.store.CurrentVersion - 1,
+                AofStoreType.ObjectStoreType => recordVersion <= storeWrapper.objectStore.CurrentVersion - 1,
                 AofStoreType.TxnType => false,
                 AofStoreType.ReplicationType => false,
                 AofStoreType.CheckpointType => false,

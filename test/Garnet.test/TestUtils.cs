@@ -179,6 +179,7 @@ namespace Garnet.test
             string MemorySize = default,
             string PageSize = default,
             bool enableAOF = false,
+            bool replayFromLegacyAof = false,
             bool EnableTLS = false,
             bool DisableObjects = false,
             int metricsSamplingFreq = -1,
@@ -254,6 +255,7 @@ namespace Garnet.test
                 ObjectStoreIndexSize = objectStoreIndexSize,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
+                ReplayFromLegacyAof = replayFromLegacyAof,
                 CommitFrequencyMs = commitFrequencyMs,
                 WaitForCommit = commitWait,
                 TlsOptions = EnableTLS ? new GarnetTlsOptions(

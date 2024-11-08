@@ -76,4 +76,14 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+  <ItemGroup>
+    <TestDataFiles Include="TestData\**\*" />
+  </ItemGroup>
+
+  <Target Name="CopyTestData" AfterTargets="Build">
+    <Copy SourceFiles="@(TestDataFiles)"
+      DestinationFolder="$(OutputPath)\TestData\%(RecursiveDir)" />
+  </Target>
+
 </Project>

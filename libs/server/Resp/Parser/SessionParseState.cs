@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -167,11 +168,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="args">Set of arguments to initialize buffer with</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeWithArguments(ArgSlice[] args)
+        public void InitializeWithArguments(IList<ArgSlice> args)
         {
-            Initialize(args.Length);
+            Initialize(args.Count);
 
-            for (var i = 0; i < args.Length; i++)
+            for (var i = 0; i < args.Count; i++)
             {
                 *(bufferPtr + i) = args[i];
             }

@@ -2,9 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -470,6 +472,30 @@ namespace Garnet.server
             var len = parseState.DeserializeFrom(src);
 
             return len;
+        }
+
+        public unsafe void DeserializeFromHistoricAof(byte* src)
+        {
+            ref SpanByte inputsb = ref Unsafe.AsRef<SpanByte>(src); 
+            byte* memoryboundary = inputsb.ToPointer() + inputsb.Length;
+            byte* result = null;
+            int len = -1;
+
+            byte* curr = inputsb.ToPointer();
+            List<ArgSlice> args = new List<ArgSlice>();
+            while(curr < memoryboundary)
+            {
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref curr, memoryboundary))
+                {
+                    // some fucking exceptional case that I got no clue how to handle, fuck
+                    throw new Exception("Historic AOF deserializing expected span byte to have length header with each string");
+                }
+
+                Debug.Assert(result != null);
+                args.Add(new ArgSlice(result, len));
+            }
+
+            parseState.InitializeWithArguments(args);
         }
     }
 

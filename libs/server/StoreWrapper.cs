@@ -229,7 +229,24 @@ namespace Garnet.server
                 {
                     RecoverCheckpoint();
                     RecoverAOF();
-                    ReplayAOF();
+                    bool aofProcessedSuccesfully = ReplayAOF().Item2;
+                    if (!aofProcessedSuccesfully && serverOptions.ReplayFromLegacyAof)
+                    {
+                        // By skipping checkpointing in case of an error we encountered while replaying AOF we can make sure taht future replays can still access the Log and dont skip it
+                        logger?.LogWarning("AOF processing has failed with legacy aof enabled, checkpointing will be skipped");
+                        return;
+                    }
+
+                    if (serverOptions.ReplayFromLegacyAof)
+                    {
+                        /*
+                        In historical mode we checkpoint post recovery to force the data to disk.
+                        This means the AOF log, till the current point will not be replayed on subsequent starts.
+                        This will eventually let us retire all legacy aof headers since we will no longer have to
+                        keep compatability for replaying it.
+                        */
+                        TakeCheckpoint(false, logger: logger);
+                    }
                 }
             }
         }
@@ -287,10 +304,10 @@ namespace Garnet.server
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
-        public long ReplayAOF(long untilAddress = -1)
+        public (long, bool) ReplayAOF(long untilAddress = -1)
         {
             if (!serverOptions.EnableAOF)
-                return -1;
+                return (-1, true);
 
             long replicationOffset = 0;
             try
@@ -302,12 +319,13 @@ namespace Garnet.server
                 aofProcessor.Dispose();
                 replicationOffset = aofProcessor.ReplicationOffset;
                 lastSaveTime = DateTimeOffset.UtcNow;
+                return (replicationOffset, true);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Error during recovery of AofProcessor");
+                return (replicationOffset, false);
             }
-            return replicationOffset;
         }
 
         async Task AutoCheckpointBasedOnAofSizeLimit(long AofSizeLimit, CancellationToken token = default, ILogger logger = null)

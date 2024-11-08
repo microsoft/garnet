@@ -322,7 +322,7 @@ namespace Garnet.cluster
                 if (replayAOF)
                 {
                     logger?.LogInformation("ReplicaRecover: replay local AOF from {beginAddress} until {recoveredReplicationOffset}", beginAddress, recoveredReplicationOffset);
-                    recoveredReplicationOffset = storeWrapper.ReplayAOF(recoveredReplicationOffset);
+                    recoveredReplicationOffset = storeWrapper.ReplayAOF(recoveredReplicationOffset).Item1;
                 }
 
                 logger?.LogInformation("Initializing AOF");

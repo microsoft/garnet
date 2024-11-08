@@ -94,6 +94,11 @@ namespace Garnet.server
         public string PubSubPageSize = "4k";
 
         /// <summary>
+        /// During AOF replay handle older AOF format
+        /// </summary>
+        public bool ReplayFromLegacyAof = false;
+
+        /// <summary>
         /// Logger
         /// </summary>
         public ILogger logger;

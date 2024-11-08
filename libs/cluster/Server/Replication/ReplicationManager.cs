@@ -226,7 +226,7 @@ namespace Garnet.cluster
                 if (storeWrapper.appendOnlyFile.TailAddress < recoveredSafeAofAddress)
                     storeWrapper.appendOnlyFile.Initialize(recoveredSafeAofAddress, recoveredSafeAofAddress);
                 logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
-                ReplicationOffset = storeWrapper.ReplayAOF();
+                ReplicationOffset = storeWrapper.ReplayAOF().Item1;
             }
 
             // First recover and then load latest checkpoint info in-memory

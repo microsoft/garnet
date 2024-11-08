@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using Garnet.server;
@@ -31,6 +32,8 @@ namespace Garnet.test
             new SortedSetEntry("i", 9),
             new SortedSetEntry("j", 10)
         ];
+
+        const String testDataDirectory = "TestData";
 
         [SetUp]
         public void Setup()
@@ -687,6 +690,135 @@ namespace Garnet.test
 
                 string writeKeysVal2 = db.StringGet(writeKey2);
                 ClassicAssert.AreEqual(readVal, writeKeysVal2);
+            }
+        }
+
+        [Test]
+        public void LegacyAofRecoverableTest()
+        {
+            string logDir = Path.Combine(TestUtils.MethodTestDir, testDataDirectory);
+
+            // move the AOF test data into the logDir so overwrites and stuff doesnt interfere with anything else
+            CopyDirectory(
+                new DirectoryInfo(Path.GetRelativePath(".", "TestData")),
+                new DirectoryInfo(logDir)
+            );
+
+            // data that is already present in static old fmt aof
+            string oldFmtWriteStringSetKey = "AP";
+            string oldFmtWriteStringSetVal = "oldmoney";
+
+            string oldFmtTxnWriteKey1 = "shubh";
+
+            string oldFmtTxnWriteKey2 = "hk";
+
+            // data to be inserted with new fmt once recovered
+            string newFmtWriteStringSetKey = "jackson";
+            string newFmtWriteStringSetVal = "billy jean";
+
+            string newFmtTxnReadKey = "taylor";
+            string newFmtTxnReadVal = "all too well";
+
+            // before the read write txn we will add this key as a set and then have the txn override the value
+            string newFmtTxnWriteKey1 = "passenger";
+            string newFmtTxnWriteVal1 = "let her go";
+
+            // internally in the read write tx, this will be a key that wont already exist
+            string newFmtTxnWriteKey2 = "diljit";
+
+            Action checkAllOldDataExists = () => 
+            {
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+                {
+                    IDatabase db = redis.GetDatabase(0);
+
+                    // Test that everything from old Aof was recovered correctly
+                    string recv = db.StringGet(oldFmtWriteStringSetKey);
+                    ClassicAssert.AreEqual(oldFmtWriteStringSetVal, recv);
+
+                    recv = db.StringGet(oldFmtTxnWriteKey1);
+                    ClassicAssert.AreEqual(oldFmtWriteStringSetVal, recv);
+
+                    recv = db.StringGet(oldFmtTxnWriteKey2);
+                    ClassicAssert.AreEqual(oldFmtWriteStringSetVal, recv);
+                }
+            };
+
+            Action checkAllNewDataExists = () => 
+            {
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+                {
+                    IDatabase db = redis.GetDatabase(0);
+
+                    // Test that all the new data exists
+                    string recv = db.StringGet(newFmtWriteStringSetKey);
+                    ClassicAssert.AreEqual(newFmtWriteStringSetVal, recv);
+
+                    recv = db.StringGet(newFmtTxnReadKey);
+                    ClassicAssert.AreEqual(newFmtTxnReadVal, recv);
+
+                    recv = db.StringGet(newFmtTxnWriteKey1);
+                    ClassicAssert.AreEqual(newFmtTxnReadVal, recv);
+
+                    recv = db.StringGet(newFmtTxnWriteKey2);
+                    ClassicAssert.AreEqual(newFmtTxnReadVal, recv);
+                }
+            };
+
+            // kill and start new server pointing to static aof with older format
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(logCheckpointDir: logDir, tryRecover: true, enableAOF: true, replayFromLegacyAof: true);
+            server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = 4 });
+
+            // Recovery is triggered at this start
+            server.Start();
+
+            checkAllOldDataExists();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                IDatabase db = redis.GetDatabase(0);
+
+                // write new data
+                ClassicAssert.IsTrue(db.StringSet(newFmtWriteStringSetKey, newFmtWriteStringSetVal));
+                ClassicAssert.IsTrue(db.StringSet(newFmtTxnReadKey, newFmtTxnReadVal));
+
+                // this will get overwritten by the txn anyway but I am adding this just to increase the amount of operations on the AOF log during replay
+                ClassicAssert.IsTrue(db.StringSet(newFmtTxnWriteKey1, newFmtTxnWriteVal1));
+
+                RedisResult result = db.Execute("READWRITETX", newFmtTxnReadKey, newFmtTxnWriteKey1, newFmtTxnWriteKey2);
+                ClassicAssert.AreEqual("SUCCESS", result.ToString());
+            }
+
+            checkAllNewDataExists();
+
+            // kill server
+            server.Dispose(false);
+
+            // restart server and check that all old and new data is there, this tests the compat story of having the earlier portion having the older fmt and the later portion of the AOF having newer fmt
+            server = TestUtils.CreateGarnetServer(logCheckpointDir: logDir, tryRecover: true, enableAOF: true, replayFromLegacyAof: true);
+            server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = 4 });
+            
+            // recovery will again be triggered at start
+            server.Start();
+
+            checkAllOldDataExists();
+            checkAllNewDataExists();
+        }
+
+        private static void CopyDirectory(DirectoryInfo source, DirectoryInfo target)
+        {
+            // Copy each file
+            foreach (var file in source.GetFiles())
+            {
+                _ = file.CopyTo(Path.Combine(target.FullName, file.Name), true);
+            }
+
+            // Copy each subdirectory
+            foreach (var sourceSubDirectory in source.GetDirectories())
+            {
+                var targetSubDirectory = target.CreateSubdirectory(sourceSubDirectory.Name);
+                CopyDirectory(sourceSubDirectory, targetSubDirectory);
             }
         }
     }
