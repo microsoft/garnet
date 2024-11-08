@@ -19,7 +19,7 @@ namespace Garnet
     /// </summary>
     sealed class TestProcedureSortedSets : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TKeyLocker, TEpochGuard, TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
         {
             var offset = 0;
             var ssA = GetNextArg(input, ref offset);
@@ -32,13 +32,16 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TKeyLocker, TEpochGuard, TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
         {
-            var result = TestAPI(api, input);
+            var result = TestAPI<TKeyLocker, TEpochGuard, TGarnetApi>(api, input);
             WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
         }
 
-        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ArgSlice input) where TGarnetApi : IGarnetApi
+        private static bool TestAPI<TKeyLocker, TEpochGuard, TGarnetApi>(TGarnetApi api, ArgSlice input)
+            where TKeyLocker : struct, IKeyLocker
+            where TEpochGuard : struct, IGarnetEpochGuard
+            where TGarnetApi : IGarnetApi<TKeyLocker, TEpochGuard>
         {
             var offset = 0;
             var ssItems = new (ArgSlice score, ArgSlice member)[10];

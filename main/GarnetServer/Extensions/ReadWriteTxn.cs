@@ -19,7 +19,7 @@ namespace Garnet
     /// </summary>
     sealed class ReadWriteTxn : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TKeyLocker, TEpochGuard, TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
         {
             int offset = 0;
             api.GET(GetNextArg(input, ref offset), out var key1);
@@ -30,7 +30,7 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TKeyLocker, TEpochGuard, TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
         {
             int offset = 0;
             var key1 = GetNextArg(input, ref offset);

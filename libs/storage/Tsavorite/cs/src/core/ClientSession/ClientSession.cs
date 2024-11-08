@@ -254,9 +254,10 @@ namespace Tsavorite.core
 
             if (Store.Kernel.Epoch.ThisInstanceProtected())
                 throw new NotSupportedException("Async operations not supported over protected epoch");
-
+#if false // TODO CompletePendingAsync
             // Complete all pending operations on session
             await Store.CompletePendingAsync<TInput, TOutput, TContext, TSessionFunctionsWrapper, TKeyLocker>(sessionFunctions, token, getOutputs ? completedOutputs : null).ConfigureAwait(false);
+#endif
 
             // Wait for commit if necessary
             if (waitForCommit)
@@ -279,7 +280,7 @@ namespace Tsavorite.core
             await TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ReadyToCompletePendingAsync(ExecutionCtx, token).ConfigureAwait(false);
         }
 
-        #endregion Pending Operations
+#endregion Pending Operations
 
         #region Other Operations
         /// <summary>

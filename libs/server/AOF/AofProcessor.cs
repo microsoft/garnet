@@ -16,8 +16,24 @@ namespace Garnet.server
     using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
+    using MainStoreBasicSafeEpochGuard = BasicSafeEpochGuard<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+        /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+        /* MainStoreAllocator */ SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>;
+
+    using MainStoreBasicKernelSession = BasicKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+        /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+        /* MainStoreAllocator */ SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>;
+
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
     using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
+    using ObjectStoreBasicSafeEpochGuard = BasicSafeEpochGuard<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+        /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+        /* ObjectStoreAllocator */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>;
+
+    using ObjectStoreBasicKernelSession = BasicKernelSession<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+        /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+        /* ObjectStoreAllocator */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>;
 
     /// <summary>
     /// Wrapper for store and store-specific information
@@ -83,9 +99,9 @@ namespace Garnet.server
 
             this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false);
 
-            var session = respServerSession.storageSession.basicContext.Session;
+            var session = respServerSession.storageSession.MainSession;
             basicContext = session.BasicContext;
-            var objectStoreSession = respServerSession.storageSession.objectStoreBasicContext.Session;
+            var objectStoreSession = respServerSession.storageSession.ObjectSession;
             if (objectStoreSession is not null)
                 objectStoreBasicContext = objectStoreSession.BasicContext;
 
@@ -276,7 +292,7 @@ namespace Garnet.server
             ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + input.TotalSize);
 
             SpanByteAndMemory output = default;
-            basicContext.Upsert(ref key, ref input, ref value, ref output);
+            basicContext.Upsert<TransientKeyLocker, MainStoreBasicSafeEpochGuard>(ref key, ref input, ref value, ref output);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
         }
@@ -287,8 +303,8 @@ namespace Garnet.server
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
             ref var input = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
             var output = new SpanByteAndMemory(pbOutput, 32);
-            if (basicContext.RMW(ref key, ref input, ref output).IsPending)
-                basicContext.CompletePending(true);
+            if (basicContext.RMW<TransientKeyLocker, MainStoreBasicSafeEpochGuard>(ref key, ref input, ref output).IsPending)
+                basicContext.CompletePending<TransientKeyLocker>(true);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
         }
@@ -296,7 +312,7 @@ namespace Garnet.server
         static unsafe void StoreDelete(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
-            basicContext.Delete(ref key);
+            basicContext.Delete<TransientKeyLocker, MainStoreBasicSafeEpochGuard>(ref key);
         }
 
         static unsafe void ObjectStoreUpsert(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
@@ -309,7 +325,7 @@ namespace Garnet.server
             var valB = garnetObjectSerializer.Deserialize(value.ToByteArray());
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
-            basicContext.Upsert(ref keyB, ref valB);
+            basicContext.Upsert<TransientKeyLocker, ObjectStoreBasicSafeEpochGuard>(ref keyB, ref valB);
             if (!output.spanByteAndMemory.IsSpanByte)
                 output.spanByteAndMemory.Memory.Dispose();
         }
@@ -347,8 +363,8 @@ namespace Garnet.server
 
             // Call RMW with the reconstructed key & ObjectInput
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
-            if (basicContext.RMW(ref keyB, ref input, ref output).IsPending)
-                basicContext.CompletePending(true);
+            if (basicContext.RMW<TransientKeyLocker, ObjectStoreBasicSafeEpochGuard>(ref keyB, ref input, ref output).IsPending)
+                basicContext.CompletePending<TransientKeyLocker>(true);
             if (!output.spanByteAndMemory.IsSpanByte)
                 output.spanByteAndMemory.Memory.Dispose();
         }
@@ -357,7 +373,7 @@ namespace Garnet.server
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
             var keyB = key.ToByteArray();
-            basicContext.Delete(ref keyB);
+            basicContext.Delete<TransientKeyLocker, ObjectStoreBasicSafeEpochGuard>(ref keyB);
         }
 
         /// <summary>

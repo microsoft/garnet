@@ -19,19 +19,19 @@ namespace Garnet
         /// <summary>
         /// No transactional phase, skip Prepare
         /// </summary>
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TKeyLocker, TEpochGuard, TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
             => false;
 
         /// <summary>
         /// Main will not be called because Prepare returns false
         /// </summary>
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TKeyLocker, TEpochGuard, TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
             => throw new InvalidOperationException();
 
         /// <summary>
         /// Perform the MSETPX operation
         /// </summary>
-        public override void Finalize<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Finalize<TKeyLocker, TEpochGuard, TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
         {
             int offset = 0;
 

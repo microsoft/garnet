@@ -18,7 +18,7 @@ namespace Garnet
 
     sealed class TestProcedureHLL : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TKeyLocker, TEpochGuard, TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
         {
             int offset = 0;
             var hll = GetNextArg(input, ref offset);
@@ -30,7 +30,7 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TKeyLocker, TEpochGuard, TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
         {
             int offset = 0;
             var elements = new string[7];

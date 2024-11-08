@@ -12,6 +12,14 @@ namespace Garnet.test
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
     using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
+    using TestObjectStore_SimpleSessionFunctions_BasicSafeEpochGuard = BasicSafeEpochGuard<byte[], IGarnetObject, IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>,
+        /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+        /* ObjectStoreAllocator */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>;
+
+    using TestObjectStore_MyFunctions_BasicSafeEpochGuard = BasicSafeEpochGuard<byte[], IGarnetObject, IGarnetObject, IGarnetObject, Empty, MyFunctions,
+        /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+        /* ObjectStoreAllocator */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>;
+
     [TestFixture]
     public class GarnetObjectTests
     {
@@ -44,10 +52,10 @@ namespace Garnet.test
             var key = new byte[] { 0 };
             var obj = new SortedSetObject();
 
-            bContext.Upsert(key, obj);
+            bContext.Upsert<TransientKeyLocker, TestObjectStore_SimpleSessionFunctions_BasicSafeEpochGuard>(key, obj);
 
             IGarnetObject output = null;
-            var status = bContext.Read(ref key, ref output);
+            var status = bContext.Read<TransientKeyLocker, TestObjectStore_SimpleSessionFunctions_BasicSafeEpochGuard>(ref key, ref output);
 
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.AreEqual(obj, output);
@@ -63,7 +71,7 @@ namespace Garnet.test
             var obj = new SortedSetObject();
             obj.Add([15], 10);
 
-            bContext.Upsert(key, obj);
+            bContext.Upsert<TransientKeyLocker, TestObjectStore_MyFunctions_BasicSafeEpochGuard>(key, obj);
 
             session.Dispose();
 
@@ -78,7 +86,7 @@ namespace Garnet.test
             bContext = session.BasicContext;
 
             IGarnetObject output = null;
-            var status = bContext.Read(ref key, ref output);
+            var status = bContext.Read<TransientKeyLocker, TestObjectStore_MyFunctions_BasicSafeEpochGuard>(ref key, ref output);
 
             session.Dispose();
 
@@ -96,11 +104,11 @@ namespace Garnet.test
             IGarnetObject obj = new SortedSetObject();
             ((SortedSetObject)obj).Add([15], 10);
 
-            bContext.Upsert(key, obj);
+            bContext.Upsert<TransientKeyLocker, TestObjectStore_MyFunctions_BasicSafeEpochGuard>(key, obj);
 
             store.Log.Flush(true);
 
-            bContext.RMW(ref key, ref obj);
+            bContext.RMW<TransientKeyLocker, TestObjectStore_MyFunctions_BasicSafeEpochGuard>(ref key, ref obj);
 
             session.Dispose();
 
@@ -115,36 +123,12 @@ namespace Garnet.test
             bContext = session.BasicContext;
 
             IGarnetObject output = null;
-            var status = bContext.Read(ref key, ref output);
+            var status = bContext.Read<TransientKeyLocker, TestObjectStore_MyFunctions_BasicSafeEpochGuard>(ref key, ref output);
 
             session.Dispose();
 
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.IsTrue(((SortedSetObject)obj).Equals((SortedSetObject)output));
-        }
-
-        private class MyFunctions : SessionFunctionsBase<byte[], IGarnetObject, IGarnetObject, IGarnetObject, Empty>
-        {
-            public MyFunctions()
-            { }
-
-            public override bool SingleReader(ref byte[] key, ref IGarnetObject input, ref IGarnetObject value, ref IGarnetObject dst, ref ReadInfo updateInfo)
-            {
-                dst = value;
-                return true;
-            }
-
-            public override bool ConcurrentReader(ref byte[] key, ref IGarnetObject input, ref IGarnetObject value, ref IGarnetObject dst, ref ReadInfo updateInfo, ref RecordInfo recordInfo)
-            {
-                dst = value;
-                return true;
-            }
-
-            public override bool CopyUpdater(ref byte[] key, ref IGarnetObject input, ref IGarnetObject oldValue, ref IGarnetObject newValue, ref IGarnetObject output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-            {
-                oldValue.CopyUpdate(ref oldValue, ref newValue, false);
-                return true;
-            }
         }
 
         private void CreateStore()
@@ -163,6 +147,30 @@ namespace Garnet.test
             store = new(kvSettings
                 , StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(), () => new Tsavorite.core.ByteArrayBinaryObjectSerializer(), () => new MyGarnetObjectSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+        }
+    }
+
+    class MyFunctions : SessionFunctionsBase<byte[], IGarnetObject, IGarnetObject, IGarnetObject, Empty>
+    {
+        public MyFunctions()
+        { }
+
+        public override bool SingleReader(ref byte[] key, ref IGarnetObject input, ref IGarnetObject value, ref IGarnetObject dst, ref ReadInfo updateInfo)
+        {
+            dst = value;
+            return true;
+        }
+
+        public override bool ConcurrentReader(ref byte[] key, ref IGarnetObject input, ref IGarnetObject value, ref IGarnetObject dst, ref ReadInfo updateInfo, ref RecordInfo recordInfo)
+        {
+            dst = value;
+            return true;
+        }
+
+        public override bool CopyUpdater(ref byte[] key, ref IGarnetObject input, ref IGarnetObject oldValue, ref IGarnetObject newValue, ref IGarnetObject output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        {
+            oldValue.CopyUpdate(ref oldValue, ref newValue, false);
+            return true;
         }
     }
 

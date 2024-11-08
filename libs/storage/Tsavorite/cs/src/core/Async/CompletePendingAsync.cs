@@ -22,6 +22,7 @@ namespace Tsavorite.core
         internal static ValueTask ReadyToCompletePendingAsync<TInput, TOutput, TContext>(ExecutionContext<TInput, TOutput, TContext> sessionCtx, CancellationToken token = default)
             => sessionCtx.WaitPendingAsync(token);
 
+#if false // TODO CompletePendingAsync
         /// <summary>
         /// Complete outstanding pending operations that were issued synchronously
         /// Async operations (e.g., ReadAsync) need to be completed individually
@@ -55,5 +56,6 @@ namespace Tsavorite.core
                 Thread.Yield();
             }
         }
+#endif
     }
 }

@@ -16,14 +16,14 @@ namespace Garnet
     /// </summary>
     sealed class ObjectExpiryTxn : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TKeyLocker, TEpochGuard, TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
         {
             int offset = 0;
             AddKey(GetNextArg(input, ref offset), LockType.Exclusive, true);
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TKeyLocker, TEpochGuard, TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
         {
             int offset = 0;
             var key = GetNextArg(input, ref offset);

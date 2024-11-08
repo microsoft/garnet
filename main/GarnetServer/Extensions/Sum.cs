@@ -8,7 +8,7 @@ namespace Garnet
 {
     class Sum : CustomProcedure
     {
-        public override bool Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
+        public override bool Execute<TKeyLocker, TEpochGuard>(IGarnetApi<TKeyLocker, TEpochGuard> garnetApi, ArgSlice input, ref MemoryResult<byte> output)
         {
             var offset = 0;
             var sum = 0;
