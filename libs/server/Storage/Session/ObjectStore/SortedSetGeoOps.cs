@@ -49,6 +49,7 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
+        /// <param name="destination"></param>
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
@@ -76,52 +77,10 @@ namespace Garnet.server
 
             try
             {
-                var storeDistIdx = -1;
-                var i = 0;
-                while (i < input.parseState.Count)
-                {
-                    if (input.parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
-                    {
-                        storeDistIdx = i;
-                        break;
-                    }
-                    i++;
-                }
-
-                SessionParseState parseState = default;
-                // Prepare the arguments for geo search when store distance is not provided
-                if (storeDistIdx == -1)
-                {
-                    parseState = new SessionParseState();
-                    parseState.Initialize(input.parseState.Count + 1);
-                    parseState.SetArguments(0, input.parseState.Parameters);
-                    parseState.SetArguments(input.parseState.Count, ArgSlice.FromPinnedSpan(CmdStrings.WITHHASH));
-                }
-                // When StoreDist is provided as the last argument
-                else if (storeDistIdx == input.parseState.Count - 1)
-                {
-                    parseState = new SessionParseState();
-                    parseState.Initialize(input.parseState.Count);
-                    parseState.SetArguments(0, input.parseState.Parameters.Slice(0, input.parseState.Count - 1));
-                    parseState.SetArguments(input.parseState.Count - 1, ArgSlice.FromPinnedSpan(CmdStrings.WITHDIST));
-                }
-                // When StoreDist is provided in the middle
-                else
-                {
-                    parseState = new SessionParseState();
-                    parseState.Initialize(input.parseState.Count);
-                    parseState.SetArguments(0, input.parseState.Parameters.Slice(0, storeDistIdx));
-                    parseState.SetArguments(storeDistIdx, input.parseState.Parameters.Slice(storeDistIdx + 1));
-                    parseState.SetArguments(input.parseState.Count - 1, ArgSlice.FromPinnedSpan(CmdStrings.WITHDIST));
-                }
-
                 var sourceKey = key.ToArray();
-                var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOSEARCH };
-                var searchInput = new ObjectInput(header, ref parseState);
-
                 SpanByteAndMemory searchOutMem = default;
                 var searchOut = new GarnetObjectStoreOutput { spanByteAndMemory = searchOutMem };
-                var status = GeoCommands(sourceKey, ref searchInput, ref searchOut, ref objectStoreLockableContext);
+                var status = GeoCommands(sourceKey, ref input, ref searchOut, ref objectStoreLockableContext);
                 searchOutMem = searchOut.spanByteAndMemory;
 
                 if (status == GarnetStatus.WRONGTYPE)
@@ -144,7 +103,7 @@ namespace Garnet.server
                 try
                 {
                     var searchOutPtr = (byte*)searchOutHandler.Pointer;
-                    var currOutPtr = searchOutPtr;
+                    ref var currOutPtr = ref searchOutPtr;
                     var endOutPtr = searchOutPtr + searchOutMem.Length;
 
                     if (RespReadUtils.TryReadErrorAsSpan(out var error, ref currOutPtr, endOutPtr))
@@ -160,27 +119,17 @@ namespace Garnet.server
                     RespReadUtils.ReadUnsignedArrayLength(out var foundItems, ref currOutPtr, endOutPtr);
 
                     // Prepare the parse state for sorted set add
-                    var zParseState = new SessionParseState();
-                    zParseState.Initialize(foundItems * 2);
-
-                    for (int j = 0; j < foundItems; j++)
+                    parseState.Initialize(foundItems * 2);
+                    
+                    for (var j = 0; j < foundItems; j++)
                     {
                         RespReadUtils.ReadUnsignedArrayLength(out var innerLength, ref currOutPtr, endOutPtr);
                         Debug.Assert(innerLength == 2, "Should always has location and hash or distance");
 
-                        RespReadUtils.TrySliceWithLengthHeader(out var location, ref currOutPtr, endOutPtr);
-                        if (storeDistIdx != -1)
-                        {
-                            RespReadUtils.ReadSpanWithLengthHeader(out var score, ref currOutPtr, endOutPtr);
-                            zParseState.SetArgument(2 * j, ArgSlice.FromPinnedSpan(score));
-                            zParseState.SetArgument((2 * j) + 1, ArgSlice.FromPinnedSpan(location));
-                        }
-                        else
-                        {
-                            RespReadUtils.ReadIntegerAsSpan(out var score, ref currOutPtr, endOutPtr);
-                            zParseState.SetArgument(2 * j, ArgSlice.FromPinnedSpan(score));
-                            zParseState.SetArgument((2 * j) + 1, ArgSlice.FromPinnedSpan(location));
-                        }
+                        // Read location into parse state
+                        parseState.Read((2 * j) + 1, ref currOutPtr, endOutPtr);
+                        // Read score into parse state
+                        parseState.Read(2 * j, ref currOutPtr, endOutPtr);
                     }
 
                     // Prepare the input
@@ -188,7 +137,7 @@ namespace Garnet.server
                     {
                         type = GarnetObjectType.SortedSet,
                         SortedSetOp = SortedSetOperation.ZADD,
-                    }, ref zParseState);
+                    }, ref parseState);
 
                     var zAddOutput = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
                     RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);

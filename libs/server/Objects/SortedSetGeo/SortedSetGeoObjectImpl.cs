@@ -396,9 +396,10 @@ namespace Garnet.server
 
                         opts.WithCount = true;
                     }
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHCOORD"u8)) opts.WithCoord = true;
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHDIST"u8)) opts.WithDist = true;
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHHASH"u8)) opts.WithHash = true;
+                    else if (input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHCOORD"u8)) opts.WithCoord = true;
+                    else if ((input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHDIST"u8)) ||
+                             (input.header.SortedSetOp == SortedSetOperation.GEOSEARCHSTORE && tokenBytes.EqualsUpperCaseSpanIgnoringCase("STOREDIST"u8))) opts.WithDist = true;
+                    else if (input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHHASH"u8)) opts.WithHash = true;
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ANY"u8)) opts.WithCountAny = true;
                     else
                     {

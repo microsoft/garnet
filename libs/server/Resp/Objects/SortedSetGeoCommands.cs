@@ -165,6 +165,7 @@ namespace Garnet.server
             var input = new ObjectInput(new RespInputHeader
             {
                 type = GarnetObjectType.SortedSet,
+                SortedSetOp = SortedSetOperation.GEOSEARCHSTORE
             }, ref parseState, startIdx: 2);
 
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
