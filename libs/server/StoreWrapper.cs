@@ -315,11 +315,11 @@ namespace Garnet.server
                 // When replaying AOF we do not want to write record again to AOF.
                 // So initialize local AofProcessor with recordToAof: false.
                 var aofProcessor = new AofProcessor(this, recordToAof: false, logger);
-                aofProcessor.Recover(untilAddress);
+                bool replayResult = aofProcessor.Recover(untilAddress);
                 aofProcessor.Dispose();
                 replicationOffset = aofProcessor.ReplicationOffset;
                 lastSaveTime = DateTimeOffset.UtcNow;
-                return (replicationOffset, true);
+                return (replicationOffset, replayResult);
             }
             catch (Exception ex)
             {

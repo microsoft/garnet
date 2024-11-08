@@ -135,7 +135,7 @@ namespace Garnet.server
             {
                 int count = 0;
                 if (untilAddress == -1) untilAddress = storeWrapper.appendOnlyFile.TailAddress;
-                using var scan = storeWrapper.appendOnlyFile.Scan(storeWrapper.appendOnlyFile.BeginAddress, untilAddress);
+                using TsavoriteLogScanIterator scan = storeWrapper.appendOnlyFile.Scan(storeWrapper.appendOnlyFile.BeginAddress, untilAddress);
 
                 while (scan.GetNext(MemoryPool<byte>.Shared, out IMemoryOwner<byte> entry, out int length, out _, out long nextAofAddress))
                 {
@@ -167,25 +167,15 @@ namespace Garnet.server
         {
             fixed (byte* ptr = entry.Memory.Span)
             {
-                if (!replayFromLegacyAof)
+                if (replayFromLegacyAof && IsLegacyFormat(ptr))
                 {
-                    AofHeader aofHeader = *(AofHeader*)ptr;
-
-                    // Can assume new format of AofHeader
-                    ProcessAofRecordInternal(aofHeader.sessionID, aofHeader.opType, aofHeader.version, aofHeader.type, ptr, length, isLegacyFormat: false, asReplica);
+                    LegacyAofHeader aofHeader = *(LegacyAofHeader*)ptr;
+                    ProcessAofRecordInternal(aofHeader.sessionID, aofHeader.opType, aofHeader.version, aofHeader.type, ptr, length, isLegacyFormat: true, asReplica);
                 }
                 else
                 {
-                    if (IsLegacyFormat(ptr))
-                    {
-                        LegacyAofHeader aofHeader = *(LegacyAofHeader*)ptr;
-                        ProcessAofRecordInternal(aofHeader.sessionID, aofHeader.opType, aofHeader.version, aofHeader.type, ptr, length, isLegacyFormat: true, asReplica);
-                    }
-                    else
-                    {
-                        AofHeader aofHeader = *(AofHeader*)ptr;
-                        ProcessAofRecordInternal(aofHeader.sessionID, aofHeader.opType, aofHeader.version, aofHeader.type, ptr, length, isLegacyFormat: false, asReplica);
-                    }
+                    AofHeader aofHeader = *(AofHeader*)ptr;
+                    ProcessAofRecordInternal(aofHeader.sessionID, aofHeader.opType, aofHeader.version, aofHeader.type, ptr, length, isLegacyFormat: false, asReplica);
                 }
             }
             entry.Dispose();
@@ -218,7 +208,7 @@ namespace Garnet.server
                         inflightTxns.Remove(sessionID);
                         break;
                     case AofEntryType.TxnCommit:
-                        ProcessTxn(opType, aofHeaderRecordVersion, type, inflightTxns[sessionID], isLegacyFormat);
+                        ProcessTxn(inflightTxns[sessionID]);
                         inflightTxns[sessionID].Clear();
                         inflightTxns.Remove(sessionID);
                         break;
@@ -274,19 +264,21 @@ namespace Garnet.server
         /// Assumes that operations arg does not contain transaction markers (i.e. TxnStart,TxnCommit,TxnAbort)
         /// </summary>
         /// <param name="operations"></param>
-        private unsafe void ProcessTxn(AofEntryType opType, long aofHeaderRecordVersion, byte type, List<byte[]> operations, bool isLegacy)
+        private unsafe void ProcessTxn(List<byte[]> operations)
         {
             foreach (byte[] entry in operations)
             {
                 fixed (byte* ptr = entry)
                 {
-                    if (!isLegacy)
+                    if (!IsLegacyFormat(ptr))
                     {
-                        ReplayOp(opType, aofHeaderRecordVersion, type, ptr);
+                        AofHeader aofHeader = *(AofHeader*)ptr;
+                        ReplayOp(aofHeader.opType, aofHeader.version,aofHeader.type, ptr);
                     }
                     else
                     {
-                        ReplayLegacyOp(opType, aofHeaderRecordVersion, type, ptr);
+                        LegacyAofHeader aofHeader = *(LegacyAofHeader*)ptr;
+                        ReplayOp(aofHeader.opType, aofHeader.version,aofHeader.type, ptr);
                     }
                 }
             }
@@ -318,7 +310,7 @@ namespace Garnet.server
                     ObjectStoreDelete(objectStoreBasicContext, entryPtr);
                     break;
                 case AofEntryType.StoredProcedure:
-                    RunStoredProc(type, customProcInput, entryPtr);
+                    RunStoredProc(type, customProcInput, entryPtr, isHistoricMode: false);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {opType}");
@@ -337,7 +329,7 @@ namespace Garnet.server
                     LegacyUpsert(entryPtr, storeInput);
                     break;
                 case AofEntryType.StoredProcedure:
-                    RunStoredProc(type, customProcInput, entryPtr, true);
+                    RunStoredProc(type, customProcInput, entryPtr, isHistoricMode: true);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {opType} for AOF legacy processing");
@@ -369,7 +361,7 @@ namespace Garnet.server
             StoreUpsertPostParsing(basicContext, ref key, storeInput, ref value);
         }
 
-        unsafe void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr, bool isHistoricMode = false)
+        unsafe void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr, bool isHistoricMode)
         {
             var curr = ptr + (isHistoricMode ? sizeof(LegacyAofHeader) : sizeof(AofHeader));
 
