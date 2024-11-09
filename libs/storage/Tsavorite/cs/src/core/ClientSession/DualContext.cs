@@ -65,7 +65,7 @@ namespace Tsavorite.core
         public void Dispose()
         {
             KernelSession.clientSession1.Dispose();
-            KernelSession.clientSession2.Dispose();
+            KernelSession.clientSession2?.Dispose();
         }
 
         #region ITsavoriteContext
@@ -108,7 +108,6 @@ namespace Tsavorite.core
             // This can throw on lock timeout so make sure it is called within try/finally to ensure epoch is released
             var status = Kernel.EnterForUpdate<DualKernelSession<TKey1, TValue1, TInput1, TOutput1, TContext, TSessionFunctions1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TInput2, TOutput2, TSessionFunctions2, TStoreFunctions2, TAllocator2>, TKeyLocker, TEpochGuard>(
                     ref KernelSession, keyHash, partitionId, beginAddress, out hei);
-            Debug.Assert(beginAddress <= 0 || status.Found, "Should always 'find' the tag when specifying BeginAddress to EnterForUpdate");
             return status;
         }
 
@@ -360,7 +359,7 @@ namespace Tsavorite.core
                     status = ItemContext1.Read<TKeyLocker>(ref hei, ref key1, ref input1, ref output1, ref readOptions, out recordMetadata, userContext);
                     if (status.IsPending)
                         (status, output1) = ItemContext1.GetSinglePendingResult<TKeyLocker>(pendingMetrics);
-                    if (status.Found)
+                    if (status.Found || !IsDual)
                         return (status, StoreId1);
 
                     // Did not find the key and the bucket is still locked--move to the second store.
@@ -621,7 +620,7 @@ namespace Tsavorite.core
             HashEntryInfo hei = default;
             try
             {
-                _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(rmwOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, KernelSession.clientSession2.Store.Log.BeginAddress, out hei);
+                _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(rmwOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, KernelSession.clientSession1.Store.Log.BeginAddress, out hei);
                 return ItemContext1.RMW<TKeyLocker>(ref hei, ref key, ref input, ref output, out recordMetadata, userContext);
             }
             finally

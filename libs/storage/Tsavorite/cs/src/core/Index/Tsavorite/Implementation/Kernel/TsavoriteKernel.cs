@@ -174,7 +174,7 @@ namespace Tsavorite.core
             hei = new(keyHash, partitionId);
 
             // We may do FindTag rather than FindOrCreateTag here because we don't want to create the slot if the tag is not found.
-            if (createIfNotFoundBeginAddress == DoNotCreateSlotAddress)
+            if (createIfNotFoundBeginAddress != DoNotCreateSlotAddress)
                 hashTable.FindOrCreateTag(ref hei, createIfNotFoundBeginAddress);
             else if (!hashTable.FindTag(ref hei))
             {
@@ -208,7 +208,7 @@ namespace Tsavorite.core
             hei = new(keyHash, partitionId);
 
             // We may do FindTag rather than FindOrCreateTag here because we don't want to create the slot if the tag is not found.
-            if (createIfNotFoundBeginAddress == DoNotCreateSlotAddress)
+            if (createIfNotFoundBeginAddress != DoNotCreateSlotAddress)
                 hashTable.FindOrCreateTag(ref hei, createIfNotFoundBeginAddress);
             else if (!hashTable.FindTag(ref hei))
                 return new(StatusCode.NotFound);
