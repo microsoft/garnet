@@ -491,6 +491,15 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus GeoAdd(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
+        /// <summary>
+        /// Geospatial search and store in destination key.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref ObjectInput input, ref SpanByteAndMemory output);
+
         #endregion
 
         #region Set Methods
