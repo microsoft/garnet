@@ -237,8 +237,8 @@ namespace Garnet.server
 
                 case RespCommand.GETRANGE:
                     var len = value.LengthWithoutMetadata;
-                    var start = input.parseState.GetInt(input.parseStateFirstArgIdx);
-                    var end = input.parseState.GetInt(input.parseStateFirstArgIdx + 1);
+                    var start = input.parseState.GetInt(0);
+                    var end = input.parseState.GetInt(1);
 
                     (start, end) = NormalizeRange(start, end, len);
                     CopyRespTo(ref value, ref dst, start, end);
