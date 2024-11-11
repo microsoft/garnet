@@ -205,6 +205,21 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Initialize the parse state with a given set of arguments
+        /// </summary>
+        /// <param name="args">Set of arguments to initialize buffer with</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeWithArguments(ReadOnlySpan<ArgSlice> args)
+        {
+            Initialize(args.Length);
+
+            for (var i = 0; i < args.Length; i++)
+            {
+                *(bufferPtr + i) = args[i];
+            }
+        }
+
+        /// <summary>
         /// Set argument at a specific index
         /// </summary>
         /// <param name="i">Index of buffer at which to set argument</param>
@@ -221,6 +236,20 @@ namespace Garnet.server
         /// <param name="i">Index of buffer at which to start setting arguments</param>
         /// <param name="args">Arguments to set</param>
         public void SetArguments(int i, params ArgSlice[] args)
+        {
+            Debug.Assert(i + args.Length - 1 < Count);
+            for (var j = 0; j < args.Length; j++)
+            {
+                *(bufferPtr + i + j) = args[j];
+            }
+        }
+
+        /// <summary>
+        /// Set arguments starting at a specific index
+        /// </summary>
+        /// <param name="i">Index of buffer at which to start setting arguments</param>
+        /// <param name="args">Arguments to set</param>
+        public void SetArguments(int i, ReadOnlySpan<ArgSlice> args)
         {
             Debug.Assert(i + args.Length - 1 < Count);
             for (var j = 0; j < args.Length; j++)
