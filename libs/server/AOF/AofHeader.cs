@@ -5,38 +5,49 @@ using System.Runtime.InteropServices;
 
 namespace Garnet.server
 {
-    [StructLayout(LayoutKind.Explicit, Size = 15)]
+    [StructLayout(LayoutKind.Explicit, Size = 16)]
     struct AofHeader
     {
-        // UPDATE THIS VERSION WHENEVER THE LAYOUT OF THIS STRUCT CHANGES
-        const byte AOF_HEADER_VERSION = 1;
+        // Important: Update version number whenever any of the following change:
+        // * Layout, size, contents of this struct
+        // * Any of the AofEntryType or AofStoreType enums' existing value mappings
+        // * SpanByte format or header
+        const byte AofHeaderVersion = 1;
 
+        /// <summary>
+        /// Version of AOF
+        /// </summary>
         [FieldOffset(0)]
         public byte aofHeaderVersion;
+        /// <summary>
+        /// Padding, for alignment and future use
+        /// </summary>
         [FieldOffset(1)]
-        public AofEntryType opType;
+        public byte padding;
+        /// <summary>
+        /// Type of operation
+        /// </summary>
         [FieldOffset(2)]
-        public byte type;
+        public AofEntryType opType;
+        /// <summary>
+        /// Procedure ID
+        /// </summary>
         [FieldOffset(3)]
-        public long version;
-        [FieldOffset(11)]
+        public byte procedureId;
+        /// <summary>
+        /// Session version
+        /// </summary>
+        [FieldOffset(4)]
+        public long sessionVersion;
+        /// <summary>
+        /// Session ID
+        /// </summary>
+        [FieldOffset(12)]
         public int sessionID;
 
-        public AofHeader(AofEntryType opType, byte type, long version, int sessionID)
+        public AofHeader()
         {
-            this.aofHeaderVersion = AOF_HEADER_VERSION;
-            this.opType = opType;
-            this.type = type;
-            this.version = version;
-            this.sessionID = sessionID;
-        }
-
-        public AofHeader(AofEntryType opType, long version, int sessionID)
-        {
-            this.aofHeaderVersion = AOF_HEADER_VERSION;
-            this.opType = opType;
-            this.version = version;
-            this.sessionID = sessionID;
+            this.aofHeaderVersion = AofHeaderVersion;
         }
     }
 }

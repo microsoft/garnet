@@ -134,7 +134,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.GETBIT:
-                    var offset = input.parseState.GetLong(0);
+                    var offset = input.parseState.GetLong(input.parseStateFirstArgIdx);
                     var oldValSet = BitmapManager.GetBit(offset, value.ToPointer(), value.Length);
                     if (oldValSet == 0)
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref dst);
@@ -143,18 +143,19 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITCOUNT:
+                    var currTokenIdx = input.parseStateFirstArgIdx;
                     var bcStartOffset = 0;
                     var bcEndOffset = -1;
                     byte bcOffsetType = 0x0;
 
-                    if (input.parseState.Count > 1)
+                    if (currTokenIdx + 1 < input.parseState.Count)
                     {
-                        bcStartOffset = input.parseState.GetInt(0);
-                        bcEndOffset = input.parseState.GetInt(1);
+                        bcStartOffset = input.parseState.GetInt(currTokenIdx++);
+                        bcEndOffset = input.parseState.GetInt(currTokenIdx++);
 
-                        if (input.parseState.Count > 2)
+                        if (currTokenIdx < input.parseState.Count)
                         {
-                            var spanOffsetType = input.parseState.GetArgSliceByRef(2).ReadOnlySpan;
+                            var spanOffsetType = input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
                             bcOffsetType = spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
                         }
                     }
@@ -164,19 +165,20 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITPOS:
-                    var bpSetVal = (byte)(input.parseState.GetArgSliceByRef(0).ReadOnlySpan[0] - '0');
+                    currTokenIdx = input.parseStateFirstArgIdx;
+                    var bpSetVal = (byte)(input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan[0] - '0');
                     var bpStartOffset = 0;
                     var bpEndOffset = -1;
                     byte bpOffsetType = 0x0;
-                    if (input.parseState.Count > 1)
+                    if (input.parseState.Count - currTokenIdx > 0)
                     {
-                        bpStartOffset = input.parseState.GetInt(1);
-                        if (input.parseState.Count > 2)
+                        bpStartOffset = input.parseState.GetInt(currTokenIdx++);
+                        if (input.parseState.Count - currTokenIdx > 0)
                         {
-                            bpEndOffset = input.parseState.GetInt(2);
-                            if (input.parseState.Count > 3)
+                            bpEndOffset = input.parseState.GetInt(currTokenIdx++);
+                            if (input.parseState.Count - currTokenIdx > 0)
                             {
-                                var sbOffsetType = input.parseState.GetArgSliceByRef(3).ReadOnlySpan;
+                                var sbOffsetType = input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
                                 bpOffsetType = sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8)
                                     ? (byte)0x1
                                     : (byte)0x0;
@@ -237,8 +239,8 @@ namespace Garnet.server
 
                 case RespCommand.GETRANGE:
                     var len = value.LengthWithoutMetadata;
-                    var start = input.parseState.GetInt(0);
-                    var end = input.parseState.GetInt(1);
+                    var start = input.parseState.GetInt(input.parseStateFirstArgIdx);
+                    var end = input.parseState.GetInt(input.parseStateFirstArgIdx + 1);
 
                     (start, end) = NormalizeRange(start, end, len);
                     CopyRespTo(ref value, ref dst, start, end);
@@ -676,7 +678,7 @@ namespace Garnet.server
                 input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(
-                new AofHeader(opType: AofEntryType.StoreUpsert, version: version, sessionID: sessionId),
+                new AofHeader { opType = AofEntryType.StoreUpsert, sessionVersion = version, sessionID = sessionId },
                 ref key, ref value, ref input, out _);
         }
 
@@ -692,7 +694,7 @@ namespace Garnet.server
             input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(
-                new AofHeader(opType: AofEntryType.StoreRMW, version: version, sessionID: sessionId),
+                new AofHeader { opType = AofEntryType.StoreRMW, sessionVersion = version, sessionID = sessionId },
                 ref key, ref input, out _);
         }
 
@@ -705,12 +707,12 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
             SpanByte def = default;
-            functionsState.appendOnlyFile.Enqueue(new AofHeader(opType: AofEntryType.StoreDelete, version: version, sessionID: sessionID), ref key, ref def, out _);
+            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, sessionVersion = version, sessionID = sessionID }, ref key, ref def, out _);
         }
 
         BitFieldCmdArgs GetBitFieldArguments(ref RawStringInput input)
         {
-            var currTokenIdx = 0;
+            var currTokenIdx = input.parseStateFirstArgIdx;
             var cmd = input.parseState.GetEnum<RespCommand>(currTokenIdx++, true);
             var encodingArg = input.parseState.GetString(currTokenIdx++);
             var offsetArg = input.parseState.GetString(currTokenIdx++);
