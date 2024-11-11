@@ -27,7 +27,7 @@ namespace Garnet.server
             if (sessionCustomProcMap[id] == null)
             {
                 var entry = customCommandManager.customProcedureMap[id] ?? throw new GarnetException($"Custom procedure {id} not found");
-                sessionCustomProcMap[id] = entry.CustomProcedure();
+                sessionCustomProcMap[id] = entry.CustomProcedureFactory();
                 sessionCustomProcMap[id].respServerSession = respServerSession;
             }
 

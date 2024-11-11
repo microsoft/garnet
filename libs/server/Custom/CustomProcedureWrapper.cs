@@ -27,22 +27,22 @@ namespace Garnet.server
         public readonly string NameStr;
         public readonly byte[] Name;
         public readonly byte Id;
-        public readonly Func<CustomProcedure> CustomProcedure;
+        public readonly Func<CustomProcedure> CustomProcedureFactory;
 
-        internal CustomProcedureWrapper(string name, byte id, Func<CustomProcedure> customProcedure, CustomCommandManager customCommandManager)
+        internal CustomProcedureWrapper(string name, byte id, Func<CustomProcedure> customProcedureFactory, CustomCommandManager customCommandManager)
         {
             if (string.IsNullOrEmpty(name))
                 throw new ArgumentNullException(nameof(name));
 
-            if (customProcedure == null)
-                throw new ArgumentNullException(nameof(customProcedure));
+            if (customProcedureFactory == null)
+                throw new ArgumentNullException(nameof(customProcedureFactory));
 
             Debug.Assert(customCommandManager != null);
 
             NameStr = name.ToUpperInvariant();
             Name = System.Text.Encoding.ASCII.GetBytes(NameStr);
             Id = id;
-            CustomProcedure = customProcedure;
+            CustomProcedureFactory = customProcedureFactory;
         }
     }
 }
