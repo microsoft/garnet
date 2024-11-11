@@ -400,7 +400,7 @@ namespace Garnet.server
             AofHeader header = new()
             {
                 opType = isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit,
-                sessionVersion = version,
+                storeVersion = version,
                 sessionID = -1
             };
             appendOnlyFile?.Enqueue(header, out _);

@@ -35,10 +35,10 @@ namespace Garnet.server
         [FieldOffset(3)]
         public byte procedureId;
         /// <summary>
-        /// Session version
+        /// Store version
         /// </summary>
         [FieldOffset(4)]
-        public long sessionVersion;
+        public long storeVersion;
         /// <summary>
         /// Session ID
         /// </summary>

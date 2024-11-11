@@ -206,14 +206,14 @@ namespace Garnet.server
                 case AofEntryType.MainStoreCheckpointCommit:
                     if (asReplica)
                     {
-                        if (header.sessionVersion > storeWrapper.store.CurrentVersion)
+                        if (header.storeVersion > storeWrapper.store.CurrentVersion)
                             storeWrapper.TakeCheckpoint(false, StoreType.Main, logger);
                     }
                     break;
                 case AofEntryType.ObjectStoreCheckpointCommit:
                     if (asReplica)
                     {
-                        if (header.sessionVersion > storeWrapper.objectStore.CurrentVersion)
+                        if (header.storeVersion > storeWrapper.objectStore.CurrentVersion)
                             storeWrapper.TakeCheckpoint(false, StoreType.Object, logger);
                     }
                     break;
@@ -388,8 +388,8 @@ namespace Garnet.server
 
             return storeType switch
             {
-                AofStoreType.MainStoreType => header.sessionVersion <= storeWrapper.store.CurrentVersion - 1,
-                AofStoreType.ObjectStoreType => header.sessionVersion <= storeWrapper.objectStore.CurrentVersion - 1,
+                AofStoreType.MainStoreType => header.storeVersion <= storeWrapper.store.CurrentVersion - 1,
+                AofStoreType.ObjectStoreType => header.storeVersion <= storeWrapper.objectStore.CurrentVersion - 1,
                 AofStoreType.TxnType => false,
                 AofStoreType.ReplicationType => false,
                 AofStoreType.CheckpointType => false,
