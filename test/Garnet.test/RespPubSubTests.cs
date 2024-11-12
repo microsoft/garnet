@@ -222,7 +222,7 @@ namespace Garnet.test
             while (true)
             {
                 db.Publish(publishChannel.Value, message.Value);
-                var ret = evt.WaitOne(TimeSpan.FromSeconds(10));
+                var ret = evt.WaitOne(TimeSpan.FromSeconds(1));
                 if (ret) break;
                 repeat--;
                 ClassicAssert.IsTrue(repeat != 0, "Timeout waiting for subscription receive");
