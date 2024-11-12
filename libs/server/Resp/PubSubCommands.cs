@@ -21,9 +21,9 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
         {
-            networkSender.EnterAndGetResponseObject(out dcurr, out dend);
             try
             {
+                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                 if (respProtocolVersion == 2)
                 {
                     while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
@@ -36,10 +36,10 @@ namespace Garnet.server
                 }
                 while (!RespWriteUtils.WriteBulkString("message"u8, ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)), ref dcurr, dend))
-                    SendAndReset();
-                while (!RespWriteUtils.WriteBulkString(new Span<byte>(valPtr + sizeof(int), valLength - sizeof(int)), ref dcurr, dend))
-                    SendAndReset();
+
+                // Write key and value to the network
+                WriteDirectLargeRespString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)));
+                WriteDirectLargeRespString(new Span<byte>(valPtr + sizeof(int), valLength - sizeof(int)));
 
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
@@ -53,9 +53,9 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe void PrefixPublish(byte* patternPtr, int patternLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
         {
-            networkSender.EnterAndGetResponseObject(out dcurr, out dend);
             try
             {
+                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                 if (respProtocolVersion == 2)
                 {
                     while (!RespWriteUtils.WriteArrayLength(4, ref dcurr, dend))

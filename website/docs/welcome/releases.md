@@ -8,6 +8,16 @@ title: Releases
 
 Find releases at [https://github.com/microsoft/garnet/releases](https://github.com/microsoft/garnet/releases).
 
+## .NET Tool
+
+Garnet can be installed as a [.NET tool](https://aka.ms/global-tools):
+
+``` txt
+> dotnet tool install --global garnet-server
+>
+> garnet-server
+```
+
 ## NuGet
 
 Find releases at [https://www.nuget.org/packages/Microsoft.Garnet](https://www.nuget.org/packages/Microsoft.Garnet). The NuGet

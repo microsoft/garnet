@@ -206,14 +206,14 @@ namespace Garnet.server
                 case AofEntryType.MainStoreCheckpointCommit:
                     if (asReplica)
                     {
-                        if (header.version > storeWrapper.store.CurrentVersion)
+                        if (header.storeVersion > storeWrapper.store.CurrentVersion)
                             storeWrapper.TakeCheckpoint(false, StoreType.Main, logger);
                     }
                     break;
                 case AofEntryType.ObjectStoreCheckpointCommit:
                     if (asReplica)
                     {
-                        if (header.version > storeWrapper.objectStore.CurrentVersion)
+                        if (header.storeVersion > storeWrapper.objectStore.CurrentVersion)
                             storeWrapper.TakeCheckpoint(false, StoreType.Object, logger);
                     }
                     break;
@@ -265,7 +265,7 @@ namespace Garnet.server
                     ObjectStoreDelete(objectStoreBasicContext, entryPtr);
                     break;
                 case AofEntryType.StoredProcedure:
-                    RunStoredProc(header.type, customProcInput, entryPtr);
+                    RunStoredProc(header.procedureId, customProcInput, entryPtr);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
@@ -275,7 +275,7 @@ namespace Garnet.server
 
         unsafe void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)
         {
-            var curr = ptr;
+            var curr = ptr + sizeof(AofHeader);
 
             // Reconstructing CustomProcedureInput
 
@@ -388,8 +388,8 @@ namespace Garnet.server
 
             return storeType switch
             {
-                AofStoreType.MainStoreType => header.version <= storeWrapper.store.CurrentVersion - 1,
-                AofStoreType.ObjectStoreType => header.version <= storeWrapper.objectStore.CurrentVersion - 1,
+                AofStoreType.MainStoreType => header.storeVersion <= storeWrapper.store.CurrentVersion - 1,
+                AofStoreType.ObjectStoreType => header.storeVersion <= storeWrapper.objectStore.CurrentVersion - 1,
                 AofStoreType.TxnType => false,
                 AofStoreType.ReplicationType => false,
                 AofStoreType.CheckpointType => false,
