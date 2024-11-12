@@ -615,6 +615,7 @@ namespace Garnet.server
                 RespCommand.GEODIST => GeoCommands(cmd, ref storageApi),
                 RespCommand.GEOPOS => GeoCommands(cmd, ref storageApi),
                 RespCommand.GEOSEARCH => GeoCommands(cmd, ref storageApi),
+                RespCommand.GEOSEARCHSTORE => GeoSearchStore(ref storageApi),
                 //HLL Commands
                 RespCommand.PFADD => HyperLogLogAdd(ref storageApi),
                 RespCommand.PFMERGE => HyperLogLogMerge(ref storageApi),
@@ -1038,6 +1039,7 @@ namespace Garnet.server
 
                 // Adjust number of bytes to copy, to space left on output buffer, then copy
                 src.Slice(0, destSpace).CopyTo(new Span<byte>(dcurr, destSpace));
+                dcurr += destSpace;
                 src = src.Slice(destSpace);
 
                 // Send and reset output buffer
