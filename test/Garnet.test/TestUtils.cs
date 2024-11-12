@@ -201,7 +201,8 @@ namespace Garnet.test
             IAuthenticationSettings authenticationSettings = null,
             bool enableLua = false,
             ILogger logger = null,
-            IEnumerable<string> loadModulePaths = null)
+            IEnumerable<string> loadModulePaths = null,
+            string pubSubPageSize = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -279,6 +280,9 @@ namespace Garnet.test
                 ThreadPoolMinThreads = threadPoolMinThreads,
                 LoadModuleCS = loadModulePaths
             };
+
+            if (!string.IsNullOrEmpty(pubSubPageSize))
+                opts.PubSubPageSize = pubSubPageSize;
 
             if (!string.IsNullOrEmpty(objectStoreHeapMemorySize))
                 opts.ObjectStoreHeapMemorySize = objectStoreHeapMemorySize;

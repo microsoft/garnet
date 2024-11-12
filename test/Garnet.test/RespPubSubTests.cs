@@ -3,8 +3,8 @@
 
 using System;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading;
-using System.Threading.Channels;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -20,7 +20,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, pubSubPageSize: "256k");
             server.Start();
         }
 
@@ -39,6 +39,27 @@ namespace Garnet.test
             var sub = subRedis.GetSubscriber();
             var db = redis.GetDatabase(0);
             string value = "published message";
+
+            ManualResetEvent evt = new(false);
+
+            SubscribeAndPublish(sub, db, RedisChannel.Literal("messages"), RedisChannel.Literal("messages"), value, onSubscribe: (channel, message) =>
+            {
+                ClassicAssert.AreEqual("messages", (string)channel);
+                ClassicAssert.AreEqual(value, (string)message);
+                evt.Set();
+            });
+
+            sub.Unsubscribe(RedisChannel.Literal("messages"));
+        }
+
+        [Test]
+        public void LargeSUBSCRIBE()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+            RedisValue value = RandomNumberGenerator.GetBytes(140 * 1024);
 
             ManualResetEvent evt = new(false);
 
@@ -180,9 +201,12 @@ namespace Garnet.test
             sub.Unsubscribe(RedisChannel.Literal("messagesB"));
         }
 
-        private void SubscribeAndPublish(ISubscriber sub, IDatabase db, RedisChannel channel, RedisChannel? publishChannel = null, string message = null, Action<RedisChannel, RedisValue> onSubscribe = null)
+        private void SubscribeAndPublish(ISubscriber sub, IDatabase db, RedisChannel channel, RedisChannel? publishChannel = null, RedisValue? message = null, Action<RedisChannel, RedisValue> onSubscribe = null)
         {
-            message ??= "published message";
+            if (!message.HasValue)
+            {
+                message = "published message";
+            }
             publishChannel ??= channel;
             ManualResetEvent evt = new(false);
             sub.Subscribe(channel, (receivedChannel, receivedMessage) =>
@@ -197,8 +221,8 @@ namespace Garnet.test
             int repeat = 5;
             while (true)
             {
-                db.Publish(publishChannel.Value, message);
-                var ret = evt.WaitOne(TimeSpan.FromSeconds(1));
+                db.Publish(publishChannel.Value, message.Value);
+                var ret = evt.WaitOne(TimeSpan.FromSeconds(10));
                 if (ret) break;
                 repeat--;
                 ClassicAssert.IsTrue(repeat != 0, "Timeout waiting for subscription receive");
