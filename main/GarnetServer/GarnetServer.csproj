@@ -5,12 +5,11 @@
     <ServerGarbageCollection>true</ServerGarbageCollection>
 
     <!-- IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~7 and GarnetServer.cs line ~32. -->
-    <Version>1.0.37</Version>
+    <Version>1.0.38</Version>
     <PackageId>garnet-server</PackageId>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>garnet-server</ToolCommandName>
     <Title>The Microsoft.Garnet RESP server, packaged as a .NET tool</Title>
-    <!--<GeneratePackageOnBuild Condition="'$(Configuration)'=='Release'">True</GeneratePackageOnBuild>  -->
     <Authors>Microsoft</Authors>
     <Company>Microsoft</Company>
     <RepositoryType>git</RepositoryType>
@@ -25,7 +24,7 @@
     </Description>
     <PackageReleaseNotes>See https://github.com/microsoft/garnet for details.</PackageReleaseNotes>
     <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
-    <Tags>Garnet key-value store cache dictionary hashtable concurrent persistent remote cluster Redis RESP</Tags> 
+    <Tags>Garnet key-value store cache dictionary hashtable concurrent persistent remote cluster Redis RESP</Tags>
   </PropertyGroup>
 
   <ItemGroup>
