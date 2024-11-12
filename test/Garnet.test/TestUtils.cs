@@ -215,7 +215,8 @@ namespace Garnet.test
             bool enableReadCache = false,
             bool enableObjectStoreReadCache = false,
             ILogger logger = null,
-            IEnumerable<string> loadModulePaths = null)
+            IEnumerable<string> loadModulePaths = null,
+            string pubSubPageSize = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -295,6 +296,9 @@ namespace Garnet.test
                 EnableReadCache = enableReadCache,
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
             };
+
+            if (!string.IsNullOrEmpty(pubSubPageSize))
+                opts.PubSubPageSize = pubSubPageSize;
 
             if (!string.IsNullOrEmpty(objectStoreHeapMemorySize))
                 opts.ObjectStoreHeapMemorySize = objectStoreHeapMemorySize;
