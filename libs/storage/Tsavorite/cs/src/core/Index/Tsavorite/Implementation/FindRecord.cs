@@ -102,7 +102,7 @@ namespace Tsavorite.core
             }
             finally
             {
-                TransientSUnlock<TInput, TOutput, TContext, TransientKeyLocker>(ref stackCtx);
+                TransientSUnlock<TransientKeyLocker>(ref stackCtx.hei);
             }
         }
 

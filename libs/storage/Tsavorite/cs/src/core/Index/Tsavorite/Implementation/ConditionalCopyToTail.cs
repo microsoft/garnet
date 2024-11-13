@@ -57,7 +57,7 @@ namespace Tsavorite.core
                     {
                         stackCtx.HandleNewRecordOnException(this);
                         if (!callerHasTransientLock)
-                            TransientSUnlock<TInput, TOutput, TContext, TKeyLocker>(ref stackCtx);
+                            TransientSUnlock<TKeyLocker>(ref stackCtx.hei);
                     }
                 }
 

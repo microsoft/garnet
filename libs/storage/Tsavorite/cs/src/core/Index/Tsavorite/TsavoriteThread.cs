@@ -17,23 +17,21 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalRefresh<TInput, TOutput, TContext>(ref HashEntryInfo hei, ExecutionContext<TInput, TOutput, TContext> executionCtx)
         {
-            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
-
             // Unlock for retry
-            var lockState = stackCtx.hei.TransientLockState;
+            var lockState = hei.TransientLockState;
             switch (lockState)
             {
                 case TransientLockState.TransientSLock:
-                    TransientSUnlock<TInput, TOutput, TContext, TransientKeyLocker>(ref stackCtx);
+                    TransientSUnlock<TransientKeyLocker>(ref hei);
                     break;
                 case TransientLockState.TransientXLock:
-                    TransientXUnlock<TInput, TOutput, TContext, TransientKeyLocker>(ref stackCtx);
+                    TransientXUnlock<TransientKeyLocker>(ref hei);
                     break;
                 default:
                     break;
             }
 
-            stackCtx.ResetTransientLockTimeout();
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
 
             var internalStatus = OperationStatus.SUCCESS;
             do
@@ -43,10 +41,10 @@ namespace Tsavorite.core
                 switch (lockState)
                 {
                     case TransientLockState.TransientSLock:
-                        TryTransientSLock<TInput, TOutput, TContext, TransientKeyLocker>(ref stackCtx, out internalStatus);
+                        _ = TryTransientSLock<TInput, TOutput, TContext, TransientKeyLocker>(ref stackCtx, out internalStatus);
                         break;
                     case TransientLockState.TransientXLock:
-                        TryTransientXLock<TInput, TOutput, TContext, TransientKeyLocker>(ref stackCtx, out internalStatus);
+                        _ = TryTransientXLock<TInput, TOutput, TContext, TransientKeyLocker>(ref stackCtx, out internalStatus);
                         break;
                     default:
                         break;

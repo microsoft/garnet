@@ -15,7 +15,11 @@ namespace Tsavorite.core
         internal RecordSource<TKey, TValue, TStoreFunctions, TAllocator> recSrc;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStackContext(ref HashEntryInfo hei) => this.hei = ref hei;
+        internal OperationStackContext(ref HashEntryInfo hei)
+        {
+            this.hei = ref hei;
+            ResetTransientLockTimeout();
+        }
 
         /// <summary>
         /// Sets <see cref="recSrc"/> to the current <see cref="hei"/>.<see cref="HashEntryInfo.Address"/>, which is the address it had

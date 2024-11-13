@@ -55,6 +55,8 @@ namespace Tsavorite.core
         {
             // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
+            stackCtx.SetRecordSourceToHashEntry(hlogBase);
+
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions, ref readOptions);
             OperationStatus internalStatus;
 
@@ -167,6 +169,8 @@ namespace Tsavorite.core
         {
             // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
+            stackCtx.SetRecordSourceToHashEntry(hlogBase);
+
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions, ref readOptions, noKey: true);
             OperationStatus internalStatus;
             do
@@ -217,6 +221,8 @@ namespace Tsavorite.core
         {
             // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
+            stackCtx.SetRecordSourceToHashEntry(hlogBase);
+
             var pcontext = new PendingContext<TInput, TOutput, TContext>();
 
             OperationStatus internalStatus;
@@ -267,6 +273,8 @@ namespace Tsavorite.core
         {
             // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
+            stackCtx.SetRecordSourceToHashEntry(hlogBase);
+
             var pcontext = new PendingContext<TInput, TOutput, TContext>();
 
             OperationStatus internalStatus;
@@ -311,6 +319,8 @@ namespace Tsavorite.core
         {
             // Called by Single or Dual Tsavorite instances; Kernel entry/exit is handled by caller
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(ref hei);
+            stackCtx.SetRecordSourceToHashEntry(hlogBase);
+
             var pcontext = new PendingContext<TInput, TOutput, TContext>();
 
             OperationStatus internalStatus;

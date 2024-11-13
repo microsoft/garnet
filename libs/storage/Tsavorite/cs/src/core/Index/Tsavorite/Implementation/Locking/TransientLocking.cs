@@ -27,9 +27,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void TransientXUnlock<TInput, TOutput, TContext, TKeyLocker>(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        private void TransientXUnlock<TKeyLocker>(ref HashEntryInfo hei)
             where TKeyLocker : struct, IKeyLocker
-            => TKeyLocker.UnlockTransientExclusive(Kernel, ref stackCtx.hei);
+            => TKeyLocker.UnlockTransientExclusive(Kernel, ref hei);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryTransientSLock<TInput, TOutput, TContext, TKeyLocker>(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, out OperationStatus status)
@@ -48,9 +48,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void TransientSUnlock<TInput, TOutput, TContext, TKeyLocker>(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        internal void TransientSUnlock<TKeyLocker>(ref HashEntryInfo hei)
             where TKeyLocker : struct, IKeyLocker
-            => TKeyLocker.UnlockTransientShared(Kernel, ref stackCtx.hei);
+            => TKeyLocker.UnlockTransientShared(Kernel, ref hei);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void LockForScan(out HashEntryInfo hei, ref TKey key)

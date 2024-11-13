@@ -79,6 +79,10 @@ namespace Tsavorite.core
                 kernelSession.Refresh<TKeyLocker>(ref hei);
                 _ = Thread.Yield();
             }
+
+            // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
+            hei.SetToCurrent();
+
             return new(StatusCode.Found);
         }
 
@@ -103,6 +107,10 @@ namespace Tsavorite.core
                 kernelSession.Refresh<TKeyLocker>(ref hei);
                 _ = Thread.Yield();
             }
+
+            // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
+            hei.SetToCurrent();
+
             return new(StatusCode.Found);
         }
 
@@ -188,6 +196,10 @@ namespace Tsavorite.core
                 kernelSession.Refresh<TKeyLocker>(ref hei);
                 _ = Thread.Yield();
             }
+
+            // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
+            hei.SetToCurrent();
+
             return new(StatusCode.Found);
         }
 
@@ -219,6 +231,10 @@ namespace Tsavorite.core
                 kernelSession.Refresh<TKeyLocker>(ref hei);
                 _ = Thread.Yield();
             }
+
+            // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
+            hei.SetToCurrent();
+
             return new(StatusCode.Found);
         }
 
