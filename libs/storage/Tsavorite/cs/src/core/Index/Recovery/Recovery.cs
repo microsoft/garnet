@@ -414,6 +414,10 @@ namespace Tsavorite.core
 
             // Reset the hybrid log
             hlogBase.Reset();
+
+            // Reset system state
+            systemState = SystemState.Make(Phase.REST, 1);
+            lastVersion = 0;
         }
 
 
