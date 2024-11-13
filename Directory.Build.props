@@ -1,9 +1,14 @@
 <Project>
 
-  <PropertyGroup Label="Targets">
+	<!-- Versioning properties -->
+	<PropertyGroup>
+		<VersionPrefix>1.0.58</VersionPrefix>
+	</PropertyGroup>
+
+	<PropertyGroup Label="Targets">
     <TargetFrameworks>net8.0</TargetFrameworks>
   </PropertyGroup>
-
+	
   <PropertyGroup Label="Configuration">
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

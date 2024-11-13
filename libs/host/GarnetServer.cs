@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using Garnet.cluster;
@@ -28,8 +29,7 @@ namespace Garnet
     /// </summary>
     public class GarnetServer : IDisposable
     {
-        // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~7 and GarnetServer.csproj line ~8.
-        readonly string version = "1.0.39";
+        readonly string version = $"{Assembly.GetExecutingAssembly().GetName().Version.Major}.{Assembly.GetExecutingAssembly().GetName().Version.Minor}.{Assembly.GetExecutingAssembly().GetName().Version.Build}";
 
         internal GarnetProvider Provider;
 
