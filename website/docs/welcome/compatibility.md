@@ -19,15 +19,16 @@ guideline on what differences you can expect when using Garnet.
 it as a transaction (stored procedure).
 2. Garnet does not support the Redis functions or modules. Instead, it has its own C# based extensibility mechanisms
 that are optimized for high performance and ease of use.
-3. Garnet does not support Lua scripting. We have an experimental version, but it was noted to be too slow for
-realistic use so we have not added it to the project.
-4. Garnet respects the FIFO ordering of request-responses. However, when used with larger-than-memory data, and if you
+3. Garnet now has support for Lua scripting. However, a few libraries (`struct` and `cmsgpack`) are not included by default. If you are interested
+   in contributing these, check out [this issue](https://github.com/microsoft/garnet/issues/722). Note however, that Lua scripts are slow in general,
+   and if performance and scalability are important, you should instead use our server-side [extensibility](../extensions/overview.md) mechanisms instead.
+5. Garnet respects the FIFO ordering of request-responses. However, when used with larger-than-memory data, and if you
 _opt in_ to using the scatter-gather version of IO (using the `EnableScatterGatherGet [--sg-get]` option) for increased disk performance, then
 even though results are still returned in FIFO order, the read operations may be executed out-of-order to earlier
 write operations in the same input operation sequence.
-5. When Garnet is used with append-only-file (AOF) turned on, by default the server does not wait for commit before
+6. When Garnet is used with append-only-file (AOF) turned on, by default the server does not wait for commit before
    returning success to the user. This can be adjusted using the `WaitForCommit [--aof-commit-wait]` option, while the frequency of
    commit can be tuned using the `CommitFrequencyMs [--aof-commit-freq]` option.
-6. You can disable the object store if your workload only consists of raw string operations, using the option `DisableObjects [--no-obj]`. The
+7. You can disable the object store if your workload only consists of raw string operations, using the option `DisableObjects [--no-obj]`. The
    storage tier is disabled by default, and you can enable it using `EnableStorageTier [--storage-tier]`. You can disable the pub-sub feature
    using the option `DisablePubSub [--no-pubsub]`.
