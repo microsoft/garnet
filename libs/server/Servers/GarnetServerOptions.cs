@@ -287,7 +287,7 @@ namespace Garnet.server
         /// <summary>
         /// Upper bound on the lag (i.e. throttle replicaAOF append if AOF.TailAddress - ReplicationOffset > ReplicaMaxLag) between primary and replica. -1 - Synchronous replay, >= 0 - background replay with specified lag 
         /// </summary>
-        public int ReplicaMaxLag = 32768;
+        public int ReplicationOffsetMaxLag = -1;
 
         /// <summary>
         /// Whether we truncate AOF as soon as replicas are fed (not just after checkpoints)
@@ -308,8 +308,6 @@ namespace Garnet.server
         /// Use native device on Linux for local storage
         /// </summary>
         public bool UseNativeDeviceLinux = false;
-
-
 
         /// <summary>
         /// Limit of items to return in one iteration of *SCAN command

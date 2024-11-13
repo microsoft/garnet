@@ -371,8 +371,8 @@ namespace Garnet
         public int ReplicaSyncDelayMs { get; set; }
 
         [IntRangeValidation(-1, int.MaxValue)]
-        [Option("replica-max-lag", Required = false, HelpText = "Upper bound on the lag (i.e. throttle replicaAOF append if AOF.TailAddress - ReplicationOffset > ReplicaMaxLag) between primary and replica. -1 - Synchronous replay, >= 0 - background replay with specified lag")]
-        public int ReplicaMaxLag { get; set; }
+        [Option("replica-offset-max-lag", Required = false, HelpText = "Upper bound on the lag (i.e. throttle replicaAOF append if AOF.TailAddress - ReplicationOffset > ReplicaMaxLag) between primary and replica. -1 - Synchronous replay, >= 0 - background replay with specified lag")]
+        public int ReplicationOffsetMaxLag { get; set; }
 
         [OptionValidation]
         [Option("main-memory-replication", Required = false, HelpText = "Use main-memory replication model.")]
@@ -682,7 +682,7 @@ namespace Garnet
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
-                ReplicaMaxLag = ReplicaMaxLag,
+                ReplicationOffsetMaxLag = ReplicationOffsetMaxLag,
                 MainMemoryReplication = MainMemoryReplication.GetValueOrDefault(),
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),

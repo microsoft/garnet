@@ -13,7 +13,7 @@ namespace Garnet.cluster
     {
         void ThrottlePrimary()
         {
-            while (replayIterator != null && storeWrapper.appendOnlyFile.TailAddress - ReplicationOffset > storeWrapper.serverOptions.ReplicaMaxLag)
+            while (replayIterator != null && storeWrapper.appendOnlyFile.TailAddress - ReplicationOffset > storeWrapper.serverOptions.ReplicationOffsetMaxLag)
             {
                 replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
                 Thread.Yield();
