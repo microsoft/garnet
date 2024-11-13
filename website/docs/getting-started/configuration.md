@@ -167,6 +167,8 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **ExtensionAllowUnsignedAssemblies** | ```--extension-allow-unsigned``` | ```bool``` |  | Allow loading custom commands from digitally unsigned assemblies (not recommended) |
 | **IndexResizeFrequencySecs** | ```--index-resize-freq``` | ```int``` | Integer in range:<br/>[1, MaxValue] | Index resize check frequency in seconds |
 | **IndexResizeThreshold** | ```--index-resize-threshold``` | ```int``` | Integer in range:<br/>[1, 100] | Overflow bucket count over total index size in percentage to trigger index resize |
+| **EnableLua** | ```--lua``` | ```bool``` |  | Enable Lua scripts on server |
+| **LuaTransactionMode** | ```--lua-transaction-mode``` | ```bool``` |  | Run Lua scripts as a transaction (lock keys - run script - unlock keys) |
 
 
 [^1]: A string representing a memory size. Can either be a number of bytes, or follow this pattern: 1k, 1kb, 5M, 5Mb, 10g, 10GB etc.
