@@ -15,7 +15,10 @@ namespace Garnet.cluster
         CancellationTokenSource replicaReplayTaskCts;
         SingleWriterMultiReaderLock activeReplay;
 
-        void ResetReplayIterator()
+        /// <summary>
+        /// Reset background replay iterator
+        /// </summary>
+        public void ResetReplayIterator()
         {
             ResetReplayCts();
             replayIterator?.Dispose();
@@ -48,12 +51,11 @@ namespace Garnet.cluster
 
         public unsafe void Consume(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
         {
-            replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
-
             ReplicationOffset = currentAddress;
             var ptr = record;
             while (ptr < record + recordLength)
             {
+                replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
                 var entryLength = storeWrapper.appendOnlyFile.HeaderSize;
                 var payloadLength = storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
                 if (payloadLength > 0)
