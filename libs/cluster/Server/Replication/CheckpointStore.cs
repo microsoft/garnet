@@ -40,7 +40,7 @@ namespace Garnet.cluster
         {
             head = tail = GetLatestCheckpointEntryFromDisk();
 
-            if (tail.storeVersion == -1 && tail.objectStoreVersion == -1) head = tail = null;
+            if (tail.metadata.storeVersion == -1 && tail.metadata.objectStoreVersion == -1) head = tail = null;
 
             //This purge does not check for active readers
             //1. If primary is initializing then we will not have any active readers since not connections are established at recovery
@@ -72,9 +72,9 @@ namespace Garnet.cluster
             entry ??= GetLatestCheckpointEntryFromDisk();
             if (entry == null) return;
             LogCheckpointEntry("Purge all except", entry);
-            PurgeAllCheckpointsExceptTokens(StoreType.Main, entry.storeHlogToken, entry.storeIndexToken);
+            PurgeAllCheckpointsExceptTokens(StoreType.Main, entry.metadata.storeHlogToken, entry.metadata.storeIndexToken);
             if (!clusterProvider.serverOptions.DisableObjects)
-                PurgeAllCheckpointsExceptTokens(StoreType.Object, entry.objectStoreHlogToken, entry.objectStoreIndexToken);
+                PurgeAllCheckpointsExceptTokens(StoreType.Object, entry.metadata.objectStoreHlogToken, entry.metadata.objectStoreIndexToken);
         }
 
         /// <summary>
@@ -124,8 +124,8 @@ namespace Garnet.cluster
                 var lastEntry = tail;
                 Debug.Assert(lastEntry != null);
 
-                entry.storeIndexToken = lastEntry.storeIndexToken;
-                entry.objectStoreIndexToken = lastEntry.objectStoreIndexToken;
+                entry.metadata.storeIndexToken = lastEntry.metadata.storeIndexToken;
+                entry.metadata.objectStoreIndexToken = lastEntry.metadata.objectStoreIndexToken;
             }
 
             //Assume we don't have multiple writers so it is safe to update the tail directly
@@ -135,20 +135,20 @@ namespace Garnet.cluster
             {
                 if (storeType == StoreType.Main)
                 {
-                    entry.objectStoreVersion = tail.objectStoreVersion;
-                    entry.objectStoreHlogToken = tail.objectStoreHlogToken;
-                    entry.objectStoreIndexToken = tail.objectStoreIndexToken;
-                    entry.objectCheckpointCoveredAofAddress = tail.storeCheckpointCoveredAofAddress;
-                    entry.objectStorePrimaryReplId = tail.objectStorePrimaryReplId;
+                    entry.metadata.objectStoreVersion = tail.metadata.objectStoreVersion;
+                    entry.metadata.objectStoreHlogToken = tail.metadata.objectStoreHlogToken;
+                    entry.metadata.objectStoreIndexToken = tail.metadata.objectStoreIndexToken;
+                    entry.metadata.objectCheckpointCoveredAofAddress = tail.metadata.storeCheckpointCoveredAofAddress;
+                    entry.metadata.objectStorePrimaryReplId = tail.metadata.objectStorePrimaryReplId;
                 }
 
                 if (storeType == StoreType.Object)
                 {
-                    entry.storeVersion = tail.storeVersion;
-                    entry.storeHlogToken = tail.storeHlogToken;
-                    entry.storeIndexToken = tail.storeIndexToken;
-                    entry.storeCheckpointCoveredAofAddress = tail.objectCheckpointCoveredAofAddress;
-                    entry.storePrimaryReplId = tail.storePrimaryReplId;
+                    entry.metadata.storeVersion = tail.metadata.storeVersion;
+                    entry.metadata.storeHlogToken = tail.metadata.storeHlogToken;
+                    entry.metadata.storeIndexToken = tail.metadata.storeIndexToken;
+                    entry.metadata.storeCheckpointCoveredAofAddress = tail.metadata.objectCheckpointCoveredAofAddress;
+                    entry.metadata.storePrimaryReplId = tail.metadata.storePrimaryReplId;
                 }
 
                 tail.next = entry;
@@ -180,18 +180,18 @@ namespace Garnet.cluster
                 LogCheckpointEntry("Deleting checkpoint entry", curr);
                 // Below check each checkpoint token separately if it is eligible for deletion
                 if (CanDeleteToken(curr, CheckpointFileType.STORE_HLOG))
-                    clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteLogCheckpoint(curr.storeHlogToken);
+                    clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteLogCheckpoint(curr.metadata.storeHlogToken);
 
                 if (CanDeleteToken(curr, CheckpointFileType.STORE_INDEX))
-                    clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteIndexCheckpoint(curr.storeIndexToken);
+                    clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteIndexCheckpoint(curr.metadata.storeIndexToken);
 
                 if (!clusterProvider.serverOptions.DisableObjects)
                 {
                     if (CanDeleteToken(curr, CheckpointFileType.OBJ_STORE_HLOG))
-                        clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteLogCheckpoint(curr.objectStoreHlogToken);
+                        clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteLogCheckpoint(curr.metadata.objectStoreHlogToken);
 
                     if (CanDeleteToken(curr, CheckpointFileType.OBJ_STORE_INDEX))
-                        clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteIndexCheckpoint(curr.objectStoreIndexToken);
+                        clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteIndexCheckpoint(curr.metadata.objectStoreIndexToken);
                 }
 
                 //At least one token can always be deleted thus invalidating the in-memory entry
@@ -247,8 +247,11 @@ namespace Garnet.cluster
             {
                 var cEntry = new CheckpointEntry()
                 {
-                    storeCheckpointCoveredAofAddress = 0,
-                    objectCheckpointCoveredAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : 0
+                    metadata = new()
+                    {
+                        storeCheckpointCoveredAofAddress = 0,
+                        objectCheckpointCoveredAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : 0
+                    }
                 };
                 cEntry.TryAddReader();
                 return cEntry;
@@ -279,17 +282,20 @@ namespace Garnet.cluster
 
             CheckpointEntry entry = new()
             {
-                storeVersion = storeHLogToken == default ? -1 : storeWrapper.store.GetLatestCheckpointVersion(),
-                storeHlogToken = storeHLogToken,
-                storeIndexToken = storeIndexToken,
-                storeCheckpointCoveredAofAddress = storeCheckpointCoveredAofAddress,
-                storePrimaryReplId = storePrimaryReplId,
+                metadata = new()
+                {
+                    storeVersion = storeHLogToken == default ? -1 : storeWrapper.store.GetLatestCheckpointVersion(),
+                    storeHlogToken = storeHLogToken,
+                    storeIndexToken = storeIndexToken,
+                    storeCheckpointCoveredAofAddress = storeCheckpointCoveredAofAddress,
+                    storePrimaryReplId = storePrimaryReplId,
 
-                objectStoreVersion = objectStoreHLogToken == default ? -1 : storeWrapper.objectStore.GetLatestCheckpointVersion(),
-                objectStoreHlogToken = objectStoreHLogToken,
-                objectStoreIndexToken = objectStoreIndexToken,
-                objectCheckpointCoveredAofAddress = objectCheckpointCoveredAofAddress,
-                objectStorePrimaryReplId = objectStorePrimaryReplId,
+                    objectStoreVersion = objectStoreHLogToken == default ? -1 : storeWrapper.objectStore.GetLatestCheckpointVersion(),
+                    objectStoreHlogToken = objectStoreHLogToken,
+                    objectStoreIndexToken = objectStoreIndexToken,
+                    objectCheckpointCoveredAofAddress = objectCheckpointCoveredAofAddress,
+                    objectStorePrimaryReplId = objectStorePrimaryReplId,
+                },
                 _lock = new SingleWriterMultiReaderLock()
             };
             return entry;
@@ -325,12 +331,12 @@ namespace Garnet.cluster
         {
             logger?.LogTrace("{msg} {storeVersion} {storeHlogToken} {storeIndexToken} {objectStoreVersion} {objectStoreHlogToken} {objectStoreIndexToken}",
                 msg,
-                entry.storeVersion,
-                entry.storeHlogToken,
-                entry.storeIndexToken,
-                entry.objectStoreVersion,
-                entry.objectStoreHlogToken,
-                entry.objectStoreIndexToken);
+                entry.metadata.storeVersion,
+                entry.metadata.storeHlogToken,
+                entry.metadata.storeIndexToken,
+                entry.metadata.objectStoreVersion,
+                entry.metadata.objectStoreHlogToken,
+                entry.metadata.objectStoreIndexToken);
         }
     }
 }
