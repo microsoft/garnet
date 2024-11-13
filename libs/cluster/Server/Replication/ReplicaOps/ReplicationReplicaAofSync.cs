@@ -3,7 +3,6 @@
 
 using System;
 using System.Threading;
-using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
@@ -64,26 +63,41 @@ namespace Garnet.cluster
                     }
                 }
 
+                // Address check
+                if (storeWrapper.serverOptions.ReplicationOffsetMaxLag == -1 && ReplicationOffset != storeWrapper.appendOnlyFile.TailAddress)
+                {
+                    logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, storeWrapper.appendOnlyFile.TailAddress);
+                    logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", ReplicationOffset, storeWrapper.appendOnlyFile.TailAddress);
+                    throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, aof.TailAddress {storeWrapper.appendOnlyFile.TailAddress}", LogLevel.Warning, clientResponse: false);
+                }
+
                 // Enqueue to AOF
                 _ = clusterProvider.storeWrapper.appendOnlyFile?.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: clusterProvider.serverOptions.EnableFastCommit);
 
-                // Throttle to give the opportunity to the background replay task to catch up
-                ThrottlePrimary();
-
-                // If background task has not been initialized
-                // initialize it here and start background replay task
-                if (replayIterator == null)
+                if (storeWrapper.serverOptions.ReplicationOffsetMaxLag > -1)
                 {
-                    replayIterator = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(
-                        previousAddress,
-                        long.MaxValue,
-                        scanUncommitted: true,
-                        recover: false,
-                        logger: logger);
+                    // Throttle to give the opportunity to the background replay task to catch up
+                    ThrottlePrimary();
 
-                    Task.Run(ReplicaReplayTask);
+                    // If background task has not been initialized
+                    // initialize it here and start background replay task
+                    if (replayIterator == null)
+                    {
+                        replayIterator = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(
+                            previousAddress,
+                            long.MaxValue,
+                            scanUncommitted: true,
+                            recover: false,
+                            logger: logger);
+
+                        System.Threading.Tasks.Task.Run(ReplicaReplayTask);
+                    }
                 }
-                //Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
+                else
+                {
+                    // Synchronous replay
+                    Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
+                }
             }
             catch (Exception ex)
             {

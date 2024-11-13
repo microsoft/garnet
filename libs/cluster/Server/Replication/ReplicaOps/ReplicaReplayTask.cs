@@ -50,12 +50,6 @@ namespace Garnet.cluster
         {
             replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
 
-            if (ReplicationOffset != currentAddress)
-            {
-                logger?.LogError("ReplicaReplayTask.Consume Begin Address Mismatch {recordLength}; {currentAddress}; {nextAddress}; {ReplicationOffset}", recordLength, currentAddress, nextAddress, ReplicationOffset);
-                throw new GarnetException($"ReplicaReplayTask.Consume Begin Address Mismatch {recordLength}; {currentAddress}; {nextAddress}; {ReplicationOffset}", LogLevel.Warning, clientResponse: false);
-            }
-
             ReplicationOffset = currentAddress;
             var ptr = record;
             while (ptr < record + recordLength)
@@ -85,8 +79,8 @@ namespace Garnet.cluster
 
             if (ReplicationOffset != nextAddress)
             {
-                logger?.LogError("ReplicaReplayTask.Consume Begin Address Mismatch {recordLength}; {currentAddress}; {nextAddress}; {ReplicationOffset}", recordLength, currentAddress, nextAddress, ReplicationOffset);
-                throw new GarnetException($"ReplicaReplayTask.Consume Begin Address Mismatch {recordLength}; {currentAddress}; {nextAddress}; {ReplicationOffset}", LogLevel.Warning, clientResponse: false);
+                logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", recordLength, currentAddress, nextAddress, ReplicationOffset);
+                throw new GarnetException($"ReplicaReplayTask.Consume NextAddress Mismatch recordeLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", LogLevel.Warning, clientResponse: false);
             }
         }
 
