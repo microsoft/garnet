@@ -265,9 +265,16 @@ namespace Garnet.server
                 if (storeVersion > 0 || objectStoreVersion > 0)
                     lastSaveTime = DateTimeOffset.UtcNow;
             }
+            catch (TsavoriteNoHybridLogException ex)
+            {
+                // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
+                logger?.LogInformation(ex, "No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
+            }
             catch (Exception ex)
             {
                 logger?.LogInformation(ex, "Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
+                if (serverOptions.FailOnRecoveryError)
+                    throw;
             }
         }
 
@@ -323,6 +330,8 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Error during recovery of AofProcessor");
+                if (serverOptions.FailOnRecoveryError)
+                    throw;
             }
             return replicationOffset;
         }
