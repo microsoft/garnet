@@ -8,5 +8,4 @@
 $propsFile = Resolve-Path -Path "$PSScriptRoot/../../Directory.Build.props"
 [xml]$xml = Get-Content -Path $propsFile
 $version = $xml.Project.PropertyGroup.VersionPrefix
-Write-Host "##vso[task.setvariable variable=version]$version"
 Write-Host "##vso[build.updatebuildnumber]$version"
