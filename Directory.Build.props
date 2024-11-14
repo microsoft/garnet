@@ -2,7 +2,7 @@
 
 	<!-- Versioning properties -->
 	<PropertyGroup>
-		<VersionPrefix>1.0.58</VersionPrefix>
+		<VersionPrefix>1.0.59</VersionPrefix>
 	</PropertyGroup>
 
 	<PropertyGroup Label="Targets">
