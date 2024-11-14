@@ -105,6 +105,11 @@ namespace Garnet.server
         public readonly TimeSpan loggingFrequncy;
 
         /// <summary>
+        /// NOTE: For now we support only a single database
+        /// </summary>
+        public readonly int databaseNum = 1;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public StoreWrapper(
