@@ -216,7 +216,8 @@ namespace Garnet.test
             bool enableObjectStoreReadCache = false,
             ILogger logger = null,
             IEnumerable<string> loadModulePaths = null,
-            string pubSubPageSize = null)
+            string pubSubPageSize = null,
+            bool asyncReplay = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -295,6 +296,7 @@ namespace Garnet.test
                 LoadModuleCS = loadModulePaths,
                 EnableReadCache = enableReadCache,
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
+                ReplicationOffsetMaxLag = asyncReplay ? -1 : 0
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
@@ -569,7 +571,7 @@ namespace Garnet.test
                 ClusterUsername = authUsername,
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
-                ReplicationOffsetMaxLag = asyncReplay ? 1 << 20 : -1,
+                ReplicationOffsetMaxLag = asyncReplay ? -1 : 0
             };
 
             if (lowMemory)

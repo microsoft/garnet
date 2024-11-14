@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -10,9 +11,10 @@ namespace Garnet.cluster
 {
     internal sealed partial class ReplicationManager : IDisposable
     {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void ThrottlePrimary()
         {
-            while (replayIterator != null && storeWrapper.appendOnlyFile.TailAddress - ReplicationOffset > storeWrapper.serverOptions.ReplicationOffsetMaxLag)
+            while (storeWrapper.serverOptions.ReplicationOffsetMaxLag != -1 && replayIterator != null && storeWrapper.appendOnlyFile.TailAddress - ReplicationOffset > storeWrapper.serverOptions.ReplicationOffsetMaxLag)
             {
                 replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
                 Thread.Yield();
@@ -63,8 +65,8 @@ namespace Garnet.cluster
                     }
                 }
 
-                // Address check
-                if (storeWrapper.serverOptions.ReplicationOffsetMaxLag == -1 && ReplicationOffset != storeWrapper.appendOnlyFile.TailAddress)
+                // Address check only if synchronous replication is enabled
+                if (storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0 && ReplicationOffset != storeWrapper.appendOnlyFile.TailAddress)
                 {
                     logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, storeWrapper.appendOnlyFile.TailAddress);
                     logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", ReplicationOffset, storeWrapper.appendOnlyFile.TailAddress);
@@ -74,7 +76,12 @@ namespace Garnet.cluster
                 // Enqueue to AOF
                 _ = clusterProvider.storeWrapper.appendOnlyFile?.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: clusterProvider.serverOptions.EnableFastCommit);
 
-                if (storeWrapper.serverOptions.ReplicationOffsetMaxLag > -1)
+                if (storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0)
+                {
+                    // Synchronous replay
+                    Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
+                }
+                else
                 {
                     // Throttle to give the opportunity to the background replay task to catch up
                     ThrottlePrimary();
@@ -92,11 +99,6 @@ namespace Garnet.cluster
 
                         System.Threading.Tasks.Task.Run(ReplicaReplayTask);
                     }
-                }
-                else
-                {
-                    // Synchronous replay
-                    Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
                 }
             }
             catch (Exception ex)

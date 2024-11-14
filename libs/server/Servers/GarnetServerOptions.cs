@@ -285,7 +285,7 @@ namespace Garnet.server
         public int ReplicaSyncDelayMs = 5;
 
         /// <summary>
-        /// Upper bound on the lag (i.e. throttle replicaAOF append if AOF.TailAddress - ReplicationOffset > ReplicaMaxLag) between primary and replica. -1 - Synchronous replay, >= 0 - background replay with specified lag 
+        /// Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > ReplicationOffsetMaxLag. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag
         /// </summary>
         public int ReplicationOffsetMaxLag = -1;
 
