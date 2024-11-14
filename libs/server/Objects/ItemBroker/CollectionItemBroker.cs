@@ -452,6 +452,7 @@ namespace Garnet.server
                 storageSession.BeginUnsafe();
 
                 var heiSrcKey = storageSession.CreateHei(key);
+                _ = storageSession.Kernel.FindTag(ref heiSrcKey);
 
                 // Get the object stored at key
                 GarnetObjectStoreOutput osObject = new();
@@ -465,6 +466,7 @@ namespace Garnet.server
                 {
                     arrDstKey = dstKey.ToArray();
                     heiDstKey = storageSession.CreateHei(arrDstKey);
+                    _ = storageSession.Kernel.FindTag(ref heiDstKey);
                     GarnetObjectStoreOutput osDstObject = new();
                     var dstStatusOp = storageSession.GET<TransactionalKeyLocker>(ref heiDstKey, arrDstKey, ref osDstObject);
                     if (dstStatusOp != GarnetStatus.NOTFOUND) 

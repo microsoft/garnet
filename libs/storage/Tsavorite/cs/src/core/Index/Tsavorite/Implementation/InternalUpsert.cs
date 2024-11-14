@@ -60,7 +60,6 @@ namespace Tsavorite.core
 
             var dummyRecordInfo = RecordInfo.InitialValid;
             ref var srcRecordInfo = ref dummyRecordInfo;
-            output = default;
 
             // We blindly insert if the key isn't in the mutable region, so only check down to ReadOnlyAddress (minRevivifiableAddress is always >= ReadOnlyAddress).
             if (!TryFindRecordForUpdate(ref key, ref stackCtx, hlogBase.ReadOnlyAddress, out var status))

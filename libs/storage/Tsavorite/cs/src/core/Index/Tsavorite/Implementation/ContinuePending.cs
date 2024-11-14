@@ -148,7 +148,7 @@ namespace Tsavorite.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnException(this);
-                        TKeyLocker.UnlockTransientExclusive(Kernel, ref hei);       // Epoch management is done above this
+                        TKeyLocker.UnlockTransientShared(Kernel, ref hei);       // Epoch management is done above this
                     }
 
                     // Must do this *after* Unlocking. Status was set by InternalTryCopyToTail.

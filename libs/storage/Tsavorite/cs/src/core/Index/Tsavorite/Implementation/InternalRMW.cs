@@ -64,7 +64,6 @@ namespace Tsavorite.core
 
             var dummyRecordInfo = RecordInfo.InitialValid;
             ref var srcRecordInfo = ref dummyRecordInfo;
-            output = default;
 
             // Search the entire in-memory region.
             if (!TryFindRecordForUpdate(ref key, ref stackCtx, hlogBase.HeadAddress, out var status))

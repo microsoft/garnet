@@ -12,7 +12,7 @@ namespace Garnet.server
         {
             ConvertKey(ref key1, out key2);
 
-            var inputPtr = (RespInputHeader*)input1.ToPointer();
+            var inputPtr = (RespInputHeader*)(input1.ToPointer() + sizeof(int));
             input2 = new ObjectInput
             {
                 header = new RespInputHeader

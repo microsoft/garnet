@@ -78,10 +78,8 @@ namespace Tsavorite.core
 
         public long GetKeyHash(ref TKey2 key) => KernelSession.clientSession2.Store.GetKeyHash(ref key);
 
-        public HashEntryInfo CreateHei(ref TKey1 key) => CreateHei1(GetKeyHash(ref key));
         public HashEntryInfo CreateHei1(long keyHash) => new(keyHash, PartitionId1);
-        public HashEntryInfo CreateHei(ref TKey2 key) => CreateHei2(GetKeyHash(ref key));
-        public HashEntryInfo CreateHei2(long keyHash) => new(keyHash, PartitionId1);
+        public HashEntryInfo CreateHei2(long keyHash) => new(keyHash, PartitionId2);
 
         public Status EnterKernelForRead<TKeyLocker, TEpochGuard>(long keyHash, ushort partitionId, out HashEntryInfo hei)
             where TKeyLocker : struct, IKeyLocker
@@ -200,7 +198,7 @@ namespace Tsavorite.core
             try
             {
                 var status = EnterKernelForRead<TKeyLocker, TEpochGuard>(readOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, out hei);
-                if (!status.Found)
+                if (status.NotFound)
                 {
                     output = default;
                     recordMetadata = default;
@@ -297,7 +295,7 @@ namespace Tsavorite.core
             try
             {
                 var status = EnterKernelForRead<TKeyLocker, TEpochGuard>(readOptions.KeyHash ?? GetKeyHash(ref key), PartitionId2, out hei);
-                if (!status.Found)
+                if (status.NotFound)
                 {
                     output = default;
                     recordMetadata = default;
@@ -704,8 +702,9 @@ namespace Tsavorite.core
             HashEntryInfo hei = default;
             try
             {
-                _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(deleteOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, TsavoriteKernel.DoNotCreateSlotAddress, out hei);
-                return ItemContext1.Delete<TKeyLocker>(ref hei, ref key, userContext);
+                // If the tag was not found there's nothing to delete
+                var status = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(deleteOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, TsavoriteKernel.DoNotCreateSlotAddress, out hei);
+                return status.Found ? ItemContext1.Delete<TKeyLocker>(ref hei, ref key, userContext) : status;
             }
             finally
             {
@@ -744,8 +743,9 @@ namespace Tsavorite.core
             HashEntryInfo hei = default;
             try
             {
-                _ = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(deleteOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, TsavoriteKernel.DoNotCreateSlotAddress, out hei);
-                return ItemContext2.Delete<TKeyLocker>(ref hei, ref key, userContext);
+                // If the tag was not found there's nothing to delete
+                var status = EnterKernelForUpdate<TKeyLocker, TEpochGuard>(deleteOptions.KeyHash ?? GetKeyHash(ref key), PartitionId1, TsavoriteKernel.DoNotCreateSlotAddress, out hei);
+                return status.Found ? ItemContext2.Delete<TKeyLocker>(ref hei, ref key, userContext) : status;
             }
             finally
             {

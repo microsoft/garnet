@@ -28,7 +28,7 @@ namespace Garnet.server
         {
             // Try to find the key; if the tag is not found, we have nothing to fetch.
             var status = dualContext.EnterKernelForRead<TKeyLocker, TEpochGuard>(GetMainStoreKeyHashCode64(ref key), MainStoreId, out var hei);
-            if (!status.IsCompletedSuccessfully)
+            if (status.NotFound)
             {
                 output = default;
                 return GarnetStatus.NOTFOUND;
@@ -227,118 +227,118 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
+            var oldKey = oldKeySlice.SpanByte;
+            var newKey = newKeySlice.SpanByte;
+
+            long oldKeyHash, newKeyHash;
             var createTransaction = false;
+            if (txnManager.state != TxnState.Running)
+            {
+                oldKeyHash = txnManager.SaveKeyEntryToLock(oldKeySlice, isObject: false, LockType.Exclusive);
+                newKeyHash = txnManager.SaveKeyEntryToLock(newKeySlice, isObject: false, LockType.Exclusive);
+                createTransaction = txnManager.Run(internal_txn: true);
+            }
+            else
+            {
+                oldKeyHash = dualContext.GetKeyHash(ref oldKey);
+                newKeyHash = dualContext.GetKeyHash(ref newKey);
+            }
+
             try
             {
                 // We're in a Transaction so use TransactionalSessionLocker. Obtain the epoch once then use GarnetUnsafeEpochGuard for called operations.
                 // Acquire HashEntryInfos directly if needed; they won't contain transient lock info, which is correct because we're in a transaction.
                 GarnetSafeEpochGuard.BeginUnsafe(ref dualContext.KernelSession);
 
-                var oldKey = oldKeySlice.SpanByte;
-                var newKey = newKeySlice.SpanByte;
-
-                long oldKeyHash, newKeyHash;
-                if (txnManager.state != TxnState.Running)
-                {
-                    oldKeyHash = txnManager.SaveKeyEntryToLock(oldKeySlice, isObject: false, LockType.Exclusive);
-                    newKeyHash = txnManager.SaveKeyEntryToLock(newKeySlice, isObject: false, LockType.Exclusive);
-                    createTransaction = txnManager.Run(internal_txn: true);
-                }
-                else
-                {
-                    oldKeyHash = dualContext.GetKeyHash(ref oldKey);
-                    newKeyHash = dualContext.GetKeyHash(ref newKey);
-                }
-
                 var oldHei = dualContext.CreateHei1(oldKeyHash);
+                _ = Kernel.FindTag(ref oldHei);
                 var newHei = dualContext.CreateHei1(newKeyHash);
+                Kernel.FindOrCreateTag(ref newHei, dualContext.Store1.Log.BeginAddress);
 
                 if (storeType is StoreType.Main or StoreType.All)
                 {
+                    SpanByte input = default;
+                    var output = new SpanByteAndMemory();
+                    var status = GET<TransactionalKeyLocker>(ref oldHei, ref oldKey, ref input, ref output);
+
+                    if (status == GarnetStatus.OK)
                     {
-                        SpanByte input = default;
-                        var output = new SpanByteAndMemory();
-                        var status = GET<TransactionalKeyLocker>(ref oldHei, ref oldKey, ref input, ref output);
+                        Debug.Assert(!output.IsSpanByte);
+                        var memoryHandle = output.Memory.Memory.Pin();
+                        var ptrVal = (byte*)memoryHandle.Pointer;
 
-                        if (status == GarnetStatus.OK)
+                        _ = RespReadUtils.ReadUnsignedLengthHeader(out var headerLength, ref ptrVal, ptrVal + output.Length);
+
+                        // Find expiration time of the old key
+                        var expireSpan = new SpanByteAndMemory();
+                        var ttlStatus = InternalTTL<TransactionalKeyLocker>(ref oldHei, ref oldKey, storeType, ref expireSpan, milliseconds:true);
+
+                        if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
                         {
-                            Debug.Assert(!output.IsSpanByte);
-                            var memoryHandle = output.Memory.Memory.Pin();
-                            var ptrVal = (byte*)memoryHandle.Pointer;
+                            using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
+                            var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
+                            _ = RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out _);
 
-                            _ = RespReadUtils.ReadUnsignedLengthHeader(out var headerLength, ref ptrVal, ptrVal + output.Length);
-
-                            // Find expiration time of the old key
-                            var expireSpan = new SpanByteAndMemory();
-                            var ttlStatus = InternalTTL<TransactionalKeyLocker>(ref oldHei, ref oldKey, storeType, ref expireSpan, milliseconds:true);
-
-                            if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
+                            // If the key has an expiration, set the new key with the expiration
+                            if (expireTimeMs > 0)
                             {
-                                using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
-                                var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
-                                _ = RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out _);
-
-                                // If the key has an expiration, set the new key with the expiration
-                                if (expireTimeMs > 0)
+                                if (isNX)
                                 {
-                                    if (isNX)
-                                    {
-                                        // Move payload forward to make space for RespInputHeader and Metadata
-                                        var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size + sizeof(long), new ArgSlice(ptrVal, headerLength));
-                                        var setValueSpan = setValue.SpanByte;
-                                        var setValuePtr = setValueSpan.ToPointerWithMetadata();
-                                        setValueSpan.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
-                                        ((RespInputHeader*)(setValuePtr + sizeof(long)))->cmd = RespCommand.SETEXNX;
-                                        ((RespInputHeader*)(setValuePtr + sizeof(long)))->flags = 0;
-                                        var setStatus = SET_Conditional<TransactionalKeyLocker>(ref newHei, ref newKey, ref setValueSpan);
+                                    // Move payload forward to make space for RespInputHeader and Metadata
+                                    var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size + sizeof(long), new ArgSlice(ptrVal, headerLength));
+                                    var setValueSpan = setValue.SpanByte;
+                                    var setValuePtr = setValueSpan.ToPointerWithMetadata();
+                                    setValueSpan.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
+                                    ((RespInputHeader*)(setValuePtr + sizeof(long)))->cmd = RespCommand.SETEXNX;
+                                    ((RespInputHeader*)(setValuePtr + sizeof(long)))->flags = 0;
+                                    var setStatus = SET_Conditional<TransactionalKeyLocker>(ref newHei, ref newKey, ref setValueSpan);
 
-                                        // For SET NX `NOTFOUND` means the operation succeeded
-                                        result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
-                                        returnStatus = GarnetStatus.OK;
-                                    }
-                                    else
-                                    {
-                                        _ = SETEX<TransactionalKeyLocker>(ref newHei, newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs));
-                                    }
-                                }
-                                else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
-                                {
-                                    if (isNX)
-                                    {
-                                        // Move payload forward to make space for RespInputHeader
-                                        var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size, new ArgSlice(ptrVal, headerLength));
-                                        var setValueSpan = setValue.SpanByte;
-                                        var setValuePtr = setValueSpan.ToPointerWithMetadata();
-                                        ((RespInputHeader*)setValuePtr)->cmd = RespCommand.SETEXNX;
-                                        ((RespInputHeader*)setValuePtr)->flags = 0;
-                                        var setStatus = SET_Conditional<TransactionalKeyLocker>(ref newHei, ref newKey, ref setValueSpan);
-
-                                        // For SET NX `NOTFOUND` means the operation succeeded
-                                        result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
-                                        returnStatus = GarnetStatus.OK;
-                                    }
-                                    else
-                                    {
-                                        var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
-                                        _ = SET<TransactionalKeyLocker>(ref newHei, ref newKey, ref value);
-                                    }
-                                }
-
-                                expireSpan.Memory.Dispose();
-                                memoryHandle.Dispose();
-                                output.Memory.Dispose();
-
-                                // Delete the old key only when SET NX succeeded
-                                if (isNX && result == 1)
-                                {
-                                    _ = DELETE<TransactionalKeyLocker>(ref oldHei, ref oldKey, StoreType.Main);
-                                }
-                                else if (!isNX)
-                                {
-                                    // Delete the old key
-                                    _ = DELETE<TransactionalKeyLocker>(ref oldHei, ref oldKey, StoreType.Main);
+                                    // For SET NX `NOTFOUND` means the operation succeeded
+                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
                                     returnStatus = GarnetStatus.OK;
                                 }
+                                else
+                                {
+                                    _ = SETEX<TransactionalKeyLocker>(ref newHei, newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs));
+                                }
+                            }
+                            else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
+                            {
+                                if (isNX)
+                                {
+                                    // Move payload forward to make space for RespInputHeader
+                                    var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size, new ArgSlice(ptrVal, headerLength));
+                                    var setValueSpan = setValue.SpanByte;
+                                    var setValuePtr = setValueSpan.ToPointerWithMetadata();
+                                    ((RespInputHeader*)setValuePtr)->cmd = RespCommand.SETEXNX;
+                                    ((RespInputHeader*)setValuePtr)->flags = 0;
+                                    var setStatus = SET_Conditional<TransactionalKeyLocker>(ref newHei, ref newKey, ref setValueSpan);
+
+                                    // For SET NX `NOTFOUND` means the operation succeeded
+                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                    returnStatus = GarnetStatus.OK;
+                                }
+                                else
+                                {
+                                    var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
+                                    _ = SET<TransactionalKeyLocker>(ref newHei, ref newKey, ref value);
+                                }
+                            }
+
+                            expireSpan.Memory.Dispose();
+                            memoryHandle.Dispose();
+                            output.Memory.Dispose();
+
+                            // Delete the old key only when SET NX succeeded
+                            if (isNX && result == 1)
+                            {
+                                _ = DELETE<TransactionalKeyLocker>(ref oldHei, ref oldKey, StoreType.Main);
+                            }
+                            else if (!isNX)
+                            {
+                                // Delete the old key
+                                _ = DELETE<TransactionalKeyLocker>(ref oldHei, ref oldKey, StoreType.Main);
+                                returnStatus = GarnetStatus.OK;
                             }
                         }
                     }
@@ -346,8 +346,10 @@ namespace Garnet.server
 
                 if ((storeType == StoreType.Object || storeType == StoreType.All) && dualContext.IsDual)
                 {
-                    oldHei = dualContext.CreateHei1(oldKeyHash);
-                    newHei = dualContext.CreateHei1(newKeyHash);
+                    oldHei = dualContext.CreateHei2(oldKeyHash);
+                    _ = Kernel.FindTag(ref oldHei);
+                    newHei = dualContext.CreateHei2(newKeyHash);
+                    Kernel.FindOrCreateTag(ref newHei, dualContext.Store2.Log.BeginAddress);
 
                     {
                         var oldKeyArray = oldKeySlice.ToArray();

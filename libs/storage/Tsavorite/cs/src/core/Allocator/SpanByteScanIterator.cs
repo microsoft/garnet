@@ -202,7 +202,7 @@ namespace Tsavorite.core
                     }
                     finally
                     {
-                        store.UnlockForScan(ref hei);
+                        store?.UnlockForScan(ref hei);
                     }
                 }
 

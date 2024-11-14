@@ -43,7 +43,7 @@ namespace Garnet.server
         /// <summary>
         /// Object store
         /// </summary>
-        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore;
+        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore => DualStore.Store2;
 
         /// <summary>
         /// Server options

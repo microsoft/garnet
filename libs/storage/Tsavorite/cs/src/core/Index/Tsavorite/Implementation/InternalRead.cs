@@ -70,7 +70,6 @@ namespace Tsavorite.core
             // It must be at this scope so it can be unlocked in 'finally'.
             var dummyRecordInfo = RecordInfo.InitialValid;
             ref var srcRecordInfo = ref dummyRecordInfo;
-            output = default;
 
             ReadInfo readInfo = new()
             {

@@ -48,7 +48,7 @@ namespace Garnet.server
         readonly ILogger logger;
         private readonly CollectionItemBroker itemBroker;
 
-        internal TsavoriteKernel Kernel => dualContext.Store2.Kernel;
+        internal TsavoriteKernel Kernel => dualContext.Store1.Kernel;
 
         public int SessionID => dualContext.Session1.ID;
         public long SessionVersion => dualContext.Session1.Version;

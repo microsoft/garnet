@@ -67,7 +67,7 @@ namespace Tsavorite.core
             // CheckHashTableGrowth(); TODO
 
             hei = new(keyHash, partitionId);
-            if (!hashTable.FindTag(ref hei))
+            if (!FindTag(ref hei))
             {
                 TEpochGuard.EndUnsafe(ref kernelSession);
                 return new(StatusCode.NotFound);
@@ -98,7 +98,7 @@ namespace Tsavorite.core
             where TKeyLocker : struct, IKeyLocker
         {
             hei = new(keyHash, partitionId);
-            if (!hashTable.FindTag(ref hei))
+            if (!FindTag(ref hei))
                 return new(StatusCode.NotFound);
 
             while (!TKeyLocker.TryLockTransientShared(this, ref hei))
@@ -124,12 +124,17 @@ namespace Tsavorite.core
         public Status EnterForReadDual2(ushort partitionId, ref HashEntryInfo hei)
         {
             hei.Reset(partitionId);
-            if (!hashTable.FindTag(ref hei))
+            if (!FindTag(ref hei))
                 return new(StatusCode.NotFound);
             Debug.Assert(hei.HasTransientSLock, "Expected transient HEI SLock after Reset and FindTag");
             Debug.Assert(lockTable.GetLockState(ref hei).IsLockedShared, "Expected bucket SLock after Reset and FindTag");
             return new(StatusCode.Found);
         }
+
+        /// <summary>
+        /// Find the slot for the tag if it is already in the hashtable.
+        /// </summary>
+        public bool FindTag(ref HashEntryInfo hei) => hashTable.FindTag(ref hei);
 
         /// <summary>
         /// Exits the kernel for this Read operation when the epoch may or may not be released
@@ -183,8 +188,8 @@ namespace Tsavorite.core
 
             // We may do FindTag rather than FindOrCreateTag here because we don't want to create the slot if the tag is not found.
             if (createIfNotFoundBeginAddress != DoNotCreateSlotAddress)
-                hashTable.FindOrCreateTag(ref hei, createIfNotFoundBeginAddress);
-            else if (!hashTable.FindTag(ref hei))
+                FindOrCreateTag(ref hei, createIfNotFoundBeginAddress);
+            else if (!FindTag(ref hei))
             {
                 TEpochGuard.EndUnsafe(ref kernelSession);
                 return new(StatusCode.NotFound);
@@ -204,6 +209,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Find the slot for the tag if it is already in the hashtable.
+        /// </summary>
+        public void FindOrCreateTag(ref HashEntryInfo hei, long createIfNotFoundBeginAddress) => hashTable.FindOrCreateTag(ref hei, createIfNotFoundBeginAddress);
+
+        /// <summary>
         /// Enter the kernel for an update operation on a single Tsavorite configuration or on the first TsavoriteKV of a dual configuration, where the epoch has already been acquired.
         /// </summary>
         /// <remarks>
@@ -221,8 +231,8 @@ namespace Tsavorite.core
 
             // We may do FindTag rather than FindOrCreateTag here because we don't want to create the slot if the tag is not found.
             if (createIfNotFoundBeginAddress != DoNotCreateSlotAddress)
-                hashTable.FindOrCreateTag(ref hei, createIfNotFoundBeginAddress);
-            else if (!hashTable.FindTag(ref hei))
+                FindOrCreateTag(ref hei, createIfNotFoundBeginAddress);
+            else if (!FindTag(ref hei))
                 return new(StatusCode.NotFound);
 
             while (!TKeyLocker.TryLockTransientExclusive(this, ref hei))
@@ -250,7 +260,7 @@ namespace Tsavorite.core
             hei.Reset(partitionId);
 
             // We always want to create the tag here if it is not found
-            hashTable.FindOrCreateTag(ref hei, createIfNotFoundBeginAddress);
+            FindOrCreateTag(ref hei, createIfNotFoundBeginAddress);
             Debug.Assert(hei.HasTransientXLock, "Expected transient XLock after Reset and FindTag");
             return new(StatusCode.Found);
         }

@@ -12,9 +12,9 @@ namespace Garnet.server
             where TKeyLocker : struct, IKeyLocker
         {
             // Object store
-            var suspended = Kernel.Epoch.ThisInstanceProtected();
+            var suspended = !Kernel.Epoch.ThisInstanceProtected();
             if (suspended)
-                dualContext.KernelSession.EndUnsafe();
+                dualContext.KernelSession.BeginUnsafe();
             StartPendingMetrics();
 
             _ = ObjectContext.CompletePendingWithOutputs<TKeyLocker>(out var completedOutputs, wait: true);
@@ -28,7 +28,7 @@ namespace Garnet.server
 
             StopPendingMetrics();
             if (suspended)
-                dualContext.KernelSession.BeginUnsafe();
+                dualContext.KernelSession.EndUnsafe();
         }
     }
 }
