@@ -474,14 +474,7 @@ namespace Tsavorite.core
                     while (tsavoriteLog.Initializing)
                     {
                         Thread.Yield();
-                        try
-                        {
-                            epoch.Suspend();
-                        }
-                        finally
-                        {
-                            epoch.Resume();
-                        }
+                        epoch.ProtectAndDrain();
                     }
 
                     var hasNext = GetNextInternal(out long startPhysicalAddress, out int newEntryLength, out long startLogicalAddress, out long endLogicalAddress, out bool isCommitRecord, out bool onFrame);
