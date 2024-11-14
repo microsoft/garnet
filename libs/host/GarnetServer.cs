@@ -29,7 +29,12 @@ namespace Garnet
     /// </summary>
     public class GarnetServer : IDisposable
     {
-        readonly string version = $"{Assembly.GetExecutingAssembly().GetName().Version.Major}.{Assembly.GetExecutingAssembly().GetName().Version.Minor}.{Assembly.GetExecutingAssembly().GetName().Version.Build}";
+        static readonly string Version = GetVersion();
+        static string GetVersion()
+        {
+            var version = Assembly.GetExecutingAssembly().GetName().Version;
+            return $"{version.Major}.{version.Minor}.{version.Build}";
+        }
 
         internal GarnetProvider Provider;
 
