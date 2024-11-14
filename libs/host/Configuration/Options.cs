@@ -63,6 +63,18 @@ namespace Garnet
         [Option("mutable-percent", Required = false, HelpText = "Percentage of log memory that is kept mutable")]
         public int MutablePercent { get; set; }
 
+        [OptionValidation]
+        [Option("readcache", Required = false, HelpText = "Enables read cache for faster access to on-disk records.")]
+        public bool? EnableReadCache { get; set; }
+
+        [MemorySizeValidation]
+        [Option("readcache-memory", Required = false, HelpText = "Total read cache log memory used in bytes (rounds down to power of 2)")]
+        public string ReadCacheMemorySize { get; set; }
+
+        [MemorySizeValidation]
+        [Option("readcache-page", Required = false, HelpText = "Size of each read cache page in bytes (rounds down to power of 2)")]
+        public string ReadCachePageSize { get; set; }
+
         [MemorySizeValidation(false)]
         [Option("obj-heap-memory", Required = false, HelpText = "Object store heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
         public string ObjectStoreHeapMemorySize { get; set; }
@@ -90,6 +102,22 @@ namespace Garnet
         [PercentageValidation]
         [Option("obj-mutable-percent", Required = false, HelpText = "Percentage of object store log memory that is kept mutable")]
         public int ObjectStoreMutablePercent { get; set; }
+
+        [OptionValidation]
+        [Option("obj-readcache", Required = false, HelpText = "Enables object store read cache for faster access to on-disk records.")]
+        public bool? EnableObjectStoreReadCache { get; set; }
+
+        [MemorySizeValidation]
+        [Option("obj-readcache-log-memory", Required = false, HelpText = "Total object store read cache log memory used in bytes (rounds down to power of 2)")]
+        public string ObjectStoreReadCacheLogMemorySize { get; set; }
+
+        [MemorySizeValidation]
+        [Option("obj-readcache-page", Required = false, HelpText = "Size of each object store read cache page in bytes (rounds down to power of 2)")]
+        public string ObjectStoreReadCachePageSize { get; set; }
+
+        [MemorySizeValidation(false)]
+        [Option("obj-readcache-heap-memory", Required = false, HelpText = "Object store read cache heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
+        public string ObjectStoreReadCacheHeapMemorySize { get; set; }
 
         [OptionValidation]
         [Option("storage-tier", Required = false, HelpText = "Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use --logdir to specify storage directory.")]
@@ -575,6 +603,9 @@ namespace Garnet
                 IndexSize = IndexSize,
                 IndexMaxSize = IndexMaxSize,
                 MutablePercent = MutablePercent,
+                EnableReadCache = EnableReadCache.GetValueOrDefault(),
+                ReadCacheMemorySize = ReadCacheMemorySize,
+                ReadCachePageSize = ReadCachePageSize,
                 ObjectStoreHeapMemorySize = ObjectStoreHeapMemorySize,
                 ObjectStoreLogMemorySize = ObjectStoreLogMemorySize,
                 ObjectStorePageSize = ObjectStorePageSize,
@@ -582,6 +613,10 @@ namespace Garnet
                 ObjectStoreIndexSize = ObjectStoreIndexSize,
                 ObjectStoreIndexMaxSize = ObjectStoreIndexMaxSize,
                 ObjectStoreMutablePercent = ObjectStoreMutablePercent,
+                EnableObjectStoreReadCache = EnableObjectStoreReadCache.GetValueOrDefault(),
+                ObjectStoreReadCachePageSize = ObjectStoreReadCachePageSize,
+                ObjectStoreReadCacheLogMemorySize = ObjectStoreReadCacheLogMemorySize,
+                ObjectStoreReadCacheHeapMemorySize = ObjectStoreReadCacheHeapMemorySize,
                 EnableStorageTier = enableStorageTier,
                 CopyReadsToTail = CopyReadsToTail.GetValueOrDefault(),
                 ObjectStoreCopyReadsToTail = ObjectStoreCopyReadsToTail.GetValueOrDefault(),
