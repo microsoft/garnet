@@ -247,6 +247,7 @@ namespace Garnet.server
                     new("ReadCache.BeginAddress", storeWrapper.objectStore.ReadCache?.BeginAddress.ToString() ?? "N/A"),
                     new("ReadCache.BufferSize", storeWrapper.objectStore.ReadCache?.BufferSize.ToString() ?? "N/A"),
                     new("ReadCache.EmptyPageCount", storeWrapper.objectStore.ReadCache?.EmptyPageCount.ToString() ?? "N/A"),
+                    new("ReadCache.HeadAddress", storeWrapper.objectStore.ReadCache?.HeadAddress.ToString() ?? "N/A"),
                     new("ReadCache.MemorySizeBytes", storeWrapper.objectStore.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
                     new("ReadCache.TailAddress", storeWrapper.objectStore.ReadCache?.TailAddress.ToString() ?? "N/A"),
                 ];

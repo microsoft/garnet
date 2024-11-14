@@ -101,7 +101,7 @@ To summarize, the total space occupied by the object store is the sum of:
 
 ## Read Cache
 
-Read cache helps bring in records from disk to memory in a separate read cache region without growing the main log. This helps avoid additional I/O when reading records that are already on the disk. More details on the internals of read cache is available [here](../dev/tsavorite/locking.md#readcache)
+Read cache helps bring in records from disk to memory in a separate read cache region without growing the main log. This helps avoid additional I/O when reading records that are already on the disk. More details on the internals of read cache are available [here](../dev/tsavorite/locking.md#readcache)
 
 Read cache can be independently enabled for either the main store or the object store or both of them simulataneously.
 Use the `--readcache` option to enable it for the main store and the `--obj-readcache` option for the object store.
