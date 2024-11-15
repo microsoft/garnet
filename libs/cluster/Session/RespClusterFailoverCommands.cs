@@ -37,8 +37,7 @@ namespace Garnet.cluster
                     var failoverOptionStr = parseState.GetString(0);
 
                     // On failure set the invalid flag, write error and continue parsing to drain rest of parameters if any
-                    while (!RespWriteUtils.WriteError($"ERR Failover option ({failoverOptionStr}) not supported",
-                               ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError($"ERR Failover option ({failoverOptionStr}) not supported", ref dcurr, dend))
                         SendAndReset();
 
                     return true;
