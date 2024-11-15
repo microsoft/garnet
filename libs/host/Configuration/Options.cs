@@ -488,6 +488,10 @@ namespace Garnet
         [Option("index-resize-threshold", Required = false, HelpText = "Overflow bucket count over total index size in percentage to trigger index resize")]
         public int IndexResizeThreshold { get; set; }
 
+        [OptionValidation]
+        [Option("fail-on-recovery-error", Default = false, Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
+        public bool? FailOnRecoveryError { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -693,7 +697,8 @@ namespace Garnet
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
-                LoadModuleCS = LoadModuleCS
+                LoadModuleCS = LoadModuleCS,
+                FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault()
             };
         }
 
