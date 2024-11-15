@@ -280,7 +280,7 @@ namespace Garnet.server
             for (var i = 0; i < commandArguments.Count; i++)
             {
                 var isGet = commandArguments[i].secondaryCommand == RespCommand.GET;
-                
+
                 // Get parameter lengths
                 var op = commandArguments[i].secondaryCommand.ToString();
                 var encodingPrefix = (commandArguments[i].typeInfo & (byte)BitFieldSign.SIGNED) > 0 ? "i"u8 : "u"u8;
@@ -325,7 +325,7 @@ namespace Garnet.server
                 paramsSpanOffset += offsetLength;
 
                 // Value
-               ArgSlice valueSlice = default;
+                ArgSlice valueSlice = default;
                 if (!isGet)
                 {
                     var valueSpan = paramsSpan.Slice(paramsSpanOffset, valueLength);
