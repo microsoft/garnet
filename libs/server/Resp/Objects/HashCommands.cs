@@ -44,16 +44,9 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = hop,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = hop };
+
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = storageApi.HashSet(keyBytes, ref input, out var output);
 
@@ -97,16 +90,8 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HGET,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGET };
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -149,15 +134,8 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HGETALL,
-                },
-                arg1 = respProtocolVersion,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGETALL };
+            var input = new ObjectInput(header, respProtocolVersion);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -199,16 +177,9 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HMGET,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HMGET };
+
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -287,16 +258,8 @@ namespace Garnet.server
             var seed = Random.Shared.Next();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HRANDFIELD,
-                },
-                arg1 = countWithMetadata,
-                arg2 = seed,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };
+            var input = new ObjectInput(header, countWithMetadata, seed);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -349,14 +312,8 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HLEN,
-                },
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HLEN };
+            var input = new ObjectInput(header);
 
             var status = storageApi.HashLength(keyBytes, ref input, out var output);
 
@@ -398,16 +355,8 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HSTRLEN,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HSTRLEN };
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = storageApi.HashStrLength(keyBytes, ref input, out var output);
 
@@ -449,16 +398,8 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HDEL,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HDEL };
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = storageApi.HashDelete(keyBytes, ref input, out var output);
 
@@ -498,16 +439,8 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HEXISTS,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXISTS };
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = storageApi.HashExists(keyBytes, ref input, out var output);
 
@@ -558,14 +491,8 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = op,
-                },
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = op };
+            var input = new ObjectInput(header);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -622,16 +549,8 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = op,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = op };
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };

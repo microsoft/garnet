@@ -61,7 +61,7 @@ namespace Tsavorite.core
         /// Utility function for <see cref="SpanByte"/> copying, Upsert version.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+        public static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo, long metadata = 0)
         {
             // First get the full record length and clear it from the extra value space (if there is any). 
             // This ensures all bytes after the used value space are 0, which retains log-scan correctness.
@@ -74,7 +74,7 @@ namespace Tsavorite.core
             upsertInfo.ClearExtraValueLength(ref recordInfo, ref dst, dst.TotalSize);
 
             // We want to set the used and extra lengths and Filler whether we succeed (to the new length) or fail (to the original length).
-            var result = src.TrySafeCopyTo(ref dst, upsertInfo.FullValueLength);
+            var result = src.TrySafeCopyTo(ref dst, upsertInfo.FullValueLength, metadata);
             upsertInfo.SetUsedValueLength(ref recordInfo, ref dst, dst.TotalSize);
             return result;
         }

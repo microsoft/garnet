@@ -20,9 +20,9 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            for (var currTokenIdx = input.parseStateStartIdx; currTokenIdx < input.parseState.Count; currTokenIdx++)
+            for (var i = 0; i < input.parseState.Count; i++)
             {
-                var member = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
+                var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
                 if (set.Add(member))
                 {
@@ -76,7 +76,7 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                var member = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.ToByteArray();
+                var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
                 var isMember = set.Contains(member);
 
                 while (!RespWriteUtils.WriteInteger(isMember ? 1 : 0, ref curr, end))
@@ -93,15 +93,50 @@ namespace Garnet.server
             }
         }
 
+        private void SetMultiIsMember(ref ObjectInput input, ref SpanByteAndMemory output)
+        {
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+            try
+            {
+                while (!RespWriteUtils.WriteArrayLength(input.parseState.Count, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                for (var i = 0; i < input.parseState.Count; i++)
+                {
+                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                    var isMember = set.Contains(member);
+
+                    while (!RespWriteUtils.WriteInteger(isMember ? 1 : 0, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+
+                _output.result1 = input.parseState.Count;
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
         private void SetRemove(ref ObjectInput input, byte* output)
         {
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var currTokenIdx = input.parseStateStartIdx;
-            while (currTokenIdx < input.parseState.Count)
+            for (var i = 0; i < input.parseState.Count; i++)
             {
-                var field = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
+                var field = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
                 if (set.Remove(field))
                 {

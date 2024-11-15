@@ -12,7 +12,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
     {
         static void CopyTo(ref SpanByte src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
@@ -83,10 +83,9 @@ namespace Garnet.server
             }
         }
 
-        void CopyRespToWithInput(ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, bool isFromPending, int payloadEtagAccountedEndOffset, int etagAccountedEnd, bool hasEtagInVal)
+        void CopyRespToWithInput(ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory dst, bool isFromPending, int payloadEtagAccountedEndOffset, int etagAccountedEnd, bool hasEtagInVal)
         {
-            var inputPtr = input.ToPointer();
-            switch ((RespCommand)(*inputPtr))
+            switch (input.header.cmd)
             {
                 case RespCommand.ASYNC:
                     // If the GET is expected to complete continuations asynchronously, we should not write anything
@@ -136,7 +135,8 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.GETBIT:
-                    byte oldValSet = BitmapManager.GetBit(inputPtr + RespInputHeader.Size, value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
+                    var offset = input.parseState.GetLong(0);
+                    var oldValSet = BitmapManager.GetBit(offset, value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
                     if (oldValSet == 0)
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref dst);
                     else
@@ -144,29 +144,65 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITCOUNT:
-                    long count = BitmapManager.BitCountDriver(inputPtr + RespInputHeader.Size, value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
+                    var bcStartOffset = 0;
+                    var bcEndOffset = -1;
+                    byte bcOffsetType = 0x0;
+
+                    if (input.parseState.Count > 1)
+                    {
+                        bcStartOffset = input.parseState.GetInt(0);
+                        bcEndOffset = input.parseState.GetInt(1);
+
+                        if (input.parseState.Count > 2)
+                        {
+                            var spanOffsetType = input.parseState.GetArgSliceByRef(2).ReadOnlySpan;
+                            bcOffsetType = spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
+                        }
+                    }
+
+                    var count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
                     CopyRespNumber(count, ref dst);
                     break;
 
                 case RespCommand.BITPOS:
-                    long pos = BitmapManager.BitPosDriver(inputPtr + RespInputHeader.Size, value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
+                    var bpSetVal = (byte)(input.parseState.GetArgSliceByRef(0).ReadOnlySpan[0] - '0');
+                    var bpStartOffset = 0;
+                    var bpEndOffset = -1;
+                    byte bpOffsetType = 0x0;
+                    if (input.parseState.Count > 1)
+                    {
+                        bpStartOffset = input.parseState.GetInt(1);
+                        if (input.parseState.Count > 2)
+                        {
+                            bpEndOffset = input.parseState.GetInt(2);
+                            if (input.parseState.Count > 3)
+                            {
+                                var sbOffsetType = input.parseState.GetArgSliceByRef(3).ReadOnlySpan;
+                                bpOffsetType = sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8)
+                                    ? (byte)0x1
+                                    : (byte)0x0;
+                            }
+                        }
+                    }
+
+                    var pos = BitmapManager.BitPosDriver(bpSetVal, bpStartOffset, bpEndOffset, bpOffsetType,
+                        value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
                     *(long*)dst.SpanByte.ToPointer() = pos;
                     CopyRespNumber(pos, ref dst);
                     break;
 
                 case RespCommand.BITOP:
-                    IntPtr bitmap = (IntPtr)value.ToPointer() + payloadEtagAccountedEndOffset;
-                    byte* output = dst.SpanByte.ToPointer();
+                    var bitmap = (IntPtr)value.ToPointer() + payloadEtagAccountedEndOffset;
+                    var output = dst.SpanByte.ToPointer();
 
-                    *(long*)output = (long)bitmap.ToInt64();
+                    *(long*)output = bitmap.ToInt64();
                     *(int*)(output + 8) = value.Length;
 
                     return;
 
                 case RespCommand.BITFIELD:
-                    long retValue = 0;
-                    bool overflow;
-                    (retValue, overflow) = BitmapManager.BitFieldExecute(inputPtr + RespInputHeader.Size, value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
+                    var bitFieldArgs = GetBitFieldArguments(ref input);
+                    var (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
                     if (!overflow)
                         CopyRespNumber(retValue, ref dst);
                     else
@@ -174,17 +210,6 @@ namespace Garnet.server
                     return;
 
                 case RespCommand.PFCOUNT:
-                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset))
-                    {
-                        *(long*)dst.SpanByte.ToPointer() = -1;
-                        return;
-                    }
-
-                    long E = 13;
-                    E = HyperLogLog.DefaultHLL.Count(value.ToPointer() + payloadEtagAccountedEndOffset);
-                    *(long*)dst.SpanByte.ToPointer() = E;
-                    return;
-
                 case RespCommand.PFMERGE:
                     if (!HyperLogLog.DefaultHLL.IsValidHYLL(value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset))
                     {
@@ -198,22 +223,23 @@ namespace Garnet.server
                         dst.SpanByte.Length = value.Length - payloadEtagAccountedEndOffset;
                         return;
                     }
-                    throw new GarnetException("Not enough space in PFMERGE buffer");
+
+                    throw new GarnetException($"Not enough space in {input.header.cmd} buffer");
 
                 case RespCommand.TTL:
-                    long ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
                     CopyRespNumber(ttlValue, ref dst);
                     return;
 
                 case RespCommand.PTTL:
-                    long pttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    var pttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
                     CopyRespNumber(pttlValue, ref dst);
                     return;
 
                 case RespCommand.GETRANGE:
-                    int len = value.LengthWithoutMetadata - payloadEtagAccountedEndOffset;
-                    int start = *(int*)(inputPtr + RespInputHeader.Size);
-                    int end = *(int*)(inputPtr + RespInputHeader.Size + 4);
+                    var len = value.LengthWithoutMetadata - payloadEtagAccountedEndOffset;
+                    var start = input.parseState.GetInt(0);
+                    var end = input.parseState.GetInt(1);
 
                     (start, end) = NormalizeRange(start, end, len);
                     CopyRespTo(ref value, ref dst, start + payloadEtagAccountedEndOffset, end + payloadEtagAccountedEndOffset);
@@ -323,13 +349,13 @@ namespace Garnet.server
                         break;
                     case ExpireOption.XX:
                     case ExpireOption.None:
-                        value.ExtraMetadata = input.ExtraMetadata;
+                        value.ExtraMetadata = newExpiry;
                         o->result1 = 1;
                         break;
                     case ExpireOption.GT:
                     case ExpireOption.XXGT:
-                        bool replace = input.ExtraMetadata < value.ExtraMetadata;
-                        value.ExtraMetadata = replace ? value.ExtraMetadata : input.ExtraMetadata;
+                        var replace = newExpiry < value.ExtraMetadata;
+                        value.ExtraMetadata = replace ? value.ExtraMetadata : newExpiry;
                         if (replace)
                             o->result1 = 0;
                         else
@@ -337,8 +363,8 @@ namespace Garnet.server
                         break;
                     case ExpireOption.LT:
                     case ExpireOption.XXLT:
-                        replace = input.ExtraMetadata > value.ExtraMetadata;
-                        value.ExtraMetadata = replace ? value.ExtraMetadata : input.ExtraMetadata;
+                        replace = newExpiry > value.ExtraMetadata;
+                        value.ExtraMetadata = replace ? value.ExtraMetadata : newExpiry;
                         if (replace)
                             o->result1 = 0;
                         else
@@ -369,7 +395,7 @@ namespace Garnet.server
             }
         }
 
-        void EvaluateExpireCopyUpdate(ExpireOption optionType, bool expiryExists, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output)
+        void EvaluateExpireCopyUpdate(ExpireOption optionType, bool expiryExists, long newExpiry, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output)
         {
             ObjectOutputHeader* o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
             if (expiryExists)
@@ -381,15 +407,15 @@ namespace Garnet.server
                         break;
                     case ExpireOption.XX:
                     case ExpireOption.None:
-                        newValue.ExtraMetadata = input.ExtraMetadata;
+                        newValue.ExtraMetadata = newExpiry;
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         o->result1 = 1;
                         break;
                     case ExpireOption.GT:
                     case ExpireOption.XXGT:
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-                        bool replace = input.ExtraMetadata < oldValue.ExtraMetadata;
-                        newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : input.ExtraMetadata;
+                        bool replace = newExpiry < oldValue.ExtraMetadata;
+                        newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : newExpiry;
                         if (replace)
                             o->result1 = 0;
                         else
@@ -398,8 +424,8 @@ namespace Garnet.server
                     case ExpireOption.LT:
                     case ExpireOption.XXLT:
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-                        replace = input.ExtraMetadata > oldValue.ExtraMetadata;
-                        newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : input.ExtraMetadata;
+                        replace = newExpiry > oldValue.ExtraMetadata;
+                        newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : newExpiry;
                         if (replace)
                             o->result1 = 0;
                         else
@@ -414,7 +440,7 @@ namespace Garnet.server
                     case ExpireOption.NX:
                     case ExpireOption.None:
                     case ExpireOption.LT:   // If expiry doesn't exist, LT should treat the current expiration as infinite
-                        newValue.ExtraMetadata = input.ExtraMetadata;
+                        newValue.ExtraMetadata = newExpiry;
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         o->result1 = 1;
                         break;
@@ -729,17 +755,19 @@ namespace Garnet.server
         /// a. ConcurrentWriter
         /// b. PostSingleWriter
         /// </summary>
-        void WriteLogUpsert(ref SpanByte key, ref SpanByte input, ref SpanByte value, long version, int sessionID)
+        void WriteLogUpsert(ref SpanByte key, ref RawStringInput input, ref SpanByte value, long version, int sessionId)
         {
             if (functionsState.StoredProcMode) return;
 
-            //We need this check because when we ingest records from the primary
-            //if the input is zero then input overlaps with value so any update to RespInputHeader->flags
-            //will incorrectly modify the total length of value.
-            if (input.Length > 0)
-                ((RespInputHeader*)input.ToPointer())->flags |= RespInputFlags.Deterministic;
+            // We need this check because when we ingest records from the primary
+            // if the input is zero then input overlaps with value so any update to RespInputHeader->flags
+            // will incorrectly modify the total length of value.
+            if (input.SerializedLength > 0)
+                input.header.flags |= RespInputFlags.Deterministic;
 
-            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreUpsert, version = version, sessionID = sessionID }, ref key, ref input, ref value, out _);
+            functionsState.appendOnlyFile.Enqueue(
+                new AofHeader { opType = AofEntryType.StoreUpsert, storeVersion = version, sessionID = sessionId },
+                ref key, ref value, ref input, out _);
         }
 
         /// <summary>
@@ -748,13 +776,14 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW(ref SpanByte key, ref SpanByte input, ref SpanByte value, long version, int sessionID)
+        void WriteLogRMW(ref SpanByte key, ref RawStringInput input, long version, int sessionId)
         {
             if (functionsState.StoredProcMode) return;
+            input.header.flags |= RespInputFlags.Deterministic;
 
-            ((RespInputHeader*)input.ToPointer())->flags |= RespInputFlags.Deterministic;
-
-            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreRMW, version = version, sessionID = sessionID }, ref key, ref input, out _);
+            functionsState.appendOnlyFile.Enqueue(
+                new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
+                ref key, ref input, out _);
         }
 
         /// <summary>
@@ -766,7 +795,38 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
             SpanByte def = default;
-            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, version = version, sessionID = sessionID }, ref key, ref def, out _);
+            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID }, ref key, ref def, out _);
+        }
+
+        BitFieldCmdArgs GetBitFieldArguments(ref RawStringInput input)
+        {
+            var currTokenIdx = 0;
+            var cmd = input.parseState.GetEnum<RespCommand>(currTokenIdx++, true);
+            var encodingArg = input.parseState.GetString(currTokenIdx++);
+            var offsetArg = input.parseState.GetString(currTokenIdx++);
+
+            long value = default;
+            if (cmd == RespCommand.SET || cmd == RespCommand.INCRBY)
+            {
+                value = input.parseState.GetLong(currTokenIdx++);
+            }
+
+            var overflowType = (byte)BitFieldOverflow.WRAP;
+            if (currTokenIdx < input.parseState.Count)
+            {
+                overflowType = (byte)input.parseState.GetEnum<BitFieldOverflow>(currTokenIdx, true);
+            }
+
+            var sign = encodingArg[0] == 'i' ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
+            // Number of bits in signed number
+            var bitCount = (byte)int.Parse(encodingArg.AsSpan(1));
+            // At most 64 bits can fit into encoding info
+            var typeInfo = (byte)(sign | bitCount);
+
+            // Calculate number offset from bitCount if offsetArg starts with #
+            var offset = offsetArg[0] == '#' ? long.Parse(offsetArg.AsSpan(1)) * bitCount : long.Parse(offsetArg);
+
+            return new BitFieldCmdArgs(cmd, typeInfo, offset, value, overflowType);
         }
     }
 }

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Buffers.Text;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -212,6 +213,27 @@ namespace Garnet.common
         /// <summary>
         /// Write simple error
         /// </summary>
+        /// <param name="errorString">An ASCII encoded error string. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
+        public static bool WriteError(ReadOnlySpan<byte> errorString, ref MemoryResult<byte> output)
+        {
+            var totalLen = 1 + errorString.Length + 2;
+            output.MemoryOwner = MemoryPool<byte>.Shared.Rent(totalLen);
+            output.Length = totalLen;
+
+            fixed (byte* ptr = output.MemoryOwner.Memory.Span)
+            {
+                var curr = ptr;
+                *curr++ = (byte)'-';
+                errorString.CopyTo(new Span<byte>(curr, errorString.Length));
+                curr += errorString.Length;
+                WriteNewline(ref curr);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Write simple error
+        /// </summary>
         /// <param name="errorString">An ASCII error string. The string mustn't contain a CR (\r) or LF (\n) characters.</param>
         public static bool WriteError(ReadOnlySpan<char> errorString, ref byte* curr, byte* end)
         {
@@ -264,6 +286,22 @@ namespace Garnet.common
                 return false;
             *(T*)curr = item;
             curr += totalLen;
+            return true;
+        }
+
+        /// <summary>
+        /// Write length header of bulk string
+        /// </summary>
+        public static bool WriteBulkStringLength(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
+        {
+            var itemDigits = NumUtils.NumDigits(item.Length);
+            var totalLen = 1 + itemDigits + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'$';
+            NumUtils.IntToBytes(item.Length, itemDigits, ref curr);
+            WriteNewline(ref curr);
             return true;
         }
 
@@ -323,6 +361,19 @@ namespace Garnet.common
             WriteNewline(ref curr);
             var bytesWritten = Encoding.UTF8.GetBytes(chars, new Span<byte>(curr, encodedByteCount));
             curr += bytesWritten;
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
+        /// Write new line
+        /// </summary>
+        public static bool WriteNewLine(ref byte* curr, byte* end)
+        {
+            var totalLen = 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
             WriteNewline(ref curr);
             return true;
         }

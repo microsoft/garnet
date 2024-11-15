@@ -78,7 +78,7 @@ namespace Garnet.server
                 // Scan Command
                 case RespCommand.COSCAN:
                     if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
-                            out var patternLength, out var limitCount, out var error))
+                            out var patternLength, out var limitCount, out bool _, out var error))
                     {
                         Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                             patternLength: patternLength);

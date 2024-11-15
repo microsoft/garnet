@@ -12,9 +12,9 @@ Custom transactions allows adding a new transaction and registering it with Garn
 
 `CustomTransactionProcedure` is the base class for all custom transactions. To develop a new one, this class has to be extended and then include the custom logic. There are three methods to be implemented in a new custom transaction:
 
-- `Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)`
-- `Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)`
-- `Finalize<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)`
+- `Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)`
+- `Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)`
+- `Finalize<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)`
 
 The `Prepare` method implementation must setup the keys that will be involved in the transaction using utility methods available described below. The `Main` method is where the actual operation is to be performed as the locks required for the keys setup in the `Prepare` method are already obtained. The `Main` method then generates the output of the transaction as well. After the unlock of keys comes the `Finalize` phase, which can contain any non-transactional read and write operations on the store, and can write output as well. `Finalize` allows users to author complex non-transactional scripts as well: `Prepare` should simply return false, while `Main` is left unimplemented.
 
@@ -23,11 +23,16 @@ These are the helper methods for developing custom transactions.
 - `RewindScratchBuffer(ref ArgSlice slice)` This method is responsible for rewinding (popping) the last entry of the scratch buffer if it contains the given ArgSlice. It takes a reference to an ArgSlice parameter and returns a boolean value indicating whether the rewind operation was successful.
 - `CreateArgSlice(ReadOnlySpan<byte> bytes)` This method is used to create an ArgSlice in the scratch buffer from a given ReadOnlySpan\<byte>. It takes a ReadOnlySpan\<byte> parameter representing the argument and returns an ArgSlice object.
 - `CreateArgSlice(string str)` This method is similar to the previous one, but it creates an ArgSlice in UTF8 format from a given string. It takes a string parameter and returns an ArgSlice object.
-- `GetNextArg(ArgSlice input, ref int offset)` This method is used to retrieve the next argument from the input at the specified offset. It takes an ArgSlice parameter representing the input and a reference to an int offset. It returns an ArgSlice object representing the argument as a span. The method internally reads a pointer with a length header to extract the argument.
+- `GetNextArg(ref CustomProcedureInput procInput, ref int offset)` This method is used to retrieve the next argument from the input at the specified offset. It takes an ArgSlice parameter representing the input and a reference to an int offset. It returns an ArgSlice object representing the argument as a span. The method internally reads a pointer with a length header to extract the argument.
 These member functions provide utility and convenience methods for manipulating and working with the transaction data, scratch buffer, and input arguments within the CustomTransactionProcedure class.
 
+**NOTE** When invoking APIs on `IGarnetApi` multiple times with large outputs, it is possible to exhaust the internal buffer capacity. If such usage scenarios are expected, the buffer could be reset as described below.
+* Retrieve the initial buffer offset using `IGarnetApi.GetScratchBufferOffset`
+* Invoke necessary apis on `IGarnetApi`
+* Reset the buffer back to where it was using `IGarnetApi.ResetScratchBuffer(offset)`
+
 Registering the custom transaction is done on the server-side by calling the `NewTransactionProc(string name, int numParams, Func<CustomTransactionProcedure> proc)` method on the Garnet server object's `RegisterAPI` object with its name, number of parameters and a method that returns an instance of the custom transaction class.\
-It is possible to register the custom transaction from the client-side as well (as an admin command, given that the code already resides on the server) by using the `REGISTER` command (see [Custom Commands](../dev/custom-commands.md)). 
+It is possible to register the custom transaction from the client-side as well (as an admin command, given that the code already resides on the server) by using the `REGISTERCS` command (see [Custom Commands](../dev/custom-commands.md)). 
 
 ### Execution
 

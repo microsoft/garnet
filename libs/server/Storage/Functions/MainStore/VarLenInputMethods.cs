@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -9,7 +10,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
     {
         /// <summary>
         /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
@@ -66,56 +67,53 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public int GetRMWInitialValueLength(ref SpanByte input)
+        public int GetRMWInitialValueLength(ref RawStringInput input)
         {
-            var inputspan = input.AsSpan();
-            var inputPtr = input.ToPointer();
-            var cmd = inputspan[0];
-            switch ((RespCommand)cmd)
+            var cmd = input.header.cmd;
+            switch (cmd)
             {
                 case RespCommand.SETBIT:
-                    return sizeof(int) + BitmapManager.Length(inputPtr + RespInputHeader.Size);
+                    var bOffset = input.parseState.GetLong(0);
+                    return sizeof(int) + BitmapManager.Length(bOffset);
                 case RespCommand.BITFIELD:
-                    return sizeof(int) + BitmapManager.LengthFromType(inputPtr + RespInputHeader.Size);
+                    var bitFieldArgs = GetBitFieldArguments(ref input);
+                    return sizeof(int) + BitmapManager.LengthFromType(bitFieldArgs);
                 case RespCommand.PFADD:
-                    byte* i = inputPtr + RespInputHeader.Size;
-                    return sizeof(int) + HyperLogLog.DefaultHLL.SparseInitialLength(i);
+                    return sizeof(int) + HyperLogLog.DefaultHLL.SparseInitialLength(ref input);
                 case RespCommand.PFMERGE:
-                    i = inputPtr + RespInputHeader.Size;
-                    int length = *(int*)i;//[hll allocated size = 4 byte] + [hll data structure]
+                    var length = input.parseState.GetArgSliceByRef(0).SpanByte.Length;
                     return sizeof(int) + length;
                 case RespCommand.SETRANGE:
-                    var offset = *((int*)(inputPtr + RespInputHeader.Size));
-                    var newValueSize = *((int*)(inputPtr + RespInputHeader.Size + sizeof(int)));
-                    return sizeof(int) + newValueSize + offset + input.MetadataSize;
+                    var offset = input.parseState.GetInt(0);
+                    var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                    return sizeof(int) + newValue.Length + offset;
 
                 case RespCommand.APPEND:
-                    var valueLength = *(int*)(inputPtr + RespInputHeader.Size);
+                    var valueLength = input.parseState.GetArgSliceByRef(0).Length;
                     return sizeof(int) + valueLength;
 
-                case RespCommand.INCRBY:
-                    if (!IsValidNumber(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size, out var next))
-                        return sizeof(int);
+                case RespCommand.INCR:
+                    return sizeof(int) + 1; // # of digits in "1"
 
+                case RespCommand.DECR:
+                    return sizeof(int) + 2; // # of digits in "-1"
+
+                case RespCommand.INCRBY:
                     var fNeg = false;
-                    var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
+                    var ndigits = NumUtils.NumDigitsInLong(input.arg1, ref fNeg);
 
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
 
                 case RespCommand.DECRBY:
-                    if (!IsValidNumber(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size, out next))
-                        return sizeof(int);
-                    next = -next;
-
                     fNeg = false;
-                    ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
+                    ndigits = NumUtils.NumDigitsInLong(-input.arg1, ref fNeg);
 
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
                 case RespCommand.SETWITHETAG:
                     // same space as SET but with 8 additional bytes for etag at the front of the payload
                     return sizeof(int) + input.Length - RespInputHeader.Size + Constants.EtagSize;
                 case RespCommand.INCRBYFLOAT:
-                    if (!IsValidDouble(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size, out var incrByFloat))
+                    if (!input.parseState.TryGetDouble(0, out var incrByFloat))
                         return sizeof(int);
 
                     ndigits = NumUtils.NumOfCharInDouble(incrByFloat, out var _, out var _, out var _);
@@ -123,43 +121,41 @@ namespace Garnet.server
                     return sizeof(int) + ndigits;
 
                 default:
-                    if (cmd >= 200)
+                    if ((ushort)cmd >= CustomCommandManager.StartOffset)
                     {
-                        var functions = functionsState.customCommands[cmd - 200].functions;
+                        var functions = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions;
                         // Compute metadata size for result
-                        int metadataSize = input.ExtraMetadata switch
+                        int metadataSize = input.arg1 switch
                         {
                             -1 => 0,
                             0 => 0,
                             _ => 8,
                         };
-                        return sizeof(int) + metadataSize + functions.GetInitialLength(input.AsReadOnlySpan().Slice(RespInputHeader.Size));
+                        return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
                     }
-                    return sizeof(int) + input.Length - RespInputHeader.Size;
+
+                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length +
+                        (input.arg1 == 0 ? 0 : sizeof(long));
             }
         }
 
         /// <inheritdoc/>
-        public int GetRMWModifiedValueLength(ref SpanByte t, ref SpanByte input, bool hasEtag)
+        public int GetRMWModifiedValueLength(ref SpanByte t, ref RawStringInput input, bool hasEtag)
         {
-            if (input.Length > 0)
+            if (input.header.cmd != RespCommand.NONE)
             {
-                var inputspan = input.AsSpan();
-                var inputPtr = input.ToPointer();
-                var cmd = inputspan[0];
+                var cmd = input.header.cmd;
                 int etagOffset = hasEtag ? Constants.EtagSize : 0;
                 bool retainEtag = ((RespInputHeader*)inputPtr)->CheckRetainEtagFlag();
 
-                switch ((RespCommand)cmd)
+                switch (cmd)
                 {
                     case RespCommand.INCR:
                     case RespCommand.INCRBY:
-                        var datalen = inputspan.Length - RespInputHeader.Size;
-                        var slicedInputData = inputspan.Slice(RespInputHeader.Size, datalen);
+                        var incrByValue = input.header.cmd == RespCommand.INCRBY ? input.arg1 : 1;
 
-                        // We don't need to TryParse here because InPlaceUpdater will raise an error before we reach this point
                         var curr = NumUtils.BytesToLong(t.AsSpan(etagOffset));
-                        var next = curr + NumUtils.BytesToLong(slicedInputData);
+                        var next = curr + incrByValue;
 
                         var fNeg = false;
                         var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
@@ -169,13 +165,10 @@ namespace Garnet.server
 
                     case RespCommand.DECR:
                     case RespCommand.DECRBY:
-                        datalen = inputspan.Length - RespInputHeader.Size;
-                        slicedInputData = inputspan.Slice(RespInputHeader.Size, datalen);
+                        var decrByValue = input.header.cmd == RespCommand.DECRBY ? input.arg1 : 1;
 
-                        // We don't need to TryParse here because InPlaceUpdater will raise an error before we reach this point
                         curr = NumUtils.BytesToLong(t.AsSpan(etagOffset));
-                        var decrBy = NumUtils.BytesToLong(slicedInputData);
-                        next = curr + (cmd == (byte)RespCommand.DECR ? decrBy : -decrBy);
+                        next = curr - decrByValue;
 
                         fNeg = false;
                         ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
@@ -183,40 +176,40 @@ namespace Garnet.server
 
                         return sizeof(int) + ndigits + t.MetadataSize + etagOffset;
                     case RespCommand.INCRBYFLOAT:
-                        datalen = inputspan.Length - RespInputHeader.Size;
-                        slicedInputData = inputspan.Slice(RespInputHeader.Size, datalen);
+                        // We don't need to TryGetDouble here because InPlaceUpdater will raise an error before we reach this point
+                        var incrByFloat = input.parseState.GetDouble(0);
 
-                        NumUtils.TryBytesToDouble(t.AsSpan(etagOffset), out var currentValue);
-                        NumUtils.TryBytesToDouble(slicedInputData, out var incrByFloat);
-                        var newValue = currentValue + incrByFloat;
+                        NumUtils.TryBytesToDouble(t.AsSpan(etagOffset), out var currVal);
+                        var nextVal = currVal + incrByFloat;
 
-                        fNeg = false;
-                        ndigits = NumUtils.NumOfCharInDouble(newValue, out var _, out var _, out var _);
+                        ndigits = NumUtils.NumOfCharInDouble(nextVal, out _, out _, out _);
 
                         return sizeof(int) + ndigits + t.MetadataSize + etagOffset;
                     case RespCommand.SETBIT:
-                        return sizeof(int) + BitmapManager.NewBlockAllocLength(inputPtr + RespInputHeader.Size, t.Length);
+                        var bOffset = input.parseState.GetLong(0);
+                        return sizeof(int) + BitmapManager.NewBlockAllocLength(t.Length, bOffset);
                     case RespCommand.BITFIELD:
-                        return sizeof(int) + BitmapManager.NewBlockAllocLengthFromType(inputPtr + RespInputHeader.Size, t.Length);
+                        var bitFieldArgs = GetBitFieldArguments(ref input);
+                        return sizeof(int) + BitmapManager.NewBlockAllocLengthFromType(bitFieldArgs, t.Length);
                     case RespCommand.PFADD:
-                        int length = sizeof(int);
-                        byte* i = inputPtr + RespInputHeader.Size;
-                        byte* v = t.ToPointer();
-                        length += HyperLogLog.DefaultHLL.UpdateGrow(i, v);
+                        var length = sizeof(int);
+                        var v = t.ToPointer();
+                        length += HyperLogLog.DefaultHLL.UpdateGrow(ref input, v);
                         return length + t.MetadataSize;
 
                     case RespCommand.PFMERGE:
                         length = sizeof(int);
-                        byte* dstHLL = t.ToPointer();
-                        byte* srcHLL = inputPtr + RespInputHeader.Size;// srcHLL: <4byte HLL len> <HLL data>
-                        length += HyperLogLog.DefaultHLL.MergeGrow(srcHLL + sizeof(int), dstHLL);
+                        var srcHLL = input.parseState.GetArgSliceByRef(0).SpanByte.ToPointer();
+                        var dstHLL = t.ToPointer();
+                        length += HyperLogLog.DefaultHLL.MergeGrow(srcHLL, dstHLL);
                         return length + t.MetadataSize;
 
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
+                        var setValue = input.parseState.GetArgSliceByRef(0);
                         if (!retainEtag)
                             etagOffset = 0;
-                        return sizeof(int) + t.MetadataSize + input.Length - RespInputHeader.Size + etagOffset;
+                        return sizeof(int) + t.MetadataSize + setValue.Length + etagOffset;
 
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
@@ -225,51 +218,66 @@ namespace Garnet.server
                         return sizeof(int) + input.Length - RespInputHeader.Size + etagOffset;
                     case RespCommand.SETIFMATCH:
                     case RespCommand.PERSIST:
-                        break;
+                        return sizeof(int) + t.LengthWithoutMetadata;
                     case RespCommand.SETWITHETAG:
                         // same space as SET but with 8 additional bytes for etag at the front of the payload
                         return sizeof(int) + input.Length - RespInputHeader.Size + Constants.EtagSize;
                     case RespCommand.EXPIRE:
                     case RespCommand.PEXPIRE:
-                        return sizeof(int) + t.Length + input.MetadataSize;
+                    case RespCommand.EXPIREAT:
+                    case RespCommand.PEXPIREAT:
+                        return sizeof(int) + t.Length + sizeof(long);
 
                     case RespCommand.SETRANGE:
-                        var offset = *((int*)(inputPtr + RespInputHeader.Size));
-                        var newValueSize = *((int*)(inputPtr + RespInputHeader.Size + sizeof(int)));
+                        var offset = input.parseState.GetInt(0);
+                        var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
-                        if (newValueSize + offset > t.LengthWithoutMetadata - etagOffset)
-                            return sizeof(int) + newValueSize + offset + t.MetadataSize + etagOffset;
+                        if (newValue.Length + offset > t.LengthWithoutMetadata - etagOffset)
+                            return sizeof(int) + newValue.Length + offset + t.MetadataSize + etagOffset;
                         return sizeof(int) + t.Length;
 
                     case RespCommand.GETDEL:
                         // No additional allocation needed.
                         break;
 
+                    case RespCommand.GETEX:
+                        return sizeof(int) + t.LengthWithoutMetadata + (input.arg1 > 0 ? sizeof(long) : 0);
+
                     case RespCommand.APPEND:
-                        var valueLength = *((int*)(inputPtr + RespInputHeader.Size));
+                        var valueLength = input.parseState.GetArgSliceByRef(0).Length;
                         return sizeof(int) + t.Length + valueLength;
 
                     default:
-                        if (cmd >= 200)
+                        if ((ushort)cmd >= CustomCommandManager.StartOffset)
                         {
-                            var functions = functionsState.customCommands[cmd - 200].functions;
+                            var functions = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions;
                             // compute metadata for result
-                            int metadataSize = input.ExtraMetadata switch
+                            var metadataSize = input.arg1 switch
                             {
                                 -1 => 0,
                                 0 => t.MetadataSize,
                                 _ => 8,
                             };
-                            return sizeof(int) + metadataSize + functions.GetLength(t.AsReadOnlySpan(), input.AsReadOnlySpan().Slice(RespInputHeader.Size));
+                            return sizeof(int) + metadataSize + functions.GetLength(t.AsReadOnlySpan(), ref input);
                         }
                         throw new GarnetException("Unsupported operation on input");
                 }
             }
 
-            return sizeof(int) + input.Length - RespInputHeader.Size;
+            return sizeof(int) + input.parseState.GetArgSliceByRef(0).Length +
+                (input.arg1 == 0 ? 0 : sizeof(long));
         }
 
-        public int GetUpsertValueLength(ref SpanByte t, ref SpanByte input)
-            => t.TotalSize;
+        public int GetUpsertValueLength(ref SpanByte t, ref RawStringInput input)
+        {
+            switch (input.header.cmd)
+            {
+                case RespCommand.SET:
+                case RespCommand.SETEX:
+                    return input.arg1 == 0 ? t.TotalSize : sizeof(int) + t.LengthWithoutMetadata + sizeof(long);
+            }
+
+            return t.TotalSize;
+        }
     }
 }

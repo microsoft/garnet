@@ -59,13 +59,13 @@ namespace Garnet.server
             var ch = false;
 
             var count = input.parseState.Count;
-            var currTokenIdx = input.parseStateStartIdx;
+            var currTokenIdx = 0;
 
             ObjectOutputHeader _output = default;
             try
             {
                 // Read the options
-                var optsCount = (count - input.parseStateStartIdx) % 3;
+                var optsCount = count % 3;
                 if (optsCount > 0 && optsCount <= 2)
                 {
                     // Is NX or XX, if not nx then use XX
@@ -145,21 +145,16 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var count = input.parseState.Count;
-            var currTokenIdx = input.parseStateStartIdx;
-
             ObjectOutputHeader _output = default;
             try
             {
-                var tokenCount = input.parseState.Count - input.parseStateStartIdx;
-
-                while (!RespWriteUtils.WriteArrayLength(tokenCount, ref curr, end))
+                while (!RespWriteUtils.WriteArrayLength(input.parseState.Count, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                while (currTokenIdx < count)
+                for (var i = 0; i < input.parseState.Count; i++)
                 {
                     // Read member
-                    var member = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
+                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
                     if (sortedSetDict.TryGetValue(member, out var value52Int))
                     {
@@ -193,21 +188,19 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currTokenIdx = input.parseStateStartIdx;
-
             ObjectOutputHeader _output = default;
             try
             {
                 // Read 1st member
-                var member1 = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
+                var member1 = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
                 // Read 2nd member
-                var member2 = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
+                var member2 = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
 
                 // Read units
-                var units = input.parseState.Count - currTokenIdx == 0
-                    ? "M"u8
-                    : input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
+                var units = input.parseState.Count > 2
+                    ? input.parseState.GetArgSliceByRef(2).ReadOnlySpan
+                    : "M"u8;
 
                 if (sortedSetDict.TryGetValue(member1, out var scoreMember1) && sortedSetDict.TryGetValue(member2, out var scoreMember2))
                 {
@@ -247,20 +240,16 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currTokenIdx = input.parseStateStartIdx;
-
             ObjectOutputHeader _output = default;
             try
             {
-                var tokenCount = input.parseState.Count - input.parseStateStartIdx;
-
-                while (!RespWriteUtils.WriteArrayLength(tokenCount, ref curr, end))
+                while (!RespWriteUtils.WriteArrayLength(input.parseState.Count, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                while (currTokenIdx < input.parseState.Count)
+                for (var i = 0; i < input.parseState.Count; i++)
                 {
                     // read member
-                    var member = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
+                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
                     if (sortedSetDict.TryGetValue(member, out var scoreMember1))
                     {
@@ -302,8 +291,6 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var currTokenIdx = input.parseStateStartIdx;
-
             ObjectOutputHeader _output = default;
             try
             {
@@ -315,6 +302,8 @@ namespace Garnet.server
 
                 ReadOnlySpan<byte> errorMessage = default;
                 var argNumError = false;
+
+                var currTokenIdx = 0;
 
                 // Read the options
                 while (currTokenIdx < input.parseState.Count)
@@ -407,9 +396,10 @@ namespace Garnet.server
 
                         opts.WithCount = true;
                     }
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHCOORD"u8)) opts.WithCoord = true;
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHDIST"u8)) opts.WithDist = true;
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHHASH"u8)) opts.WithHash = true;
+                    else if (input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHCOORD"u8)) opts.WithCoord = true;
+                    else if ((input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHDIST"u8)) ||
+                             (input.header.SortedSetOp == SortedSetOperation.GEOSEARCHSTORE && tokenBytes.EqualsUpperCaseSpanIgnoringCase("STOREDIST"u8))) opts.WithDist = true;
+                    else if (input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHHASH"u8)) opts.WithHash = true;
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ANY"u8)) opts.WithCountAny = true;
                     else
                     {
@@ -433,6 +423,14 @@ namespace Garnet.server
                 if (errorMessage != default)
                 {
                     while (!RespWriteUtils.WriteError(errorMessage, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return;
+                }
+
+                // Not supported options in Garnet: WITHHASH
+                if (opts.WithHash)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     return;
                 }
@@ -475,30 +473,64 @@ namespace Garnet.server
                             }
                         }
 
-                        // Write results 
-                        while (!RespWriteUtils.WriteArrayLength(responseData.Count, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                        foreach (var item in responseData)
+                        if (responseData.Count == 0)
                         {
-                            while (!RespWriteUtils.WriteBulkString(item.Member, ref curr, end))
+                            while (!RespWriteUtils.WriteInteger(0, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        }
+                        else
+                        {
+                            var innerArrayLength = 1;
+                            if (opts.WithDist)
+                            {
+                                innerArrayLength++;
+                            }
+                            if (opts.WithHash)
+                            {
+                                innerArrayLength++;
+                            }
+                            if (opts.WithCoord)
+                            {
+                                innerArrayLength++;
+                            }
+
+                            // Write results 
+                            while (!RespWriteUtils.WriteArrayLength(responseData.Count, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            var distanceValue = (byBoxUnits.Length == 1 && (byBoxUnits[0] == (int)'M' || byBoxUnits[0] == (int)'m')) ? item.Distance
-                                                : server.GeoHash.ConvertMetersToUnits(item.Distance, byBoxUnits);
+                            foreach (var item in responseData)
+                            {
+                                if (innerArrayLength > 1)
+                                {
+                                    while (!RespWriteUtils.WriteArrayLength(innerArrayLength, ref curr, end))
+                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                }
 
-                            while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                while (!RespWriteUtils.WriteBulkString(item.Member, ref curr, end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            // Write array of 2 values
-                            while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                if (opts.WithDist)
+                                {
+                                    var distanceValue = (byBoxUnits.Length == 1 && (byBoxUnits[0] == (int)'M' || byBoxUnits[0] == (int)'m')) ? item.Distance
+                                                        : server.GeoHash.ConvertMetersToUnits(item.Distance, byBoxUnits);
 
-                            while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Longitude, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                    while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
+                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                }
 
-                            while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Latitude, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                if (opts.WithCoord)
+                                {
+                                    // Write array of 2 values
+                                    while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
+                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                                    while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Longitude, ref curr, end))
+                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                                    while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Latitude, ref curr, end))
+                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                }
+                            }
                         }
                     }
                 }

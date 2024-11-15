@@ -86,6 +86,7 @@ namespace Garnet.test.cluster
 
         /// <summary>
         /// Setup for a given command that references a single slot
+        /// NOTE: Used for TRYAGAIN test to simulate a key MOVED to another node
         /// </summary>
         /// <returns></returns>
         public abstract ArraySegment<string>[] SetupSingleSlotRequest();
@@ -274,6 +275,100 @@ namespace Garnet.test.cluster
         {
             var ssk = GetSingleSlotKeys;
             var setup = new ArraySegment<string>[] { new ArraySegment<string>(["MSET", ssk[1], "value1", ssk[2], "value", ssk[3], "value2"]) };
+            return setup;
+        }
+    }
+
+    internal class GETSET : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(GETSET);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "value1"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class SETNX : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(SETNX);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "value1"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class SUBSTR : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(SUBSTR);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "0", "-1"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class GETEX : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(GETEX);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0]];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class GEOSEARCHSTORE : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(GEOSEARCHSTORE);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1], "FROMMEMBER", "bar", "BYBOX", "800", "800", "km", "STOREDIST"];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1], "FROMMEMBER", "bar", "BYBOX", "800", "800", "km", "STOREDIST"];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[] { new ArraySegment<string>([ssk[0], ssk[1], "FROMMEMBER", "bar", "BYBOX", "800", "800", "km", "STOREDIST"]) };
             return setup;
         }
     }
@@ -526,6 +621,84 @@ namespace Garnet.test.cluster
 
         public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
     }
+
+    internal class WATCH : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(WATCH);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1], ssk[2]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1], csk[2]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[] { new ArraySegment<string>(["MSET", ssk[1], "value1", ssk[2], "value", ssk[3], "value2"]) };
+            return setup;
+        }
+    }
+
+    internal class WATCHMS : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(WATCHMS);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1], ssk[2]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1], csk[2]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[] { new ArraySegment<string>(["MSET", ssk[1], "value1", ssk[2], "value", ssk[3], "value2"]) };
+            return setup;
+        }
+    }
+
+    internal class WATCHOS : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(WATCHOS);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1], ssk[2]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1], csk[2]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[] { new ArraySegment<string>(["MSET", ssk[1], "value1", ssk[2], "value", ssk[3], "value2"]) };
+            return setup;
+        }
+    }
     #endregion
 
     #region BitmapCommands
@@ -663,7 +836,6 @@ namespace Garnet.test.cluster
     #endregion
 
     #region HLLCommands
-
     internal class PFADD : BaseCommand
     {
         public override bool IsArrayCommand => false;
@@ -1023,6 +1195,23 @@ namespace Garnet.test.cluster
         {
             var ssk = GetSingleSlotKeys;
             return [ssk[0], "0"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class SMISMEMBER : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(SMISMEMBER);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "0", "1"];
         }
 
         public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
@@ -1701,6 +1890,37 @@ namespace Garnet.test.cluster
 
         public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
     }
+
+    internal class ZDIFFSTORE : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(ZDIFFSTORE);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            // ZDIFFSTORE c 2 a b
+            return [ssk[0], "2", ssk[1], ssk[2]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], "2", csk[1], csk[2]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[3];
+            setup[0] = new ArraySegment<string>(["ZADD", ssk[1], "1", "a"]);
+            setup[1] = new ArraySegment<string>(["ZADD", ssk[2], "2", "b"]);
+            setup[2] = new ArraySegment<string>(["ZADD", ssk[3], "3", "c"]);
+            return setup;
+        }
+    }
+
     #endregion
 
     #region HashCommands

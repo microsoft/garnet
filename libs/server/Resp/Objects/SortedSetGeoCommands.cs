@@ -30,16 +30,8 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.SortedSet,
-                    SortedSetOp = SortedSetOperation.GEOADD,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
@@ -111,16 +103,9 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.SortedSet,
-                    SortedSetOp = op,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
+
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
@@ -150,6 +135,49 @@ namespace Garnet.server
                             break;
                     }
 
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// GEOSEARCHSTORE: Store the the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool GeoSearchStore<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 4)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GEOSEARCHSTORE));
+            }
+
+            var destinationKey = parseState.GetArgSliceByRef(0);
+            var sourceKey = parseState.GetArgSliceByRef(1);
+
+            var input = new ObjectInput(new RespInputHeader
+            {
+                type = GarnetObjectType.SortedSet,
+                SortedSetOp = SortedSetOperation.GEOSEARCHSTORE
+            }, ref parseState, startIdx: 2);
+
+            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var status = storageApi.GeoSearchStore(sourceKey, destinationKey, ref input, ref output);
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    if (!output.IsSpanByte)
+                        SendAndReset(output.Memory, output.Length);
+                    else
+                        dcurr += output.Length;
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))

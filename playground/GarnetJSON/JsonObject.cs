@@ -216,6 +216,6 @@ namespace GarnetJSON
         }
 
         /// <inheritdoc/>
-        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = null, int patternLength = 0) => throw new NotImplementedException();
+        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = null, int patternLength = 0, bool isNoValue = false) => throw new NotImplementedException();
     }
 }

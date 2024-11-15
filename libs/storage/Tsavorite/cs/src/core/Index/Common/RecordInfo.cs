@@ -222,8 +222,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SetIsInNewVersion() => word &= ~kInNewVersionBitMask;
-
+        public void SetIsInNewVersion() => word |= kInNewVersionBitMask;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetDirtyAndModified() => word |= kDirtyBitMask | kModifiedBitMask;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

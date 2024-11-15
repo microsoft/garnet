@@ -33,6 +33,7 @@ namespace Garnet.server
         GEODIST,
         GEOPOS,
         GEOSEARCH,
+        GEOSEARCHSTORE,
         ZREVRANGE,
         ZREVRANGEBYSCORE,
         ZREVRANK,
@@ -273,6 +274,7 @@ namespace Garnet.server
                         GeoPosition(ref input, ref output);
                         break;
                     case SortedSetOperation.GEOSEARCH:
+                    case SortedSetOperation.GEOSEARCHSTORE:
                         GeoSearch(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREVRANGE:
@@ -304,7 +306,7 @@ namespace Garnet.server
                         break;
                     case SortedSetOperation.ZSCAN:
                         if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
-                                out var patternLength, out var limitCount, out var error))
+                                out var patternLength, out var limitCount, out var _, out var error))
                         {
                             Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                                 patternLength: patternLength);
@@ -326,7 +328,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0)
+        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0, bool isNoValue = false)
         {
             cursor = start;
             items = new List<byte[]>();

@@ -3,6 +3,28 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <ServerGarbageCollection>true</ServerGarbageCollection>
+
+    <!-- IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~7 and GarnetServer.cs line ~32. -->
+    <Version>1.0.39</Version>
+    <PackageId>garnet-server</PackageId>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>garnet-server</ToolCommandName>
+    <Title>The Microsoft.Garnet RESP server, packaged as a .NET tool</Title>
+    <Authors>Microsoft</Authors>
+    <Company>Microsoft</Company>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/microsoft/garnet.git</RepositoryUrl>
+    <PackageProjectUrl>https://microsoft.github.io/garnet</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
+    <Description>
+      Garnet is a remote cache-store from Microsoft Research, that offers strong performance (throughput and latency),
+      scalability, storage, recovery, cluster sharding, key migration, and replication features. Garnet uses the Redis RESP wire
+      protocol and can work with existing Redis clients.
+    </Description>
+    <PackageReleaseNotes>See https://github.com/microsoft/garnet for details.</PackageReleaseNotes>
+    <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
+    <Tags>Garnet key-value store cache dictionary hashtable concurrent persistent remote cluster Redis RESP</Tags>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +43,10 @@
     <None Update="garnet.conf">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="readme.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
+  <PropertyGroup>
+    <PackageReadmeFile>readme.md</PackageReadmeFile>
+  </PropertyGroup>
 </Project>

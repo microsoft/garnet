@@ -8,12 +8,14 @@ COPY libs/cluster/*.csproj libs/cluster/
 COPY libs/common/*.csproj libs/common/
 COPY libs/host/*.csproj libs/host/
 COPY libs/server/*.csproj libs/server/
+COPY libs/resources/*.csproj libs/resources/
 COPY libs/storage/Tsavorite/cs/src/core/*.csproj libs/storage/Tsavorite/cs/src/core/
 COPY libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/*.csproj libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/
 COPY main/GarnetServer/*.csproj main/GarnetServer/
 COPY metrics/HdrHistogram/*.csproj metrics/HdrHistogram/
 COPY Directory.Build.props Directory.Build.props
 COPY Directory.Packages.props Directory.Packages.props
+COPY .editorconfig .editorconfig
 
 RUN dotnet restore main/GarnetServer/GarnetServer.csproj -a $TARGETARCH
 
@@ -25,7 +27,7 @@ COPY metrics/ metrics/
 COPY test/testcerts test/testcerts
 
 WORKDIR /src/main/GarnetServer
-RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contained false -f net8.0
+RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-cbl-mariner2.0 AS runtime

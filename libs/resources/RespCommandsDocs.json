@@ -2217,6 +2217,227 @@
     ]
   },
   {
+    "Command": "GEOSEARCHSTORE",
+    "Name": "GEOSEARCHSTORE",
+    "Summary": "Queries a geospatial index for members inside an area of a box or a circle, optionally stores the result.",
+    "Group": "Geo",
+    "Complexity": "O(N\u002Blog(M)) where N is the number of elements in the grid-aligned bounding box area around the shape provided as the filter and M is the number of items inside the shape",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "SOURCE",
+        "DisplayText": "source",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FROM",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMBER",
+            "DisplayText": "member",
+            "Type": "String",
+            "Token": "FROMMEMBER"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "FROMLONLAT",
+            "Type": "Block",
+            "Token": "FROMLONLAT",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "LONGITUDE",
+                "DisplayText": "longitude",
+                "Type": "Double"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "LATITUDE",
+                "DisplayText": "latitude",
+                "Type": "Double"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "BY",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "CIRCLE",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "RADIUS",
+                "DisplayText": "radius",
+                "Type": "Double",
+                "Token": "BYRADIUS"
+              },
+              {
+                "TypeDiscriminator": "RespCommandContainerArgument",
+                "Name": "UNIT",
+                "Type": "OneOf",
+                "Arguments": [
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "M",
+                    "DisplayText": "m",
+                    "Type": "PureToken",
+                    "Token": "M"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "KM",
+                    "DisplayText": "km",
+                    "Type": "PureToken",
+                    "Token": "KM"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "FT",
+                    "DisplayText": "ft",
+                    "Type": "PureToken",
+                    "Token": "FT"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "MI",
+                    "DisplayText": "mi",
+                    "Type": "PureToken",
+                    "Token": "MI"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "BOX",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "WIDTH",
+                "DisplayText": "width",
+                "Type": "Double",
+                "Token": "BYBOX"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "HEIGHT",
+                "DisplayText": "height",
+                "Type": "Double"
+              },
+              {
+                "TypeDiscriminator": "RespCommandContainerArgument",
+                "Name": "UNIT",
+                "Type": "OneOf",
+                "Arguments": [
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "M",
+                    "DisplayText": "m",
+                    "Type": "PureToken",
+                    "Token": "M"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "KM",
+                    "DisplayText": "km",
+                    "Type": "PureToken",
+                    "Token": "KM"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "FT",
+                    "DisplayText": "ft",
+                    "Type": "PureToken",
+                    "Token": "FT"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "MI",
+                    "DisplayText": "mi",
+                    "Type": "PureToken",
+                    "Token": "MI"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ORDER",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ASC",
+            "DisplayText": "asc",
+            "Type": "PureToken",
+            "Token": "ASC"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "DESC",
+            "DisplayText": "desc",
+            "Type": "PureToken",
+            "Token": "DESC"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "COUNT-BLOCK",
+        "Type": "Block",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer",
+            "Token": "COUNT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ANY",
+            "DisplayText": "any",
+            "Type": "PureToken",
+            "Token": "ANY",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "STOREDIST",
+        "DisplayText": "storedist",
+        "Type": "PureToken",
+        "Token": "STOREDIST",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
     "Command": "GET",
     "Name": "GET",
     "Summary": "Returns the string value of a key.",
@@ -2271,6 +2492,65 @@
     ]
   },
   {
+    "Command": "GETEX",
+    "Name": "GETEX",
+    "Summary": "Returns the string value of a key after setting its expiration time.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "UNIX-TIME-SECONDS",
+            "DisplayText": "unix-time-seconds",
+            "Type": "UnixTime",
+            "Token": "EXAT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "UNIX-TIME-MILLISECONDS",
+            "DisplayText": "unix-time-milliseconds",
+            "Type": "UnixTime",
+            "Token": "PXAT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "PERSIST",
+            "DisplayText": "persist",
+            "Type": "PureToken",
+            "Token": "PERSIST"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "GETRANGE",
     "Name": "GETRANGE",
     "Summary": "Returns a substring of the string stored at a key.",
@@ -2295,6 +2575,30 @@
         "Name": "END",
         "DisplayText": "end",
         "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "GETSET",
+    "Name": "GETSET",
+    "Summary": "Returns the previous string value of a key after setting it to a new value.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060SET\u0060 with the \u0060!GET\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
       }
     ]
   },
@@ -3776,6 +4080,54 @@
     ]
   },
   {
+    "Command": "PUBSUB",
+    "Name": "PUBSUB",
+    "Summary": "A container for Pub/Sub commands.",
+    "Group": "PubSub",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "PUBSUB_NUMPAT",
+        "Name": "PUBSUB|NUMPAT",
+        "Summary": "Returns a count of unique pattern subscriptions.",
+        "Group": "PubSub",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "PUBSUB_CHANNELS",
+        "Name": "PUBSUB|CHANNELS",
+        "Summary": "Returns the active channels.",
+        "Group": "PubSub",
+        "Complexity": "O(N) where N is the number of active channels, and assuming constant time pattern matching (relatively short channels and patterns)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "PATTERN",
+            "DisplayText": "pattern",
+            "Type": "Pattern",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "Command": "PUBSUB_NUMSUB",
+        "Name": "PUBSUB|NUMSUB",
+        "Summary": "Returns a count of subscribers to channels.",
+        "Group": "PubSub",
+        "Complexity": "O(N) for the NUMSUB subcommand, where N is the number of requested channels",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CHANNEL",
+            "DisplayText": "channel",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "PUNSUBSCRIBE",
     "Name": "PUNSUBSCRIBE",
     "Summary": "Stops listening to messages published to channels that match one or more patterns.",
@@ -4476,6 +4828,30 @@
     ]
   },
   {
+    "Command": "SETNX",
+    "Name": "SETNX",
+    "Summary": "Set the string value of a key only when the key doesn\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060SET\u0060 with the \u0060NX\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      }
+    ]
+  },
+  {
     "Command": "SETRANGE",
     "Name": "SETRANGE",
     "Summary": "Overwrites a part of a string value with another by an offset. Creates the key if it doesn\u0027t exist.",
@@ -4637,6 +5013,29 @@
         "DisplayText": "key",
         "Type": "Key",
         "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "SMISMEMBER",
+    "Name": "SMISMEMBER",
+    "Summary": "Determines whether multiple members belong to a set.",
+    "Group": "Set",
+    "Complexity": "O(N) where N is the number of elements being checked for membership",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "DisplayText": "member",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
       }
     ]
   },
@@ -4809,6 +5208,36 @@
     ]
   },
   {
+    "Command": "SUBSTR",
+    "Name": "SUBSTR",
+    "Summary": "Returns a substring from a string value.",
+    "Group": "String",
+    "Complexity": "O(N) where N is the length of the returned string. The complexity is ultimately determined by the returned length, but because creating a substring from an existing string is very cheap, it can be considered O(1) for small strings.",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060GETRANGE\u0060",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "END",
+        "DisplayText": "end",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
     "Command": "SUNION",
     "Name": "SUNION",
     "Summary": "Returns the union of multiple sets.",
@@ -4934,42 +5363,40 @@
     "Summary": "Monitors changes to keys to determine the execution of a transaction.",
     "Group": "Transactions",
     "Complexity": "O(1) for every key.",
-    "SubCommands": [
+    "Arguments": [
       {
-        "Command": "WATCH_MS",
-        "Name": "WATCH|MS",
-        "Summary": "Monitors changes to keys in main store to determine the execution of a transaction.",
-        "Group": "Transactions",
-        "Complexity": "O(1) for every key.",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandKeyArgument",
-            "Name": "KEY",
-            "DisplayText": "key",
-            "Type": "Key",
-            "ArgumentFlags": "Multiple",
-            "KeySpecIndex": 0
-          }
-        ]
-      },
-      {
-        "Command": "WATCH_OS",
-        "Name": "WATCH|OS",
-        "Summary": "Monitors changes to keys in object store to determine the execution of a transaction.",
-        "Group": "Transactions",
-        "Complexity": "O(1) for every key.",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandKeyArgument",
-            "Name": "KEY",
-            "DisplayText": "key",
-            "Type": "Key",
-            "ArgumentFlags": "Multiple",
-            "KeySpecIndex": 0
-          }
-        ]
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
       }
-    ],
+    ]
+  },
+  {
+    "Command": "WATCHMS",
+    "Name": "WATCHMS",
+    "Summary": "Monitors changes to keys in main store to determine the execution of a transaction.",
+    "Group": "Transactions",
+    "Complexity": "O(1) for every key.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "WATCHOS",
+    "Name": "WATCHOS",
+    "Summary": "Monitors changes to keys in object store to determine the execution of a transaction.",
+    "Group": "Transactions",
+    "Complexity": "O(1) for every key.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -5149,6 +5576,36 @@
         "Type": "PureToken",
         "Token": "WITHSCORES",
         "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZDIFFSTORE",
+    "Name": "ZDIFFSTORE",
+    "Summary": "Stores the difference of multiple sorted sets in a key.",
+    "Group": "SortedSet",
+    "Complexity": "O(L \u002B (N-K)log(N)) worst case where L is the total number of elements in all the sets, N is the size of the first set, and K is the size of the result set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 1
       }
     ]
   },

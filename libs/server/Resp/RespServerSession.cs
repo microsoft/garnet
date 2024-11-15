@@ -17,13 +17,13 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
             /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
             SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
         BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
             GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
-    using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+    using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
             /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
             SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
         LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
@@ -65,7 +65,6 @@ namespace Garnet.server
         internal readonly ScratchBufferManager scratchBufferManager;
 
         internal SessionParseState parseState;
-        internal ArgSlice[] parseStateBuffer;
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
 
@@ -220,7 +219,7 @@ namespace Garnet.server
             clusterSession?.SetUser(this._user);
             sessionScriptCache?.SetUser(this._user);
 
-            parseState.Initialize(ref parseStateBuffer);
+            parseState.Initialize();
             readHead = 0;
             toDispose = false;
             SessionAsking = 0;
@@ -506,10 +505,12 @@ namespace Garnet.server
             _ = cmd switch
             {
                 RespCommand.GET => NetworkGET(ref storageApi),
+                RespCommand.GETEX => NetworkGETEX(ref storageApi),
                 RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
                 RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
                 RespCommand.SET => NetworkSET(ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(false, ref storageApi),
+                RespCommand.SETNX => NetworkSETNX(false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(ref storageApi),
                 RespCommand.SETWITHETAG => NetworkSETWITHETAG(ref storageApi),
@@ -524,10 +525,12 @@ namespace Garnet.server
                 RespCommand.PEXPIRETIME => NetworkEXPIRETIME(RespCommand.PEXPIRETIME, ref storageApi),
                 RespCommand.PERSIST => NetworkPERSIST(ref storageApi),
                 RespCommand.GETRANGE => NetworkGetRange(ref storageApi),
+                RespCommand.SUBSTR => NetworkGetRange(ref storageApi),
                 RespCommand.TTL => NetworkTTL(RespCommand.TTL, ref storageApi),
                 RespCommand.PTTL => NetworkTTL(RespCommand.PTTL, ref storageApi),
                 RespCommand.SETRANGE => NetworkSetRange(ref storageApi),
                 RespCommand.GETDEL => NetworkGETDEL(ref storageApi),
+                RespCommand.GETSET => NetworkGETSET(ref storageApi),
                 RespCommand.APPEND => NetworkAppend(ref storageApi),
                 RespCommand.STRLEN => NetworkSTRLEN(ref storageApi),
                 RespCommand.INCR => NetworkIncrement(RespCommand.INCR, ref storageApi),
@@ -574,13 +577,16 @@ namespace Garnet.server
                 RespCommand.UNLINK => NetworkDEL(ref storageApi),
                 RespCommand.SELECT => NetworkSELECT(),
                 RespCommand.WATCH => NetworkWATCH(),
-                RespCommand.WATCH_MS => NetworkWATCH_MS(),
-                RespCommand.WATCH_OS => NetworkWATCH_OS(),
+                RespCommand.WATCHMS => NetworkWATCH_MS(),
+                RespCommand.WATCHOS => NetworkWATCH_OS(),
                 // Pub/sub commands
                 RespCommand.SUBSCRIBE => NetworkSUBSCRIBE(),
                 RespCommand.PSUBSCRIBE => NetworkPSUBSCRIBE(),
                 RespCommand.UNSUBSCRIBE => NetworkUNSUBSCRIBE(),
                 RespCommand.PUNSUBSCRIBE => NetworkPUNSUBSCRIBE(),
+                RespCommand.PUBSUB_CHANNELS => NetworkPUBSUB_CHANNELS(),
+                RespCommand.PUBSUB_NUMSUB => NetworkPUBSUB_NUMSUB(),
+                RespCommand.PUBSUB_NUMPAT => NetworkPUBSUB_NUMPAT(),
                 // Custom Object Commands
                 RespCommand.COSCAN => ObjectScan(GarnetObjectType.All, ref storageApi),
                 // Sorted Set commands
@@ -603,6 +609,7 @@ namespace Garnet.server
                 RespCommand.ZPOPMIN => SortedSetPop(cmd, ref storageApi),
                 RespCommand.ZRANDMEMBER => SortedSetRandomMember(ref storageApi),
                 RespCommand.ZDIFF => SortedSetDifference(ref storageApi),
+                RespCommand.ZDIFFSTORE => SortedSetDifferenceStore(ref storageApi),
                 RespCommand.ZREVRANGE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZSCAN => ObjectScan(GarnetObjectType.SortedSet, ref storageApi),
@@ -612,6 +619,7 @@ namespace Garnet.server
                 RespCommand.GEODIST => GeoCommands(cmd, ref storageApi),
                 RespCommand.GEOPOS => GeoCommands(cmd, ref storageApi),
                 RespCommand.GEOSEARCH => GeoCommands(cmd, ref storageApi),
+                RespCommand.GEOSEARCHSTORE => GeoSearchStore(ref storageApi),
                 //HLL Commands
                 RespCommand.PFADD => HyperLogLogAdd(ref storageApi),
                 RespCommand.PFMERGE => HyperLogLogMerge(ref storageApi),
@@ -664,7 +672,8 @@ namespace Garnet.server
                 // Set Commands
                 RespCommand.SADD => SetAdd(ref storageApi),
                 RespCommand.SMEMBERS => SetMembers(ref storageApi),
-                RespCommand.SISMEMBER => SetIsMember(ref storageApi),
+                RespCommand.SISMEMBER => SetIsMember(cmd, ref storageApi),
+                RespCommand.SMISMEMBER => SetIsMember(cmd, ref storageApi),
                 RespCommand.SREM => SetRemove(ref storageApi),
                 RespCommand.SCARD => SetLength(ref storageApi),
                 RespCommand.SPOP => SetPop(ref storageApi),
@@ -749,7 +758,10 @@ namespace Garnet.server
                 }
 
                 // Perform the operation
-                TryTransactionProc(currentCustomTransaction.id, recvBufferPtr + readHead, recvBufferPtr + endReadHead, customCommandManagerSession.GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager).Item1);
+                TryTransactionProc(currentCustomTransaction.id,
+                    customCommandManagerSession
+                        .GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager)
+                        .Item1);
                 currentCustomTransaction = null;
                 return true;
             }
@@ -762,8 +774,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                TryCustomProcedure(currentCustomProcedure.Id, recvBufferPtr + readHead, recvBufferPtr + endReadHead,
-                    currentCustomProcedure.CustomProcedureImpl);
+                TryCustomProcedure(currentCustomProcedure.CustomProcedureImpl);
 
                 currentCustomProcedure = null;
                 return true;
@@ -789,7 +800,8 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomRawStringCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomRawStringCommand.GetRespCommand(), currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
+            TryCustomRawStringCommand(currentCustomRawStringCommand.GetRespCommand(),
+                currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
             currentCustomRawStringCommand = null;
             return true;
         }
@@ -804,7 +816,8 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomObjectCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
+            TryCustomObjectCommand(currentCustomObjectCommand.GetObjectType(), currentCustomObjectCommand.subid,
+                currentCustomObjectCommand.type, ref storageApi);
             currentCustomObjectCommand = null;
             return true;
         }
@@ -1000,6 +1013,18 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteDirectLargeRespString(ReadOnlySpan<byte> message)
+        {
+            while (!RespWriteUtils.WriteBulkStringLength(message, ref dcurr, dend))
+                SendAndReset();
+
+            WriteDirectLarge(message);
+
+            while (!RespWriteUtils.WriteNewLine(ref dcurr, dend))
+                SendAndReset();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteDirectLarge(ReadOnlySpan<byte> src)
         {
             // Repeat while we have bytes left to write
@@ -1018,6 +1043,7 @@ namespace Garnet.server
 
                 // Adjust number of bytes to copy, to space left on output buffer, then copy
                 src.Slice(0, destSpace).CopyTo(new Span<byte>(dcurr, destSpace));
+                dcurr += destSpace;
                 src = src.Slice(destSpace);
 
                 // Send and reset output buffer

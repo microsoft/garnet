@@ -22,6 +22,24 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Reset cached slot verification result
+        /// </summary>
+        public void ResetCacheSlotVerificationResult()
+        {
+            if (!clusterEnabled) return;
+            respSession.clusterSession.ResetCachedSlotVerificationResult();
+        }
+
+        /// <summary>
+        /// Reset cached slot verification result
+        /// </summary>
+        public void WriteCachedSlotVerificationMessage(ref MemoryResult<byte> output)
+        {
+            if (!clusterEnabled) return;
+            respSession.clusterSession.WriteCachedSlotVerificationMessage(ref output);
+        }
+
+        /// <summary>
         /// Verify key ownership
         /// </summary>
         /// <param name="key"></param>
@@ -30,8 +48,8 @@ namespace Garnet.server
         {
             if (!clusterEnabled) return;
 
-            bool readOnly = type == LockType.Shared;
-            if (!respSession.clusterSession.CheckSingleKeySlotVerify(key, readOnly, respSession.SessionAsking))
+            var readOnly = type == LockType.Shared;
+            if (!respSession.clusterSession.NetworkIterativeSlotVerify(key, readOnly, respSession.SessionAsking))
             {
                 this.state = TxnState.Aborted;
                 return;
@@ -57,6 +75,7 @@ namespace Garnet.server
                 RespCommand.SMOVE => SetObjectKeys(SetOperation.SMOVE, inputCount),
                 RespCommand.SRANDMEMBER => SetObjectKeys(SetOperation.SRANDMEMBER, inputCount),
                 RespCommand.SISMEMBER => SetObjectKeys(SetOperation.SISMEMBER, inputCount),
+                RespCommand.SMISMEMBER => SetObjectKeys(SetOperation.SMISMEMBER, inputCount),
                 RespCommand.SUNION => SetObjectKeys(SetOperation.SUNION, inputCount),
                 RespCommand.SUNIONSTORE => SetObjectKeys(SetOperation.SUNIONSTORE, inputCount),
                 RespCommand.SDIFF => SetObjectKeys(SetOperation.SDIFF, inputCount),
@@ -262,6 +281,7 @@ namespace Garnet.server
                 SetOperation.SRANDMEMBER => SingleKey(1, true, LockType.Shared),
                 SetOperation.SPOP => SingleKey(1, true, LockType.Exclusive),
                 SetOperation.SISMEMBER => SingleKey(1, true, LockType.Shared),
+                SetOperation.SMISMEMBER => SingleKey(1, true, LockType.Shared),
                 SetOperation.SUNION => ListKeys(inputCount, true, LockType.Shared),
                 SetOperation.SUNIONSTORE => XSTOREKeys(inputCount, true),
                 SetOperation.SDIFF => ListKeys(inputCount, true, LockType.Shared),

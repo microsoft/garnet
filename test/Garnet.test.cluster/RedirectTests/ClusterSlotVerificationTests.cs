@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -30,6 +31,10 @@ namespace Garnet.test.cluster
                 new SET(),
                 new MGET(),
                 new MSET(),
+                new GETEX(),
+                new GETSET(),
+                new SETNX(),
+                new SUBSTR(),
                 new PFADD(),
                 new PFCOUNT(),
                 new PFMERGE(),
@@ -80,10 +85,12 @@ namespace Garnet.test.cluster
                 new SCARD(),
                 new SMEMBERS(),
                 new SISMEMBER(),
+                new SMISMEMBER(),
                 new SPOP(),
                 new SRANDMEMBER(),
                 new GEOADD(),
                 new GEOHASH(),
+                new GEOSEARCHSTORE(),
                 new ZADD(),
                 new ZREM(),
                 new ZCARD(),
@@ -98,6 +105,7 @@ namespace Garnet.test.cluster
                 new ZREMRANGEBYRANK(),
                 new ZRANDMEMBER(),
                 new ZDIFF(),
+                new ZDIFFSTORE(),
                 new HSET(),
                 new HGET(),
                 new HGETALL(),
@@ -109,6 +117,11 @@ namespace Garnet.test.cluster
                 new HEXISTS(),
                 new HKEYS(),
                 new HINCRBY(),
+                new CLUSTERGETPROC(),
+                new CLUSTERSETPROC(),
+                new WATCH(),
+                new WATCHMS(),
+                new WATCHOS(),
             };
 
         ClusterTestContext context;
@@ -164,6 +177,17 @@ namespace Garnet.test.cluster
             context.Setup([]);
 
             context.CreateInstances(3, enableLua: true);
+
+            context.RegisterCustomTxn(
+                "CLUSTERGETPROC",
+                () => new TestClusterReadOnlyCustomTxn(),
+                new RespCommandsInfo { Arity = TestClusterReadOnlyCustomTxn.Arity });
+
+            context.RegisterCustomTxn(
+                "CLUSTERSETPROC",
+                () => new TestClusterReadWriteCustomTxn(),
+                new RespCommandsInfo { Arity = TestClusterReadWriteCustomTxn.Arity });
+
             context.CreateConnection();
 
             // Assign all slots to node 0
@@ -185,8 +209,12 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -236,10 +264,12 @@ namespace Garnet.test.cluster
         [TestCase("SCARD")]
         [TestCase("SMEMBERS")]
         [TestCase("SISMEMBER")]
+        [TestCase("SMISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("GEOSEARCHSTORE")]
         [TestCase("ZADD")]
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
@@ -254,6 +284,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("ZDIFFSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -265,6 +296,11 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCH")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterCLUSTERDOWNTest(string commandName)
         {
             var requestNodeIndex = otherIndex;
@@ -311,8 +347,12 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -363,10 +403,12 @@ namespace Garnet.test.cluster
         [TestCase("SCARD")]
         [TestCase("SMEMBERS")]
         [TestCase("SISMEMBER")]
+        [TestCase("SMISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("GEOSEARCHSTORE")]
         [TestCase("ZADD")]
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
@@ -381,6 +423,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("ZDIFFSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -392,6 +435,10 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterOKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -449,8 +496,12 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -501,10 +552,12 @@ namespace Garnet.test.cluster
         [TestCase("SCARD")]
         [TestCase("SMEMBERS")]
         [TestCase("SISMEMBER")]
+        [TestCase("SMISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("GEOSEARCHSTORE")]
         [TestCase("ZADD")]
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
@@ -519,6 +572,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("ZDIFFSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -530,6 +584,10 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterCROSSSLOTTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -580,8 +638,12 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -631,10 +693,12 @@ namespace Garnet.test.cluster
         [TestCase("SCARD")]
         [TestCase("SMEMBERS")]
         [TestCase("SISMEMBER")]
+        [TestCase("SMISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("GEOSEARCHSTORE")]
         [TestCase("ZADD")]
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
@@ -649,6 +713,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("ZDIFFSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -660,6 +725,10 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterMOVEDTest(string commandName)
         {
             var requestNodeIndex = targetIndex;
@@ -717,8 +786,12 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -768,10 +841,12 @@ namespace Garnet.test.cluster
         [TestCase("SCARD")]
         [TestCase("SMEMBERS")]
         [TestCase("SISMEMBER")]
+        [TestCase("SMISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("GEOSEARCHSTORE")]
         [TestCase("ZADD")]
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
@@ -786,6 +861,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("ZDIFFSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -797,6 +873,10 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterASKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -871,8 +951,12 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         [TestCase("GET")]
         [TestCase("SET")]
+        [TestCase("GETSET")]
+        [TestCase("SETNX")]
+        [TestCase("SUBSTR")]
         [TestCase("MGET")]
         [TestCase("MSET")]
+        [TestCase("GETEX")]
         [TestCase("PFADD")]
         [TestCase("PFCOUNT")]
         [TestCase("PFMERGE")]
@@ -922,10 +1006,12 @@ namespace Garnet.test.cluster
         [TestCase("SCARD")]
         [TestCase("SMEMBERS")]
         [TestCase("SISMEMBER")]
+        [TestCase("SMISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("GEOSEARCHSTORE")]
         [TestCase("ZADD")]
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
@@ -940,6 +1026,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("ZDIFFSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -951,6 +1038,10 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterTRYAGAINTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;

@@ -28,6 +28,9 @@ namespace Garnet
     /// </summary>
     public class GarnetServer : IDisposable
     {
+        // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~7 and GarnetServer.csproj line ~8.
+        readonly string version = "1.0.39";
+
         internal GarnetProvider Provider;
 
         private readonly GarnetServerOptions opts;
@@ -50,9 +53,6 @@ namespace Garnet
         /// Store and associated information used by this Garnet server
         /// </summary>
         protected StoreWrapper storeWrapper;
-
-        // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
-        readonly string version = "1.0.30";
 
         /// <summary>
         /// Resp protocol version
@@ -202,7 +202,7 @@ namespace Garnet
             {
                 var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes + (store.ReadCache?.MaxMemorySizeBytes ?? 0) + (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
                 if (objectStore != null)
-                    configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes + (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) + (objectStoreSizeTracker?.TargetSize ?? 0);
+                    configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes + (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) + (objectStoreSizeTracker?.TargetSize ?? 0) + (objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
                 logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
             }
 
@@ -282,7 +282,7 @@ namespace Garnet
             if (!opts.DisableObjects)
             {
                 objKvSettings = opts.GetObjectStoreSettings(this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"),
-                    out var objHeapMemorySize);
+                    out var objHeapMemorySize, out var objReadCacheHeapMemorySize);
 
                 // Run checkpoint on its own thread to control p99
                 objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
@@ -304,8 +304,8 @@ namespace Garnet
                         () => new GarnetObjectSerializer(customCommandManager))
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
-                if (objHeapMemorySize > 0)
-                    objectStoreSizeTracker = new CacheSizeTracker(objectStore, objKvSettings, objHeapMemorySize,
+                if (objHeapMemorySize > 0 || objReadCacheHeapMemorySize > 0)
+                    objectStoreSizeTracker = new CacheSizeTracker(objectStore, objKvSettings, objHeapMemorySize, objReadCacheHeapMemorySize,
                         this.loggerFactory);
             }
         }

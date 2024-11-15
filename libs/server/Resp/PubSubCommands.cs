@@ -21,9 +21,9 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
         {
-            networkSender.EnterAndGetResponseObject(out dcurr, out dend);
             try
             {
+                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                 if (respProtocolVersion == 2)
                 {
                     while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
@@ -36,10 +36,10 @@ namespace Garnet.server
                 }
                 while (!RespWriteUtils.WriteBulkString("message"u8, ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)), ref dcurr, dend))
-                    SendAndReset();
-                while (!RespWriteUtils.WriteBulkString(new Span<byte>(valPtr + sizeof(int), valLength - sizeof(int)), ref dcurr, dend))
-                    SendAndReset();
+
+                // Write key and value to the network
+                WriteDirectLargeRespString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)));
+                WriteDirectLargeRespString(new Span<byte>(valPtr + sizeof(int), valLength - sizeof(int)));
 
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
@@ -53,9 +53,9 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe void PrefixPublish(byte* patternPtr, int patternLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
         {
-            networkSender.EnterAndGetResponseObject(out dcurr, out dend);
             try
             {
+                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                 if (respProtocolVersion == 2)
                 {
                     while (!RespWriteUtils.WriteArrayLength(4, ref dcurr, dend))
@@ -368,6 +368,81 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteError("ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
                     SendAndReset();
             }
+            return true;
+        }
+
+        private bool NetworkPUBSUB_CHANNELS()
+        {
+            if (parseState.Count > 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PUBSUB_CHANNELS));
+            }
+
+            if (subscribeBroker is null)
+            {
+                while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB CHANNELS"), ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var input = new ObjectInput()
+            {
+                parseState = parseState
+            };
+            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            subscribeBroker.Channels(ref input, ref output);
+
+            if (!output.IsSpanByte)
+                SendAndReset(output.Memory, output.Length);
+            else
+                dcurr += output.Length;
+
+            return true;
+        }
+
+        private bool NetworkPUBSUB_NUMPAT()
+        {
+            if (parseState.Count > 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PUBSUB_NUMPAT));
+            }
+
+            if (subscribeBroker is null)
+            {
+                while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB NUMPAT"), ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var numPatSubs = subscribeBroker.NumPatternSubscriptions();
+
+            while (!RespWriteUtils.WriteInteger(numPatSubs, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        private bool NetworkPUBSUB_NUMSUB()
+        {
+            if (subscribeBroker is null)
+            {
+                while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB NUMSUB"), ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var input = new ObjectInput
+            {
+                parseState = parseState
+            };
+            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            subscribeBroker.NumSubscriptions(ref input, ref output);
+
+            if (!output.IsSpanByte)
+                SendAndReset(output.Memory, output.Length);
+            else
+                dcurr += output.Length;
+
             return true;
         }
     }

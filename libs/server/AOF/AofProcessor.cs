@@ -25,9 +25,12 @@ namespace Garnet.server
     public sealed unsafe partial class AofProcessor
     {
         readonly StoreWrapper storeWrapper;
-        readonly CustomRawStringCommand[] customCommands;
-        readonly CustomObjectCommandWrapper[] customObjectCommands;
         readonly RespServerSession respServerSession;
+
+        private readonly RawStringInput storeInput;
+        private readonly ObjectInput objectStoreInput;
+        private readonly CustomProcedureInput customProcInput;
+        private readonly SessionParseState parseState;
 
         /// <summary>
         /// Replication offset
@@ -37,7 +40,7 @@ namespace Garnet.server
         /// <summary>
         /// Session for main store
         /// </summary>
-        readonly BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
+        readonly BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
 
         /// <summary>
         /// Session for object store
@@ -61,8 +64,6 @@ namespace Garnet.server
             ILogger logger = null)
         {
             this.storeWrapper = storeWrapper;
-            this.customCommands = storeWrapper.customCommandManager.rawStringCommandMap;
-            this.customObjectCommands = storeWrapper.customCommandManager.objectCommandMap;
             this.recordToAof = recordToAof;
 
             ReplicationOffset = 0;
@@ -87,6 +88,11 @@ namespace Garnet.server
             var objectStoreSession = respServerSession.storageSession.objectStoreBasicContext.Session;
             if (objectStoreSession is not null)
                 objectStoreBasicContext = objectStoreSession.BasicContext;
+
+            parseState.Initialize();
+            storeInput.parseState = parseState;
+            objectStoreInput.parseState = parseState;
+            customProcInput.parseState = parseState;
 
             inflightTxns = new Dictionary<int, List<byte[]>>();
             buffer = new byte[BufferSizeUtils.ServerBufferSize(new MaxSizeSettings())];
@@ -200,14 +206,14 @@ namespace Garnet.server
                 case AofEntryType.MainStoreCheckpointCommit:
                     if (asReplica)
                     {
-                        if (header.version > storeWrapper.store.CurrentVersion)
+                        if (header.storeVersion > storeWrapper.store.CurrentVersion)
                             storeWrapper.TakeCheckpoint(false, StoreType.Main, logger);
                     }
                     break;
                 case AofEntryType.ObjectStoreCheckpointCommit:
                     if (asReplica)
                     {
-                        if (header.version > storeWrapper.objectStore.CurrentVersion)
+                        if (header.storeVersion > storeWrapper.objectStore.CurrentVersion)
                             storeWrapper.TakeCheckpoint(false, StoreType.Object, logger);
                     }
                     break;
@@ -241,16 +247,16 @@ namespace Garnet.server
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
-                    StoreUpsert(basicContext, entryPtr);
+                    StoreUpsert(basicContext, storeInput, entryPtr);
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(basicContext, entryPtr);
+                    StoreRMW(basicContext, storeInput, entryPtr);
                     break;
                 case AofEntryType.StoreDelete:
                     StoreDelete(basicContext, entryPtr);
                     break;
                 case AofEntryType.ObjectStoreRMW:
-                    ObjectStoreRMW(objectStoreBasicContext, entryPtr, bufferPtr, buffer.Length);
+                    ObjectStoreRMW(objectStoreBasicContext, objectStoreInput, entryPtr, bufferPtr, buffer.Length);
                     break;
                 case AofEntryType.ObjectStoreUpsert:
                     ObjectStoreUpsert(objectStoreBasicContext, storeWrapper.GarnetObjectSerializer, entryPtr, bufferPtr, buffer.Length);
@@ -259,8 +265,7 @@ namespace Garnet.server
                     ObjectStoreDelete(objectStoreBasicContext, entryPtr);
                     break;
                 case AofEntryType.StoredProcedure:
-                    ref var input = ref Unsafe.AsRef<SpanByte>(entryPtr + sizeof(AofHeader));
-                    respServerSession.RunTransactionProc(header.type, new ArgSlice(ref input), ref output);
+                    RunStoredProc(header.procedureId, customProcInput, entryPtr);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
@@ -268,31 +273,60 @@ namespace Garnet.server
             return true;
         }
 
-        static unsafe void StoreUpsert(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
+        unsafe void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)
         {
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
-            ref var input = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
-            ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + input.TotalSize);
+            var curr = ptr + sizeof(AofHeader);
+
+            // Reconstructing CustomProcedureInput
+
+            // input
+            customProcInput.DeserializeFrom(curr);
+
+            respServerSession.RunTransactionProc(id, ref customProcInput, ref output);
+        }
+
+        static unsafe void StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+            RawStringInput storeInput, byte* ptr)
+        {
+            var curr = ptr + sizeof(AofHeader);
+            ref var key = ref Unsafe.AsRef<SpanByte>(curr);
+            curr += key.TotalSize;
+
+            ref var value = ref Unsafe.AsRef<SpanByte>(curr);
+            curr += value.TotalSize;
+
+            // Reconstructing RawStringInput
+
+            // input
+            storeInput.DeserializeFrom(curr);
 
             SpanByteAndMemory output = default;
-            basicContext.Upsert(ref key, ref input, ref value, ref output);
+            basicContext.Upsert(ref key, ref storeInput, ref value, ref output);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
         }
 
-        static unsafe void StoreRMW(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
+        static unsafe void StoreRMW(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, byte* ptr)
         {
-            byte* pbOutput = stackalloc byte[32];
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
-            ref var input = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
+            var curr = ptr + sizeof(AofHeader);
+            ref var key = ref Unsafe.AsRef<SpanByte>(curr);
+            curr += key.TotalSize;
+
+            // Reconstructing RawStringInput
+
+            // input
+            storeInput.DeserializeFrom(curr);
+
+            var pbOutput = stackalloc byte[32];
             var output = new SpanByteAndMemory(pbOutput, 32);
-            if (basicContext.RMW(ref key, ref input, ref output).IsPending)
+
+            if (basicContext.RMW(ref key, ref storeInput, ref output).IsPending)
                 basicContext.CompletePending(true);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
         }
 
-        static unsafe void StoreDelete(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
+        static unsafe void StoreDelete(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
             basicContext.Delete(ref key);
@@ -314,7 +348,7 @@ namespace Garnet.server
         }
 
         static unsafe void ObjectStoreRMW(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
-                byte* ptr, byte* outputPtr, int outputLength)
+            ObjectInput objectStoreInput, byte* ptr, byte* outputPtr, int outputLength)
         {
             var curr = ptr + sizeof(AofHeader);
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
@@ -324,30 +358,13 @@ namespace Garnet.server
             // Reconstructing ObjectInput
 
             // input
-            ref var sbInput = ref Unsafe.AsRef<SpanByte>(curr);
-            ref var input = ref Unsafe.AsRef<ObjectInput>(sbInput.ToPointer());
-            curr += sbInput.TotalSize;
-
-            // Reconstructing parse state
-            var parseStateCount = input.parseState.Count;
-
-            if (parseStateCount > 0)
-            {
-                ArgSlice[] parseStateBuffer = default;
-                input.parseState.Initialize(ref parseStateBuffer, parseStateCount);
-
-                for (var i = 0; i < parseStateCount; i++)
-                {
-                    ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
-                    parseStateBuffer[i] = new ArgSlice(ref sbArgument);
-                    curr += sbArgument.TotalSize;
-                }
-            }
+            objectStoreInput.DeserializeFrom(curr);
 
             // Call RMW with the reconstructed key & ObjectInput
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
-            if (basicContext.RMW(ref keyB, ref input, ref output).IsPending)
+            if (basicContext.RMW(ref keyB, ref objectStoreInput, ref output).IsPending)
                 basicContext.CompletePending(true);
+
             if (!output.spanByteAndMemory.IsSpanByte)
                 output.spanByteAndMemory.Memory.Dispose();
         }
@@ -371,8 +388,8 @@ namespace Garnet.server
 
             return storeType switch
             {
-                AofStoreType.MainStoreType => header.version <= storeWrapper.store.CurrentVersion - 1,
-                AofStoreType.ObjectStoreType => header.version <= storeWrapper.objectStore.CurrentVersion - 1,
+                AofStoreType.MainStoreType => header.storeVersion <= storeWrapper.store.CurrentVersion - 1,
+                AofStoreType.ObjectStoreType => header.storeVersion <= storeWrapper.objectStore.CurrentVersion - 1,
                 AofStoreType.TxnType => false,
                 AofStoreType.ReplicationType => false,
                 AofStoreType.CheckpointType => false,

@@ -8,7 +8,7 @@ using Tsavorite.core;
 namespace Garnet
 {
     /// <summary>
-    /// Functions to implement custom tranasction Delete key/object
+    /// Functions to implement custom transaction Delete key/object
     /// 
     /// Format: DeleteTxn 1 key
     /// 
@@ -16,17 +16,17 @@ namespace Garnet
     /// </summary>
     sealed class DeleteTxn : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
-            int offset = 0;
-            AddKey(GetNextArg(input, ref offset), LockType.Exclusive, false);
+            var offset = 0;
+            AddKey(GetNextArg(ref procInput.parseState, ref offset), LockType.Exclusive, false);
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
-            int offset = 0;
-            var key = GetNextArg(input, ref offset);
+            var offset = 0;
+            var key = GetNextArg(ref procInput.parseState, ref offset);
             api.DELETE(key, StoreType.Main);
             WriteSimpleString(ref output, "SUCCESS");
         }

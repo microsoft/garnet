@@ -5,11 +5,9 @@ using System;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using ErrorEventArgs = Newtonsoft.Json.Serialization.ErrorEventArgs;
-using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace Garnet
 {
@@ -86,18 +84,26 @@ namespace Garnet
 
             try
             {
-                var settings = new JsonSerializerSettings
+                var jsonSerializerOptions = new JsonSerializerOptions
                 {
-                    MissingMemberHandling = MissingMemberHandling.Error,
-                    Error = delegate (object _, ErrorEventArgs args)
-                    {
-                        logger?.LogWarning("Encountered an issue when deserializing config file  (Path: {path}): {ErrorMessage}", path, args.ErrorContext.Error.Message);
-                        args.ErrorContext.Handled = true;
-                    }
+                    Converters = { new PopulateObjectJsonConverter<Options>(options), new JsonStringEnumConverter() },
+                    NumberHandling = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.WriteAsString
                 };
-                JsonConvert.PopulateObject(streamReader.ReadToEnd(), options, settings);
+
+                var json = streamReader.ReadToEnd();
+
+                var jsonReaderOptions = new JsonReaderOptions
+                {
+                    CommentHandling = JsonCommentHandling.Skip,
+                    AllowTrailingCommas = true
+                };
+
+                var jsonReader = new Utf8JsonReader(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(json)), jsonReaderOptions);
+
+                // No need fot the return value, as the deserializer populates the existing options instance
+                _ = JsonSerializer.Deserialize<Options>(ref jsonReader, jsonSerializerOptions);
             }
-            catch (Newtonsoft.Json.JsonException je)
+            catch (JsonException je)
             {
                 logger?.LogError(je, "An error occurred while parsing config file (Path: {path}).", path);
                 return false;

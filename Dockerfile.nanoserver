@@ -11,7 +11,7 @@ RUN dotnet restore
 RUN dotnet build -c Release
 
 # Copy and publish app and libraries
-RUN dotnet publish -c Release -o /app -r win-x64 --self-contained false -f net8.0
+RUN dotnet publish -c Release -o /app -r win-x64 --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-nanoserver-$TAG AS runtime
