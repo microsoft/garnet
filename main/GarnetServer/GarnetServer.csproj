@@ -6,6 +6,7 @@
     <PackageId>garnet-server</PackageId>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>garnet-server</ToolCommandName>
+    <PackageReadmeFile>readme.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,7 +28,4 @@
     <None Include="readme.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
-  <PropertyGroup>
-    <PackageReadmeFile>readme.md</PackageReadmeFile>
-  </PropertyGroup>
 </Project>
