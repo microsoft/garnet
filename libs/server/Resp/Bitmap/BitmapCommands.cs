@@ -68,22 +68,14 @@ namespace Garnet.server
             value = default;
 
             if (input.EqualsUpperCaseSpanIgnoringCase("WRAP"u8))
-            {
                 value = BitFieldOverflow.WRAP;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("SAT"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("SAT"u8))
                 value = BitFieldOverflow.SAT;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("FAIL"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("FAIL"u8))
                 value = BitFieldOverflow.FAIL;
-                return true;
-            }
+            else return false;
 
-            return false;
+            return true;
         }
     }
 

@@ -105,87 +105,40 @@ namespace Garnet.common
             value = default;
 
             if (input.EqualsUpperCaseSpanIgnoringCase("SERVER"u8))
-            {
                 value = InfoMetricsType.SERVER;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("MEMORY"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("MEMORY"u8))
                 value = InfoMetricsType.MEMORY;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("CLUSTER"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("CLUSTER"u8))
                 value = InfoMetricsType.CLUSTER;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("REPLICATION"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("REPLICATION"u8))
                 value = InfoMetricsType.REPLICATION;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("STATS"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("STATS"u8))
                 value = InfoMetricsType.STATS;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("STORE"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("STORE"u8))
                 value = InfoMetricsType.STORE;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("OBJECTSTORE"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("OBJECTSTORE"u8))
                 value = InfoMetricsType.OBJECTSTORE;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("STOREHASHTABLE"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("STOREHASHTABLE"u8))
                 value = InfoMetricsType.STOREHASHTABLE;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("OBJECTSTOREHASHTABLE"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("OBJECTSTOREHASHTABLE"u8))
                 value = InfoMetricsType.OBJECTSTOREHASHTABLE;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("STOREREVIV"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("STOREREVIV"u8))
                 value = InfoMetricsType.STOREREVIV;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("OBJECTSTOREREVIV"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("OBJECTSTOREREVIV"u8))
                 value = InfoMetricsType.OBJECTSTOREREVIV;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("PERSISTENCE"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("PERSISTENCE"u8))
                 value = InfoMetricsType.PERSISTENCE;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("CLIENTS"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("CLIENTS"u8))
                 value = InfoMetricsType.CLIENTS;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("KEYSPACE"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("KEYSPACE"u8))
                 value = InfoMetricsType.KEYSPACE;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("MODULES"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("MODULES"u8))
                 value = InfoMetricsType.MODULES;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("BPSTATS"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("BPSTATS"u8))
                 value = InfoMetricsType.BPSTATS;
-                return true;
-            }
+            else return false;
 
-            return false;
+            return true;
         }
     }
 }

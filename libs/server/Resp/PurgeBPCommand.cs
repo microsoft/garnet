@@ -53,22 +53,14 @@ namespace Garnet.server
             value = default;
 
             if (input.EqualsUpperCaseSpanIgnoringCase("MIGRATIONMANAGER"u8))
-            {
                 value = ManagerType.MigrationManager;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("REPLICATIONMANAGER"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("REPLICATIONMANAGER"u8))
                 value = ManagerType.ReplicationManager;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("SERVERLISTENER"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("SERVERLISTENER"u8))
                 value = ManagerType.ServerListener;
-                return true;
-            }
+            else return false;
 
-            return false;
+            return true;
         }
     }
 

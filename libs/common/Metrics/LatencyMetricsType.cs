@@ -53,37 +53,20 @@ namespace Garnet.common
             value = default;
 
             if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_LAT"u8))
-            {
                 value = LatencyMetricsType.NET_RS_LAT;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("PENDING_LAT"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("PENDING_LAT"u8))
                 value = LatencyMetricsType.PENDING_LAT;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("TX_PROC_LAT"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("TX_PROC_LAT"u8))
                 value = LatencyMetricsType.TX_PROC_LAT;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_BYTES"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_BYTES"u8))
                 value = LatencyMetricsType.NET_RS_BYTES;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_OPS"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_OPS"u8))
                 value = LatencyMetricsType.NET_RS_OPS;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_LAT_ADMIN"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_LAT_ADMIN"u8))
                 value = LatencyMetricsType.NET_RS_LAT_ADMIN;
-                return true;
-            }
+            else return false;
 
-            return false;
+            return true;
         }
     }
 }

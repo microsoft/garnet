@@ -58,42 +58,22 @@ namespace Garnet.cluster
             value = default;
 
             if (input.EqualsUpperCaseSpanIgnoringCase("OFFLINE"u8))
-            {
                 value = SlotState.OFFLINE;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("STABLE"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("STABLE"u8))
                 value = SlotState.STABLE;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("MIGRATING"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("MIGRATING"u8))
                 value = SlotState.MIGRATING;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("IMPORTING"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("IMPORTING"u8))
                 value = SlotState.IMPORTING;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("FAIL"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("FAIL"u8))
                 value = SlotState.FAIL;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("NODE"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("NODE"u8))
                 value = SlotState.NODE;
-                return true;
-            }
-            if (input.EqualsUpperCaseSpanIgnoringCase("INVALID"u8))
-            {
+            else if (input.EqualsUpperCaseSpanIgnoringCase("INVALID"u8))
                 value = SlotState.INVALID;
-                return true;
-            }
+            else return false;
 
-            return false;
+            return true;
         }
     }
 

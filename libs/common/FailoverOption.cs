@@ -67,9 +67,13 @@ namespace Garnet.common
         /// <returns>True if value parsed successfully</returns>
         public static bool TryParseFailoverOption(ReadOnlySpan<byte> input, out FailoverOption value)
         {
-            value = FailoverOption.DEFAULT;
+            value = default;
 
-            if (input.EqualsUpperCaseSpanIgnoringCase("TO"u8))
+            if (input.EqualsUpperCaseSpanIgnoringCase("DEFAULT"u8))
+                value = FailoverOption.DEFAULT;
+            else if (input.EqualsUpperCaseSpanIgnoringCase("INVALID"u8))
+                value = FailoverOption.INVALID;
+            else if (input.EqualsUpperCaseSpanIgnoringCase("TO"u8))
                 value = FailoverOption.TO;
             else if (input.EqualsUpperCaseSpanIgnoringCase("FORCE"u8))
                 value = FailoverOption.FORCE;
@@ -79,8 +83,9 @@ namespace Garnet.common
                 value = FailoverOption.TIMEOUT;
             else if (input.EqualsUpperCaseSpanIgnoringCase("TAKEOVER"u8))
                 value = FailoverOption.TAKEOVER;
+            else return false;
 
-            return value != FailoverOption.DEFAULT;
+            return true;
         }
     }
 }

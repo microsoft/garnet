@@ -31,7 +31,8 @@ namespace Garnet.cluster
             {
                 // Try to parse failover option
                 var sbFailoverOption = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                if (!common.FailoverUtils.TryParseFailoverOption(sbFailoverOption, out failoverOption))
+                if (!common.FailoverUtils.TryParseFailoverOption(sbFailoverOption, out failoverOption) ||
+                    failoverOption == FailoverOption.DEFAULT || failoverOption == FailoverOption.INVALID)
                 {
                     var failoverOptionStr = parseState.GetString(0);
 
