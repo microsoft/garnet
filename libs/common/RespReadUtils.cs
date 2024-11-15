@@ -378,7 +378,7 @@ namespace Garnet.common
             }
 
             // Validate length
-            if (value > int.MaxValue)
+            if (value > int.MaxValue + (ulong)(negative ? 1 : 0)) // int.MinValue = -int.MaxValue + 1
             {
                 RespParsingException.ThrowIntegerOverflow(readHead - digitsRead, (int)digitsRead);
             }
