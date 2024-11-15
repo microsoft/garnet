@@ -77,6 +77,9 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **IndexSize** | ```-i```<br/>```--index``` | ```string``` | Memory size | Start size of hash index in bytes (rounds down to power of 2) |
 | **IndexMaxSize** | ```--index-max-size``` | ```string``` | Memory size | Max size of hash index in bytes (rounds down to power of 2) |
 | **MutablePercent** | ```--mutable-percent``` | ```int``` |  | Percentage of log memory that is kept mutable |
+| **EnableReadCache** | ```--readcache``` | ```bool``` | | Enables read cache for faster access to on-disk records |
+| **ReadCacheMemorySize** | ```--readcache-memory``` | ```string``` | Memory size | Total read cache log memory used in bytes (rounds down to power of 2) |
+| **ReadCachePageSize** | ```--readcache-page``` | ```string``` | Memory size | Size of each read cache page in bytes (rounds down to power of 2) |
 | **ObjectStoreHeapMemorySize** | ```--obj-heap-memory``` | ```string``` | Memory size | Object store heap memory size in bytes (Sum of size taken up by all object instances in the heap) |
 | **ObjectStoreLogMemorySize** | ```--obj-log-memory``` | ```string``` | Memory size | Object store log memory used in bytes (Size of only the log with references to heap objects, excludes size of heap memory consumed by the objects themselves referred to from the log) |
 | **ObjectStorePageSize** | ```--obj-page``` | ```string``` | Memory size | Size of each object store page in bytes (rounds down to power of 2) |
@@ -84,6 +87,10 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **ObjectStoreIndexSize** | ```--obj-index``` | ```string``` | Memory size | Start size of object store hash index in bytes (rounds down to power of 2) |
 | **ObjectStoreIndexMaxSize** | ```--obj-index-max-size``` | ```string``` | Memory size | Max size of object store hash index in bytes (rounds down to power of 2) |
 | **ObjectStoreMutablePercent** | ```--obj-mutable-percent``` | ```int``` |  | Percentage of object store log memory that is kept mutable |
+| **EnableObjectStoreReadCache** | ```--obj-readcache``` | ```bool``` | | Enables object store read cache for faster access to on-disk records |
+| **ObjectStoreReadCacheLogMemorySize** | ```--obj-readcache-log-memory``` | ```string``` | Memory size | Total object store read cache log memory used in bytes (rounds down to power of 2) |
+| **ObjectStoreReadCachePageSize** | ```--obj-readcache-page``` | ```string``` | Memory size | Size of each object store read cache page in bytes (rounds down to power of 2) |
+| **ObjectStoreReadCacheHeapMemorySize** | ```--obj-readcache-heap-memory``` | ```string``` | Memory size | Object store read cache heap memory size in bytes (Sum of size taken up by all object instances in the heap) |
 | **EnableStorageTier** | ```--storage-tier``` | ```bool``` |  | Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use --logdir to specify storage directory. |
 | **CopyReadsToTail** | ```--copy-reads-to-tail``` | ```bool``` |  | When records are read from the main store's in-memory immutable region or storage device, copy them to the tail of the log. |
 | **ObjectStoreCopyReadsToTail** | ```--obj-copy-reads-to-tail``` | ```bool``` |  | When records are read from the object store's in-memory immutable region or storage device, copy them to the tail of the log. |
