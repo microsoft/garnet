@@ -35,9 +35,12 @@
     <!-- Include files from 8.0 root directory and runtimes in Nuget pacakge - don't want other folders in 8.0 root though  -->
     <Content Include="..\host\bin\Release\net8.0\*" Pack="true" PackagePath="lib\net8.0" />
     <Content Include="..\host\bin\Release\net8.0\runtimes\**\*" Pack="true" PackagePath="runtimes" />
-    <None Include="..\..\README.md" Pack="true" PackagePath="/"/>
+    
+    <None Include="..\..\..\README.md" Pack="true" PackagePath="/"/>
   </ItemGroup>
 
+: error NU5039: The readme file '../../README.md' does not exist in the package. [/home/vsts/work/1/s/libs/host
+\..
 
 </Project>
 
