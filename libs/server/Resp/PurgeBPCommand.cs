@@ -9,6 +9,8 @@ namespace Garnet.server
 {
     public enum ManagerType : byte
     {
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (ManagerTypeUtils.TryParseManagerType)
+
         /// <summary>
         /// MigrationManager Buffer Pool
         /// </summary>

@@ -12,6 +12,8 @@ namespace Garnet.cluster
     /// </summary>
     public enum SlotState : byte
     {
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (SlotStateUtils.TryParseSlotState)
+
         /// <summary>
         /// Slot not assigned
         /// </summary>

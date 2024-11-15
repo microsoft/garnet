@@ -12,6 +12,8 @@ namespace Garnet.common
     /// </summary>
     public enum FailoverOption : byte
     {
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (FailoverUtils.TryParseFailoverOption)
+
         /// <summary>
         /// Internal use only
         /// </summary>

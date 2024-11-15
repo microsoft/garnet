@@ -44,6 +44,8 @@ namespace Garnet.server
 
     internal enum BitFieldOverflow : byte
     {
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (BitmapUtils.TryParseBitFieldOverflow)
+
         WRAP,
         SAT,
         FAIL

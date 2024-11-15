@@ -11,6 +11,8 @@ namespace Garnet.server
     /// </summary>
     public enum ClientType : byte
     {
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (ClientTypeUtils.TryParseClientType)
+
         /// <summary>
         /// Default invalid case.
         /// </summary>
