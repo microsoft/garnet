@@ -30,7 +30,7 @@ namespace Garnet.server
                         help = true;
                     else if (!sbSection.EqualsUpperCaseSpanIgnoringCase("ALL"u8))
                     {
-                        if (InfoCommandUtils.TryParseInfoMetricsType(sbSection, out var sectionType))
+                        if (parseState.TryGetInfoMetricsType(i, out var sectionType))
                         {
                             sections.Add(sectionType);
                         }

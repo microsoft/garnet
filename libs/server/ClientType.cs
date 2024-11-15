@@ -11,7 +11,7 @@ namespace Garnet.server
     /// </summary>
     public enum ClientType : byte
     {
-        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (ClientTypeUtils.TryParseClientType)
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (SessionParseStateExtensions.TryGetClientType)
 
         /// <summary>
         /// Default invalid case.
@@ -41,32 +41,5 @@ namespace Garnet.server
         /// for older commands.
         /// </summary>
         SLAVE,
-    }
-
-    public static class ClientTypeUtils
-    {
-        /// <summary>
-        /// Parse client type from span
-        /// </summary>
-        /// <param name="input">ReadOnlySpan input to parse</param>
-        /// <param name="value">Parsed value</param>
-        /// <returns>True if value parsed successfully</returns>
-        public static bool TryParseClientType(ReadOnlySpan<byte> input, out ClientType value)
-        {
-            value = ClientType.Invalid;
-
-            if (input.EqualsUpperCaseSpanIgnoringCase("NORMAL"u8))
-                value = ClientType.NORMAL;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("MASTER"u8))
-                value = ClientType.MASTER;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("REPLICA"u8))
-                value = ClientType.REPLICA;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("PUBSUB"u8))
-                value = ClientType.PUBSUB;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("SLAVE"u8))
-                value = ClientType.SLAVE;
-
-            return value != ClientType.Invalid;
-        }
     }
 }

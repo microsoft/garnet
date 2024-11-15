@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Runtime.InteropServices;
 using Garnet.common;
+using Garnet.server;
 
 namespace Garnet.cluster
 {
@@ -12,7 +12,7 @@ namespace Garnet.cluster
     /// </summary>
     public enum SlotState : byte
     {
-        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (SlotStateUtils.TryParseSlotState)
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (SessionParseStateExtensions.TryGetSlotState)
 
         /// <summary>
         /// Slot not assigned
@@ -42,41 +42,6 @@ namespace Garnet.cluster
         /// Invalid slot state
         /// </summary>
         INVALID,
-    }
-
-    /// <summary>
-    /// Utility methods for <see cref="SlotState"/>.
-    /// </summary>
-    public static class SlotStateUtils
-    {
-        /// <summary>
-        /// Parse slot state from span
-        /// </summary>
-        /// <param name="input">ReadOnlySpan input to parse</param>
-        /// <param name="value">Parsed value</param>
-        /// <returns>True if value parsed successfully</returns>
-        public static bool TryParseSlotState(ReadOnlySpan<byte> input, out SlotState value)
-        {
-            value = default;
-
-            if (input.EqualsUpperCaseSpanIgnoringCase("OFFLINE"u8))
-                value = SlotState.OFFLINE;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("STABLE"u8))
-                value = SlotState.STABLE;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("MIGRATING"u8))
-                value = SlotState.MIGRATING;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("IMPORTING"u8))
-                value = SlotState.IMPORTING;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("FAIL"u8))
-                value = SlotState.FAIL;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("NODE"u8))
-                value = SlotState.NODE;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("INVALID"u8))
-                value = SlotState.INVALID;
-            else return false;
-
-            return true;
-        }
     }
 
     /// <summary>

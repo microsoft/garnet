@@ -21,9 +21,7 @@ namespace Garnet.cluster
             var currTokenIdx = 0;
             while (currTokenIdx < parseState.Count)
             {
-                var sbFailoverOption = parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
-
-                if (!common.FailoverUtils.TryParseFailoverOption(sbFailoverOption, out var failoverOption) ||
+                if (!parseState.TryGetFailoverOption(currTokenIdx, out var failoverOption) ||
                     failoverOption == FailoverOption.DEFAULT || failoverOption == FailoverOption.INVALID)
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))

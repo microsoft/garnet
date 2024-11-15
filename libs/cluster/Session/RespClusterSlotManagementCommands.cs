@@ -439,9 +439,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var sbSlotState = parseState.GetArgSliceByRef(1).ReadOnlySpan;
-
-            if (!SlotStateUtils.TryParseSlotState(sbSlotState, out var slotState) || slotState == SlotState.INVALID ||
+            if (!parseState.TryGetSlotState(1, out var slotState) || slotState == SlotState.INVALID ||
                 slotState == SlotState.OFFLINE)
             {
                 var slotStateStr = parseState.GetString(1);
@@ -534,11 +532,8 @@ namespace Garnet.cluster
             // CLUSTER SETSLOTRANGE STABLE <slot-start> <slot-end> [slot-start slot-end]
             string nodeId = default;
 
-            // Extract subcommand
-            var sbSubcommand = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-
             // Try parse slot state
-            if (!SlotStateUtils.TryParseSlotState(sbSubcommand, out var slotState))
+            if (!parseState.TryGetSlotState(0, out var slotState))
             {
                 // Log error for invalid slot state option
                 var subcommand = parseState.GetString(0);

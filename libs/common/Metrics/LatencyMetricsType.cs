@@ -10,7 +10,7 @@ namespace Garnet.common
     /// </summary>
     public enum LatencyMetricsType : byte
     {
-        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (LatencyMetricsUtils.TryParseLatencyMetricsType)
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (SessionParseStateExtensions.TryGetLatencyMetricsType)
 
         /// <summary>
         /// Latency of processing, per network receive call (server side) - consider batches with only non-admin requests
@@ -40,35 +40,5 @@ namespace Garnet.common
         /// Ops processed, per network receive call (server side)
         /// </summary>
         NET_RS_OPS = 4,
-    }
-
-    public static class LatencyMetricsUtils
-    {
-        /// <summary>
-        /// Parse latency metrics type from span
-        /// </summary>
-        /// <param name="input">ReadOnlySpan input to parse</param>
-        /// <param name="value">Parsed value</param>
-        /// <returns>True if value parsed successfully</returns>
-        public static bool TryParseLatencyMetricsType(ReadOnlySpan<byte> input, out LatencyMetricsType value)
-        {
-            value = default;
-
-            if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_LAT"u8))
-                value = LatencyMetricsType.NET_RS_LAT;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("PENDING_LAT"u8))
-                value = LatencyMetricsType.PENDING_LAT;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("TX_PROC_LAT"u8))
-                value = LatencyMetricsType.TX_PROC_LAT;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_BYTES"u8))
-                value = LatencyMetricsType.NET_RS_BYTES;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_OPS"u8))
-                value = LatencyMetricsType.NET_RS_OPS;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_LAT_ADMIN"u8))
-                value = LatencyMetricsType.NET_RS_LAT_ADMIN;
-            else return false;
-
-            return true;
-        }
     }
 }

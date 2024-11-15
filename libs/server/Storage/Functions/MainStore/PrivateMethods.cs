@@ -734,8 +734,7 @@ namespace Garnet.server
             var overflowType = (byte)BitFieldOverflow.WRAP;
             if (currTokenIdx < input.parseState.Count)
             {
-                var sbOverflowType = input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
-                var overflowTypeParsed = BitmapUtils.TryParseBitFieldOverflow(sbOverflowType, out var overflowTypeValue);
+                var overflowTypeParsed = input.parseState.TryGetBitFieldOverflow(currTokenIdx, out var overflowTypeValue);
                 Debug.Assert(overflowTypeParsed);
                 overflowType = (byte)overflowTypeValue;
             }

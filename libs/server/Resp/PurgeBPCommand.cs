@@ -9,7 +9,7 @@ namespace Garnet.server
 {
     public enum ManagerType : byte
     {
-        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (ManagerTypeUtils.TryParseManagerType)
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (SessionParseStateExtensions.TryGetManagerType)
 
         /// <summary>
         /// MigrationManager Buffer Pool
@@ -42,30 +42,6 @@ namespace Garnet.server
         }
     }
 
-    internal static class ManagerTypeUtils
-    {
-        /// <summary>
-        /// Parse manager type from span
-        /// </summary>
-        /// <param name="input">ReadOnlySpan input to parse</param>
-        /// <param name="value">Parsed value</param>
-        /// <returns>True if value parsed successfully</returns>
-        public static bool TryParseManagerType(ReadOnlySpan<byte> input, out ManagerType value)
-        {
-            value = default;
-
-            if (input.EqualsUpperCaseSpanIgnoringCase("MIGRATIONMANAGER"u8))
-                value = ManagerType.MigrationManager;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("REPLICATIONMANAGER"u8))
-                value = ManagerType.ReplicationManager;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("SERVERLISTENER"u8))
-                value = ManagerType.ServerListener;
-            else return false;
-
-            return true;
-        }
-    }
-
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         private bool NetworkPurgeBP()
@@ -76,8 +52,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PURGEBP));
             }
 
-            var sbManagerType = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            if (!ManagerTypeUtils.TryParseManagerType(sbManagerType, out var managerType))
+            if (!parseState.TryGetManagerType(0, out var managerType))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
                     SendAndReset();

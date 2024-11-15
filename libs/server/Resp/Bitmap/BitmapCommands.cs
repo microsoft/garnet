@@ -44,7 +44,7 @@ namespace Garnet.server
 
     internal enum BitFieldOverflow : byte
     {
-        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (BitmapUtils.TryParseBitFieldOverflow)
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (SessionParseStateExtensions.TryGetBitFieldOverflow)
 
         WRAP,
         SAT,
@@ -55,30 +55,6 @@ namespace Garnet.server
     {
         UNSIGNED = 0x0,
         SIGNED = 0x80
-    }
-
-    internal static class BitmapUtils
-    {
-        /// <summary>
-        /// Parse BitFieldOverflow from span
-        /// </summary>
-        /// <param name="input">ReadOnlySpan input to parse</param>
-        /// <param name="value">Parsed value</param>
-        /// <returns>True if value parsed successfully</returns>
-        public static bool TryParseBitFieldOverflow(ReadOnlySpan<byte> input, out BitFieldOverflow value)
-        {
-            value = default;
-
-            if (input.EqualsUpperCaseSpanIgnoringCase("WRAP"u8))
-                value = BitFieldOverflow.WRAP;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("SAT"u8))
-                value = BitFieldOverflow.SAT;
-            else if (input.EqualsUpperCaseSpanIgnoringCase("FAIL"u8))
-                value = BitFieldOverflow.FAIL;
-            else return false;
-
-            return true;
-        }
     }
 
     /// <summary>
@@ -415,8 +391,7 @@ namespace Garnet.server
                     isOverflowTypeSet = true;
 
                     // Validate overflow type
-                    var sbBitFieldOverflow = parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
-                    if (!BitmapUtils.TryParseBitFieldOverflow(sbBitFieldOverflow, out _))
+                    if (!parseState.TryGetBitFieldOverflow(currTokenIdx, out _))
                     {
                         while (!RespWriteUtils.WriteError(
                                    $"ERR Overflow type {parseState.GetString(currTokenIdx)} not supported",

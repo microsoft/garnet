@@ -48,9 +48,7 @@ namespace Garnet.server
                                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                             }
 
-                            var sbClientType = parseState.GetArgSliceByRef(1).ReadOnlySpan;
-
-                            if (!ClientTypeUtils.TryParseClientType(sbClientType, out var clientType) ||
+                            if (!parseState.TryGetClientType(1, out var clientType) ||
                                 clientType == ClientType.SLAVE) // SLAVE is not legal as CLIENT|LIST was introduced after the SLAVE -> REPLICA rename
                             {
                                 var type = parseState.GetString(1);
@@ -265,7 +263,8 @@ namespace Garnet.server
                         ref var filter = ref parseState.GetArgSliceByRef(argIx);
                         var filterSpan = filter.Span;
 
-                        ref var value = ref parseState.GetArgSliceByRef(argIx + 1);
+                        var valueIx = argIx + 1;
+                        ref var value = ref parseState.GetArgSliceByRef(valueIx);
 
                         AsciiUtils.ToUpperInPlace(filterSpan);
 
@@ -290,7 +289,7 @@ namespace Garnet.server
                                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrDuplicateFilter, "TYPE")));
                             }
 
-                            if (!ClientTypeUtils.TryParseClientType(value.ReadOnlySpan, out var typeParsed))
+                            if (!parseState.TryGetClientType(valueIx, out var typeParsed))
                             {
                                 var typeStr = ParseUtils.ReadString(ref value);
                                 return AbortWithErrorMessage(Encoding.UTF8.GetBytes(string.Format(CmdStrings.GenericUnknownClientType, typeStr)));

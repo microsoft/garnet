@@ -50,9 +50,7 @@ namespace Garnet.server
                 events = new();
                 for (int i = 0; i < parseState.Count; i++)
                 {
-                    var sbEvent = parseState.GetArgSliceByRef(i).ReadOnlySpan;
-
-                    if (LatencyMetricsUtils.TryParseLatencyMetricsType(sbEvent, out var eventType))
+                    if (parseState.TryGetLatencyMetricsType(i, out var eventType))
                     {
                         events.Add(eventType);
                     }
@@ -98,9 +96,7 @@ namespace Garnet.server
                 events = new();
                 for (int i = 0; i < parseState.Count; i++)
                 {
-                    var sbEvent = parseState.GetArgSliceByRef(i).ReadOnlySpan;
-
-                    if (LatencyMetricsUtils.TryParseLatencyMetricsType(sbEvent, out var eventType))
+                    if (parseState.TryGetLatencyMetricsType(i, out var eventType))
                     {
                         events.Add(eventType);
                     }
