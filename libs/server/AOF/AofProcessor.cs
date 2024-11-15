@@ -146,6 +146,9 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error occurred AofProcessor.RecoverReplay");
+
+                if (storeWrapper.serverOptions.FailOnRecoveryError)
+                    throw;
             }
             finally
             {
