@@ -2,7 +2,7 @@
 
 	<!-- Versioning property for builds and packages -->
 	<PropertyGroup>
-		<VersionPrefix>1.0.72</VersionPrefix>
+		<VersionPrefix>1.0.75</VersionPrefix>
 	</PropertyGroup>
 
 	<PropertyGroup Label="Targets">
@@ -34,6 +34,5 @@
     <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
     <Tags>Garnet key-value store cache dictionary hashtable concurrent persistent remote cluster Redis RESP</Tags>
   </PropertyGroup>
-
 
 </Project>
