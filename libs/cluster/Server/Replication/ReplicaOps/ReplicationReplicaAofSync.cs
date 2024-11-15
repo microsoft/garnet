@@ -65,6 +65,15 @@ namespace Garnet.cluster
                     }
                 }
 
+                var tail = storeWrapper.appendOnlyFile.TailAddress;
+                var pageBits = storeWrapper.appendOnlyFile.UnsafeGetLogPageSizeBits();
+                var nextPageBeginAddress = ((tail >> pageBits) + 1) << pageBits;
+                if (tail + recordLength > nextPageBeginAddress && nextPageBeginAddress != currentAddress)
+                {
+                    logger?.LogError("Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress{tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
+                    throw new GarnetException($"Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress{tail}", LogLevel.Warning, clientResponse: false);
+                }
+
                 // Address check only if synchronous replication is enabled
                 if (storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0 && ReplicationOffset != storeWrapper.appendOnlyFile.TailAddress)
                 {
