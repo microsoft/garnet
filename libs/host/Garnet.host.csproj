@@ -35,8 +35,8 @@
 
   <ItemGroup>
     <!-- Include files from 8.0 root directory and runtimes - don't want other folders in 8.0 root though  -->
-    <Content Include="C:\GarnetGitHub\libs\host\bin\Release\net8.0\*" Pack="true" PackagePath="lib\net8.0" />
-    <Content Include="C:\GarnetGitHub\libs\host\bin\Release\net8.0\runtimes\**\*" Pack="true" PackagePath="runtimes" />
+    <Content Include="..\host\bin\Release\net8.0\*" Pack="true" PackagePath="lib\net8.0" />
+    <Content Include="..\host\bin\Release\net8.0\runtimes\**\*" Pack="true" PackagePath="runtimes" />
   </ItemGroup>
 
 
