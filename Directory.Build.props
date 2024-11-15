@@ -2,7 +2,7 @@
 
 	<!-- Versioning property for builds and packages -->
 	<PropertyGroup>
-		<VersionPrefix>1.0.70</VersionPrefix>
+		<VersionPrefix>1.0.71</VersionPrefix>
 	</PropertyGroup>
 
 	<PropertyGroup Label="Targets">
