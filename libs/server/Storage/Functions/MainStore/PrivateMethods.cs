@@ -724,7 +724,12 @@ namespace Garnet.server
 
             var encodingArg = input.parseState.GetString(currTokenIdx++);
             var offsetArg = input.parseState.GetString(currTokenIdx++);
-            var value = input.parseState.GetLong(currTokenIdx++);
+
+            long value = default;
+            if (cmd == RespCommand.SET || cmd == RespCommand.INCRBY)
+            {
+                value = input.parseState.GetLong(currTokenIdx++);
+            }
 
             var overflowType = (byte)BitFieldOverflow.WRAP;
             if (currTokenIdx < input.parseState.Count)
