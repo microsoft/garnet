@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 
 namespace Garnet.server
 {
@@ -40,17 +41,30 @@ namespace Garnet.server
         SLAVE,
     }
 
-    public static class ClientTypeExtensions
+    public static class ClientTypeUtils
     {
         /// <summary>
-        /// Validate that the given <see cref="ClientType"/> is legal, and _could_ have come from the given <see cref="ArgSlice"/>.
-        /// 
-        /// TODO: Long term we can kill this and use <see cref="IUtf8SpanParsable{ClientType}"/> instead of <see cref="Enum.TryParse{TEnum}(string?, bool, out TEnum)"/>
-        /// and avoid extra validation.  See: https://github.com/dotnet/runtime/issues/81500 .
+        /// Parse client type from span
         /// </summary>
-        public static bool IsValid(this ClientType type, ref ArgSlice fromSlice)
+        /// <param name="input">ReadOnlySpan input to parse</param>
+        /// <param name="value">Parsed value</param>
+        /// <returns>True if value parsed successfully</returns>
+        public static bool TryParseClientType(ReadOnlySpan<byte> input, out ClientType value)
         {
-            return type != ClientType.Invalid && Enum.IsDefined(type) && !fromSlice.ReadOnlySpan.ContainsAnyInRange((byte)'0', (byte)'9');
+            value = ClientType.Invalid;
+
+            if (input.EqualsUpperCaseSpanIgnoringCase("NORMAL"u8))
+                value = ClientType.NORMAL;
+            else if (input.EqualsUpperCaseSpanIgnoringCase("MASTER"u8))
+                value = ClientType.MASTER;
+            else if (input.EqualsUpperCaseSpanIgnoringCase("REPLICA"u8))
+                value = ClientType.REPLICA;
+            else if (input.EqualsUpperCaseSpanIgnoringCase("PUBSUB"u8))
+                value = ClientType.PUBSUB;
+            else if (input.EqualsUpperCaseSpanIgnoringCase("SLAVE"u8))
+                value = ClientType.SLAVE;
+
+            return value != ClientType.Invalid;
         }
     }
 }

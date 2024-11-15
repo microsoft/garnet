@@ -55,6 +55,38 @@ namespace Garnet.server
         SIGNED = 0x80
     }
 
+    internal static class BitmapUtils
+    {
+        /// <summary>
+        /// Parse BitFieldOverflow from span
+        /// </summary>
+        /// <param name="input">ReadOnlySpan input to parse</param>
+        /// <param name="value">Parsed value</param>
+        /// <returns>True if value parsed successfully</returns>
+        public static bool TryParseBitFieldOverflow(ReadOnlySpan<byte> input, out BitFieldOverflow value)
+        {
+            value = default;
+
+            if (input.EqualsUpperCaseSpanIgnoringCase("WRAP"u8))
+            {
+                value = BitFieldOverflow.WRAP;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("SAT"u8))
+            {
+                value = BitFieldOverflow.SAT;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("FAIL"u8))
+            {
+                value = BitFieldOverflow.FAIL;
+                return true;
+            }
+
+            return false;
+        }
+    }
+
     /// <summary>
     /// struct with parameters for BITFIELD command
     /// </summary>
@@ -389,7 +421,8 @@ namespace Garnet.server
                     isOverflowTypeSet = true;
 
                     // Validate overflow type
-                    if (!parseState.TryGetEnum(currTokenIdx, true, out BitFieldOverflow _))
+                    var sbBitFieldOverflow = parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
+                    if (!BitmapUtils.TryParseBitFieldOverflow(sbBitFieldOverflow, out _))
                     {
                         while (!RespWriteUtils.WriteError(
                                    $"ERR Overflow type {parseState.GetString(currTokenIdx)} not supported",

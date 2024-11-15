@@ -3,6 +3,7 @@
 
 using System;
 using System.Runtime.InteropServices;
+using Garnet.common;
 
 namespace Garnet.cluster
 {
@@ -42,19 +43,57 @@ namespace Garnet.cluster
     }
 
     /// <summary>
-    /// Extension methods for <see cref="SlotState"/>.
+    /// Utility methods for <see cref="SlotState"/>.
     /// </summary>
-    public static class SlotStateExtensions
+    public static class SlotStateUtils
     {
         /// <summary>
-        /// Validate that the given <see cref="SlotState"/> is legal, and _could_ have come from the given <see cref="ReadOnlySpan{T}"/>.
-        /// 
-        /// TODO: Long term we can kill this and use <see cref="IUtf8SpanParsable{ClientType}"/> instead of <see cref="Enum.TryParse{TEnum}(string?, bool, out TEnum)"/>
-        /// and avoid extra validation.  See: https://github.com/dotnet/runtime/issues/81500 .
+        /// Parse slot state from span
         /// </summary>
-        public static bool IsValid(this SlotState type, ReadOnlySpan<byte> fromSpan)
+        /// <param name="input">ReadOnlySpan input to parse</param>
+        /// <param name="value">Parsed value</param>
+        /// <returns>True if value parsed successfully</returns>
+        public static bool TryParseSlotState(ReadOnlySpan<byte> input, out SlotState value)
         {
-            return type != SlotState.INVALID && type != SlotState.OFFLINE && Enum.IsDefined(type) && !fromSpan.ContainsAnyInRange((byte)'0', (byte)'9');
+            value = default;
+
+            if (input.EqualsUpperCaseSpanIgnoringCase("OFFLINE"u8))
+            {
+                value = SlotState.OFFLINE;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("STABLE"u8))
+            {
+                value = SlotState.STABLE;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("MIGRATING"u8))
+            {
+                value = SlotState.MIGRATING;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("IMPORTING"u8))
+            {
+                value = SlotState.IMPORTING;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("FAIL"u8))
+            {
+                value = SlotState.FAIL;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("NODE"u8))
+            {
+                value = SlotState.NODE;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("INVALID"u8))
+            {
+                value = SlotState.INVALID;
+                return true;
+            }
+
+            return false;
         }
     }
 

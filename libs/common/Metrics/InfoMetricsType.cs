@@ -93,5 +93,99 @@ namespace Garnet.common
         /// <returns></returns>
         public static byte[] GetRespFormattedInfoSection(InfoMetricsType infoMetricsType)
             => infoMetricsType == default ? default(byte[]) : infoSections[(int)infoMetricsType];
+
+        /// <summary>
+        /// Parse slot state from span
+        /// </summary>
+        /// <param name="input">ReadOnlySpan input to parse</param>
+        /// <param name="value">Parsed value</param>
+        /// <returns>True if value parsed successfully</returns>
+        public static bool TryParseInfoMetricsType(ReadOnlySpan<byte> input, out InfoMetricsType value)
+        {
+            value = default;
+
+            if (input.EqualsUpperCaseSpanIgnoringCase("SERVER"u8))
+            {
+                value = InfoMetricsType.SERVER;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("MEMORY"u8))
+            {
+                value = InfoMetricsType.MEMORY;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("CLUSTER"u8))
+            {
+                value = InfoMetricsType.CLUSTER;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("REPLICATION"u8))
+            {
+                value = InfoMetricsType.REPLICATION;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("STATS"u8))
+            {
+                value = InfoMetricsType.STATS;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("STORE"u8))
+            {
+                value = InfoMetricsType.STORE;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("OBJECTSTORE"u8))
+            {
+                value = InfoMetricsType.OBJECTSTORE;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("STOREHASHTABLE"u8))
+            {
+                value = InfoMetricsType.STOREHASHTABLE;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("OBJECTSTOREHASHTABLE"u8))
+            {
+                value = InfoMetricsType.OBJECTSTOREHASHTABLE;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("STOREREVIV"u8))
+            {
+                value = InfoMetricsType.STOREREVIV;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("OBJECTSTOREREVIV"u8))
+            {
+                value = InfoMetricsType.OBJECTSTOREREVIV;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("PERSISTENCE"u8))
+            {
+                value = InfoMetricsType.PERSISTENCE;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("CLIENTS"u8))
+            {
+                value = InfoMetricsType.CLIENTS;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("KEYSPACE"u8))
+            {
+                value = InfoMetricsType.KEYSPACE;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("MODULES"u8))
+            {
+                value = InfoMetricsType.MODULES;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("BPSTATS"u8))
+            {
+                value = InfoMetricsType.BPSTATS;
+                return true;
+            }
+
+            return false;
+        }
     }
 }

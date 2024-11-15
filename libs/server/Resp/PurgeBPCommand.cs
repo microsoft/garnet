@@ -40,6 +40,38 @@ namespace Garnet.server
         }
     }
 
+    internal static class ManagerTypeUtils
+    {
+        /// <summary>
+        /// Parse manager type from span
+        /// </summary>
+        /// <param name="input">ReadOnlySpan input to parse</param>
+        /// <param name="value">Parsed value</param>
+        /// <returns>True if value parsed successfully</returns>
+        public static bool TryParseManagerType(ReadOnlySpan<byte> input, out ManagerType value)
+        {
+            value = default;
+
+            if (input.EqualsUpperCaseSpanIgnoringCase("MIGRATIONMANAGER"u8))
+            {
+                value = ManagerType.MigrationManager;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("REPLICATIONMANAGER"u8))
+            {
+                value = ManagerType.ReplicationManager;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("SERVERLISTENER"u8))
+            {
+                value = ManagerType.ServerListener;
+                return true;
+            }
+
+            return false;
+        }
+    }
+
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         private bool NetworkPurgeBP()
@@ -50,7 +82,8 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PURGEBP));
             }
 
-            if (!parseState.TryGetEnum<ManagerType>(0, ignoreCase: true, out var managerType) || !Enum.IsDefined(managerType))
+            var sbManagerType = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            if (!ManagerTypeUtils.TryParseManagerType(sbManagerType, out var managerType))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
                     SendAndReset();

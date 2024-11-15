@@ -58,22 +58,29 @@ namespace Garnet.common
         /// <returns></returns>
         public static byte[] GetRespFormattedFailoverOption(FailoverOption failoverOption)
             => infoSections[(int)failoverOption];
-    }
 
-    /// <summary>
-    /// Extension methods for <see cref="FailoverOption"/>.
-    /// </summary>
-    public static class FailoverOptionExtensions
-    {
         /// <summary>
-        /// Validate that the given <see cref="FailoverOption"/> is legal, and _could_ have come from the given <see cref="ReadOnlySpan{T}"/>.
-        /// 
-        /// TODO: Long term we can kill this and use <see cref="IUtf8SpanParsable{ClientType}"/> instead of <see cref="Enum.TryParse{TEnum}(string?, bool, out TEnum)"/>
-        /// and avoid extra validation.  See: https://github.com/dotnet/runtime/issues/81500 .
+        /// Parse failover option from span
         /// </summary>
-        public static bool IsValid(this FailoverOption type, ReadOnlySpan<byte> fromSpan)
+        /// <param name="input">ReadOnlySpan input to parse</param>
+        /// <param name="value">Parsed value</param>
+        /// <returns>True if value parsed successfully</returns>
+        public static bool TryParseFailoverOption(ReadOnlySpan<byte> input, out FailoverOption value)
         {
-            return type != FailoverOption.DEFAULT && type != FailoverOption.INVALID && Enum.IsDefined(type) && !fromSpan.ContainsAnyInRange((byte)'0', (byte)'9');
+            value = FailoverOption.DEFAULT;
+
+            if (input.EqualsUpperCaseSpanIgnoringCase("TO"u8))
+                value = FailoverOption.TO;
+            else if (input.EqualsUpperCaseSpanIgnoringCase("FORCE"u8))
+                value = FailoverOption.FORCE;
+            else if (input.EqualsUpperCaseSpanIgnoringCase("ABORT"u8))
+                value = FailoverOption.ABORT;
+            else if (input.EqualsUpperCaseSpanIgnoringCase("TIMEOUT"u8))
+                value = FailoverOption.TIMEOUT;
+            else if (input.EqualsUpperCaseSpanIgnoringCase("TAKEOVER"u8))
+                value = FailoverOption.TAKEOVER;
+
+            return value != FailoverOption.DEFAULT;
         }
     }
 }

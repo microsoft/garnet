@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+
 namespace Garnet.common
 {
     /// <summary>
@@ -36,5 +38,52 @@ namespace Garnet.common
         /// Ops processed, per network receive call (server side)
         /// </summary>
         NET_RS_OPS = 4,
+    }
+
+    public static class LatencyMetricsUtils
+    {
+        /// <summary>
+        /// Parse latency metrics type from span
+        /// </summary>
+        /// <param name="input">ReadOnlySpan input to parse</param>
+        /// <param name="value">Parsed value</param>
+        /// <returns>True if value parsed successfully</returns>
+        public static bool TryParseLatencyMetricsType(ReadOnlySpan<byte> input, out LatencyMetricsType value)
+        {
+            value = default;
+
+            if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_LAT"u8))
+            {
+                value = LatencyMetricsType.NET_RS_LAT;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("PENDING_LAT"u8))
+            {
+                value = LatencyMetricsType.PENDING_LAT;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("TX_PROC_LAT"u8))
+            {
+                value = LatencyMetricsType.TX_PROC_LAT;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_BYTES"u8))
+            {
+                value = LatencyMetricsType.NET_RS_BYTES;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_OPS"u8))
+            {
+                value = LatencyMetricsType.NET_RS_OPS;
+                return true;
+            }
+            if (input.EqualsUpperCaseSpanIgnoringCase("NET_RS_LAT_ADMIN"u8))
+            {
+                value = LatencyMetricsType.NET_RS_LAT_ADMIN;
+                return true;
+            }
+
+            return false;
+        }
     }
 }
