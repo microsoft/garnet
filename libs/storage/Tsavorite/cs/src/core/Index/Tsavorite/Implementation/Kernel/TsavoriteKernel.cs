@@ -93,7 +93,7 @@ namespace Tsavorite.core
         /// This does epoch entry and the hash bucket lookup and transient lock (which is the only hash bucket lock unless a RETRY is needed, in which case transient locks are released then reacquired by the TsavoriteKV instance).
         /// </remarks>
         /// <returns><see cref="Status.Found"/> if the tag was found, else <see cref="Status.NotFound"/></returns>
-        public Status UnsafeEnterForRead<TKernelSession, TKeyLocker>(ref TKernelSession kernelSession, long keyHash, ushort partitionId, out HashEntryInfo hei)
+        internal Status UnsafeEnterForRead<TKernelSession, TKeyLocker>(ref TKernelSession kernelSession, long keyHash, ushort partitionId, out HashEntryInfo hei)
             where TKernelSession : IKernelSession
             where TKeyLocker : struct, IKeyLocker
         {
@@ -158,7 +158,7 @@ namespace Tsavorite.core
         /// <remarks>
         /// Releases the read lock on the hash bucket and releases the epoch.
         /// </remarks>
-        public void UnsafeExitForRead<TKernelSession, TKeyLocker>(ref TKernelSession kernelSession, ref HashEntryInfo hei)
+        internal void UnsafeExitForRead<TKernelSession, TKeyLocker>(ref TKernelSession kernelSession, ref HashEntryInfo hei)
             where TKernelSession : IKernelSession
             where TKeyLocker : struct, IKeyLocker
         {
@@ -223,7 +223,7 @@ namespace Tsavorite.core
         /// which store they are operating on and will call a different method.
         /// </remarks>
         /// <returns><see cref="Status.Found"/> if the tag was found, else <see cref="Status.NotFound"/></returns>
-        public Status UnsafeEnterForUpdate<TKernelSession, TKeyLocker>(ref TKernelSession kernelSession, long keyHash, ushort partitionId, long createIfNotFoundBeginAddress, out HashEntryInfo hei)
+        internal Status UnsafeEnterForUpdate<TKernelSession, TKeyLocker>(ref TKernelSession kernelSession, long keyHash, ushort partitionId, long createIfNotFoundBeginAddress, out HashEntryInfo hei)
             where TKernelSession : IKernelSession
             where TKeyLocker : struct, IKeyLocker
         {
@@ -249,23 +249,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Enter the kernel for an update operation on the second TsavoriteKV of a dual configuration.
-        /// </summary>
-        /// <remarks>
-        /// This is a strict update operation from the HashBucket perspective; if the tag is not found, we do not create it. It is used for operations like Delete or Expire. Operations that do in-place updates or RCU will know
-        /// which store they are operating on and will call a different method.
-        /// </remarks>
-        public Status EnterForUpdateDual2(ushort partitionId, ref HashEntryInfo hei, long createIfNotFoundBeginAddress)
-        {
-            hei.Reset(partitionId);
-
-            // We always want to create the tag here if it is not found
-            FindOrCreateTag(ref hei, createIfNotFoundBeginAddress);
-            Debug.Assert(hei.HasTransientXLock, "Expected transient XLock after Reset and FindTag");
-            return new(StatusCode.Found);
-        }
-
-        /// <summary>
         /// Exits the kernel for this Update operation when epoch may or may not be released
         /// </summary>
         /// <remarks>
@@ -287,7 +270,7 @@ namespace Tsavorite.core
         /// <remarks>
         /// Releases the read lock on the hash bucket and releases the epoch.
         /// </remarks>
-        public void UnsafeExitForUpdate<TKernelSession, TKeyLocker>(ref TKernelSession kernelSession, ref HashEntryInfo hei)
+        internal void UnsafeExitForUpdate<TKernelSession, TKeyLocker>(ref TKernelSession kernelSession, ref HashEntryInfo hei)
             where TKernelSession : IKernelSession
             where TKeyLocker : struct, IKeyLocker
         {

@@ -62,7 +62,7 @@ namespace Garnet.server
     public class GarnetSessionMetrics
     {
         /// <summary>
-        /// Aggregate number of incom  ing bytes from the network
+        /// Aggregate number of incoming bytes from the network
         /// </summary>
         public ulong total_net_input_bytes;
 

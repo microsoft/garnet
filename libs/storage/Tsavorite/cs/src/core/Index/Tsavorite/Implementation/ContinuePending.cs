@@ -148,7 +148,7 @@ namespace Tsavorite.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnException(this);
-                        TKeyLocker.UnlockTransientShared(Kernel, ref hei);       // Epoch management is done above this
+                        Kernel.UnsafeExitForRead<TKernelSession, TKeyLocker>(ref kernelSession, ref hei);
                     }
 
                     // Must do this *after* Unlocking. Status was set by InternalTryCopyToTail.
@@ -242,7 +242,7 @@ namespace Tsavorite.core
                 finally
                 {
                     stackCtx.HandleNewRecordOnException(this);
-                    TKeyLocker.UnlockTransientExclusive(Kernel, ref hei);
+                    Kernel.UnsafeExitForUpdate<TKernelSession, TKeyLocker>(ref kernelSession, ref hei);
                 }
 
             // Must do this *after* Unlocking.
