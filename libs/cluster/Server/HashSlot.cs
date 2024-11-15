@@ -2,8 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Runtime.InteropServices;
-using Garnet.common;
-using Garnet.server;
 
 namespace Garnet.cluster
 {
