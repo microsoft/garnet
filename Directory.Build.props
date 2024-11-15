@@ -18,6 +18,7 @@
 
 	<!-- Common properties for nuget packages -->
 	<PropertyGroup>
+    <title>Garnet</title>
     <Authors>Microsoft</Authors>
     <Company>Microsoft</Company>
     <RepositoryType>git</RepositoryType>
@@ -32,6 +33,7 @@
     </Description>
     <PackageReleaseNotes>See https://github.com/microsoft/garnet for details.</PackageReleaseNotes>
     <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
+    <language>en-US</language>
     <Tags>Garnet key-value store cache dictionary hashtable concurrent persistent remote cluster Redis RESP</Tags>
   </PropertyGroup>
 
