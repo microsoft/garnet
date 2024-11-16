@@ -71,7 +71,6 @@ namespace Garnet.cluster
                     }
                     TsavoriteLogRecoveryInfo info = new();
                     info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                    //TODO: Verify again that this does not write into the AOF
                     storeWrapper.appendOnlyFile?.UnsafeCommitMetadataOnly(info, isProtected);
                     entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                 }
