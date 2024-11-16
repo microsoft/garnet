@@ -11,8 +11,10 @@ namespace Garnet.server
     internal sealed class CustomCommandManagerSession
     {
         readonly CustomCommandManager customCommandManager;
-        public readonly (CustomTransactionProcedure, int)[] sessionTransactionProcMap;
-        public readonly CustomProcedure[] sessionCustomProcMap;
+
+        // These session specific arrays are indexed by the same ID as the arrays in CustomCommandManager
+        readonly (CustomTransactionProcedure, int)[] sessionTransactionProcMap;
+        readonly CustomProcedure[] sessionCustomProcMap;
 
 
         public CustomCommandManagerSession(CustomCommandManager customCommandManager)
