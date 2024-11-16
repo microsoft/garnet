@@ -22,6 +22,8 @@ namespace Garnet.cluster
 
         readonly CancellationTokenSource ctsRepManager = new();
 
+        readonly int pageSizeBits;
+
         readonly ILogger logger;
         bool _disposed;
 
@@ -92,6 +94,7 @@ namespace Garnet.cluster
             this.logger = logger;
             this.clusterProvider = clusterProvider;
             this.storeWrapper = clusterProvider.storeWrapper;
+            this.pageSizeBits = storeWrapper.appendOnlyFile == null ? 0 : storeWrapper.appendOnlyFile.UnsafeGetLogPageSizeBits();
 
             this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
             ValidateNetworkBufferSettings();

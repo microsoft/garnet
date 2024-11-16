@@ -54,7 +54,7 @@ namespace Garnet.cluster
                     if (currentAddress > previousAddress)
                     {
                         if (
-                            (currentAddress % (1 << storeWrapper.appendOnlyFile.UnsafeGetLogPageSizeBits()) != 0) || // the skip was to a non-page-boundary
+                            (currentAddress % (1 << pageSizeBits) != 0) || // the skip was to a non-page-boundary
                             (currentAddress >= previousAddress + recordLength) // the skip will not be auto-handled by the AOF enqueue
                             )
                         {
@@ -66,8 +66,7 @@ namespace Garnet.cluster
                 }
 
                 var tail = storeWrapper.appendOnlyFile.TailAddress;
-                var pageBits = storeWrapper.appendOnlyFile.UnsafeGetLogPageSizeBits();
-                var nextPageBeginAddress = ((tail >> pageBits) + 1) << pageBits;
+                var nextPageBeginAddress = ((tail >> pageSizeBits) + 1) << pageSizeBits;
                 if (tail + recordLength > nextPageBeginAddress && nextPageBeginAddress != currentAddress)
                 {
                     logger?.LogError("Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress{tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
