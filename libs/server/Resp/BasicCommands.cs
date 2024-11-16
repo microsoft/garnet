@@ -321,16 +321,8 @@ namespace Garnet.server
             Debug.Assert(parseState.Count == 1);
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var input = new RawStringInput(RespCommand.GETWITHETAG, ref parseState, startIdx: 1);
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-
-            // Setup input buffer
-            // (len of spanbyte + input header size) is our input buffer size
-            var inputSize = sizeof(int) + RespInputHeader.Size;
-            SpanByte input = SpanByte.Reinterpret(stackalloc byte[inputSize]);
-            byte* inputPtr = input.ToPointer();
-            ((RespInputHeader*)inputPtr)->cmd = RespCommand.GETWITHETAG;
-            ((RespInputHeader*)inputPtr)->flags = 0;
-
             var status = storageApi.GET(ref key, ref input, ref output);
 
             switch (status)
@@ -362,19 +354,8 @@ namespace Garnet.server
             Debug.Assert(parseState.Count == 2);
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            var etagToCheckWith = parseState.GetLong(1);
-
+            var input = new RawStringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1);
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-
-            // Setup input buffer to pass command info, and the ETag to check with.
-            // len + header + etag's data type size 
-            var inputSize = RespInputHeader.Size + Constants.EtagSize + sizeof(int);
-            SpanByte input = SpanByte.Reinterpret(stackalloc byte[inputSize]);
-            byte* inputPtr = input.ToPointer();
-            ((RespInputHeader*)inputPtr)->cmd = RespCommand.GETIFNOTMATCH;
-            ((RespInputHeader*)inputPtr)->flags = 0;
-            *(long*)(inputPtr + RespInputHeader.Size) = etagToCheckWith;
-
             var status = storageApi.GET(ref key, ref input, ref output);
 
             switch (status)
@@ -408,21 +389,9 @@ namespace Garnet.server
             Debug.Assert(parseState.Count == 3);
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            var value = parseState.GetArgSliceByRef(1).SpanByte;
-            long etagToCheckWith = parseState.GetLong(2);
-
-            /* 
-                The network buffer holds key, value, and etag in a contiguous chunk of memory, in order, along with padding for separators in RESP.
-                Shift the etag down over the post-value padding to immediately follow the value:
-                    [<value><padding><etag>] -> [<value><etag>]
-            */
-
-            int initialSizeOfValueSpan = value.Length;
-            value.Length = initialSizeOfValueSpan + Constants.EtagSize;
-            *(long*)(value.ToPointer() + initialSizeOfValueSpan) = etagToCheckWith;
 
             // Here Etag retain argument does not really matter because setifmatch may or may not update etag based on the "if match" condition
-            NetworkSET_Conditional(RespCommand.SETIFMATCH, 0, ref key, value.ToPointer() - sizeof(int), value.Length, getValue: true, highPrecision: false, retainEtag: true, ref storageApi);
+            NetworkSET_Conditional(RespCommand.SETIFMATCH, 0, ref key, getValue: true, highPrecision: false, retainEtag: true, ref storageApi);
 
             return true;
         }
@@ -438,7 +407,6 @@ namespace Garnet.server
             Debug.Assert(parseState.Count == 2 || parseState.Count == 3);
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            var value = parseState.GetArgSliceByRef(1).SpanByte;
 
             bool retainEtag = false;
             if (parseState.Count == 3)
@@ -467,7 +435,7 @@ namespace Garnet.server
             }
 
             // calling set with etag on an exisitng key will update the etag of the existing key
-            NetworkSET_Conditional(RespCommand.SETWITHETAG, 0, ref key, value.ToPointer() - sizeof(int), value.Length, getValue: true, highPrecision: false, retainEtag, ref storageApi);
+            NetworkSET_Conditional(RespCommand.SETWITHETAG, 0, ref key, getValue: true, highPrecision: false, retainEtag, ref storageApi);
 
             return true;
         }

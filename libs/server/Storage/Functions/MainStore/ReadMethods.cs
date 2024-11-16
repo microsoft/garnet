@@ -24,8 +24,8 @@ namespace Garnet.server
 
             if (isEtagCmd && cmd == RespCommand.GETIFNOTMATCH)
             {
-                long existingEtag = *(long*)value.ToPointer();
-                long etagToMatchAgainst = *(long*)(input.ToPointer() + RespInputHeader.Size);
+                var existingEtag = *(long*)value.ToPointer();
+                var etagToMatchAgainst = input.parseState.GetLong(2);
                 if (existingEtag == etagToMatchAgainst)
                 {
                     // write the value not changed message to dst, and early return
@@ -78,8 +78,8 @@ namespace Garnet.server
 
             if (isEtagCmd && cmd == RespCommand.GETIFNOTMATCH)
             {
-                long existingEtag = *(long*)value.ToPointer();
-                long etagToMatchAgainst = *(long*)(input.ToPointer() + RespInputHeader.Size);
+                var existingEtag = *(long*)value.ToPointer();
+                var etagToMatchAgainst = input.parseState.GetLong(2);
                 if (existingEtag == etagToMatchAgainst)
                 {
                     // write the value not changed message to dst, and early return
