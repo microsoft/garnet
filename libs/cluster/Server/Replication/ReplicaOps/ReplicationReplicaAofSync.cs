@@ -67,10 +67,11 @@ namespace Garnet.cluster
 
                 var tail = storeWrapper.appendOnlyFile.TailAddress;
                 var nextPageBeginAddress = ((tail >> pageSizeBits) + 1) << pageSizeBits;
-                if (tail + recordLength > nextPageBeginAddress && nextPageBeginAddress != currentAddress)
+                if ((tail + recordLength <= nextPageBeginAddress && tail != currentAddress) ||
+                    (tail + recordLength > nextPageBeginAddress && nextPageBeginAddress != currentAddress))
                 {
-                    logger?.LogError("Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress{tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
-                    throw new GarnetException($"Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress{tail}", LogLevel.Warning, clientResponse: false);
+                    logger?.LogError("Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress:{tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
+                    throw new GarnetException($"Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress:{tail}", LogLevel.Warning, clientResponse: false);
                 }
 
                 // Address check only if synchronous replication is enabled
