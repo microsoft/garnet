@@ -159,5 +159,59 @@ namespace Garnet.server
 
             return true;
         }
+
+        /// <summary>
+        /// Parse sorted set add option from parse state at specified index
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The argument index</param>
+        /// <param name="value">Parsed value</param>
+        /// <returns>True if value parsed successfully</returns>
+        internal static bool TryGetSortedSetAddOption(this SessionParseState parseState, int idx, out SortedSetAddOption value)
+        {
+            value = SortedSetAddOption.None;
+            var sbArg = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
+
+            if (sbArg.EqualsUpperCaseSpanIgnoringCase("XX"u8))
+                value = SortedSetAddOption.XX;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("NX"u8))
+                value = SortedSetAddOption.NX;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("LT"u8))
+                value = SortedSetAddOption.LT;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("GT"u8))
+                value = SortedSetAddOption.GT;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("CH"u8))
+                value = SortedSetAddOption.CH;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("INCR"u8))
+                value = SortedSetAddOption.INCR;
+            else return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Parse expire option from parse state at specified index
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The argument index</param>
+        /// <param name="value">Parsed value</param>
+        /// <returns>True if value parsed successfully</returns>
+        internal static bool TryGetExpireOption(this SessionParseState parseState, int idx, out ExpireOption value)
+        {
+            value = ExpireOption.None;
+            var sbArg = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
+
+            if (sbArg.EqualsUpperCaseSpanIgnoringCase("NX"u8))
+                value = ExpireOption.NX;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("XX"u8))
+                value = ExpireOption.XX;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("GT"u8))
+                value = ExpireOption.GT;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("LT"u8))
+                value = ExpireOption.LT;
+            else return false;
+
+            return true;
+        }
     }
 }
