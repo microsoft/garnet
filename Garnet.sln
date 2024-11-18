@@ -43,6 +43,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		Dockerfile.nanoserver = Dockerfile.nanoserver
 		Dockerfile.ubuntu = Dockerfile.ubuntu
 		.azure\pipelines\extract_version.ps1 = .azure\pipelines\extract_version.ps1
+		Version.props = Version.props
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Bitmap", "playground\Bitmap\Bitmap.csproj", "{B9FA7D45-6DAE-4D56-AD7E-BB6C987A58C5}"

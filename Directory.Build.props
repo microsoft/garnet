@@ -1,13 +1,11 @@
 <Project>
 
-	<!-- Versioning property for builds and packages -->
-	<PropertyGroup>
-		<VersionPrefix>1.0.40</VersionPrefix>
-	</PropertyGroup>
-
 	<PropertyGroup Label="Targets">
     <TargetFrameworks>net8.0</TargetFrameworks>
   </PropertyGroup>
+
+	<!-- Versioning property for builds and packages -->
+  <Import Project="Version.props" />
 
   <PropertyGroup Label="Configuration">
     <LangVersion>latest</LangVersion>
