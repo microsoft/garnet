@@ -8,7 +8,7 @@
 	<PropertyGroup Label="Targets">
     <TargetFrameworks>net8.0</TargetFrameworks>
   </PropertyGroup>
-	
+
   <PropertyGroup Label="Configuration">
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

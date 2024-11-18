@@ -6,7 +6,7 @@
     <PackageId>garnet-server</PackageId>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>garnet-server</ToolCommandName>
-    <PackageReadmeFile>readme.md</PackageReadmeFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,7 +25,7 @@
     <None Update="garnet.conf">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="readme.md" Pack="true" PackagePath="/" />
+    <None Include="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
 </Project>
