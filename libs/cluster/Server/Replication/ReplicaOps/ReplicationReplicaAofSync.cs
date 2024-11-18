@@ -67,6 +67,10 @@ namespace Garnet.cluster
 
                 var tail = storeWrapper.appendOnlyFile.TailAddress;
                 var nextPageBeginAddress = ((tail >> pageSizeBits) + 1) << pageSizeBits;
+                // Check to ensure:
+                // 1. if record fits in current page tailAddress of this local node (replica) should be equal to the incoming currentAddress (address of chunk send from primary node)
+                // 2. if record does not fit in current page start address of the next page matches incoming currentAddress (address of chunk send from primary node)
+                // otherwise fail and break the connection
                 if ((tail + recordLength <= nextPageBeginAddress && tail != currentAddress) ||
                     (tail + recordLength > nextPageBeginAddress && nextPageBeginAddress != currentAddress))
                 {
