@@ -13,7 +13,6 @@
 
   <ItemGroup>
     <PackageReference Include="JsonPath.Net" />
-    <PackageReference Include="Newtonsoft.Json" />
   </ItemGroup>
 
   <ItemGroup>
