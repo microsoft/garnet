@@ -4,12 +4,11 @@
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
-		<PackageId>Microsoft.Garnet</PackageId>
+    <EmbedUntrackedSources>false</EmbedUntrackedSources>
+    <PackageId>Microsoft.Garnet</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>    
-    <AllowedOutputExtensionsInPackageBuildOutputFolder>dll;xml</AllowedOutputExtensionsInPackageBuildOutputFolder>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
@@ -36,8 +35,10 @@
 
   <ItemGroup>
     <!-- Include files from 8.0 root directory and runtimes in Nuget pacakge - don't want other folders in 8.0 root though  -->
-    <Content Include="..\host\bin\Release\net8.0\*" Pack="true" PackagePath="lib\net8.0" />
-    <Content Include="..\host\bin\Release\net8.0\runtimes\**\*" Pack="true" PackagePath="runtimes" />
+    <Content Include="..\host\bin\Release\net8.0\*.dll" Pack="true" PackagePath="lib\net8.0" />
+    <Content Include="..\host\bin\Release\net8.0\*.pdb" Pack="true" PackagePath="lib\net8.0" />
+    <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.so" Pack="true" PackagePath="runtimes" />
+    <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.dll" Pack="true" PackagePath="runtimes" />
     <None Include="..\..\README.md" Pack="true" PackagePath="/"/>
   </ItemGroup>
 

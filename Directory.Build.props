@@ -19,14 +19,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="../../website/static/img/garnet-logo-diamond.png" Pack="true" Visible="false" PackagePath="/" />
+    <Content Include="../../website/static/img/garnet-logo-diamond.png" Pack="true" Visible="false" PackagePath="/" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Update="**\*.pdb">
-      <Pack>false</Pack>
-    </None>
-  </ItemGroup>
 
 	<!-- Common properties for nuget packages -->
 	<PropertyGroup>
