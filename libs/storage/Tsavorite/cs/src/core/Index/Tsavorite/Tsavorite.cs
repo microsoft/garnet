@@ -195,19 +195,27 @@ namespace Tsavorite.core
         /// </returns>
         public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1)
         {
-            ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator> backend;
+            token = default;
+            bool result;
             if (checkpointType == CheckpointType.FoldOver)
-                backend = new FoldOverCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
+            {
+                var backend = new FoldOverCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
+                result = StartStateMachine(new FullCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
+            }
             else if (checkpointType == CheckpointType.Snapshot)
-                backend = new SnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
+            {
+                var backend = new SnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
+                result = StartStateMachine(new FullCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
+            }
+            else if (checkpointType == CheckpointType.StreamingSnapshot)
+            {
+                result = StartStateMachine(new StreamingSnapshotCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(targetVersion));
+            }
             else
                 throw new TsavoriteException("Unsupported full checkpoint type");
 
-            var result = StartStateMachine(new FullCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
             if (result)
                 token = _hybridLogCheckpointToken;
-            else
-                token = default;
             return result;
         }
 
@@ -289,21 +297,31 @@ namespace Tsavorite.core
         public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
             long targetVersion = -1)
         {
-            ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator> backend;
+            token = default;
+            bool result;
             if (checkpointType == CheckpointType.FoldOver)
-                backend = new FoldOverCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
+            {
+                var backend = new FoldOverCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
+                result = StartStateMachine(new HybridLogCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
+            }
             else if (checkpointType == CheckpointType.Snapshot)
             {
+                ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator> backend;
                 if (tryIncremental && _lastSnapshotCheckpoint.info.guid != default && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress && !hlog.HasObjectLog)
                     backend = new IncrementalSnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
                 else
                     backend = new SnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
+                result = StartStateMachine(new HybridLogCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
+            }
+            else if (checkpointType == CheckpointType.StreamingSnapshot)
+            {
+                result = StartStateMachine(new StreamingSnapshotCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(targetVersion));
             }
             else
-                throw new TsavoriteException("Unsupported checkpoint type");
+                throw new TsavoriteException("Unsupported hybrid log checkpoint type");
 
-            var result = StartStateMachine(new HybridLogCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
-            token = _hybridLogCheckpointToken;
+            if (result)
+                token = _hybridLogCheckpointToken;
             return result;
         }
 
