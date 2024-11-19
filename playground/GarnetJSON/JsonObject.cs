@@ -2,7 +2,10 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Garnet.server;
+using Json.Path;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -37,7 +40,10 @@ namespace GarnetJSON
     /// </summary>
     public class JsonObject : CustomObjectBase
     {
+        private const string JsonPathPattern = @"(\.[^.\[]+)|(\['[^']+'\])|(\[\d+\])";
+
         private JObject jObject;
+        private JsonNode? jNode;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="JsonObject"/> class with the specified type.
@@ -47,6 +53,7 @@ namespace GarnetJSON
             : base(type, 0, MemoryUtils.DictionaryOverhead)
         {
             jObject = new();
+            jNode = null;
             // TODO: update size
         }
 
@@ -62,6 +69,7 @@ namespace GarnetJSON
 
             var jsonString = reader.ReadString();
             jObject = jsonString != null ? JsonConvert.DeserializeObject<JObject>(jsonString) ?? new() : new();
+            jNode = jsonString != null ? JsonNode.Parse(jsonString) : null;
             // TODO: update size
         }
 
@@ -121,10 +129,55 @@ namespace GarnetJSON
                 logger?.LogError(ex, "Failed to set JSON value");
                 return false;
             }
+            catch (System.Text.Json.JsonException ex)
+            {
+                logger?.LogError(ex, "Failed to set JSON value");
+                return false;
+            }
         }
 
         private void Set(string path, string value)
         {
+            var jPath = JsonPath.Parse(path);
+            var result = jPath.Evaluate(jNode);
+
+            if (result.Matches.Count == 0)
+            {
+                var parentPath = JsonPath.Parse(GetParentPathExt(path));
+                result = parentPath.Evaluate(jNode);
+                if (result.Matches.Count == 0)
+                    throw new System.Text.Json.JsonException("Unable to find parent node(s) for JSON path.");
+
+                foreach (var match in result.Matches)
+                {
+                    if (match.Value is System.Text.Json.Nodes.JsonObject matchObject)
+                    {
+
+                    }
+
+                    if (match.Value is JsonArray matchArray)
+                    {
+
+                    }
+                }
+            }
+            else
+            {
+                foreach (var match in result.Matches)
+                {
+                    if (match.Value == null && match.Location?.ToString() == "$")
+                    {
+                        jNode = JsonNode.Parse(value);
+                        continue;
+                    }
+
+                    if (match.Value is JsonValue matchValue)
+                    {
+                        matchValue.ReplaceWith(value);
+                    }
+                }
+            }
+
             var tokens = jObject.SelectTokens(path);
             if (!tokens.Any())
             {
@@ -158,6 +211,16 @@ namespace GarnetJSON
                 }
             }
         }
+
+        static string GetParentPathExt(string jsonPath)
+        {
+            var matches = Regex.Matches(jsonPath, JsonPathPattern);
+
+            if (matches.Count == 0) return "$";
+
+            return jsonPath.Substring(0, matches[^1].Index);
+        }
+
 
         private string GetParentPath(string path)
         {
