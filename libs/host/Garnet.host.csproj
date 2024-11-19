@@ -7,7 +7,9 @@
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
 		<PackageId>Microsoft.Garnet</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <AllowedOutputExtensionsInPackageBuildOutputFolder>dll</AllowedOutputExtensionsInPackageBuildOutputFolder>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>    
+    <AllowedOutputExtensionsInPackageBuildOutputFolder>dll;xml</AllowedOutputExtensionsInPackageBuildOutputFolder>
   </PropertyGroup>
 
   <ItemGroup>

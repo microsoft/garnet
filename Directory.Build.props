@@ -48,8 +48,6 @@
     <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
     <language>en-US</language>
     <PackageTags>Garnet key-value store cache dictionary hashtable concurrent persistent remote cluster Redis RESP</PackageTags>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>    
     <IncludeSource>false</IncludeSource>
   </PropertyGroup>
 

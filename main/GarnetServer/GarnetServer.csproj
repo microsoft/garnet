@@ -7,7 +7,9 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>garnet-server</ToolCommandName>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <AllowedOutputExtensionsInPackageBuildOutputFolder>dll</AllowedOutputExtensionsInPackageBuildOutputFolder>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>    
+    <AllowedOutputExtensionsInPackageBuildOutputFolder>dll;xml</AllowedOutputExtensionsInPackageBuildOutputFolder>
   </PropertyGroup>
 
   <ItemGroup>
