@@ -7,6 +7,7 @@
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
 		<PackageId>Microsoft.Garnet</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <AllowedOutputExtensionsInPackageBuildOutputFolder>dll</AllowedOutputExtensionsInPackageBuildOutputFolder>
   </PropertyGroup>
 
   <ItemGroup>
@@ -36,12 +37,6 @@
     <Content Include="..\host\bin\Release\net8.0\*" Pack="true" PackagePath="lib\net8.0" />
     <Content Include="..\host\bin\Release\net8.0\runtimes\**\*" Pack="true" PackagePath="runtimes" />
     <None Include="..\..\README.md" Pack="true" PackagePath="/"/>
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="**\*.pdb">
-      <Pack>false</Pack>
-    </None>
   </ItemGroup>
 
 </Project>
