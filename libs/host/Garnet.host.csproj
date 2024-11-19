@@ -36,7 +36,7 @@
   <ItemGroup>
     <!-- Include files from 8.0 root directory and runtimes in Nuget pacakge - don't want other folders in 8.0 root though  -->
     <Content Include="..\host\bin\Release\net8.0\*.dll" Pack="true" PackagePath="lib\net8.0" />
-    <Content Include="..\host\bin\Release\net8.0\*.pdb" Pack="true" PackagePath="lib\net8.0" />
+    <Content Include="..\host\bin\Release\net8.0\*.xml" Pack="true" PackagePath="lib\net8.0" />
     <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.so" Pack="true" PackagePath="runtimes" />
     <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.dll" Pack="true" PackagePath="runtimes" />
     <None Include="..\..\README.md" Pack="true" PackagePath="/"/>
