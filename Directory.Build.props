@@ -14,9 +14,17 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(TF_BUILD)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../website/static/img/garnet-logo-diamond.png" Pack="true" Visible="false" PackagePath="/" />
+  </ItemGroup>
+
 	<!-- Common properties for nuget packages -->
 	<PropertyGroup>
-    <title>Garnet</title>
+    <Product>Garnet</Product>
     <Authors>Microsoft</Authors>
     <Company>Microsoft</Company>
     <RepositoryType>git</RepositoryType>
@@ -29,10 +37,14 @@
       scalability, storage, recovery, cluster sharding, key migration, and replication features. Garnet uses the Redis RESP wire
       protocol and can work with existing Redis clients.
     </Description>
+    <PackageIcon>garnet-logo-diamond.png</PackageIcon>
     <PackageReleaseNotes>See https://github.com/microsoft/garnet for details.</PackageReleaseNotes>
     <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
     <language>en-US</language>
-    <Tags>Garnet key-value store cache dictionary hashtable concurrent persistent remote cluster Redis RESP</Tags>
+    <PackageTags>Garnet key-value store cache dictionary hashtable concurrent persistent remote cluster Redis RESP</PackageTags>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>    
+    <IncludeSource>false</IncludeSource>
   </PropertyGroup>
 
 </Project>

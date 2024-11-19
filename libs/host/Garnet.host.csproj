@@ -38,4 +38,10 @@
     <None Include="..\..\README.md" Pack="true" PackagePath="/"/>
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="**\*.pdb">
+      <Pack>false</Pack>
+    </None>
+  </ItemGroup>
+
 </Project>
