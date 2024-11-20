@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Security;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -149,8 +150,7 @@ namespace Garnet.common
                 Assembly assembly;
                 try
                 {
-                    var data = File.ReadAllBytes(path);
-                    assembly = Assembly.Load(data);
+                    assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
                 }
                 catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException ||
                                            ex is NotSupportedException || ex is BadImageFormatException ||

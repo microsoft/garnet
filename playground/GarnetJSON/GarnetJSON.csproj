@@ -7,11 +7,12 @@
   </PropertyGroup>
 
   <PropertyGroup>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <ItemGroup>
+	<ItemGroup>
     <PackageReference Include="JsonPath.Net" />
   </ItemGroup>
 
