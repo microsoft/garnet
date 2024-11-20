@@ -18,8 +18,6 @@ namespace Garnet.common
     /// </summary>
     public static class FileUtils
     {
-        static object AssemblyLoadLock = new object();
-
         /// <summary>
         /// Receives a list of paths and searches for files matching the extensions given in the input
         /// </summary>
@@ -148,35 +146,29 @@ namespace Garnet.common
 
             var tmpAssemblies = new List<Assembly>();
 
-            lock (AssemblyLoadLock)
+            foreach (var path in assemblyPaths)
             {
-                var currLoadedAssemblies =
-                    AssemblyLoadContext.Default.Assemblies.ToDictionary(a => a.GetName().Name, a => a);
-
-                foreach (var path in assemblyPaths)
+                Assembly assembly;
+                try
                 {
-                    var assemblyName = AssemblyName.GetAssemblyName(path).Name;
-                    if (currLoadedAssemblies.TryGetValue(assemblyName!, out var loadedAssembly))
-                    {
-                        tmpAssemblies.Add(loadedAssembly);
-                        continue;
-                    }
-
-                    Assembly assembly;
-                    try
-                    {
-                        assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
-                    }
-                    catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException ||
-                                               ex is NotSupportedException || ex is BadImageFormatException ||
-                                               ex is SecurityException)
-                    {
-                        sbErrorMessage.AppendLine($"Unable to load assembly from path: {path}. Error: {ex.Message}");
-                        continue;
-                    }
-
-                    tmpAssemblies.Add(assembly);
+                    assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
                 }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException ||
+                                           ex is NotSupportedException || ex is BadImageFormatException ||
+                                           ex is SecurityException)
+                {
+                    if (ex is FileLoadException && ex.Message == "Assembly with same name is already loaded")
+                    {
+                        var assemblyName = AssemblyName.GetAssemblyName(path).Name;
+                        tmpAssemblies.Add(AssemblyLoadContext.Default.Assemblies.First(a => a.GetName().Name == assemblyName));
+                        continue;
+                    }
+
+                    sbErrorMessage.AppendLine($"Unable to load assembly from path: {path}. Error: {ex.Message}");
+                    continue;
+                }
+
+                tmpAssemblies.Add(assembly);
             }
 
             errorMessage = sbErrorMessage.ToString();
