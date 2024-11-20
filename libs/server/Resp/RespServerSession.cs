@@ -604,7 +604,8 @@ namespace Garnet.server
                 RespCommand.WATCHMS => NetworkWATCH_MS(),
                 RespCommand.WATCHOS => NetworkWATCH_OS(),
                 // Pub/sub commands
-                RespCommand.SUBSCRIBE => NetworkSUBSCRIBE(),
+                RespCommand.SUBSCRIBE => NetworkSUBSCRIBE(cmd),
+                RespCommand.SSUBSCRIBE => NetworkSUBSCRIBE(cmd),
                 RespCommand.PSUBSCRIBE => NetworkPSUBSCRIBE(),
                 RespCommand.UNSUBSCRIBE => NetworkUNSUBSCRIBE(),
                 RespCommand.PUNSUBSCRIBE => NetworkPUNSUBSCRIBE(),

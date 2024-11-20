@@ -270,6 +270,7 @@ namespace CommandInfoUpdater
             new("SSCAN", RespCommand.SSCAN),
             new("STRLEN", RespCommand.STRLEN),
             new("SUBSCRIBE", RespCommand.SUBSCRIBE),
+            new("SSUBSCRIBE", RespCommand.SSUBSCRIBE),
             new("SUBSTR", RespCommand.SUBSTR),
             new("SUNION", RespCommand.SUNION),
             new("SUNIONSTORE", RespCommand.SUNIONSTORE),

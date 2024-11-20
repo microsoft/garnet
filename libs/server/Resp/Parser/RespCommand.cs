@@ -72,6 +72,7 @@ namespace Garnet.server
         SMISMEMBER,
         SRANDMEMBER,
         SSCAN,
+        SSUBSCRIBE,
         STRLEN,
         SUBSTR,
         SUNION,
@@ -1448,6 +1449,12 @@ namespace Garnet.server
                                     return RespCommand.HEXPIREAT;
                                 }
                                 break;
+                            case 10:
+                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SSUBSCRI"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("BE\r\n"u8))
+                                {
+                                    return RespCommand.SSUBSCRIBE;
+                                }
+                                break;
                         }
 
                         // Reset optimistically changed state, if no matching command was found
@@ -1665,6 +1672,10 @@ namespace Garnet.server
             if (command.SequenceEqual(CmdStrings.SUBSCRIBE))
             {
                 return RespCommand.SUBSCRIBE;
+            }
+            else if (command.SequenceEqual(CmdStrings.SSUBSCRIBE))
+            {
+                return RespCommand.SSUBSCRIBE;
             }
             else if (command.SequenceEqual(CmdStrings.RUNTXP))
             {

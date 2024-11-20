@@ -129,15 +129,36 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSUBSCRIBE()
+        private bool NetworkSUBSCRIBE(RespCommand cmd)
         {
             if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SUBSCRIBE));
+                var cmdName = cmd switch
+                {
+                    RespCommand.SUBSCRIBE => nameof(RespCommand.SUBSCRIBE),
+                    RespCommand.SSUBSCRIBE => nameof(RespCommand.SSUBSCRIBE),
+                    _ => throw new NotImplementedException()
+                };
+                return AbortWithWrongNumberOfArguments(cmdName);
             }
 
-            // SUBSCRIBE channel1 channel2.. ==> [$9\r\nSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
+            if (cmd == RespCommand.SSUBSCRIBE && clusterSession == null)
+            {
+                // Print error message
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             var disabledBroker = subscribeBroker == null;
+            var header = cmd switch
+            {
+                RespCommand.SUBSCRIBE => "subscribe"u8,
+                RespCommand.SSUBSCRIBE => "ssubscribe"u8,
+                _ => throw new NotImplementedException()
+            };
+
+            // SUBSCRIBE|SUBSCRIBE channel1 channel2.. ==> [$9\r\nSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
             for (var c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
@@ -150,8 +171,9 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.WriteBulkString("subscribe"u8, ref dcurr, dend))
+                while (!RespWriteUtils.WriteBulkString(header, ref dcurr, dend))
                     SendAndReset();
+
                 while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
                     SendAndReset();
 
@@ -449,6 +471,16 @@ namespace Garnet.server
                 SendAndReset(output.Memory, output.Length);
             else
                 dcurr += output.Length;
+
+            return true;
+        }
+
+        private bool NetworkSSUBSCRIBE()
+        {
+            if (parseState.Count < 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SSUBSCRIBE));
+            }
 
             return true;
         }
