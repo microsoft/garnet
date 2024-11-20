@@ -484,21 +484,26 @@ namespace Garnet.server
             for (var i = 0; i < moduleArgs.Length; i++)
                 moduleArgs[i] = parseState.GetArgSliceByRef(i + 1).ToString();
 
+            var errorMsg = ReadOnlySpan<byte>.Empty;
+
             // Load dependencies from the module path
             var binPath = Path.GetDirectoryName(modulePath);
-            var binFiles = Directory.EnumerateFiles(binPath!, "*.dll", SearchOption.TopDirectoryOnly).Where(f =>
-                !string.Equals(f, modulePath, StringComparison.InvariantCultureIgnoreCase));
-
-            if (!ModuleUtils.LoadAssemblies(binFiles, storeWrapper.serverOptions.ExtensionBinPaths,
-                    storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies, out _, out var errorMsg))
+            if (Directory.Exists(binPath))
             {
-                if (!errorMsg.IsEmpty)
-                {
-                    while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
-                        SendAndReset();
-                }
+                var binFiles = Directory.EnumerateFiles(binPath!, "*.dll", SearchOption.TopDirectoryOnly).Where(f =>
+                    !f.Equals(modulePath, StringComparison.InvariantCultureIgnoreCase));
 
-                return true;
+                if (!ModuleUtils.LoadAssemblies(binFiles, storeWrapper.serverOptions.ExtensionBinPaths,
+                        storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies, out _, out errorMsg))
+                {
+                    if (!errorMsg.IsEmpty)
+                    {
+                        while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                            SendAndReset();
+                    }
+
+                    return true;
+                }
             }
 
             // Load the module path
@@ -514,8 +519,6 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
-
-                return true;
             }
 
             if (!errorMsg.IsEmpty)

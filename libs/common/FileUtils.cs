@@ -144,9 +144,18 @@ namespace Garnet.common
             var sbErrorMessage = new StringBuilder();
             loadedAssemblies = null;
 
+            var currLoadedAssemblies =
+                AssemblyLoadContext.Default.Assemblies.ToDictionary(a => a.GetName().Name, a => a);
             var tmpAssemblies = new List<Assembly>();
             foreach (var path in assemblyPaths)
             {
+                var assemblyName = AssemblyName.GetAssemblyName(path).Name;
+                if (currLoadedAssemblies.TryGetValue(assemblyName!, out var loadedAssembly))
+                {
+                    tmpAssemblies.Add(loadedAssembly);
+                    continue;
+                }
+
                 Assembly assembly;
                 try
                 {

@@ -236,7 +236,7 @@ namespace Garnet.test
                     if (args[1] != ""arg1"")
                         throw new Exception($""Incorrect arg value {args[1]}"");";
 
-            var modulePath = CreateTestModule(onLoad);
+            var modulePath = CreateTestModule(onLoad, "TestModuleLoadCSArgs.dll");
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

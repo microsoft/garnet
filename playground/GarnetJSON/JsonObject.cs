@@ -41,6 +41,7 @@ namespace GarnetJSON
     {
         private const string JsonPathPattern = @"(\.[^.\[]+)|(\['[^']+'\])|(\[\d+\])";
 
+        // Root node
         private JsonNode? jNode;
 
         /// <summary>
@@ -97,6 +98,9 @@ namespace GarnetJSON
         /// Disposes the <see cref="JsonObject"/> instance.
         /// </summary>
         public override void Dispose() { }
+
+        /// <inheritdoc/>
+        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0, bool isNoValue = false) => throw new NotImplementedException();
 
         /// <summary>
         /// Tries to get the value at the specified JSON path.
@@ -221,7 +225,7 @@ namespace GarnetJSON
             }
         }
 
-        static string GetParentPathExt(string jsonPath)
+        private static string GetParentPathExt(string jsonPath)
         {
             var matches = Regex.Matches(jsonPath, JsonPathPattern);
 
@@ -230,13 +234,13 @@ namespace GarnetJSON
             return jsonPath.Substring(0, matches[^1].Index);
         }
 
-        private string GetPropertyName(string path)
+        private static string GetPropertyName(string path)
         {
             var lastDotIndex = path.LastIndexOf('.');
             return lastDotIndex >= 0 ? path.Substring(lastDotIndex + 1) : path;
         }
 
-        private int GetArrayIndex(string path)
+        private static int GetArrayIndex(string path)
         {
             var startIndex = path.LastIndexOf('[');
             var endIndex = path.LastIndexOf(']');
@@ -251,8 +255,5 @@ namespace GarnetJSON
 
             throw new ArgumentException("Invalid array index in path");
         }
-
-        /// <inheritdoc/>
-        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = null, int patternLength = 0, bool isNoValue = false) => throw new NotImplementedException();
     }
 }
