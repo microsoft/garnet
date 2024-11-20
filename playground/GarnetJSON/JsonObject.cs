@@ -100,7 +100,9 @@ namespace GarnetJSON
         public override void Dispose() { }
 
         /// <inheritdoc/>
-        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0, bool isNoValue = false) => throw new NotImplementedException();
+        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10,
+            byte* pattern = default, int patternLength = 0, bool isNoValue = false) =>
+            throw new NotImplementedException();
 
         /// <summary>
         /// Tries to get the value at the specified JSON path.

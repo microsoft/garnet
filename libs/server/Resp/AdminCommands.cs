@@ -486,24 +486,22 @@ namespace Garnet.server
 
             var errorMsg = ReadOnlySpan<byte>.Empty;
 
-            // Load dependencies from the module path
             var binPath = Path.GetDirectoryName(modulePath);
-            if (Directory.Exists(binPath))
+            var moduleFileName = Path.GetFileName(modulePath);
+
+            // Load dependencies from the module path
+            if (Directory.Exists(binPath) && !ModuleUtils.LoadAssemblies([binPath],
+                    storeWrapper.serverOptions.ExtensionBinPaths,
+                    storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies, out _, out errorMsg, [moduleFileName],
+                    SearchOption.TopDirectoryOnly, true))
             {
-                var binFiles = Directory.EnumerateFiles(binPath!, "*.dll", SearchOption.TopDirectoryOnly).Where(f =>
-                    !f.Equals(modulePath, StringComparison.InvariantCultureIgnoreCase));
-
-                if (!ModuleUtils.LoadAssemblies(binFiles, storeWrapper.serverOptions.ExtensionBinPaths,
-                        storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies, out _, out errorMsg))
+                if (!errorMsg.IsEmpty)
                 {
-                    if (!errorMsg.IsEmpty)
-                    {
-                        while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
-                            SendAndReset();
-                    }
-
-                    return true;
+                    while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                        SendAndReset();
                 }
+
+                return true;
             }
 
             // Load the module path
