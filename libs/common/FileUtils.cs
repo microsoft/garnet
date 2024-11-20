@@ -18,6 +18,8 @@ namespace Garnet.common
     /// </summary>
     public static class FileUtils
     {
+        static object AssemblyLoadLock = new();
+
         /// <summary>
         /// Receives a list of paths and searches for files matching the extensions given in the input
         /// </summary>
@@ -150,29 +152,32 @@ namespace Garnet.common
 
             var tmpAssemblies = new List<Assembly>();
 
-            foreach (var path in assemblyPaths)
+            lock (AssemblyLoadLock)
             {
-                Assembly assembly;
-                try
+                foreach (var path in assemblyPaths)
                 {
-                    assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
-                }
-                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException ||
-                                           ex is NotSupportedException || ex is BadImageFormatException ||
-                                           ex is SecurityException)
-                {
-                    if (ex is FileLoadException && ex.Message == "Assembly with same name is already loaded")
+                    Assembly assembly;
+                    try
                     {
-                        var assemblyName = AssemblyName.GetAssemblyName(path).Name;
-                        tmpAssemblies.Add(AssemblyLoadContext.Default.Assemblies.First(a => a.GetName().Name == assemblyName));
+                        assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
+                    }
+                    catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException ||
+                                               ex is NotSupportedException || ex is BadImageFormatException ||
+                                               ex is SecurityException)
+                    {
+                        if (ex is FileLoadException && ex.Message == "Assembly with same name is already loaded")
+                        {
+                            var assemblyName = AssemblyName.GetAssemblyName(path).Name;
+                            tmpAssemblies.Add(AssemblyLoadContext.Default.Assemblies.First(a => a.GetName().Name == assemblyName));
+                            continue;
+                        }
+
+                        sbErrorMessage.AppendLine($"Unable to load assembly from path: {path}. Error: {ex.Message}");
                         continue;
                     }
 
-                    sbErrorMessage.AppendLine($"Unable to load assembly from path: {path}. Error: {ex.Message}");
-                    continue;
+                    tmpAssemblies.Add(assembly);
                 }
-
-                tmpAssemblies.Add(assembly);
             }
 
             errorMessage = sbErrorMessage.ToString();
