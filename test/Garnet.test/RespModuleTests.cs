@@ -95,30 +95,30 @@ namespace Garnet.test
         public void TestModuleLoad()
         {
             var onLoad =
-                    @"context.Initialize(""TestModule"", 1);
+                    @"context.Initialize(""TestModule3"", 1);
                     
-                    context.RegisterCommand(""TestModule.SetIfPM"", new SetIfPMCustomCommand(), CommandType.ReadModifyWrite,
-                    new RespCommandsInfo { Name = ""TestModule.SETIFPM"", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1,
+                    context.RegisterCommand(""TestModule3.SetIfPM"", new SetIfPMCustomCommand(), CommandType.ReadModifyWrite,
+                    new RespCommandsInfo { Name = ""TestModule3.SETIFPM"", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1,
                     Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.String | RespAclCategories.Write });
                     
-                    context.RegisterTransaction(""TestModule.READWRITETX"", () => new ReadWriteTxn(),
-                    new RespCommandsInfo { Name = ""TestModule.READWRITETX"", Arity = 4, FirstKey = 1, LastKey = 3, Step = 1,
+                    context.RegisterTransaction(""TestModule3.READWRITETX"", () => new ReadWriteTxn(),
+                    new RespCommandsInfo { Name = ""TestModule3.READWRITETX"", Arity = 4, FirstKey = 1, LastKey = 3, Step = 1,
                     Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write });
 
                     var factory = new MyDictFactory();
                     context.RegisterType(factory);
 
-                    context.RegisterCommand(""TestModule.MYDICTSET"", factory, new MyDictSet(), CommandType.ReadModifyWrite,
-                    new RespCommandsInfo { Name = ""TestModule.MYDICTSET"", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1, 
+                    context.RegisterCommand(""TestModule3.MYDICTSET"", factory, new MyDictSet(), CommandType.ReadModifyWrite,
+                    new RespCommandsInfo { Name = ""TestModule3.MYDICTSET"", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1, 
                     Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write });
 
-                    context.RegisterCommand(""TestModule.MYDICTGET"", factory, new MyDictGet(), CommandType.Read,
-                    new RespCommandsInfo { Name = ""TestModule.MYDICTGET"", Arity = 3, FirstKey = 1, LastKey = 1, Step = 1,
+                    context.RegisterCommand(""TestModule3.MYDICTGET"", factory, new MyDictGet(), CommandType.Read,
+                    new RespCommandsInfo { Name = ""TestModule3.MYDICTGET"", Arity = 3, FirstKey = 1, LastKey = 1, Step = 1,
                     Flags = RespCommandFlags.ReadOnly, AclCategories = RespAclCategories.Read });
 
-                    context.RegisterProcedure(""TestModule.SUM"", () => new Sum());";
+                    context.RegisterProcedure(""TestModule3.SUM"", () => new Sum());";
 
-            var modulePath = CreateTestModule(onLoad);
+            var modulePath = CreateTestModule(onLoad, "TestModule3.dll");
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -134,7 +134,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(value, retValue.ToString());
 
             string newValue = "foovalue2";
-            resp = db.Execute("TestModule.SETIFPM", key, newValue, "foo");
+            resp = db.Execute("TestModule3.SETIFPM", key, newValue, "foo");
             ClassicAssert.AreEqual("OK", (string)resp);
             retValue = db.StringGet(key);
             ClassicAssert.AreEqual(newValue, retValue.ToString());
@@ -142,7 +142,7 @@ namespace Garnet.test
             string writekey1 = "writekey1";
             string writekey2 = "writekey2";
 
-            var result = db.Execute("TestModule.READWRITETX", key, writekey1, writekey2);
+            var result = db.Execute("TestModule3.READWRITETX", key, writekey1, writekey2);
             ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             // Read keys to verify transaction succeeded
@@ -157,17 +157,17 @@ namespace Garnet.test
             var dictKey = "dictkey";
             var dictField = "dictfield";
             var dictValue = "dictvalue";
-            resp = db.Execute("TestModule.MYDICTSET", dictKey, dictField, dictValue);
+            resp = db.Execute("TestModule3.MYDICTSET", dictKey, dictField, dictValue);
             ClassicAssert.AreEqual("OK", (string)resp);
 
-            var dictRetValue = db.Execute("TestModule.MYDICTGET", dictKey, dictField);
+            var dictRetValue = db.Execute("TestModule3.MYDICTGET", dictKey, dictField);
             ClassicAssert.AreEqual(dictValue, (string)dictRetValue);
 
             // Test SUM command
             db.StringSet("key1", "1");
             db.StringSet("key2", "2");
             db.StringSet("key3", "3");
-            result = db.Execute("TestModule.SUM", "key1", "key2", "key3");
+            result = db.Execute("TestModule3.SUM", "key1", "key2", "key3");
             ClassicAssert.IsNotNull(result);
             ClassicAssert.AreEqual("6", result.ToString());
         }
@@ -236,7 +236,7 @@ namespace Garnet.test
                     if (args[1] != ""arg1"")
                         throw new Exception($""Incorrect arg value {args[1]}"");";
 
-            var modulePath = CreateTestModule(onLoad);
+            var modulePath = CreateTestModule(onLoad, "TestModuleLoadCSArgs.dll");
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

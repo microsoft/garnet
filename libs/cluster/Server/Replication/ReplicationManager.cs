@@ -22,6 +22,8 @@ namespace Garnet.cluster
 
         readonly CancellationTokenSource ctsRepManager = new();
 
+        readonly int pageSizeBits;
+
         readonly ILogger logger;
         bool _disposed;
 
@@ -92,6 +94,7 @@ namespace Garnet.cluster
             this.logger = logger;
             this.clusterProvider = clusterProvider;
             this.storeWrapper = clusterProvider.storeWrapper;
+            this.pageSizeBits = storeWrapper.appendOnlyFile == null ? 0 : storeWrapper.appendOnlyFile.UnsafeGetLogPageSizeBits();
 
             this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
             ValidateNetworkBufferSettings();
@@ -137,6 +140,7 @@ namespace Garnet.cluster
 
             // After initializing replication history propagate replicationId to ReplicationLogCheckpointManager
             SetPrimaryReplicationId();
+            replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token);
         }
 
         /// <summary>
@@ -189,6 +193,9 @@ namespace Garnet.cluster
 
             checkpointStore.WaitForReplicas();
             replicaSyncSessionTaskStore.Dispose();
+            replicaReplayTaskCts.Cancel();
+            activeReplay.WriteLock();
+            replicaReplayTaskCts.Dispose();
             ctsRepManager.Cancel();
             ctsRepManager.Dispose();
             aofTaskStore.Dispose();

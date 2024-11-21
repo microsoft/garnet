@@ -800,7 +800,7 @@ namespace Garnet.test
                 TestUtils.CreateTestLibrary(namespaces, referenceFiles, ltf.Value, ltf.Key);
             }
 
-            var notAllowedPath = Path.Combine(TestUtils.MethodTestDir, "testLib1.dll");
+            var notAllowedPath = Path.Combine(TestUtils.MethodTestDir, "testLib4.dll");
             if (!File.Exists(notAllowedPath))
             {
                 File.Copy(Path.Combine(dir1, "testLib1.dll"), notAllowedPath);
@@ -927,7 +927,7 @@ namespace Garnet.test
                 2,
                 "MyDictFactory",
                 "SRC",
-                Path.Combine(TestUtils.MethodTestDir, "testLib1.dll")
+                Path.Combine(TestUtils.MethodTestDir, "testLib4.dll")
             ];
 
             try
