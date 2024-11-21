@@ -29,7 +29,7 @@ namespace Garnet
     public class GarnetServer : IDisposable
     {
         // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~7 and GarnetServer.csproj line ~8.
-        readonly string version = "1.0.40";
+        readonly string version = "1.0.41";
 
         internal GarnetProvider Provider;
 
