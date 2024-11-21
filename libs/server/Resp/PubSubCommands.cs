@@ -94,11 +94,25 @@ namespace Garnet.server
         /// <summary>
         /// PUBLISH
         /// </summary>
-        private bool NetworkPUBLISH()
+        private bool NetworkPUBLISH(RespCommand cmd)
         {
             if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PUBLISH));
+                var cmdName = cmd switch
+                {
+                    RespCommand.PUBLISH => nameof(RespCommand.PUBLISH),
+                    RespCommand.SPUBLISH => nameof(RespCommand.SPUBLISH),
+                    _ => throw new NotImplementedException()
+                };
+                return AbortWithWrongNumberOfArguments(cmdName);
+            }
+
+            if (cmd == RespCommand.SPUBLISH && clusterSession == null)
+            {
+                // Print error message
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
             Debug.Assert(isSubscriptionSession == false);
@@ -471,16 +485,6 @@ namespace Garnet.server
                 SendAndReset(output.Memory, output.Length);
             else
                 dcurr += output.Length;
-
-            return true;
-        }
-
-        private bool NetworkSSUBSCRIBE()
-        {
-            if (parseState.Count < 1)
-            {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SSUBSCRIBE));
-            }
 
             return true;
         }

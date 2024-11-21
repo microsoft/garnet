@@ -265,6 +265,7 @@ namespace CommandInfoUpdater
             new("SMISMEMBER", RespCommand.SMISMEMBER),
             new("SMOVE", RespCommand.SMOVE),
             new("SPOP", RespCommand.SPOP),
+            new("SPUBLISH", RespCommand.SPUBLISH),
             new("SRANDMEMBER", RespCommand.SRANDMEMBER),
             new("SREM", RespCommand.SREM),
             new("SSCAN", RespCommand.SSCAN),
