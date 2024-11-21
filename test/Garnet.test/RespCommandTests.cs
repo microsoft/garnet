@@ -404,8 +404,6 @@ namespace Garnet.test
 
         private (string, string, string) CreateTestLibrary()
         {
-            var libraryName = $"{TestContext.CurrentContext.Test.ClassName}.{TestContext.CurrentContext.Test.MethodName}.dll";
-
             var runtimePath = RuntimeEnvironment.GetRuntimeDirectory();
             var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             ClassicAssert.IsNotNull(binPath);
@@ -443,7 +441,7 @@ namespace Garnet.test
             var libPathToFiles = new Dictionary<string, string[]>
             {
                 {
-                    Path.Combine(dir1, libraryName),
+                    Path.Combine(dir1, "testLib1.dll"),
                     new[]
                     {
                         Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictObject.cs", TestUtils.RootTestsProjectPath),
@@ -463,7 +461,7 @@ namespace Garnet.test
             var cmdDocsPath = Path.Combine(dir1, Path.GetFileName(TestUtils.CustomRespCommandDocsJsonPath)!);
             File.Copy(TestUtils.CustomRespCommandDocsJsonPath!, cmdDocsPath);
 
-            return (cmdInfoPath, cmdDocsPath, Path.Combine(dir1, libraryName));
+            return (cmdInfoPath, cmdDocsPath, Path.Combine(dir1, "testLib1.dll"));
         }
 
         private string[] DynamicallyRegisterCustomCommands(IDatabase db)
