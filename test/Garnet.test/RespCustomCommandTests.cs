@@ -714,6 +714,11 @@ namespace Garnet.test
 
         private string[] CreateTestLibraries()
         {
+            var libraryName1 = $"{TestContext.CurrentContext.Test.ClassName}.{TestContext.CurrentContext.Test.MethodName}1.dll";
+            var libraryName2 = $"{TestContext.CurrentContext.Test.ClassName}.{TestContext.CurrentContext.Test.MethodName}2.dll";
+            var libraryName3 = $"{TestContext.CurrentContext.Test.ClassName}.{TestContext.CurrentContext.Test.MethodName}3.dll";
+            var libraryName4 = $"{TestContext.CurrentContext.Test.ClassName}.{TestContext.CurrentContext.Test.MethodName}4.dll";
+
             var runtimePath = RuntimeEnvironment.GetRuntimeDirectory();
             var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             ClassicAssert.IsNotNull(binPath);
@@ -759,7 +764,7 @@ namespace Garnet.test
 
             var libPathToFiles = new Dictionary<string, string[]>
             {
-                { Path.Combine(dir1, "testLib1.dll"),
+                { Path.Combine(dir1, libraryName1),
                     new []
                     {
                         Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictObject.cs", TestUtils.RootTestsProjectPath),
@@ -767,8 +772,8 @@ namespace Garnet.test
                         Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictGet.cs", TestUtils.RootTestsProjectPath)
                     }
                 },
-                { Path.Combine(dir2, "testLib2.dll"), new [] { Path.GetFullPath(@"../main/GarnetServer/Extensions/SetIfPM.cs", TestUtils.RootTestsProjectPath) }},
-                { Path.Combine(dir2, "testLib3.dll"), new []
+                { Path.Combine(dir2, libraryName2), new [] { Path.GetFullPath(@"../main/GarnetServer/Extensions/SetIfPM.cs", TestUtils.RootTestsProjectPath) }},
+                { Path.Combine(dir2, libraryName3), new []
                 {
                     Path.GetFullPath(@"../main/GarnetServer/Extensions/ReadWriteTxn.cs", TestUtils.RootTestsProjectPath),
                     testFilePath,
@@ -780,13 +785,13 @@ namespace Garnet.test
                 TestUtils.CreateTestLibrary(namespaces, referenceFiles, ltf.Value, ltf.Key);
             }
 
-            var notAllowedPath = Path.Combine(TestUtils.MethodTestDir, "testLib4.dll");
+            var notAllowedPath = Path.Combine(TestUtils.MethodTestDir, libraryName4);
             if (!File.Exists(notAllowedPath))
             {
-                File.Copy(Path.Combine(dir1, "testLib1.dll"), notAllowedPath);
+                File.Copy(Path.Combine(dir1, libraryName1), notAllowedPath);
             }
 
-            return [Path.Combine(dir1, "testLib1.dll"), dir2];
+            return [Path.Combine(dir1, libraryName1), dir2, notAllowedPath];
         }
 
         [Test]
@@ -805,7 +810,7 @@ namespace Garnet.test
                 "READ", "MYDICTGET", 1, "MyDictFactory", "MyDictGet",
                 "SRC",
             };
-            args.AddRange(libraryPaths);
+            args.AddRange(libraryPaths.Take(libraryPaths.Length - 1));
 
             // Register select custom commands and transactions
             var resp = (string)db.Execute($"REGISTERCS",
@@ -886,7 +891,7 @@ namespace Garnet.test
 
             // Malformed request #2 - binary paths before sub-command
             var args = new List<object>() { "SRC" };
-            args.AddRange(libraryPaths);
+            args.AddRange(libraryPaths.Take(libraryPaths.Length - 1));
             args.AddRange(["TXN", "READWRITETX", 3, "ReadWriteTxn"]);
 
             try
@@ -907,7 +912,7 @@ namespace Garnet.test
                 2,
                 "MyDictFactory",
                 "SRC",
-                Path.Combine(TestUtils.MethodTestDir, "testLib4.dll")
+                libraryPaths.TakeLast(1)
             ];
 
             try
