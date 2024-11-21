@@ -381,35 +381,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Publish the update made to key to all the subscribers, asynchronously
-        /// </summary>
-        /// <param name="key">key that has been updated</param>
-        /// <param name="value">value that has been updated</param>
-        /// <param name="valueLength">value length that has been updated</param>
-        /// <param name="ascii">is payload ascii</param>
-        public unsafe void Publish(byte* key, byte* value, int valueLength, bool ascii = false)
-        {
-            if (subscriptions == null && prefixSubscriptions == null) return;
-
-            var start = key;
-            ref TKey k = ref keySerializer.ReadKeyByRef(ref key);
-            // TODO: this needs to be a single atomic enqueue
-            byte[] logEntryBytes = new byte[(key - start) + valueLength + sizeof(bool)];
-            fixed (byte* logEntryBytePtr = &logEntryBytes[0])
-            {
-                byte* dst = logEntryBytePtr;
-                Buffer.MemoryCopy(start, dst, (key - start), (key - start));
-                dst += (key - start);
-                Buffer.MemoryCopy(value, dst, valueLength, valueLength);
-                dst += valueLength;
-                byte* asciiPtr = (byte*)&ascii;
-                Buffer.MemoryCopy(asciiPtr, dst, sizeof(bool), sizeof(bool));
-            }
-
-            log.Enqueue(logEntryBytes);
-        }
-
-        /// <summary>
         /// Retrieves the collection of channels that have active subscriptions.
         /// </summary>
         /// <returns>The collection of channels.</returns>
