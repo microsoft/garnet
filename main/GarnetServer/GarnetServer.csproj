@@ -5,7 +5,7 @@
     <ServerGarbageCollection>true</ServerGarbageCollection>
 
     <!-- IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~7 and GarnetServer.cs line ~32. -->
-    <Version>1.0.39</Version>
+    <Version>1.0.40</Version>
     <PackageId>garnet-server</PackageId>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>garnet-server</ToolCommandName>
