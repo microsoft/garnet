@@ -122,6 +122,7 @@ Please check the syntax of your command. For detailed usage information run with
             {
                 logger?.LogError("Configuration validation failed.");
                 options = null;
+                exitGracefully = false;
                 return false;
             }
 
