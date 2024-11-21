@@ -5,6 +5,7 @@
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <PackageId>garnet-server</PackageId>
     <ToolCommandName>garnet-server</ToolCommandName>
+    <PackAsTool>true</PackAsTool>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>    
@@ -28,16 +29,7 @@
     </None>
 
     <None Include="README.md" Pack="true" PackagePath="/" />
-    <None Include="..\..\main\GarnetServer\bin\Release\net8.0\*.json" Pack="true" PackagePath="tools\net8.0" />
-
-    <Content Include="..\..\main\GarnetServer\bin\Release\net8.0\*.exe" Pack="true" PackagePath="tools\net8.0" />
-    <Content Include="..\..\main\GarnetServer\bin\Release\net8.0\*.dll" Pack="true" PackagePath="tools\net8.0" />
-    <Content Include="..\..\main\GarnetServer\bin\Release\net8.0\*.xml" Pack="true" PackagePath="tools\net8.0" />
-    <Content Include="..\..\main\GarnetServer\bin\Release\net8.0\runtimes\**\*.so" Pack="true" PackagePath="tools\net8.0\runtimes" />
-    <Content Include="..\..\main\GarnetServer\bin\Release\net8.0\runtimes\**\*.dll" Pack="true" PackagePath="tools\net8.0\runtimes" />
-    <Content Include="..\..\main\GarnetServer\bin\Release\net8.0\runtimes\**\*.dylib" Pack="true" PackagePath="tools\net8.0\runtimes" />
-    <Content Include="..\..\main\GarnetServer\bin\Release\net8.0\runtimes\**\Info.plist" Pack="true" PackagePath="tools\net8.0\runtimes" />
-    <Content Include="..\..\main\GarnetServer\bin\Release\net8.0\runtimes\**\liblua54" Pack="true" PackagePath="tools\net8.0\runtimes" />
+    <Content Include="..\..\main\GarnetServer\bin\Release\net8.0\*.exe" Pack="true" PackagePath="tools\net8.0\any" />
   </ItemGroup>
  
 </Project>

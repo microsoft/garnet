@@ -34,6 +34,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\host\bin\Release\net8.0\*.pdb" Pack="false" PackagePath="lib\net8.0" />
     <Content Include="..\host\bin\Release\net8.0\*.dll" Pack="true" PackagePath="lib\net8.0" />
     <Content Include="..\host\bin\Release\net8.0\*.xml" Pack="true" PackagePath="lib\net8.0" />
     <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.so" Pack="true" PackagePath="runtimes" />
