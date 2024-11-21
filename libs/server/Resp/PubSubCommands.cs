@@ -44,6 +44,10 @@ namespace Garnet.server
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
             }
+            catch
+            {
+                // Ignore exceptions
+            }
             finally
             {
                 networkSender.ExitAndReturnResponseObject();
@@ -68,15 +72,18 @@ namespace Garnet.server
                 }
                 while (!RespWriteUtils.WriteBulkString("pmessage"u8, ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.WriteBulkString(new Span<byte>(patternPtr + sizeof(int), patternLength - sizeof(int)), ref dcurr, dend))
-                    SendAndReset();
-                while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)), ref dcurr, dend))
-                    SendAndReset();
-                while (!RespWriteUtils.WriteBulkString(new Span<byte>(valPtr + sizeof(int), valLength - sizeof(int)), ref dcurr, dend))
-                    SendAndReset();
+
+                // Write pattern, key, and value to the network
+                WriteDirectLargeRespString(new Span<byte>(patternPtr + sizeof(int), patternLength - sizeof(int)));
+                WriteDirectLargeRespString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)));
+                WriteDirectLargeRespString(new Span<byte>(valPtr + sizeof(int), valLength - sizeof(int)));
 
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
+            }
+            catch
+            {
+                // Ignore exceptions
             }
             finally
             {
