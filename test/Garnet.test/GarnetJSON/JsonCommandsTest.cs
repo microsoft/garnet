@@ -42,9 +42,21 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
+            // Invalid JSON value
             try
             {
                 db.Execute("JSON.SET", "key", "$", "{\"a\": 1");
+                Assert.Fail();
+            }
+            catch (RedisServerException e)
+            {
+                ClassicAssert.AreEqual("ERR Invalid input", e.Message);
+            }
+
+            // Invalid JSON path
+            try
+            {
+                db.Execute("JSON.SET", "key", "a", "{\"a\": 1}");
                 Assert.Fail();
             }
             catch (RedisServerException e)

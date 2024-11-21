@@ -117,6 +117,8 @@ namespace GarnetJSON
             if (path == null)
                 throw new ArgumentNullException(nameof(path));
 
+            jsonString = string.Empty;
+
             try
             {
                 // Find all items matching JSON path
@@ -128,10 +130,14 @@ namespace GarnetJSON
 
                 return true;
             }
+            catch (PathParseException ex)
+            {
+                logger?.LogError(ex, "Failed to parse JSON path");
+                return false;
+            }
             catch (JsonException ex)
             {
                 logger?.LogError(ex, "Failed to get JSON value");
-                jsonString = string.Empty;
                 return false;
             }
         }
@@ -156,6 +162,11 @@ namespace GarnetJSON
             {
                 Set(path, value);
                 return true;
+            }
+            catch (PathParseException ex)
+            {
+                logger?.LogError(ex, "Failed to parse JSON path");
+                return false;
             }
             catch (JsonException ex)
             {
