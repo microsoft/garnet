@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Azure.Core;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -26,6 +27,17 @@ namespace Tsavorite.devices
         /// <param name="logger"></param>
         public AzureStorageNamedDeviceFactory(string connectionString, ILogger logger = null)
             : this(BlobUtilsV12.GetServiceClients(connectionString), logger)
+        {
+        }
+
+        /// <summary>
+        /// Create instance of factory for Azure devices
+        /// </summary>
+        /// <param name="serviceUri"></param>
+        /// <param name="credential"></param>
+        /// <param name="logger"></param>
+        public AzureStorageNamedDeviceFactory(string serviceUri, TokenCredential credential, ILogger logger = null)
+            : this(BlobUtilsV12.GetServiceClients(serviceUri, credential), logger)
         {
         }
 
