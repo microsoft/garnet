@@ -224,11 +224,9 @@ namespace Garnet.server
             ArgumentNullException.ThrowIfNull(customCommand);
 
             var sbKey = key.SpanByte;
-
             var inputArg = customCommand.expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + customCommand.expirationTicks : customCommand.expirationTicks;
-            var sessionParseState = new SessionParseState();
-            sessionParseState.InitializeWithArguments(args);
-            var rawStringInput = new RawStringInput(customCommand.GetRespCommand(), ref sessionParseState, arg1: inputArg);
+            customCommandParseState.InitializeWithArguments(args);
+            var rawStringInput = new RawStringInput(customCommand.GetRespCommand(), ref customCommandParseState, arg1: inputArg);
 
             var _output = new SpanByteAndMemory(null);
             GarnetStatus status;
@@ -293,9 +291,8 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(customObjCommand.GetObjectType()) { SubId = customObjCommand.subid };
-            var sessionParseState = new SessionParseState();
-            sessionParseState.InitializeWithArguments(args);
-            var input = new ObjectInput(header, ref sessionParseState);
+            customCommandParseState.InitializeWithArguments(args);
+            var input = new ObjectInput(header, ref customCommandParseState);
 
             var _output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
             GarnetStatus status;
