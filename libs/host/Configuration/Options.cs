@@ -370,6 +370,10 @@ namespace Garnet
         [Option("replica-sync-delay", Required = false, HelpText = "Whether and by how much (milliseconds) should we throttle the replica sync: 0 - disable throttling")]
         public int ReplicaSyncDelayMs { get; set; }
 
+        [IntRangeValidation(-1, int.MaxValue)]
+        [Option("replica-offset-max-lag", Required = false, HelpText = "Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > ReplicationOffsetMaxLag. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag")]
+        public int ReplicationOffsetMaxLag { get; set; }
+
         [OptionValidation]
         [Option("main-memory-replication", Required = false, HelpText = "Use main-memory replication model.")]
         public bool? MainMemoryReplication { get; set; }
@@ -678,6 +682,7 @@ namespace Garnet
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
+                ReplicationOffsetMaxLag = ReplicationOffsetMaxLag,
                 MainMemoryReplication = MainMemoryReplication.GetValueOrDefault(),
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),

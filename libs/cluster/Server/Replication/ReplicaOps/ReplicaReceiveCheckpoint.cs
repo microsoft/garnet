@@ -95,6 +95,9 @@ namespace Garnet.cluster
                 storeWrapper.appendOnlyFile?.WaitForCommit();
             }
 
+            // Reset background replay iterator
+            ResetReplayIterator();
+
             // Reset replication offset
             ReplicationOffset = 0;
 
