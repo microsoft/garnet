@@ -4,11 +4,9 @@
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
-    <EmbedUntrackedSources>false</EmbedUntrackedSources>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <PackageId>Microsoft.Garnet</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <IncludeSymbols>false</IncludeSymbols>
-    <IncludeSource>false</IncludeSource>
   </PropertyGroup>
 
   <ItemGroup>

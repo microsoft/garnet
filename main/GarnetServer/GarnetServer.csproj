@@ -7,8 +7,6 @@
     <ToolCommandName>garnet-server</ToolCommandName>
     <PackAsTool>true</PackAsTool>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <IncludeSymbols>false</IncludeSymbols>
-    <IncludeSource>false</IncludeSource>
   </PropertyGroup>
 
   <ItemGroup>
