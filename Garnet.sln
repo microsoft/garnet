@@ -42,7 +42,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		Dockerfile.chiseled = Dockerfile.chiseled
 		Dockerfile.nanoserver = Dockerfile.nanoserver
 		Dockerfile.ubuntu = Dockerfile.ubuntu
-		.azure\pipelines\extract_version.ps1 = .azure\pipelines\extract_version.ps1
+		Garnet.nuspec = Garnet.nuspec
 		Version.props = Version.props
 	EndProjectSection
 EndProject
@@ -99,7 +99,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SampleModule", "playground\
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GarnetJSON", "playground\GarnetJSON\GarnetJSON.csproj", "{2C8F1F5D-31E5-4D00-A46E-F3B1D9BC098F}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MigrateBench", "playground\MigrateBench\MigrateBench.csproj", "{6B66B394-E410-4B61-9A5A-1595FF6F5E08}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MigrateBench", "playground\MigrateBench\MigrateBench.csproj", "{6B66B394-E410-4B61-9A5A-1595FF6F5E08}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "hosting", "hosting", "{01823EA4-4446-4D66-B268-DFEE55951964}"
 EndProject
@@ -107,7 +107,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Windows", "Windows", "{6977
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Garnet.worker", "hosting\Windows\Garnet.worker\Garnet.worker.csproj", "{DF2DD03E-87EE-482A-9FBA-6C8FBC23BDC5}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Garnet.resources", "libs\resources\Garnet.resources.csproj", "{A48412B4-FD60-467E-A5D9-F155CAB4F907}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Garnet.resources", "libs\resources\Garnet.resources.csproj", "{A48412B4-FD60-467E-A5D9-F155CAB4F907}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
