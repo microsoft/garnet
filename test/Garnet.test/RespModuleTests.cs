@@ -116,7 +116,7 @@ namespace Garnet.test
                     new RespCommandsInfo { Name = ""TestModule3.MYDICTGET"", Arity = 3, FirstKey = 1, LastKey = 1, Step = 1,
                     Flags = RespCommandFlags.ReadOnly, AclCategories = RespAclCategories.Read });
 
-                    context.RegisterProcedure(""TestModule3.SUM"", new Sum());";
+                    context.RegisterProcedure(""TestModule3.SUM"", () => new Sum());";
 
             var modulePath = CreateTestModule(onLoad, "TestModule3.dll");
 
@@ -186,7 +186,7 @@ namespace Garnet.test
             var onLoad2 =
                    @"context.Initialize(""TestModule2"", 1);
                    
-                    context.RegisterProcedure(""TestModule2.SUM"", new Sum());";
+                    context.RegisterProcedure(""TestModule2.SUM"", () => new Sum());";
 
             var module1Path = CreateTestModule(onLoad, "TestModule1.dll");
             var module2Path = CreateTestModule(onLoad2, "TestModule2.dll");
