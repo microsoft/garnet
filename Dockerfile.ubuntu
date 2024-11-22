@@ -15,6 +15,7 @@ COPY main/GarnetServer/*.csproj main/GarnetServer/
 COPY metrics/HdrHistogram/*.csproj metrics/HdrHistogram/
 COPY Directory.Build.props Directory.Build.props
 COPY Directory.Packages.props Directory.Packages.props
+COPY Version.props Version.props
 COPY .editorconfig .editorconfig
 
 RUN dotnet restore main/GarnetServer/GarnetServer.csproj -a $TARGETARCH
