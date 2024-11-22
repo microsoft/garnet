@@ -676,7 +676,7 @@ namespace Garnet.server
                 input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreUpsert, version = version, sessionID = sessionId },
+                new AofHeader { opType = AofEntryType.StoreUpsert, storeVersion = version, sessionID = sessionId },
                 ref key, ref value, ref input, out _);
         }
 
@@ -692,7 +692,7 @@ namespace Garnet.server
             input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreRMW, version = version, sessionID = sessionId },
+                new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
                 ref key, ref input, out _);
         }
 
@@ -705,13 +705,23 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
             SpanByte def = default;
-            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, version = version, sessionID = sessionID }, ref key, ref def, out _);
+            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID }, ref key, ref def, out _);
         }
 
         BitFieldCmdArgs GetBitFieldArguments(ref RawStringInput input)
         {
             var currTokenIdx = 0;
-            var cmd = input.parseState.GetEnum<RespCommand>(currTokenIdx++, true);
+
+            // Get secondary command. Legal commands: GET, SET & INCRBY.
+            var cmd = RespCommand.NONE;
+            var sbCmd = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+            if (sbCmd.EqualsUpperCaseSpanIgnoringCase("GET"u8))
+                cmd = RespCommand.GET;
+            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase("SET"u8))
+                cmd = RespCommand.SET;
+            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase("INCRBY"u8))
+                cmd = RespCommand.INCRBY;
+
             var encodingArg = input.parseState.GetString(currTokenIdx++);
             var offsetArg = input.parseState.GetString(currTokenIdx++);
 
@@ -724,7 +734,9 @@ namespace Garnet.server
             var overflowType = (byte)BitFieldOverflow.WRAP;
             if (currTokenIdx < input.parseState.Count)
             {
-                overflowType = (byte)input.parseState.GetEnum<BitFieldOverflow>(currTokenIdx, true);
+                var overflowTypeParsed = input.parseState.TryGetBitFieldOverflow(currTokenIdx, out var overflowTypeValue);
+                Debug.Assert(overflowTypeParsed);
+                overflowType = (byte)overflowTypeValue;
             }
 
             var sign = encodingArg[0] == 'i' ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;

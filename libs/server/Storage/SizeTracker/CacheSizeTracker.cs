@@ -23,11 +23,12 @@ namespace Garnet.server
         internal readonly LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator> mainLogTracker;
         internal readonly LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator> readCacheTracker;
         public long TargetSize;
+        public long ReadCacheTargetSize;
 
         private const int deltaFraction = 10; // 10% of target size
         private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
 
-        internal bool Stopped => mainLogTracker.Stopped && (readCacheTracker == null || readCacheTracker.Stopped);
+        internal bool Stopped => (mainLogTracker == null || mainLogTracker.Stopped) && (readCacheTracker == null || readCacheTracker.Stopped);
 
         /// <summary>Helps calculate size of a record including heap memory in Object store.</summary>
         internal struct LogSizeCalculator : ILogSizeCalculator<byte[], IGarnetObject>
@@ -53,52 +54,43 @@ namespace Garnet.server
         /// <param name="store">Tsavorite store instance</param>
         /// <param name="logSettings">Hybrid log settings</param>
         /// <param name="targetSize">Total memory size target</param>
+        /// <param name="readCacheTargetSize">Target memory size for read cache</param>
         /// <param name="loggerFactory"></param>
         public CacheSizeTracker(TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store, KVSettings<byte[], IGarnetObject> logSettings,
-                long targetSize, ILoggerFactory loggerFactory = null)
+                long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory = null)
         {
             Debug.Assert(store != null);
             Debug.Assert(logSettings != null);
-            Debug.Assert(targetSize > 0);
+            Debug.Assert(targetSize > 0 || readCacheTargetSize > 0);
 
             this.store = store;
             this.TargetSize = targetSize;
+            this.ReadCacheTargetSize = readCacheTargetSize;
             var logSizeCalculator = new LogSizeCalculator();
 
-            var (mainLogTargetSizeBytes, readCacheTargetSizeBytes) = CalculateLogTargetSizeBytes(targetSize);
+            if (targetSize > 0)
+            {
+                this.mainLogTracker = new LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator>(store.Log, logSizeCalculator,
+                    targetSize, targetSize / deltaFraction, loggerFactory?.CreateLogger("ObjSizeTracker"));
+                store.Log.SubscribeEvictions(mainLogTracker);
+                store.Log.SubscribeDeserializations(new LogOperationObserver<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator>(mainLogTracker, LogOperationType.Deserialize));
+                store.Log.IsSizeBeyondLimit = () => mainLogTracker.IsSizeBeyondLimit;
+            }
 
-            this.mainLogTracker = new LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator>(store.Log, logSizeCalculator,
-                mainLogTargetSizeBytes, mainLogTargetSizeBytes / deltaFraction, loggerFactory?.CreateLogger("ObjSizeTracker"));
-            store.Log.SubscribeEvictions(mainLogTracker);
-            store.Log.SubscribeDeserializations(new LogOperationObserver<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator>(mainLogTracker, LogOperationType.Deserialize));
-            store.Log.IsSizeBeyondLimit = () => mainLogTracker.IsSizeBeyondLimit;
-
-            if (store.ReadCache != null)
+            if (store.ReadCache != null && readCacheTargetSize > 0)
             {
                 this.readCacheTracker = new LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator>(store.ReadCache, logSizeCalculator,
-                    readCacheTargetSizeBytes, readCacheTargetSizeBytes / deltaFraction, loggerFactory?.CreateLogger("ObjReadCacheSizeTracker"));
+                    readCacheTargetSize, readCacheTargetSize / deltaFraction, loggerFactory?.CreateLogger("ObjReadCacheSizeTracker"));
                 store.ReadCache.SubscribeEvictions(readCacheTracker);
+                store.ReadCache.SubscribeDeserializations(new LogOperationObserver<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator>(readCacheTracker, LogOperationType.Deserialize));
+                store.ReadCache.IsSizeBeyondLimit = () => readCacheTracker.IsSizeBeyondLimit;
             }
         }
 
         public void Start(CancellationToken token)
         {
-            mainLogTracker.Start(token);
+            mainLogTracker?.Start(token);
             readCacheTracker?.Start(token);
-        }
-
-        /// <summary>
-        /// Calculates target size for both the main cache and read cache.
-        /// Target size will be checked against the total size of the index, log pages and heap memory size.
-        /// For now, main cache and read cache are allocated equal size. If needed, this could be driven by a configurable setting.
-        /// </summary>
-        /// <param name="newTargetSize">Target size</param>
-        public (long mainLogSizeBytes, long readCacheSizeBytes) CalculateLogTargetSizeBytes(long newTargetSize)
-        {
-            var mainLogSizeBytes = this.store.ReadCache == null ? newTargetSize : newTargetSize / 2;
-            var readCacheSizeBytes = this.store.ReadCache == null ? 0 : newTargetSize / 2;
-
-            return (mainLogSizeBytes, readCacheSizeBytes);
         }
 
         /// <summary>Add to the tracked size of the cache.</summary>
@@ -107,7 +99,8 @@ namespace Garnet.server
         {
             if (size == 0) return;
 
-            this.mainLogTracker.IncrementSize(size);
+            // mainLogTracker could be null if heap size limit is set just for the read cache
+            this.mainLogTracker?.IncrementSize(size);
         }
 
         /// <summary>Add to the tracked size of read cache.</summary>
@@ -116,7 +109,9 @@ namespace Garnet.server
         {
             if (size == 0) return;
 
-            this.readCacheTracker.IncrementSize(size);
+            // readCacheTracker could be null if read cache is not enabled or heap size limit is set
+            // just for the main log
+            this.readCacheTracker?.IncrementSize(size);
         }
     }
 }

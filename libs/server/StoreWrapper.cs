@@ -105,6 +105,11 @@ namespace Garnet.server
         public readonly TimeSpan loggingFrequncy;
 
         /// <summary>
+        /// NOTE: For now we support only a single database
+        /// </summary>
+        public readonly int databaseNum = 1;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public StoreWrapper(
@@ -237,20 +242,44 @@ namespace Garnet.server
         /// <summary>
         /// Caller will have to decide if recover is necessary, so we do not check if recover option is enabled
         /// </summary>
-        public void RecoverCheckpoint(bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false,
-            Guid storeIndexToken = default, Guid storeHlogToken = default, Guid objectStoreIndexToken = default, Guid objectStoreHlogToken = default)
+        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
         {
             long storeVersion = -1, objectStoreVersion = -1;
             try
             {
-                storeVersion = !recoverMainStoreFromToken ? store.Recover() : store.Recover(storeIndexToken, storeHlogToken);
-                if (objectStore != null) objectStoreVersion = !recoverObjectStoreFromToken ? objectStore.Recover() : objectStore.Recover(objectStoreIndexToken, objectStoreHlogToken);
+                if (replicaRecover)
+                {
+                    if (metadata.storeIndexToken != default && metadata.storeHlogToken != default)
+                    {
+                        storeVersion = !recoverMainStoreFromToken ? store.Recover() : store.Recover(metadata.storeIndexToken, metadata.storeHlogToken);
+                    }
+
+                    if (!serverOptions.DisableObjects)
+                    {
+                        if (metadata.objectStoreIndexToken != default && metadata.objectStoreHlogToken != default)
+                        {
+                            objectStoreVersion = !recoverObjectStoreFromToken ? objectStore.Recover() : objectStore.Recover(metadata.objectStoreIndexToken, metadata.objectStoreHlogToken);
+                        }
+                    }
+                }
+                else
+                {
+                    storeVersion = store.Recover();
+                    if (objectStore != null) objectStoreVersion = objectStore.Recover();
+                }
                 if (storeVersion > 0 || objectStoreVersion > 0)
                     lastSaveTime = DateTimeOffset.UtcNow;
+            }
+            catch (TsavoriteNoHybridLogException ex)
+            {
+                // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
+                logger?.LogInformation(ex, "No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
             }
             catch (Exception ex)
             {
                 logger?.LogInformation(ex, "Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
+                if (serverOptions.FailOnRecoveryError)
+                    throw;
             }
         }
 
@@ -306,6 +335,8 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Error during recovery of AofProcessor");
+                if (serverOptions.FailOnRecoveryError)
+                    throw;
             }
             return replicationOffset;
         }
@@ -400,7 +431,7 @@ namespace Garnet.server
             AofHeader header = new()
             {
                 opType = isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit,
-                version = version,
+                storeVersion = version,
                 sessionID = -1
             };
             appendOnlyFile?.Enqueue(header, out _);
