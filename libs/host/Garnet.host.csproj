@@ -7,8 +7,8 @@
     <EmbedUntrackedSources>false</EmbedUntrackedSources>
     <PackageId>Microsoft.Garnet</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <IncludeSymbols>false</IncludeSymbols>
+    <IncludeSource>false</IncludeSource>
   </PropertyGroup>
 
   <ItemGroup>

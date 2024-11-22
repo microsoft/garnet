@@ -18,10 +18,19 @@
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
+	<!-- Embeds debug symbols in the DLLs instead of separate pdb files -->
+	<PropertyGroup>
+      <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedFiles Include="$(GeneratedAssemblyInfoFile)"/>
+    <EmbeddedFiles Include="$(TargetFrameworkMonikerAssemblyAttributesPath)"/>
+  </ItemGroup>
+
   <ItemGroup>
     <Content Include="../../website/static/img/garnet-logo-diamond.png" Pack="true" Visible="false" PackagePath="/" />
   </ItemGroup>
-
 
 	<!-- Common properties for nuget packages -->
 	<PropertyGroup>
@@ -43,7 +52,6 @@
     <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
     <language>en-US</language>
     <PackageTags>Garnet key-value store cache dictionary hashtable concurrent persistent remote cluster Redis RESP</PackageTags>
-    <IncludeSource>false</IncludeSource>
   </PropertyGroup>
 
 </Project>

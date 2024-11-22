@@ -7,8 +7,8 @@
     <ToolCommandName>garnet-server</ToolCommandName>
     <PackAsTool>true</PackAsTool>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>    
+    <IncludeSymbols>false</IncludeSymbols>
+    <IncludeSource>false</IncludeSource>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,7 +29,6 @@
     </None>
 
     <None Include="README.md" Pack="true" PackagePath="/" />
-    <Content Include="..\..\main\GarnetServer\bin\Release\net8.0\*.exe" Pack="true" PackagePath="tools\net8.0\any" />
   </ItemGroup>
  
 </Project>
