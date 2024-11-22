@@ -55,7 +55,7 @@ namespace Garnet.cluster
             cts?.Dispose();
         }
 
-        public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress)
+        public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
         {
             try
             {

@@ -231,6 +231,7 @@ namespace Garnet.cluster
                 {
                     var (address, port) = config.GetLocalNodePrimaryAddress();
                     var primaryLinkStatus = clusterManager.GetPrimaryLinkStatus(config);
+                    var replicationOffsetLag = storeWrapper.appendOnlyFile.TailAddress - replicationManager.ReplicationOffset;
                     replicationInfo.Add(new("master_host", address));
                     replicationInfo.Add(new("master_port", port.ToString()));
                     replicationInfo.Add(primaryLinkStatus[0]);
@@ -241,6 +242,8 @@ namespace Garnet.cluster
                     replicationInfo.Add(new("slave_read_only", "1"));
                     replicationInfo.Add(new("replica_announced", "1"));
                     replicationInfo.Add(new("master_sync_last_io_seconds_ago", replicationManager.LastPrimarySyncSeconds.ToString()));
+                    replicationInfo.Add(new("replication_offset_lag", replicationOffsetLag.ToString()));
+                    replicationInfo.Add(new("replication_offset_max_lag", storeWrapper.serverOptions.ReplicationOffsetMaxLag.ToString()));
                 }
                 else
                 {

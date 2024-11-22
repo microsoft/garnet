@@ -42,9 +42,21 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
+            // Invalid JSON value
             try
             {
                 db.Execute("JSON.SET", "key", "$", "{\"a\": 1");
+                Assert.Fail();
+            }
+            catch (RedisServerException e)
+            {
+                ClassicAssert.AreEqual("ERR Invalid input", e.Message);
+            }
+
+            // Invalid JSON path
+            try
+            {
+                db.Execute("JSON.SET", "key", "a", "{\"a\": 1}");
                 Assert.Fail();
             }
             catch (RedisServerException e)
@@ -138,7 +150,7 @@ namespace Garnet.test
         [Test]
         public void SerializationTest()
         {
-            var jsonObject = new GarnetJSON.JsonObject(23);
+            var jsonObject = new JsonObject(23);
             jsonObject.TrySet("$", "{\"a\": 1}");
 
             byte[] serializedData;
@@ -156,7 +168,7 @@ namespace Garnet.test
             {
                 using (var binaryReader = new BinaryReader(memoryStream))
                 {
-                    var deserializedObject = new GarnetJSON.JsonObject(binaryReader.ReadByte(), binaryReader);
+                    var deserializedObject = new JsonObject(binaryReader.ReadByte(), binaryReader);
 
                     deserializedObject.TryGet("$", out var newString);
                     ClassicAssert.AreEqual("[{\"a\":1}]", newString);
