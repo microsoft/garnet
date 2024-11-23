@@ -45,7 +45,7 @@ namespace Tsavorite.core
             public void OnStop(bool completed, long numberOfRecords) { }
         }
 
-        public void StreamingSnapshotScanPhase1()
+        internal void StreamingSnapshotScanPhase1()
         {
             try
             {
@@ -96,7 +96,7 @@ namespace Tsavorite.core
                 => userScanIteratorFunctions.OnStop(completed, numberOfRecords);
         }
 
-        public void StreamingSnapshotScanPhase2(long untilAddress)
+        internal void StreamingSnapshotScanPhase2(long untilAddress)
         {
             try
             {

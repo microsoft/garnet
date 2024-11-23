@@ -17,7 +17,7 @@ namespace Tsavorite.core
     /// it does not require a snapshot of the index. Recovery is achieved by replaying the yielded log 
     /// of key-value pairs and inserting each record into an empty database.
     /// </summary>
-    internal sealed class StreamingSnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointOrchestrationTask<TKey, TValue, TStoreFunctions, TAllocator>
+    sealed class StreamingSnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointOrchestrationTask<TKey, TValue, TStoreFunctions, TAllocator>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {

@@ -6,7 +6,7 @@ namespace Tsavorite.core
     /// <summary>
     /// StreamingSnapshot checkpoint state machine.
     /// </summary>
-    internal class StreamingSnapshotCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator> : VersionChangeStateMachine<TKey, TValue, TStoreFunctions, TAllocator>
+    class StreamingSnapshotCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator> : VersionChangeStateMachine<TKey, TValue, TStoreFunctions, TAllocator>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
