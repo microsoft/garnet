@@ -24,6 +24,7 @@ namespace Garnet.server
         readonly int networkSendThrottleMax;
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
+        readonly int connectionLimit;
 
         public IPEndPoint GetEndPoint
         {
@@ -69,9 +70,10 @@ namespace Garnet.server
         /// <param name="tlsOptions"></param>
         /// <param name="networkSendThrottleMax"></param>
         /// <param name="logger"></param>
-        public GarnetServerTcp(string address, int port, int networkBufferSize = default, IGarnetTlsOptions tlsOptions = null, int networkSendThrottleMax = 8, ILogger logger = null)
+        public GarnetServerTcp(string address, int port, int networkBufferSize = default, IGarnetTlsOptions tlsOptions = null, int networkSendThrottleMax = 8, int connectionLimit = -1, ILogger logger = null)
             : base(address, port, networkBufferSize, logger)
         {
+            this.connectionLimit = connectionLimit;
             this.tlsOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
             var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
@@ -134,11 +136,11 @@ namespace Garnet.server
             string remoteEndpointName = e.AcceptSocket.RemoteEndPoint?.ToString();
             logger?.LogDebug("Accepted TCP connection from {remoteEndpoint}", remoteEndpointName);
 
-
             ServerTcpNetworkHandler handler = null;
             if (activeHandlerCount >= 0)
             {
-                if (Interlocked.Increment(ref activeHandlerCount) > 0)
+                var currentActiveHandlerCount = Interlocked.Increment(ref activeHandlerCount);
+                if (currentActiveHandlerCount is > 0 && (connectionLimit == 0 || currentActiveHandlerCount <= connectionLimit))
                 {
                     try
                     {
@@ -156,6 +158,11 @@ namespace Garnet.server
                         Interlocked.Decrement(ref activeHandlerCount);
                         handler?.Dispose();
                     }
+                }
+                else
+                {
+                    Interlocked.Decrement(ref activeHandlerCount);
+                    e.AcceptSocket.Dispose();
                 }
             }
             return true;

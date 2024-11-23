@@ -340,7 +340,7 @@ namespace Garnet
         public int ThreadPoolMaxThreads { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("connection-limit", Required = false, Default = -1, HelpText = "Maximum number of client connections")]
+        [Option("connection-limit", Required = false, Default = 0, HelpText = "Maximum number of client connections")]
         public int ConnectionLimit { get; set; }
 
         [OptionValidation]
