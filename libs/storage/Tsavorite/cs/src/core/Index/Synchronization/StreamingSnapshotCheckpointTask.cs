@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
+
     /// <summary>
     /// A Streaming Snapshot persists a version by yielding a stream of key-value pairs that correspond to
     /// a consistent snapshot of the database, for the old version (v). Unlike Snapshot, StreamingSnapshot
@@ -29,72 +30,19 @@ namespace Tsavorite.core
                     base.GlobalBeforeEnteringState(next, store);
                     store._hybridLogCheckpointToken = Guid.NewGuid();
                     store._lastSnapshotCheckpoint.Dispose();
+                    _ = Task.Run(store.StreamingSnapshotScanPhase1);
                     break;
                 case Phase.PREPARE:
+                    store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     base.GlobalBeforeEnteringState(next, store);
-                    store._hybridLogCheckpoint.info.useSnapshotFile = 1;
                     break;
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, store);
-                    store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
-                    store._hybridLogCheckpoint.info.snapshotFinalLogicalAddress = store._hybridLogCheckpoint.info.finalLogicalAddress;
-
-                    store._hybridLogCheckpoint.snapshotFileDevice =
-                        store.checkpointManager.GetSnapshotLogDevice(store._hybridLogCheckpointToken);
-                    store._hybridLogCheckpoint.snapshotFileObjectLogDevice =
-                        store.checkpointManager.GetSnapshotObjectLogDevice(store._hybridLogCheckpointToken);
-                    store._hybridLogCheckpoint.snapshotFileDevice.Initialize(store.hlogBase.GetSegmentSize());
-                    store._hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(-1);
-
-                    // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress; get all records in memory.
-                    store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;
-
-                    long startPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress);
-                    long endPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.finalLogicalAddress);
-                    if (store._hybridLogCheckpoint.info.finalLogicalAddress >
-                        store.hlog.GetStartLogicalAddress(endPage))
-                    {
-                        endPage++;
-                    }
-
-                    // We are writing pages outside epoch protection, so callee should be able to
-                    // handle corrupted or unexpected concurrent page changes during the flush, e.g., by
-                    // resuming epoch protection if necessary. Correctness is not affected as we will
-                    // only read safe pages during recovery.
-                    store.hlogBase.AsyncFlushPagesToDevice(
-                        startPage,
-                        endPage,
-                        store._hybridLogCheckpoint.info.finalLogicalAddress,
-                        store._hybridLogCheckpoint.info.startLogicalAddress,
-                        store._hybridLogCheckpoint.snapshotFileDevice,
-                        store._hybridLogCheckpoint.snapshotFileObjectLogDevice,
-                        out store._hybridLogCheckpoint.flushedSemaphore,
-                        store.ThrottleCheckpointFlushDelayMs);
-                    break;
-                case Phase.PERSISTENCE_CALLBACK:
-                    // Set actual FlushedUntil to the latest possible data in main log that is on disk
-                    // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress; get all records in memory.
-                    store._hybridLogCheckpoint.info.flushedLogicalAddress = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;
-                    base.GlobalBeforeEnteringState(next, store);
-                    store._lastSnapshotCheckpoint = store._hybridLogCheckpoint.Transfer();
+                    var finalLogicalAddress = store.hlogBase.GetTailAddress();
+                    Task.Run(() => store.StreamingSnapshotScanPhase2(finalLogicalAddress));
                     break;
                 default:
                     base.GlobalBeforeEnteringState(next, store);
-                    break;
-            }
-        }
-
-        public override void GlobalAfterEnteringState(SystemState next, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
-        {
-            switch (next.Phase)
-            {
-                case Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT:
-                    base.GlobalAfterEnteringState(next, store);
-                    // TODO: spawn task that scans and yields until ReadOnlyAddress
-                    // TODO: Then calls store.GlobalStateMachineStep(next);
-                    break;
-                default:
-                    base.GlobalAfterEnteringState(next, store);
                     break;
             }
         }
@@ -112,7 +60,7 @@ namespace Tsavorite.core
 
             if (current.Phase != Phase.WAIT_FLUSH) return;
 
-            if (ctx is null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
+            if (ctx is null)
             {
                 var s = store._hybridLogCheckpoint.flushedSemaphore;
 
@@ -124,16 +72,7 @@ namespace Tsavorite.core
                     Debug.Assert(s != null);
                     valueTasks.Add(new ValueTask(s.WaitAsync(token).ContinueWith(t => s.Release())));
                 }
-
-                if (!notify) return;
-
-                if (ctx is not null)
-                    ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
-
-            store.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
-            if (store.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
-                store.GlobalStateMachineStep(current);
         }
     }
 }

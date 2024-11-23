@@ -36,9 +36,6 @@ namespace Tsavorite.core
                     result.Phase = Phase.WAIT_FLUSH;
                     break;
                 case Phase.WAIT_FLUSH:
-                    result.Phase = Phase.PERSISTENCE_CALLBACK;
-                    break;
-                case Phase.PERSISTENCE_CALLBACK:
                     result.Phase = Phase.REST;
                     break;
                 default:

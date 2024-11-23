@@ -193,7 +193,7 @@ namespace Tsavorite.core
         /// fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
         /// </returns>
-        public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1)
+        public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1, IScanIteratorFunctions<TKey, TValue> streamingSnapshotScanIteratorFunctions = null)
         {
             token = default;
             bool result;
@@ -209,6 +209,7 @@ namespace Tsavorite.core
             }
             else if (checkpointType == CheckpointType.StreamingSnapshot)
             {
+                this.streamingSnapshotScanIteratorFunctions = streamingSnapshotScanIteratorFunctions;
                 result = StartStateMachine(new StreamingSnapshotCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(targetVersion));
             }
             else

@@ -24,7 +24,12 @@ namespace Tsavorite.core
         /// <summary>
         /// End the current cursor batch (as if "count" had been met); return a valid cursor for the next ScanCursor call
         /// </summary>
-        EndBatch = 4
+        EndBatch = 4,
+
+        /// <summary>
+        /// Retry the last record when returning a valid cursor
+        /// </summary>
+        RetryLastRecord = 8,
     }
 
     /// <summary>

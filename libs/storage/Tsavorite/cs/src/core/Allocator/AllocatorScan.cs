@@ -227,7 +227,10 @@ namespace Tsavorite.core
                 }
 
                 // Update the cursor to point to the next record.
-                cursor = iter.NextAddress;
+                if (scanCursorState.retryLastRecord)
+                    cursor = iter.CurrentAddress;
+                else
+                    cursor = iter.NextAddress;
 
                 // Now see if we completed the enumeration.
                 if (scanCursorState.stop)
@@ -288,6 +291,8 @@ namespace Tsavorite.core
                         Interlocked.Increment(ref scanCursorState.acceptedCount);
                     if ((cursorRecordResult & CursorRecordResult.EndBatch) != 0)
                         scanCursorState.endBatch = true;
+                    if ((cursorRecordResult & CursorRecordResult.RetryLastRecord) != 0)
+                        scanCursorState.retryLastRecord = true;
                 }
                 internalStatus = OperationStatus.SUCCESS;
             }
