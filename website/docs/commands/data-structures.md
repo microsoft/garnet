@@ -1224,3 +1224,22 @@ An Array reply of matched members, where each sub-array represents a single item
 
 ---
 
+### GEOSEARCHSTORE
+
+#### Syntax
+
+```bash
+GEOSEARCHSTORE destination source <FROMMEMBER member |
+  FROMLONLAT longitude latitude> <BYRADIUS radius <m | km | ft | mi>
+  | BYBOX width height <m | km | ft | mi>> [ASC | DESC] [COUNT count
+  [ANY]] [STOREDIST]
+```
+
+This command is like [GEOSEARCH](#geosearch), but stores the result in destination key.
+
+**Reply**
+
+Integer reply: the number of elements in the resulting set
+
+---
+

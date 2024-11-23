@@ -274,6 +274,128 @@ namespace Garnet.test
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoSearch(keys[0], values[0][1], new GeoSearchBox(800, 800, GeoUnit.Kilometers)));
         }
 
+        [Test]
+        public void CanUseGeoSearch()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var entries = new GeoEntry[cities.GetLength(0)];
+            var key = new RedisKey("cities");
+            var destinationKey = new RedisKey("newCities");
+            for (int j = 0; j < cities.GetLength(0); j++)
+            {
+                entries[j] = new GeoEntry(
+                    double.Parse(cities[j, 0], CultureInfo.InvariantCulture),
+                    double.Parse(cities[j, 1], CultureInfo.InvariantCulture),
+                    new RedisValue(cities[j, 2]));
+            }
+            var response = db.GeoAdd(key, entries, CommandFlags.None);
+
+            var res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers), options: GeoRadiusOptions.None);
+            ClassicAssert.AreEqual(3, res.Length);
+            ClassicAssert.AreEqual("Washington", (string)res[0].Member);
+            ClassicAssert.AreEqual(res[0].Distance, null);
+            ClassicAssert.AreEqual(res[0].Position, null);
+            ClassicAssert.AreEqual("Philadelphia", (string)res[1].Member);
+            ClassicAssert.AreEqual(res[1].Distance, null);
+            ClassicAssert.AreEqual(res[1].Position, null);
+            ClassicAssert.AreEqual("New York", (string)res[2].Member);
+            ClassicAssert.AreEqual(res[2].Distance, null);
+            ClassicAssert.AreEqual(res[2].Position, null);
+
+            res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers), options: GeoRadiusOptions.WithDistance);
+            ClassicAssert.AreEqual(3, res.Length);
+            ClassicAssert.AreEqual("Washington", (string)res[0].Member);
+            Assert.That(res[0].Distance, Is.EqualTo(0).Within(1.0 / Math.Pow(10, 6)));
+            ClassicAssert.AreEqual(res[0].Position, null);
+            ClassicAssert.AreEqual("Philadelphia", (string)res[1].Member);
+            Assert.That(res[1].Distance, Is.EqualTo(198.424300439725).Within(1.0 / Math.Pow(10, 6)));
+            ClassicAssert.AreEqual(res[1].Position, null);
+            ClassicAssert.AreEqual("New York", (string)res[2].Member);
+            Assert.That(res[2].Distance, Is.EqualTo(327.676458633557).Within(1.0 / Math.Pow(10, 6)));
+            ClassicAssert.AreEqual(res[2].Position, null);
+
+            res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers), options: GeoRadiusOptions.WithCoordinates);
+            ClassicAssert.AreEqual(3, res.Length);
+            ClassicAssert.AreEqual("Washington", (string)res[0].Member);
+            ClassicAssert.AreEqual(res[0].Distance, null);
+            Assert.That(res[0].Position.Value.Longitude, Is.EqualTo(-77.03687042).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[0].Position.Value.Latitude, Is.EqualTo(38.9071919).Within(1.0 / Math.Pow(10, 6)));
+            ClassicAssert.AreEqual("Philadelphia", (string)res[1].Member);
+            ClassicAssert.AreEqual(res[1].Distance, null);
+            Assert.That(res[1].Position.Value.Longitude, Is.EqualTo(-75.1652196).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[1].Position.Value.Latitude, Is.EqualTo(39.95258287).Within(1.0 / Math.Pow(10, 6)));
+            ClassicAssert.AreEqual("New York", (string)res[2].Member);
+            ClassicAssert.AreEqual(res[2].Distance, null);
+            Assert.That(res[2].Position.Value.Longitude, Is.EqualTo(-74.00594205).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[2].Position.Value.Latitude, Is.EqualTo(40.71278259).Within(1.0 / Math.Pow(10, 6)));
+
+            res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers), options: GeoRadiusOptions.WithDistance | GeoRadiusOptions.WithCoordinates);
+            ClassicAssert.AreEqual(3, res.Length);
+            ClassicAssert.AreEqual("Washington", (string)res[0].Member);
+            Assert.That(res[0].Distance, Is.EqualTo(0).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[0].Position.Value.Longitude, Is.EqualTo(-77.03687042).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[0].Position.Value.Latitude, Is.EqualTo(38.9071919).Within(1.0 / Math.Pow(10, 6)));
+            ClassicAssert.AreEqual("Philadelphia", (string)res[1].Member);
+            Assert.That(res[1].Distance, Is.EqualTo(198.424300439725).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[1].Position.Value.Longitude, Is.EqualTo(-75.1652196).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[1].Position.Value.Latitude, Is.EqualTo(39.95258287).Within(1.0 / Math.Pow(10, 6)));
+            ClassicAssert.AreEqual("New York", (string)res[2].Member);
+            Assert.That(res[2].Distance, Is.EqualTo(327.676458633557).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[2].Position.Value.Longitude, Is.EqualTo(-74.00594205).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[2].Position.Value.Latitude, Is.EqualTo(40.71278259).Within(1.0 / Math.Pow(10, 6)));
+        }
+
+        [Test]
+        public void CanUseGeoSearchStore()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var entries = new GeoEntry[cities.GetLength(0)];
+            var key = new RedisKey("cities");
+            var destinationKey = new RedisKey("newCities");
+            for (int j = 0; j < cities.GetLength(0); j++)
+            {
+                entries[j] = new GeoEntry(
+                    double.Parse(cities[j, 0], CultureInfo.InvariantCulture),
+                    double.Parse(cities[j, 1], CultureInfo.InvariantCulture),
+                    new RedisValue(cities[j, 2]));
+            }
+            db.GeoAdd(key, entries, CommandFlags.None);
+
+            db.SortedSetAdd(destinationKey, "OldValue", 10); // Add a value to be replaced
+
+            var actualCount = db.GeoSearchAndStore(key, destinationKey, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers), storeDistances: true);
+            ClassicAssert.AreEqual(3, actualCount);
+
+            var actualValues = db.SortedSetRangeByScoreWithScores(destinationKey);
+            ClassicAssert.AreEqual(3, actualValues.Length);
+            ClassicAssert.AreEqual("Washington", (string)actualValues[0].Element);
+            Assert.That(actualValues[0].Score, Is.EqualTo(0).Within(1.0 / Math.Pow(10, 6)));
+            ClassicAssert.AreEqual("Philadelphia", (string)actualValues[1].Element);
+            Assert.That(actualValues[1].Score, Is.EqualTo(198.424300439725).Within(1.0 / Math.Pow(10, 6)));
+            ClassicAssert.AreEqual("New York", (string)actualValues[2].Element);
+            Assert.That(actualValues[2].Score, Is.EqualTo(327.676458633557).Within(1.0 / Math.Pow(10, 6)));
+        }
+
+        [Test]
+        public void CanUseGeoSearchStoreWithDeleteKeyWhenSourceNotFound()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var entries = new GeoEntry[cities.GetLength(0)];
+            var key = new RedisKey("cities");
+            var destinationKey = new RedisKey("newCities");
+
+            db.SortedSetAdd(destinationKey, "OldValue", 10);
+
+            var actualCount = db.GeoSearchAndStore(key, destinationKey, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers), storeDistances: true);
+            ClassicAssert.AreEqual(0, actualCount);
+
+            var actualValues = db.SortedSetRangeByScoreWithScores(destinationKey);
+            ClassicAssert.AreEqual(0, actualValues.Length);
+        }
+
         //end region of SE tests
         #endregion
 
@@ -301,14 +423,14 @@ namespace Garnet.test
             //TODO: Assert values for latitude and longitude
             //TODO: Review precision to use for all framework versions
             using var lightClientRequest = TestUtils.CreateRequest();
-            var responseBuf = lightClientRequest.SendCommands("GEOSEARCH cities FROMMEMBER Washington BYBOX 800 800 km WITHCOORD WITHDIST WITHHASH", "PING", 16);
-            var expectedResponse = "*3\r\n$10\r\nWashington\r\n$1\r\n0\r\n*2\r\n$12\r\n-77.03687042\r\n$10\r\n38.9071919\r\n$12\r\nPhiladelphia\r\n$16\r\n198.424300439725\r\n*2\r\n$11\r\n-75.1652196\r\n$11\r\n39.95258287\r\n$8\r\nNew York\r\n$16\r\n327.676458633557\r\n*2\r\n$12\r\n-74.00594205\r\n$11\r\n40.71278259\r\n+PONG\r\n";
+            var responseBuf = lightClientRequest.SendCommands("GEOSEARCH cities FROMMEMBER Washington BYBOX 800 800 km WITHCOORD WITHDIST", "PING");
+            var expectedResponse = "*3\r\n*3\r\n$10\r\nWashington\r\n$1\r\n0\r\n*2\r\n$17\r\n-77.0368704199791\r\n$17\r\n38.90719190239906\r\n*3\r\n$12\r\nPhiladelphia\r\n$17\r\n198.4242996738795\r\n*2\r\n$18\r\n-75.16521960496902\r\n$18\r\n39.952582865953445\r\n*3\r\n$8\r\nNew York\r\n$18\r\n327.67645879712575\r\n*2\r\n$17\r\n-74.0059420466423\r\n$18\r\n40.712782591581345\r\n+PONG\r\n";
             var actualValue = Encoding.ASCII.GetString(responseBuf).Substring(0, expectedResponse.Length);
             ClassicAssert.IsTrue(actualValue.IndexOf("Washington") != -1);
 
             //Send command in chunks
-            responseBuf = lightClientRequest.SendCommandChunks("GEOSEARCH cities FROMMEMBER Washington BYBOX 800 800 km COUNT 3 ANY WITHCOORD WITHDIST WITHHASH", bytesSent, 16);
-            expectedResponse = "*3\r\n$10\r\nWashington\r\n$1\r\n0\r\n*2\r\n$12\r\n-77.03687042\r\n$10\r\n38.9071919\r\n$12\r\nPhiladelphia\r\n$16\r\n198.424300439725\r\n*2\r\n$11\r\n-75.1652196\r\n$11\r\n39.95258287\r\n$8\r\nNew York\r\n$16\r\n327.676458633557\r\n*2\r\n$12\r\n-74.00594205\r\n$11\r\n40.71278259\r\n+PONG\r\n";
+            responseBuf = lightClientRequest.SendCommandChunks("GEOSEARCH cities FROMMEMBER Washington BYBOX 800 800 km COUNT 3 ANY WITHCOORD WITHDIST", bytesSent, 16);
+            expectedResponse = "*3\r\n*3\r\n$10\r\nWashington\r\n$1\r\n0\r\n*2\r\n$17\r\n-77.0368704199791\r\n$17\r\n38.90719190239906\r\n*3\r\n$12\r\nPhiladelphia\r\n$17\r\n198.4242996738795\r\n*2\r\n$18\r\n-75.16521960496902\r\n$18\r\n39.952582865953445\r\n*3\r\n$8\r\nNew York\r\n$18\r\n327.67645879712575\r\n*2\r\n$17\r\n-74.0059420466423\r\n$18\r\n40.712782591581345\r\n+PONG\r\n";
             actualValue = Encoding.ASCII.GetString(responseBuf).Substring(0, expectedResponse.Length);
             ClassicAssert.IsTrue(actualValue.IndexOf("Washington") != -1);
         }

@@ -47,8 +47,9 @@ namespace GarnetJSON
 
             var offset = 0;
             var path = CustomCommandUtils.GetNextArg(ref input, ref offset);
+            var strPath = path.IsEmpty ? "$" : Encoding.UTF8.GetString(path);
 
-            if (((JsonObject)value).TryGet(Encoding.UTF8.GetString(path), out var result, logger))
+            if (((JsonObject)value).TryGet(strPath, out var result, logger))
                 CustomCommandUtils.WriteBulkString(ref output, Encoding.UTF8.GetBytes(result));
             else
                 WriteNullBulkString(ref output);

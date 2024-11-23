@@ -1,14 +1,59 @@
 <Project>
 
-  <PropertyGroup Label="Targets">
+	<PropertyGroup Label="Targets">
     <TargetFrameworks>net8.0</TargetFrameworks>
   </PropertyGroup>
+
+	<!-- Versioning property for builds and packages -->
+  <Import Project="Version.props" />
 
   <PropertyGroup Label="Configuration">
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TF_BUILD)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+	<!-- Embeds debug symbols in the DLLs instead of separate pdb files -->
+	<PropertyGroup>
+    <DebugType>embedded</DebugType>
+    <IncludeSymbols>false</IncludeSymbols>
+    <IncludeSource>false</IncludeSource>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedFiles Include="$(GeneratedAssemblyInfoFile)"/>
+    <EmbeddedFiles Include="$(TargetFrameworkMonikerAssemblyAttributesPath)"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="../../website/static/img/garnet-logo-diamond.png" Pack="true" Visible="false" PackagePath="/" />
+  </ItemGroup>
+
+	<!-- Common properties for nuget packages -->
+	<PropertyGroup>
+    <Product>Garnet</Product>
+    <Authors>Microsoft</Authors>
+    <Company>Microsoft</Company>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/microsoft/garnet.git</RepositoryUrl>
+    <PackageProjectUrl>https://microsoft.github.io/garnet</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
+    <Description>
+      Garnet is a remote cache-store from Microsoft Research, that offers strong performance (throughput and latency),
+      scalability, storage, recovery, cluster sharding, key migration, and replication features. Garnet uses the Redis RESP wire
+      protocol and can work with existing Redis clients.
+    </Description>
+    <PackageIcon>garnet-logo-diamond.png</PackageIcon>
+    <PackageReleaseNotes>See https://github.com/microsoft/garnet for details.</PackageReleaseNotes>
+    <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
+    <language>en-US</language>
+    <PackageTags>Garnet key-value store cache dictionary hashtable concurrent persistent remote cluster Redis RESP</PackageTags>
   </PropertyGroup>
 
 </Project>

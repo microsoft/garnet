@@ -48,7 +48,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [LOAD](acl.md#acl-load) | ➕ |  |
 |  | HELP | ➖ |  |
 |  | LOG | ➖ |  |
-|  | SAVE | ➖ |  |
+|  | [SAVE](acl.md#acl-save) | ➕ |  |
 |  | [SETUSER](acl.md#acl-setuser) | ➕ |  |
 |  | [USERS](acl.md#acl-users) | ➕ |  |
 |  | [WHOAMI](acl.md#acl-whoami) | ➕ |  |
@@ -160,7 +160,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | GEORADIUSBYMEMBER | ➖ | (Deprecated) |
 |  | GEORADIUSBYMEMBER_RO | ➖ | (Deprecated) |
 |  | [GEOSEARCH](data-structures.md#geosearch) | ➕ | Partially Implemented |
-|  | GEOSEARCHSTORE | ➖ |  |
+|  | [GEOSEARCHSTORE](data-structures.md#geosearchstore) | ➕ | Partially Implemented |
 | <span id="hash">**HASH**</span> | [HDEL](data-structures.md#hdel) | ➕ |  |
 |  | [HEXISTS](data-structures.md#hexists) | ➕ |  |
 |  | HEXPIRE | ➖ |  |
@@ -248,10 +248,10 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | REFCOUNT | ➖ |  |
 | <span id="pubsub">**PUB/SUB**</span> | [PSUBSCRIBE](analytics.md#psubscribe) | ➕ |  |
 |  | [PUBLISH](analytics.md#publish) | ➕ |  |
-|  | [PUBSUB CHANNELS](analytics.md#pubsub-channels) | ➖ |  |
+|  | [PUBSUB CHANNELS](analytics.md#pubsub-channels) | ➕ |  |
 |  | PUBSUB HELP | ➖ |  |
-|  | [PUBSUB NUMPAT](analytics.md#pubsub-numpat) | ➖ |  |
-|  | [PUBSUB NUMSUB](analytics.md#pubsub-numsub) | ➖ |  |
+|  | [PUBSUB NUMPAT](analytics.md#pubsub-numpat) | ➕ |  |
+|  | [PUBSUB NUMSUB](analytics.md#pubsub-numsub) | ➕ |  |
 |  | PUBSUB SHARDCHANNELS | ➖ |  |
 |  | PUBSUB SHARDNUMSUB | ➖ |  |
 |  | [PUNSUBSCRIBE](analytics.md#punsubscribe) | ➕ |  |

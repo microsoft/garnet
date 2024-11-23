@@ -65,6 +65,8 @@ namespace Garnet.server
         internal readonly ScratchBufferManager scratchBufferManager;
 
         internal SessionParseState parseState;
+        internal SessionParseState customCommandParseState;
+
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
 
@@ -615,6 +617,7 @@ namespace Garnet.server
                 RespCommand.GEODIST => GeoCommands(cmd, ref storageApi),
                 RespCommand.GEOPOS => GeoCommands(cmd, ref storageApi),
                 RespCommand.GEOSEARCH => GeoCommands(cmd, ref storageApi),
+                RespCommand.GEOSEARCHSTORE => GeoSearchStore(ref storageApi),
                 //HLL Commands
                 RespCommand.PFADD => HyperLogLogAdd(ref storageApi),
                 RespCommand.PFMERGE => HyperLogLogMerge(ref storageApi),
@@ -757,7 +760,7 @@ namespace Garnet.server
                 // Perform the operation
                 TryTransactionProc(currentCustomTransaction.id,
                     customCommandManagerSession
-                        .GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager)
+                        .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager, scratchBufferManager)
                         .Item1);
                 currentCustomTransaction = null;
                 return true;
@@ -771,7 +774,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                TryCustomProcedure(currentCustomProcedure.CustomProcedureImpl);
+                TryCustomProcedure(customCommandManagerSession.GetCustomProcedure(currentCustomProcedure.Id, this));
 
                 currentCustomProcedure = null;
                 return true;
@@ -1040,6 +1043,7 @@ namespace Garnet.server
 
                 // Adjust number of bytes to copy, to space left on output buffer, then copy
                 src.Slice(0, destSpace).CopyTo(new Span<byte>(dcurr, destSpace));
+                dcurr += destSpace;
                 src = src.Slice(destSpace);
 
                 // Send and reset output buffer

@@ -91,6 +91,7 @@ namespace Garnet.test.cluster
                 new SRANDMEMBER(),
                 new GEOADD(),
                 new GEOHASH(),
+                new GEOSEARCHSTORE(),
                 new ZADD(),
                 new ZREM(),
                 new ZCARD(),
@@ -271,6 +272,7 @@ namespace Garnet.test.cluster
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("GEOSEARCHSTORE")]
         [TestCase("ZADD")]
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
@@ -411,6 +413,7 @@ namespace Garnet.test.cluster
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("GEOSEARCHSTORE")]
         [TestCase("ZADD")]
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
@@ -561,6 +564,7 @@ namespace Garnet.test.cluster
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("GEOSEARCHSTORE")]
         [TestCase("ZADD")]
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
@@ -703,6 +707,7 @@ namespace Garnet.test.cluster
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("GEOSEARCHSTORE")]
         [TestCase("ZADD")]
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
@@ -852,6 +857,7 @@ namespace Garnet.test.cluster
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("GEOSEARCHSTORE")]
         [TestCase("ZADD")]
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
@@ -1018,6 +1024,7 @@ namespace Garnet.test.cluster
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("GEOSEARCHSTORE")]
         [TestCase("ZADD")]
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
