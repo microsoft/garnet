@@ -164,6 +164,7 @@ namespace Garnet.server
                     RespCommand.ZRANGE => SortedSetOperation.ZRANGE,
                     RespCommand.ZREVRANGE => SortedSetOperation.ZREVRANGE,
                     RespCommand.ZRANGEBYSCORE => SortedSetOperation.ZRANGEBYSCORE,
+                    RespCommand.ZREVRANGEBYLEX => SortedSetOperation.ZREVRANGEBYLEX,
                     RespCommand.ZREVRANGEBYSCORE => SortedSetOperation.ZREVRANGEBYSCORE,
                     _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
                 };
@@ -191,53 +192,6 @@ namespace Garnet.server
             }
 
             return true;
-        }
-
-        /// <summary>
-        /// ZREVRANGEBYLEX 
-        /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="storageApi"></param>
-        /// <returns></returns>
-        private bool ListRangeByLength<TGarnetApi>(ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
-        {
-            if (parseState.Count is not (3 or 6))
-            {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZREVRANGEBYLEX));
-            }
-
-
-            var sbKey = parseState.GetArgSliceByRef(0);
-            var start = parseState.GetArgSliceByRef(1);
-            var stop = parseState.GetArgSliceByRef(2);
-            var byLenOption = ArgSlice.FromPinnedSpan(CmdStrings.BYLEX);
-            var revOption = ArgSlice.FromPinnedSpan(CmdStrings.REV);
-
-            // ZREVRANGEBYLEX key start stop
-            if (parseState.Count == 3)
-            {
-                parseState.InitializeWithArguments(sbKey, start, stop, byLenOption, revOption);
-
-                return SortedSetRange(RespCommand.ZRANGE, ref storageApi);
-            }
-
-            // ZREVRANGEBYLEX key start stop [LIMIT offset count]
-            var limit = parseState.GetArgSliceByRef(3);
-            var offset = parseState.GetArgSliceByRef(4);
-            var count = parseState.GetArgSliceByRef(5);
-
-            parseState.Initialize(8);
-            parseState.SetArgument(0, sbKey);
-            parseState.SetArgument(1, start);
-            parseState.SetArgument(2, stop);
-            parseState.SetArgument(3, byLenOption);
-            parseState.SetArgument(4, revOption);
-            parseState.SetArgument(5, limit);
-            parseState.SetArgument(6, offset);
-            parseState.SetArgument(7, count);
-
-            return SortedSetRange(RespCommand.ZRANGE, ref storageApi);
         }
 
         /// <summary>
