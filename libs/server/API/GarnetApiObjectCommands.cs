@@ -35,6 +35,10 @@ namespace Garnet.server
             => storageSession.SortedSetAdd(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
+        public GarnetStatus SortedSetRangeStore(ArgSlice distKey, ArgSlice sbKey, ref ObjectInput input, out int result)
+            => storageSession.SortedSetRangeStore(distKey, sbKey, ref input, out result, ref objectContext);
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetRemove(ArgSlice key, ArgSlice member, out int zremCount)
             => storageSession.SortedSetRemove(key.ToArray(), member, out zremCount, ref objectContext);
 

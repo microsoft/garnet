@@ -596,6 +596,7 @@ namespace Garnet.server
                 RespCommand.ZINCRBY => SortedSetIncrement(ref storageApi),
                 RespCommand.ZRANK => SortedSetRank(cmd, ref storageApi),
                 RespCommand.ZRANGE => SortedSetRange(cmd, ref storageApi),
+                RespCommand.ZRANGE => SortedSetRangeStore(ref storageApi),
                 RespCommand.ZRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANK => SortedSetRank(cmd, ref storageApi),
                 RespCommand.ZREMRANGEBYLEX => SortedSetLengthByValue(cmd, ref storageApi),
