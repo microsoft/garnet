@@ -247,6 +247,11 @@ namespace Garnet.server
         public int ThreadPoolMaxThreads = 0;
 
         /// <summary>
+        /// Maximum client connection limit
+        /// </summary>
+        public int ConnectionLimit = 0;
+
+        /// <summary>
         /// Creator of device factories
         /// </summary>
         public Func<INamedDeviceFactory> DeviceFactoryCreator = null;
