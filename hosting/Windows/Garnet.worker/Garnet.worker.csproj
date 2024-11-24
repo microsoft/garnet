@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\libs\host\Garnet.host.csproj" />
+    <ProjectReference Include="..\..\..\libs\server\Garnet.server.csproj" />
   </ItemGroup>
 
 </Project>

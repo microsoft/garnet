@@ -97,6 +97,7 @@ namespace Garnet.server
         FLUSHALL,
         FLUSHDB,
         GEOADD,
+        GEOSEARCHSTORE,
         GETDEL,
         GETEX,
         GETSET,
@@ -1429,6 +1430,10 @@ namespace Garnet.server
                                 if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREMRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
                                 {
                                     return RespCommand.ZREMRANGEBYLEX;
+                                }
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nGEOSEA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("RCHSTORE"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.GEOSEARCHSTORE;
                                 }
                                 break;
 

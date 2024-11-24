@@ -205,6 +205,21 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Initialize the parse state with a given set of arguments
+        /// </summary>
+        /// <param name="args">Set of arguments to initialize buffer with</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeWithArguments(ReadOnlySpan<ArgSlice> args)
+        {
+            Initialize(args.Length);
+
+            for (var i = 0; i < args.Length; i++)
+            {
+                *(bufferPtr + i) = args[i];
+            }
+        }
+
+        /// <summary>
         /// Set argument at a specific index
         /// </summary>
         /// <param name="i">Index of buffer at which to set argument</param>
@@ -426,42 +441,6 @@ namespace Garnet.server
         {
             Debug.Assert(i < Count);
             return ParseUtils.ReadString(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i));
-        }
-
-        /// <summary>
-        /// Get enum argument at the given index
-        /// Note: this method exists for compatibility with existing code.
-        /// For best performance use: ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(""VALUE""u8) to figure out the current enum value
-        /// </summary>
-        /// <returns>True if enum parsed successfully</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public T GetEnum<T>(int i, bool ignoreCase) where T : struct, Enum
-        {
-            Debug.Assert(i < Count);
-            var strRep = GetString(i);
-            var value = Enum.Parse<T>(strRep, ignoreCase);
-            // Extra check is to avoid numerical values being successfully parsed as enum value
-            return string.Equals(Enum.GetName(value), strRep,
-                ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ? value : default;
-        }
-
-        /// <summary>
-        /// Try to get enum argument at the given index
-        /// Note: this method exists for compatibility with existing code.
-        /// For best performance use: ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(""VALUE""u8) to figure out the current enum value
-        /// </summary>
-        /// <returns>True if integer parsed successfully</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetEnum<T>(int i, bool ignoreCase, out T value) where T : struct, Enum
-        {
-            Debug.Assert(i < Count);
-            var strRep = GetString(i);
-            var successful = Enum.TryParse(strRep, ignoreCase, out value) &&
-                             // Extra check is to avoid numerical values being successfully parsed as enum value
-                             string.Equals(Enum.GetName(value), strRep,
-                                 ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-            if (!successful) value = default;
-            return successful;
         }
 
         /// <summary>

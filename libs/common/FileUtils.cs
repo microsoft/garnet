@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Security;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -17,16 +18,19 @@ namespace Garnet.common
     /// </summary>
     public static class FileUtils
     {
+        static object AssemblyLoadLock = new();
+
         /// <summary>
         /// Receives a list of paths and searches for files matching the extensions given in the input
         /// </summary>
         /// <param name="paths">Paths to files or directories</param>
         /// <param name="extensions">Extensions to match files (defaults to any)</param>
+        /// <param name="ignoreFileNames">File names to ignore</param>
         /// <param name="searchOption">In case path is a directory, determines whether to search only top directory or all subdirectories</param>
         /// <param name="files">Files that match the extensions</param>
         /// <param name="errorMessage">Error message, if applicable</param>
         /// <returns>True if successfully enumerated all directories</returns>
-        public static bool TryGetFiles(IEnumerable<string> paths, out IEnumerable<string> files, out string errorMessage, string[] extensions = null, SearchOption searchOption = SearchOption.TopDirectoryOnly)
+        public static bool TryGetFiles(IEnumerable<string> paths, out string[] files, out string errorMessage, string[] extensions = null, IEnumerable<string> ignoreFileNames = null, SearchOption searchOption = SearchOption.TopDirectoryOnly)
         {
             var validExtensionPattern = "^\\.[A-Za-z0-9]+$";
             var anyExtension = false;
@@ -34,6 +38,7 @@ namespace Garnet.common
             errorMessage = string.Empty;
             var sbErrorMessage = new StringBuilder();
             files = null;
+            var ignoreFiles = ignoreFileNames == null ? new HashSet<string>() : [.. ignoreFileNames];
 
             string extensionPattern = null;
             if (extensions == null || extensions.Length == 0)
@@ -63,7 +68,8 @@ namespace Garnet.common
             {
                 if (File.Exists(path))
                 {
-                    if (anyExtension || Regex.IsMatch(path, extensionPattern))
+                    if ((anyExtension || Regex.IsMatch(path, extensionPattern)) &&
+                        !ignoreFiles.Contains(Path.GetFileName(path)))
                     {
                         tmpFiles.Add(path);
                     }
@@ -92,7 +98,8 @@ namespace Garnet.common
 
                 foreach (var filePath in filePaths)
                 {
-                    if (anyExtension || Regex.IsMatch(filePath, extensionPattern))
+                    if ((anyExtension || Regex.IsMatch(filePath, extensionPattern)) &&
+                        !ignoreFiles.Contains(Path.GetFileName(path)))
                     {
                         tmpFiles.Add(filePath);
                     }
@@ -103,7 +110,7 @@ namespace Garnet.common
             if (!errorMessage.IsNullOrEmpty())
                 return false;
 
-            files = tmpFiles;
+            files = [.. tmpFiles];
             return true;
         }
 
@@ -144,23 +151,33 @@ namespace Garnet.common
             loadedAssemblies = null;
 
             var tmpAssemblies = new List<Assembly>();
-            foreach (var path in assemblyPaths)
-            {
-                Assembly assembly;
-                try
-                {
-                    var data = File.ReadAllBytes(path);
-                    assembly = Assembly.Load(data);
-                }
-                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException ||
-                                           ex is NotSupportedException || ex is BadImageFormatException ||
-                                           ex is SecurityException)
-                {
-                    sbErrorMessage.AppendLine($"Unable to load assembly from path: {path}. Error: {ex.Message}");
-                    continue;
-                }
 
-                tmpAssemblies.Add(assembly);
+            lock (AssemblyLoadLock)
+            {
+                foreach (var path in assemblyPaths)
+                {
+                    Assembly assembly;
+                    try
+                    {
+                        assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
+                    }
+                    catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException ||
+                                               ex is NotSupportedException || ex is BadImageFormatException ||
+                                               ex is SecurityException)
+                    {
+                        if (ex is FileLoadException && ex.Message == "Assembly with same name is already loaded")
+                        {
+                            var assemblyName = AssemblyName.GetAssemblyName(path).Name;
+                            tmpAssemblies.Add(AssemblyLoadContext.Default.Assemblies.First(a => a.GetName().Name == assemblyName));
+                            continue;
+                        }
+
+                        sbErrorMessage.AppendLine($"Unable to load assembly from path: {path}. Error: {ex.Message}");
+                        continue;
+                    }
+
+                    tmpAssemblies.Add(assembly);
+                }
             }
 
             errorMessage = sbErrorMessage.ToString();

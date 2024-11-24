@@ -63,6 +63,18 @@ namespace Garnet
         [Option("mutable-percent", Required = false, HelpText = "Percentage of log memory that is kept mutable")]
         public int MutablePercent { get; set; }
 
+        [OptionValidation]
+        [Option("readcache", Required = false, HelpText = "Enables read cache for faster access to on-disk records.")]
+        public bool? EnableReadCache { get; set; }
+
+        [MemorySizeValidation]
+        [Option("readcache-memory", Required = false, HelpText = "Total read cache log memory used in bytes (rounds down to power of 2)")]
+        public string ReadCacheMemorySize { get; set; }
+
+        [MemorySizeValidation]
+        [Option("readcache-page", Required = false, HelpText = "Size of each read cache page in bytes (rounds down to power of 2)")]
+        public string ReadCachePageSize { get; set; }
+
         [MemorySizeValidation(false)]
         [Option("obj-heap-memory", Required = false, HelpText = "Object store heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
         public string ObjectStoreHeapMemorySize { get; set; }
@@ -90,6 +102,22 @@ namespace Garnet
         [PercentageValidation]
         [Option("obj-mutable-percent", Required = false, HelpText = "Percentage of object store log memory that is kept mutable")]
         public int ObjectStoreMutablePercent { get; set; }
+
+        [OptionValidation]
+        [Option("obj-readcache", Required = false, HelpText = "Enables object store read cache for faster access to on-disk records.")]
+        public bool? EnableObjectStoreReadCache { get; set; }
+
+        [MemorySizeValidation]
+        [Option("obj-readcache-log-memory", Required = false, HelpText = "Total object store read cache log memory used in bytes (rounds down to power of 2)")]
+        public string ObjectStoreReadCacheLogMemorySize { get; set; }
+
+        [MemorySizeValidation]
+        [Option("obj-readcache-page", Required = false, HelpText = "Size of each object store read cache page in bytes (rounds down to power of 2)")]
+        public string ObjectStoreReadCachePageSize { get; set; }
+
+        [MemorySizeValidation(false)]
+        [Option("obj-readcache-heap-memory", Required = false, HelpText = "Object store read cache heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
+        public string ObjectStoreReadCacheHeapMemorySize { get; set; }
 
         [OptionValidation]
         [Option("storage-tier", Required = false, HelpText = "Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use --logdir to specify storage directory.")]
@@ -342,6 +370,10 @@ namespace Garnet
         [Option("replica-sync-delay", Required = false, HelpText = "Whether and by how much (milliseconds) should we throttle the replica sync: 0 - disable throttling")]
         public int ReplicaSyncDelayMs { get; set; }
 
+        [IntRangeValidation(-1, int.MaxValue)]
+        [Option("replica-offset-max-lag", Required = false, HelpText = "Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > ReplicationOffsetMaxLag. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag")]
+        public int ReplicationOffsetMaxLag { get; set; }
+
         [OptionValidation]
         [Option("main-memory-replication", Required = false, HelpText = "Use main-memory replication model.")]
         public bool? MainMemoryReplication { get; set; }
@@ -460,6 +492,10 @@ namespace Garnet
         [Option("index-resize-threshold", Required = false, HelpText = "Overflow bucket count over total index size in percentage to trigger index resize")]
         public int IndexResizeThreshold { get; set; }
 
+        [OptionValidation]
+        [Option("fail-on-recovery-error", Default = false, Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
+        public bool? FailOnRecoveryError { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -575,6 +611,9 @@ namespace Garnet
                 IndexSize = IndexSize,
                 IndexMaxSize = IndexMaxSize,
                 MutablePercent = MutablePercent,
+                EnableReadCache = EnableReadCache.GetValueOrDefault(),
+                ReadCacheMemorySize = ReadCacheMemorySize,
+                ReadCachePageSize = ReadCachePageSize,
                 ObjectStoreHeapMemorySize = ObjectStoreHeapMemorySize,
                 ObjectStoreLogMemorySize = ObjectStoreLogMemorySize,
                 ObjectStorePageSize = ObjectStorePageSize,
@@ -582,6 +621,10 @@ namespace Garnet
                 ObjectStoreIndexSize = ObjectStoreIndexSize,
                 ObjectStoreIndexMaxSize = ObjectStoreIndexMaxSize,
                 ObjectStoreMutablePercent = ObjectStoreMutablePercent,
+                EnableObjectStoreReadCache = EnableObjectStoreReadCache.GetValueOrDefault(),
+                ObjectStoreReadCachePageSize = ObjectStoreReadCachePageSize,
+                ObjectStoreReadCacheLogMemorySize = ObjectStoreReadCacheLogMemorySize,
+                ObjectStoreReadCacheHeapMemorySize = ObjectStoreReadCacheHeapMemorySize,
                 EnableStorageTier = enableStorageTier,
                 CopyReadsToTail = CopyReadsToTail.GetValueOrDefault(),
                 ObjectStoreCopyReadsToTail = ObjectStoreCopyReadsToTail.GetValueOrDefault(),
@@ -639,6 +682,7 @@ namespace Garnet
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
+                ReplicationOffsetMaxLag = ReplicationOffsetMaxLag,
                 MainMemoryReplication = MainMemoryReplication.GetValueOrDefault(),
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),
@@ -658,7 +702,8 @@ namespace Garnet
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
-                LoadModuleCS = LoadModuleCS
+                LoadModuleCS = LoadModuleCS,
+                FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault()
             };
         }
 

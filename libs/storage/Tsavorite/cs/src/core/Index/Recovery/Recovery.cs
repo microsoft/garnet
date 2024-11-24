@@ -324,7 +324,7 @@ namespace Tsavorite.core
             GetClosestHybridLogCheckpointInfo(requestedVersion, out var closestToken, out recoveredHlcInfo, out recoveredCommitCookie);
 
             if (recoveredHlcInfo.IsDefault())
-                throw new TsavoriteException("Unable to find valid HybridLog token");
+                throw new TsavoriteNoHybridLogException("Unable to find valid HybridLog token");
 
             if (recoveredHlcInfo.deltaLog != null)
             {
@@ -414,6 +414,10 @@ namespace Tsavorite.core
 
             // Reset the hybrid log
             hlogBase.Reset();
+
+            // Reset system state
+            systemState = SystemState.Make(Phase.REST, 1);
+            lastVersion = 0;
         }
 
 

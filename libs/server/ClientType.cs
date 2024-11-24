@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-
 namespace Garnet.server
 {
     /// <summary>
@@ -10,6 +8,8 @@ namespace Garnet.server
     /// </summary>
     public enum ClientType : byte
     {
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (SessionParseStateExtensions.TryGetClientType)
+
         /// <summary>
         /// Default invalid case.
         /// </summary>
@@ -38,19 +38,5 @@ namespace Garnet.server
         /// for older commands.
         /// </summary>
         SLAVE,
-    }
-
-    public static class ClientTypeExtensions
-    {
-        /// <summary>
-        /// Validate that the given <see cref="ClientType"/> is legal, and _could_ have come from the given <see cref="ArgSlice"/>.
-        /// 
-        /// TODO: Long term we can kill this and use <see cref="IUtf8SpanParsable{ClientType}"/> instead of <see cref="Enum.TryParse{TEnum}(string?, bool, out TEnum)"/>
-        /// and avoid extra validation.  See: https://github.com/dotnet/runtime/issues/81500 .
-        /// </summary>
-        public static bool IsValid(this ClientType type, ref ArgSlice fromSlice)
-        {
-            return type != ClientType.Invalid && Enum.IsDefined(type) && !fromSlice.ReadOnlySpan.ContainsAnyInRange((byte)'0', (byte)'9');
-        }
     }
 }

@@ -33,6 +33,7 @@ namespace Garnet.server
         GEODIST,
         GEOPOS,
         GEOSEARCH,
+        GEOSEARCHSTORE,
         ZREVRANGE,
         ZREVRANGEBYSCORE,
         ZREVRANK,
@@ -273,6 +274,7 @@ namespace Garnet.server
                         GeoPosition(ref input, ref output);
                         break;
                     case SortedSetOperation.GEOSEARCH:
+                    case SortedSetOperation.GEOSEARCHSTORE:
                         GeoSearch(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREVRANGE:

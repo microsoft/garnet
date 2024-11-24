@@ -164,13 +164,13 @@ namespace Garnet.server
         /// <param name="commandDocs"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        internal int Register(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
+        internal int Register(string name, Func<CustomProcedure> customProcedure, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
         {
             int id = Interlocked.Increment(ref CustomProcedureId) - 1;
             if (id >= MaxRegistrations)
                 throw new Exception("Out of registration space");
 
-            customProcedureMap[id] = new CustomProcedureWrapper(name, (byte)id, customProcedure);
+            customProcedureMap[id] = new CustomProcedureWrapper(name, (byte)id, customProcedure, this);
             if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
             return id;

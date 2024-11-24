@@ -9,6 +9,8 @@ namespace Garnet.server
 {
     public enum ManagerType : byte
     {
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (SessionParseStateExtensions.TryGetManagerType)
+
         /// <summary>
         /// MigrationManager Buffer Pool
         /// </summary>
@@ -50,7 +52,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PURGEBP));
             }
 
-            if (!parseState.TryGetEnum<ManagerType>(0, ignoreCase: true, out var managerType) || !Enum.IsDefined(managerType))
+            if (!parseState.TryGetManagerType(0, out var managerType))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
                     SendAndReset();
