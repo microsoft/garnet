@@ -193,7 +193,7 @@ namespace Garnet.server
             return true;
         }
 
-        private unsafe bool SortedSetRangeStore<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetRangeStore<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             // ZRANGESTORE dst src min max [BYSCORE | BYLEX] [REV] [LIMIT offset count]
@@ -205,7 +205,7 @@ namespace Garnet.server
             var destKey = parseState.GetArgSliceByRef(0);
             var sbKey = parseState.GetArgSliceByRef(1);
 
-            var header = new RespInputHeader(GarnetObjectType.SortedSet);
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGESTORE };
             var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: respProtocolVersion);
 
             var status = storageApi.SortedSetRangeStore(destKey, sbKey, ref input, out int result);

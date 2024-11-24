@@ -702,7 +702,7 @@ namespace Garnet.server
         /// <param name="result">The result of the operation, indicating the number of elements stored.</param>
         /// <param name="objectStoreContext">The context of the object store.</param>
         /// <returns>Returns a GarnetStatus indicating the success or failure of the operation.</returns>
-        public GarnetStatus SortedSetRangeStore<TObjectContext>(ArgSlice distKey, ArgSlice sbKey, ref ObjectInput input, out int result, ref TObjectContext objectStoreContext)
+        public unsafe GarnetStatus SortedSetRangeStore<TObjectContext>(ArgSlice distKey, ArgSlice sbKey, ref ObjectInput input, out int result, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             result = 0;
@@ -722,19 +722,14 @@ namespace Garnet.server
             }
 
             // SetObject
-            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+            var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
 
             try
             {
-                var rangeParseState = new SessionParseState();
-                rangeParseState.Initialize(input.parseState.Count - 1);
-                rangeParseState.SetArguments(0, input.parseState.Parameters.Slice(1));
-                rangeParseState.SetArguments(input.parseState.Count - 2, ArgSlice.FromPinnedSpan(CmdStrings.WITHSCORES));
-
-                var rangeInput = new ObjectInput(input.header, ref rangeParseState);
                 SpanByteAndMemory rangeOutputMem = default;
                 var rangeOutput = new GarnetObjectStoreOutput() { spanByteAndMemory = rangeOutputMem };
-                var status = SortedSetRange(sbKey.ToArray(), ref rangeInput, ref rangeOutput, ref objectStoreContext);
+                var status = SortedSetRange(sbKey.ToArray(), ref input, ref rangeOutput, ref objectStoreLockableContext);
+                rangeOutputMem = rangeOutput.spanByteAndMemory;
 
                 if (status == GarnetStatus.WRONGTYPE)
                 {
@@ -751,45 +746,45 @@ namespace Garnet.server
                 Debug.Assert(!rangeOutputMem.IsSpanByte, "Output should not be in SpanByte format when the status is OK");
 
                 var rangeOutputHandler = rangeOutputMem.Memory.Memory.Pin();
-
-                if (status == GarnetStatus.OK)
+                try
                 {
+                    var rangeOutPtr = (byte*)rangeOutputHandler.Pointer;
+                    ref var currOutPtr = ref rangeOutPtr;
+                    var endOutPtr = rangeOutPtr + rangeOutputMem.Length;
+
                     var destinationKey = distKey.ToArray();
                     objectStoreLockableContext.Delete(ref destinationKey);
 
-                    var zParseState = new SessionParseState();
-                    zParseState.Initialize(foundItems * 2);
+                    RespReadUtils.ReadUnsignedArrayLength(out var arrayLen, ref currOutPtr, endOutPtr);
+                    Debug.Assert(arrayLen % 2 == 0, "Should always contain element and its score");
+                    result = arrayLen / 2;
 
-                    for (int j = 0; j < foundItems; j++)
+                    if (result > 0)
                     {
-                        RespReadUtils.ReadUnsignedArrayLength(out var innerLength, ref currOutPtr, endOutPtr);
-                        Debug.Assert(innerLength == 2, "Should always has location and hash or distance");
+                        parseState.Initialize(arrayLen); // 2 elements per pair (result * 2)
 
-                        RespReadUtils.TrySliceWithLengthHeader(out var location, ref currOutPtr, endOutPtr);
-                        if (storeDistIdx != -1)
+                        for (int j = 0; j < result; j++)
                         {
-                            RespReadUtils.ReadSpanWithLengthHeader(out var score, ref currOutPtr, endOutPtr);
-                            zParseState.SetArgument(2 * j, ArgSlice.FromPinnedSpan(score));
-                            zParseState.SetArgument((2 * j) + 1, ArgSlice.FromPinnedSpan(location));
+                            // Read member/element into parse state
+                            parseState.Read((2 * j) + 1, ref currOutPtr, endOutPtr);
+                            // Read score into parse state
+                            parseState.Read(2 * j, ref currOutPtr, endOutPtr);
                         }
-                        else
+
+                        var zAddInput = new ObjectInput(new RespInputHeader
                         {
-                            RespReadUtils.ReadIntegerAsSpan(out var score, ref currOutPtr, endOutPtr);
-                            zParseState.SetArgument(2 * j, ArgSlice.FromPinnedSpan(score));
-                            zParseState.SetArgument((2 * j) + 1, ArgSlice.FromPinnedSpan(location));
-                        }
+                            type = GarnetObjectType.SortedSet,
+                            SortedSetOp = SortedSetOperation.ZADD,
+                        }, ref parseState);
+
+                        var zAddOutput = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+                        RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
                     }
-
-                    var zAddInput = new ObjectInput(new RespInputHeader
-                    {
-                        type = GarnetObjectType.SortedSet,
-                        SortedSetOp = SortedSetOperation.ZADD,
-                    }, ref zParseState);
-
-                    var zAddOutput = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-                    RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
                 }
-
+                finally
+                {
+                    rangeOutputHandler.Dispose();
+                }
                 return status;
             }
             finally

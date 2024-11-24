@@ -1086,6 +1086,41 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, actualMembers.Length);
         }
 
+        [Test]
+        [TestCase("user1:obj1", "user1:objA", new[] { "Hello", "World" }, new[] { 1.0, 2.0 }, new[] { "Hello", "World" }, new[] { 1.0, 2.0 })] // Normal case
+        [TestCase("user1:emptySet", "user1:objB", new string[] { }, new double[] { }, new string[] { }, new double[] { })] // Empty set
+        [TestCase("user1:nonExistingKey", "user1:objC", new string[] { }, new double[] { }, new string[] { }, new double[] { })] // Non-existing key
+        [TestCase("user1:obj2", "user1:objD", new[] { "Alpha", "Beta", "Gamma" }, new[] { 1.0, 2.0, 3.0 }, new[] { "Beta", "Gamma" }, new[] { 2.0, 3.0 }, -2, -1)] // Negative range
+        public void CheckSortedSetRangeStoreSE(string key, string destinationKey, string[] elements, double[] scores, string[] expectedElements, double[] expectedScores, int start = 0, int stop = -1)
+        {
+            int expectedCount = expectedElements.Length;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var redisKey = new RedisKey(key);
+            var redisDestinationKey = new RedisKey(destinationKey);
+            var keyValues = elements.Zip(scores, (e, s) => new SortedSetEntry(e, s)).ToArray();
+
+            // Set up sorted set if elements are provided
+            if (keyValues.Length > 0)
+            {
+                db.SortedSetAdd(redisKey, keyValues);
+            }
+
+            var actualCount = db.SortedSetRangeAndStore(redisKey, redisDestinationKey, start, stop);
+            ClassicAssert.AreEqual(expectedCount, actualCount);
+
+            var actualMembers = db.SortedSetRangeByScoreWithScores(redisDestinationKey);
+            ClassicAssert.AreEqual(expectedCount, actualMembers.Length);
+
+            for (int i = 0; i < expectedCount; i++)
+            {
+                ClassicAssert.AreEqual(expectedElements[i], actualMembers[i].Element.ToString());
+                ClassicAssert.AreEqual(expectedScores[i], actualMembers[i].Score);
+            }
+        }
+
         #endregion
 
         #region LightClientTests
@@ -1208,6 +1243,61 @@ namespace Garnet.test
             response = lightClientRequest.SendCommandChunks("ZRANGE board (1 +inf BYSCORE LIMIT 1 1", bytesSent, 2);
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        // ZRANGEBSTORE
+        [Test]
+        [TestCase("user1:obj1", "user1:objA", new[] { "Hello", "World" }, new[] { 1.0, 2.0 }, new[] { "Hello", "World" }, new[] { 1.0, 2.0 })] // Normal case
+        [TestCase("user1:emptySet", "user1:objB", new string[] { }, new double[] { }, new string[] { }, new double[] { })] // Empty set
+        [TestCase("user1:nonExistingKey", "user1:objC", new string[] { }, new double[] { }, new string[] { }, new double[] { })] // Non-existing key
+        [TestCase("user1:obj2", "user1:objD", new[] { "Alpha", "Beta", "Gamma" }, new[] { 1.0, 2.0, 3.0 }, new[] { "Beta", "Gamma" }, new[] { 2.0, 3.0 }, -2, -1)] // Negative range
+        public void CheckSortedSetRangeStoreLC(string key, string destinationKey, string[] elements, double[] scores, string[] expectedElements, double[] expectedScores, int start = 0, int stop = -1)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            // Setup initial sorted set if elements exist
+            if (elements.Length > 0)
+            {
+                var addCommand = $"ZADD {key} " + string.Join(" ", elements.Zip(scores, (e, s) => $"{s} {e}"));
+                var response = lightClientRequest.SendCommand(addCommand);
+                var expectedResponse = $":{elements.Length}\r\n";
+                var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+                ClassicAssert.AreEqual(expectedResponse, actualValue);
+            }
+
+            // Execute ZRANGESTORE
+            var rangeStoreCommand = $"ZRANGESTORE {destinationKey} {key} {start} {stop}";
+            var response2 = lightClientRequest.SendCommand(rangeStoreCommand);
+            var expectedResponse2 = $":{expectedElements.Length}\r\n";
+            var actualValue2 = Encoding.ASCII.GetString(response2).Substring(0, expectedResponse2.Length);
+            ClassicAssert.AreEqual(expectedResponse2, actualValue2);
+
+            // Verify stored result using ZRANGE
+            if (expectedElements.Length > 0)
+            {
+                var verifyCommand = $"ZRANGE {destinationKey} 0 -1 WITHSCORES";
+                var response3 = lightClientRequest.SendCommand(verifyCommand, expectedElements.Length * 2 + 1);
+                var expectedItems = new List<string>();
+                expectedItems.Add($"*{expectedElements.Length * 2}");
+                for (int i = 0; i < expectedElements.Length; i++)
+                {
+                    expectedItems.Add($"${expectedElements[i].Length}");
+                    expectedItems.Add(expectedElements[i]);
+                    expectedItems.Add($"${expectedScores[i].ToString().Length}");
+                    expectedItems.Add(expectedScores[i].ToString());
+                }
+                var expectedResponse3 = string.Join("\r\n", expectedItems) + "\r\n";
+                var actualValue3 = Encoding.ASCII.GetString(response3).Substring(0, expectedResponse3.Length);
+                ClassicAssert.AreEqual(expectedResponse3, actualValue3);
+            }
+            else
+            {
+                var verifyCommand = $"ZRANGE {destinationKey} 0 -1";
+                var response3 = lightClientRequest.SendCommand(verifyCommand);
+                var expectedResponse3 = "*0\r\n";
+                var actualValue3 = Encoding.ASCII.GetString(response3).Substring(0, expectedResponse3.Length);
+                ClassicAssert.AreEqual(expectedResponse3, actualValue3);
+            }
         }
 
         [Test]

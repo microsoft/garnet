@@ -435,6 +435,9 @@ namespace Garnet.server
                 ZRangeOptions options = new();
                 switch (input.header.SortedSetOp)
                 {
+                    case SortedSetOperation.ZRANGESTORE:
+                        options.WithScores = true;
+                        break;
                     case SortedSetOperation.ZRANGEBYSCORE:
                         options.ByScore = true;
                         break;
