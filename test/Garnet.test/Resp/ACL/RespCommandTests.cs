@@ -5706,6 +5706,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ZRangeStoreACLsAsync()
+        {
+            // TODO: ZRange has loads of options, come back and test all the different lengths
+
+            await CheckCommandsAsync(
+                "ZRANGESTORE",
+                [DoZRangeStoreAsync]
+            );
+
+            static async Task DoZRangeStoreAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("ZRANGESTORE", ["dkey", "key", "0", "-1"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
         public async Task ZRangeByScoreACLsAsync()
         {
             await CheckCommandsAsync(
