@@ -5708,8 +5708,6 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public async Task ZRangeStoreACLsAsync()
         {
-            // TODO: ZRange has loads of options, come back and test all the different lengths
-
             await CheckCommandsAsync(
                 "ZRANGESTORE",
                 [DoZRangeStoreAsync]
