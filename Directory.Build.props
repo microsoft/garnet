@@ -31,7 +31,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="../../website/static/img/garnet-logo-diamond.png" Pack="true" Visible="false" PackagePath="/" />
+    <Content Include="../../website/static/img/logo_128.png" Pack="true" Visible="false" PackagePath="/" />
   </ItemGroup>
 
 	<!-- Common properties for nuget packages -->
@@ -49,7 +49,7 @@
       scalability, storage, recovery, cluster sharding, key migration, and replication features. Garnet uses the Redis RESP wire
       protocol and can work with existing Redis clients.
     </Description>
-    <PackageIcon>garnet-logo-diamond.png</PackageIcon>
+    <PackageIcon>logo_128.png</PackageIcon>
     <PackageReleaseNotes>See https://github.com/microsoft/garnet for details.</PackageReleaseNotes>
     <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
     <language>en-US</language>
