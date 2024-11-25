@@ -539,7 +539,7 @@ namespace Garnet.test
 
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
-            server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
+            server.Register.NewProcedure("SETMAINANDOBJECT", () => new SetStringAndList());
             server.Start();
 
             var strKey = "StrKey";
@@ -557,7 +557,7 @@ namespace Garnet.test
             server.Store.CommitAOF(true);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
-            server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
+            server.Register.NewProcedure("SETMAINANDOBJECT", () => new SetStringAndList());
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
@@ -645,6 +645,48 @@ namespace Garnet.test
                 var returnedData = db.ListRange(key);
                 ClassicAssert.AreEqual(returned_data_before_recovery, returnedData);
                 ClassicAssert.AreEqual(ldata, returnedData);
+            }
+        }
+
+        [Test]
+        public void AofCustomTxnRecoverTest()
+        {
+            server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = 4 });
+            string readkey = "readme";
+            string readVal = "surewhynot";
+
+            string writeKey1 = "writeme";
+            string writeKey2 = "writemetoo";
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.IsTrue(db.StringSet(readkey, readVal));
+
+                RedisResult result = db.Execute("READWRITETX", readkey, writeKey1, writeKey2);
+
+                ClassicAssert.AreEqual("SUCCESS", result.ToString());
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = 4 });
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                string readKeysVal = db.StringGet(readkey);
+                ClassicAssert.AreEqual(readVal, readKeysVal);
+
+                string writeKeysVal = db.StringGet(writeKey1);
+                ClassicAssert.AreEqual(readVal, writeKeysVal);
+
+                string writeKeysVal2 = db.StringGet(writeKey2);
+                ClassicAssert.AreEqual(readVal, writeKeysVal2);
             }
         }
     }

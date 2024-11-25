@@ -12,6 +12,7 @@ namespace Tsavorite.core
 {
     /// <summary>
     /// Represents a pinned variable length byte array that is viewable as a pinned Span&lt;byte&gt;
+    /// Important: AOF header version needs to be updated if this struct's disk representation changes
     /// </summary>
     /// <remarks>
     /// Format: [4-byte (int) length of payload][[optional 8-byte metadata] payload bytes...]

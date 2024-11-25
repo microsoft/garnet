@@ -31,7 +31,8 @@ namespace Tsavorite.core
         /// <param name="payloadLength"></param>
         /// <param name="currentAddress"> address of the consumed entry </param>
         /// <param name="nextAddress"> (predicted) address of the next entry </param>
-        unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress);
+        /// <param name="isProtected"> If call is under epoch protection </param>
+        unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected);
 
         /// <summary>
         /// Throttle the iteration if needed, outside epoch protection - blocking here is fine.

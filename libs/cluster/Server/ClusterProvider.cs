@@ -153,20 +153,20 @@ namespace Garnet.cluster
 
             if (storeType is StoreType.Main or StoreType.All)
             {
-                entry.storeVersion = storeWrapper.store.CurrentVersion;
-                entry.storeHlogToken = storeCheckpointToken;
-                entry.storeIndexToken = storeCheckpointToken;
-                entry.storeCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
-                entry.storePrimaryReplId = replicationManager.PrimaryReplId;
+                entry.metadata.storeVersion = storeWrapper.store.CurrentVersion;
+                entry.metadata.storeHlogToken = storeCheckpointToken;
+                entry.metadata.storeIndexToken = storeCheckpointToken;
+                entry.metadata.storeCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
+                entry.metadata.storePrimaryReplId = replicationManager.PrimaryReplId;
             }
 
             if (storeType is StoreType.Object or StoreType.All)
             {
-                entry.objectStoreVersion = serverOptions.DisableObjects ? -1 : storeWrapper.objectStore.CurrentVersion;
-                entry.objectStoreHlogToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
-                entry.objectStoreIndexToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
-                entry.objectCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
-                entry.objectStorePrimaryReplId = replicationManager.PrimaryReplId;
+                entry.metadata.objectStoreVersion = serverOptions.DisableObjects ? -1 : storeWrapper.objectStore.CurrentVersion;
+                entry.metadata.objectStoreHlogToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
+                entry.metadata.objectStoreIndexToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
+                entry.metadata.objectCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
+                entry.metadata.objectStorePrimaryReplId = replicationManager.PrimaryReplId;
             }
 
             // Keep track of checkpoints for replica
@@ -231,6 +231,7 @@ namespace Garnet.cluster
                 {
                     var (address, port) = config.GetLocalNodePrimaryAddress();
                     var primaryLinkStatus = clusterManager.GetPrimaryLinkStatus(config);
+                    var replicationOffsetLag = storeWrapper.appendOnlyFile.TailAddress - replicationManager.ReplicationOffset;
                     replicationInfo.Add(new("master_host", address));
                     replicationInfo.Add(new("master_port", port.ToString()));
                     replicationInfo.Add(primaryLinkStatus[0]);
@@ -241,6 +242,8 @@ namespace Garnet.cluster
                     replicationInfo.Add(new("slave_read_only", "1"));
                     replicationInfo.Add(new("replica_announced", "1"));
                     replicationInfo.Add(new("master_sync_last_io_seconds_ago", replicationManager.LastPrimarySyncSeconds.ToString()));
+                    replicationInfo.Add(new("replication_offset_lag", replicationOffsetLag.ToString()));
+                    replicationInfo.Add(new("replication_offset_max_lag", storeWrapper.serverOptions.ReplicationOffsetMaxLag.ToString()));
                 }
                 else
                 {

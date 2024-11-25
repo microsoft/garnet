@@ -97,7 +97,7 @@ jobs:
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }}
       - name: Run tests ${{ matrix.test }}
-        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
+        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
       - name: Upload test results
         uses: actions/upload-artifact@v4

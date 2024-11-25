@@ -285,6 +285,11 @@ namespace Garnet.server
         public int ReplicaSyncDelayMs = 5;
 
         /// <summary>
+        /// Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > ReplicationOffsetMaxLag. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag
+        /// </summary>
+        public int ReplicationOffsetMaxLag = -1;
+
+        /// <summary>
         /// Whether we truncate AOF as soon as replicas are fed (not just after checkpoints)
         /// </summary>
         public bool MainMemoryReplication = false;
@@ -303,8 +308,6 @@ namespace Garnet.server
         /// Use native device on Linux for local storage
         /// </summary>
         public bool UseNativeDeviceLinux = false;
-
-
 
         /// <summary>
         /// Limit of items to return in one iteration of *SCAN command
@@ -369,7 +372,22 @@ namespace Garnet.server
         /// </summary>
         public bool ExtensionAllowUnsignedAssemblies;
 
+        /// <summary>List of modules to load</summary>
         public IEnumerable<string> LoadModuleCS;
+
+        public bool EnableReadCache = false;
+
+        public string ReadCacheMemorySize = "16g";
+
+        public string ReadCachePageSize = "32m";
+
+        public string ObjectStoreReadCachePageSize = "1m";
+
+        public string ObjectStoreReadCacheLogMemorySize = "32m";
+
+        public string ObjectStoreReadCacheHeapMemorySize = "";
+
+        public bool EnableObjectStoreReadCache = false;
 
         /// <summary>
         /// Constructor
@@ -439,6 +457,21 @@ namespace Garnet.server
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");
+
+            // Read cache related settings
+            if (EnableReadCache && !EnableStorageTier)
+            {
+                throw new Exception("Read cache requires storage tiering to be enabled");
+            }
+
+            if (EnableReadCache)
+            {
+                kvSettings.ReadCacheEnabled = true;
+                kvSettings.ReadCachePageSize = ParseSize(ReadCachePageSize);
+                kvSettings.ReadCacheMemorySize = ParseSize(ReadCacheMemorySize);
+                logger?.LogInformation("[Store] Read cache enabled with page size of {ReadCachePageSize} and memory size of {ReadCacheMemorySize}",
+                    PrettySize(kvSettings.ReadCachePageSize), PrettySize(kvSettings.ReadCacheMemorySize));
+            }
 
             if (EnableStorageTier)
             {
@@ -528,8 +561,10 @@ namespace Garnet.server
         /// <summary>
         /// Get KVSettings for the object store log
         /// </summary>
-        public KVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILogger logger, out long objHeapMemorySize)
+        public KVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILogger logger, out long objHeapMemorySize, out long objReadCacheHeapMemorySize)
         {
+            objReadCacheHeapMemorySize = default;
+
             if (ObjectStoreMutablePercent is < 10 or > 95)
                 throw new Exception("ObjectStoreMutablePercent must be between 10 and 95");
 
@@ -577,7 +612,25 @@ namespace Garnet.server
             logger?.LogInformation("[Object Store] Using log mutable percentage of {ObjectStoreMutablePercent}%", ObjectStoreMutablePercent);
 
             objHeapMemorySize = ParseSize(ObjectStoreHeapMemorySize);
-            logger?.LogInformation("[Object Store] Total memory size including heap objects is {totalMemorySize}", (objHeapMemorySize > 0 ? PrettySize(objHeapMemorySize) : "unlimited"));
+            logger?.LogInformation("[Object Store] Heap memory size is {objHeapMemorySize}", objHeapMemorySize > 0 ? PrettySize(objHeapMemorySize) : "unlimited");
+
+            // Read cache related settings
+            if (EnableObjectStoreReadCache && !EnableStorageTier)
+            {
+                throw new Exception("Read cache requires storage tiering to be enabled");
+            }
+
+            if (EnableObjectStoreReadCache)
+            {
+                kvSettings.ReadCacheEnabled = true;
+                kvSettings.ReadCachePageSize = ParseSize(ObjectStoreReadCachePageSize);
+                kvSettings.ReadCacheMemorySize = ParseSize(ObjectStoreReadCacheLogMemorySize);
+                logger?.LogInformation("[Object Store] Read cache enabled with page size of {ReadCachePageSize} and memory size of {ReadCacheMemorySize}",
+                    PrettySize(kvSettings.ReadCachePageSize), PrettySize(kvSettings.ReadCacheMemorySize));
+
+                objReadCacheHeapMemorySize = ParseSize(ObjectStoreReadCacheHeapMemorySize);
+                logger?.LogInformation("[Object Store] Read cache heap memory size is {objReadCacheHeapMemorySize}", objReadCacheHeapMemorySize > 0 ? PrettySize(objReadCacheHeapMemorySize) : "unlimited");
+            }
 
             if (EnableStorageTier)
             {

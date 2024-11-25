@@ -5,6 +5,8 @@
     <AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <PackageId>Microsoft.Garnet</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,22 +14,34 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\server\Garnet.server.csproj" />
-    <ProjectReference Include="..\cluster\Garnet.cluster.csproj" />
-    <ProjectReference Include="..\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
+    <ProjectReference Include="..\server\Garnet.server.csproj" PrivateAssets="All"/>
+    <ProjectReference Include="..\cluster\Garnet.cluster.csproj" PrivateAssets="All"/>
+    <ProjectReference Include="..\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" PrivateAssets="All"/>
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommandLineParser" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+    <PackageReference Include="CommandLineParser" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
-    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
     <PackageReference Include="System.Text.Json" />
+    <PackageReference Include="Microsoft.IdentityModel.Validators" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+    <PackageReference Include="Azure.Storage.Blobs" />
+    <PackageReference Include="NLua" />
   </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="Garnet.test" Key="0024000004800000940000000602000000240000525341310004000001000100011b1661238d3d3c76232193c8aa2de8c05b8930d6dfe8cd88797a8f5624fdf14a1643141f31da05c0f67961b0e3a64c7120001d2f8579f01ac788b0ff545790d44854abe02f42bfe36a056166a75c6a694db8c5b6609cff8a2dbb429855a1d9f79d4d8ec3e145c74bfdd903274b7344beea93eab86b422652f8dd8eecf530d2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\host\bin\Release\net8.0\*.dll" Pack="true" PackagePath="lib\net8.0" />
+    <Content Include="..\host\bin\Release\net8.0\*.xml" Pack="true" PackagePath="lib\net8.0" />
+    <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.so" Pack="true" PackagePath="runtimes" />
+    <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.dll" Pack="true" PackagePath="runtimes" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="/"/>
   </ItemGroup>
 
 </Project>
