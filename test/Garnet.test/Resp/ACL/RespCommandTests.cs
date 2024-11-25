@@ -38,7 +38,7 @@ namespace Garnet.test.Resp.ACL
             server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), respCustomCommandsInfo["SETWPIFPGT"]);
             server.Register.NewCommand("MYDICTGET", CommandType.Read, new MyDictFactory(), new MyDictGet(), respCustomCommandsInfo["MYDICTGET"]);
             server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = 4 });
-            server.Register.NewProcedure("SUM", new Sum());
+            server.Register.NewProcedure("SUM", () => new Sum());
 
             server.Start();
         }
@@ -5522,6 +5522,22 @@ namespace Garnet.test.Resp.ACL
             {
                 // GEOSEARCH replies with an array of arrays, which GarnetClient doesn't deal with
                 await client.ExecuteForStringResultAsync("GEOSEARCH", ["foo", "FROMMEMBER", "bar", "BYBOX", "2", "2", "M"]);
+            }
+        }
+
+        [Test]
+        public async Task GeoSearchStoreACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GEOSEARCHSTORE",
+                [DoGeoSearchStoreAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoGeoSearchStoreAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("GEOSEARCHSTORE", ["bar", "foo", "FROMMEMBER", "bar", "BYBOX", "2", "2", "M", "STOREDIST"]);
+                ClassicAssert.AreEqual(0, val);
             }
         }
 

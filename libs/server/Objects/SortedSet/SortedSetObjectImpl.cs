@@ -30,49 +30,13 @@ namespace Garnet.server
             public bool WithScores { get; set; }
         };
 
-        bool TryGetSortedSetAddOption(ReadOnlySpan<byte> item, out SortedSetAddOption options)
-        {
-            if (item.EqualsUpperCaseSpanIgnoringCase("XX"u8))
-            {
-                options = SortedSetAddOption.XX;
-                return true;
-            }
-            if (item.EqualsUpperCaseSpanIgnoringCase("NX"u8))
-            {
-                options = SortedSetAddOption.NX;
-                return true;
-            }
-            if (item.EqualsUpperCaseSpanIgnoringCase("LT"u8))
-            {
-                options = SortedSetAddOption.LT;
-                return true;
-            }
-            if (item.EqualsUpperCaseSpanIgnoringCase("GT"u8))
-            {
-                options = SortedSetAddOption.GT;
-                return true;
-            }
-            if (item.EqualsUpperCaseSpanIgnoringCase("CH"u8))
-            {
-                options = SortedSetAddOption.CH;
-                return true;
-            }
-            if (item.EqualsUpperCaseSpanIgnoringCase("INCR"u8))
-            {
-                options = SortedSetAddOption.INCR;
-                return true;
-            }
-            options = SortedSetAddOption.None;
-            return false;
-        }
-
         bool GetOptions(ref ObjectInput input, ref int currTokenIdx, out SortedSetAddOption options, ref byte* curr, byte* end, ref SpanByteAndMemory output, ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle)
         {
             options = SortedSetAddOption.None;
 
             while (currTokenIdx < input.parseState.Count)
             {
-                if (!TryGetSortedSetAddOption(input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan, out var currOption))
+                if (!input.parseState.TryGetSortedSetAddOption(currTokenIdx, out var currOption))
                     break;
 
                 options |= currOption;

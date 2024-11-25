@@ -137,32 +137,6 @@ namespace Garnet.server
             return true;
         }
 
-        bool TryGetExpireOption(ReadOnlySpan<byte> item, out ExpireOption option)
-        {
-            if (item.EqualsUpperCaseSpanIgnoringCase("NX"u8))
-            {
-                option = ExpireOption.NX;
-                return true;
-            }
-            if (item.EqualsUpperCaseSpanIgnoringCase("XX"u8))
-            {
-                option = ExpireOption.XX;
-                return true;
-            }
-            if (item.EqualsUpperCaseSpanIgnoringCase("GT"u8))
-            {
-                option = ExpireOption.GT;
-                return true;
-            }
-            if (item.EqualsUpperCaseSpanIgnoringCase("LT"u8))
-            {
-                option = ExpireOption.LT;
-                return true;
-            }
-            option = ExpireOption.None;
-            return false;
-        }
-
         /// <summary>
         /// Set a timeout on a key.
         /// </summary>
@@ -190,7 +164,7 @@ namespace Garnet.server
             var expireOption = ExpireOption.None;
             if (parseState.Count > 2)
             {
-                if (!TryGetExpireOption(parseState.GetArgSliceByRef(2).ReadOnlySpan, out expireOption))
+                if (!parseState.TryGetExpireOption(2, out expireOption))
                 {
                     var optionStr = parseState.GetString(2);
 
@@ -201,7 +175,7 @@ namespace Garnet.server
 
                 if (parseState.Count > 3)
                 {
-                    if (!TryGetExpireOption(parseState.GetArgSliceByRef(3).ReadOnlySpan, out var additionExpireOption))
+                    if (!parseState.TryGetExpireOption(3, out var additionExpireOption))
                     {
                         var optionStr = parseState.GetString(3);
 
@@ -278,7 +252,7 @@ namespace Garnet.server
 
             if (parseState.Count > 2)
             {
-                if (!TryGetExpireOption(parseState.GetArgSliceByRef(2).ReadOnlySpan, out expireOption))
+                if (!parseState.TryGetExpireOption(2, out expireOption))
                 {
                     var optionStr = parseState.GetString(2);
 
@@ -290,7 +264,7 @@ namespace Garnet.server
 
             if (parseState.Count > 3)
             {
-                if (!TryGetExpireOption(parseState.GetArgSliceByRef(3).ReadOnlySpan, out var additionExpireOption))
+                if (!parseState.TryGetExpireOption(3, out var additionExpireOption))
                 {
                     var optionStr = parseState.GetString(3);
 
