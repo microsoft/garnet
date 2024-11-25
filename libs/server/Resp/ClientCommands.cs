@@ -48,12 +48,8 @@ namespace Garnet.server
                                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                             }
 
-                            var invalidType =
-                                !parseState.TryGetEnum<ClientType>(1, true, out var clientType) ||
-                                (clientType == ClientType.SLAVE) || // SLAVE is not legal as CLIENT|LIST was introduced after the SLAVE -> REPLICA rename
-                                !clientType.IsValid(ref parseState.GetArgSliceByRef(1));
-
-                            if (invalidType)
+                            if (!parseState.TryGetClientType(1, out var clientType) ||
+                                clientType == ClientType.SLAVE) // SLAVE is not legal as CLIENT|LIST was introduced after the SLAVE -> REPLICA rename
                             {
                                 var type = parseState.GetString(1);
                                 return AbortWithErrorMessage(Encoding.UTF8.GetBytes(string.Format(CmdStrings.GenericUnknownClientType, type)));
@@ -267,7 +263,8 @@ namespace Garnet.server
                         ref var filter = ref parseState.GetArgSliceByRef(argIx);
                         var filterSpan = filter.Span;
 
-                        ref var value = ref parseState.GetArgSliceByRef(argIx + 1);
+                        var valueIx = argIx + 1;
+                        ref var value = ref parseState.GetArgSliceByRef(valueIx);
 
                         AsciiUtils.ToUpperInPlace(filterSpan);
 
@@ -292,11 +289,7 @@ namespace Garnet.server
                                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrDuplicateFilter, "TYPE")));
                             }
 
-                            var unknownType =
-                                !Enum.TryParse<ClientType>(ParseUtils.ReadString(ref value), true, out var typeParsed) ||
-                                !typeParsed.IsValid(ref value);
-
-                            if (unknownType)
+                            if (!parseState.TryGetClientType(valueIx, out var typeParsed))
                             {
                                 var typeStr = ParseUtils.ReadString(ref value);
                                 return AbortWithErrorMessage(Encoding.UTF8.GetBytes(string.Format(CmdStrings.GenericUnknownClientType, typeStr)));

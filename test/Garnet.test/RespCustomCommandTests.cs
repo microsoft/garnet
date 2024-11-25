@@ -120,6 +120,26 @@ namespace Garnet.test
         }
     }
 
+    public class InvalidCommandProc : CustomProcedure
+    {
+        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        {
+            var offset = 0;
+            var key = GetNextArg(ref procInput, ref offset);
+
+            if (ParseCustomRawStringCommand("INVALIDCMD", out var _output))
+            {
+                WriteError(ref output, "ERR ExecuteCustomCommand should have failed");
+            }
+            else
+            {
+                WriteSimpleString(ref output, "OK");
+            }
+
+            return true;
+        }
+    }
+
     [TestFixture]
     public class RespCustomCommandTests
     {
@@ -636,7 +656,7 @@ namespace Garnet.test
         [Test]
         public void CustomCommandRegistrationTest()
         {
-            server.Register.NewProcedure("SUM", new Sum());
+            server.Register.NewProcedure("SUM", () => new Sum());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -653,7 +673,7 @@ namespace Garnet.test
         [Test]
         public void CustomProcedureFreeBufferTest()
         {
-            server.Register.NewProcedure("LARGEGET", new LargeGet());
+            server.Register.NewProcedure("LARGEGET", () => new LargeGet());
             var key = "key";
             var hashKey = "hashKey";
             var hashField = "field";
@@ -701,7 +721,7 @@ namespace Garnet.test
         [Test]
         public void CustomProcedureOutOfOrderFreeBufferTest()
         {
-            server.Register.NewProcedure("OUTOFORDERFREE", new OutOfOrderFreeBuffer());
+            server.Register.NewProcedure("OUTOFORDERFREE", () => new OutOfOrderFreeBuffer());
             var key = "key";
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -780,7 +800,7 @@ namespace Garnet.test
                 TestUtils.CreateTestLibrary(namespaces, referenceFiles, ltf.Value, ltf.Key);
             }
 
-            var notAllowedPath = Path.Combine(TestUtils.MethodTestDir, "testLib1.dll");
+            var notAllowedPath = Path.Combine(TestUtils.MethodTestDir, "testLib4.dll");
             if (!File.Exists(notAllowedPath))
             {
                 File.Copy(Path.Combine(dir1, "testLib1.dll"), notAllowedPath);
@@ -907,7 +927,7 @@ namespace Garnet.test
                 2,
                 "MyDictFactory",
                 "SRC",
-                Path.Combine(TestUtils.MethodTestDir, "testLib1.dll")
+                Path.Combine(TestUtils.MethodTestDir, "testLib4.dll")
             ];
 
             try
@@ -997,6 +1017,76 @@ namespace Garnet.test
             Thread.Sleep(TimeSpan.FromSeconds(1));
             result = db.Execute("RATELIMIT", "key3", 1000, 5);
             ClassicAssert.AreEqual("ALLOWED", result.ToString());
+        }
+
+        [Test]
+        public void CustomProcInvokingCustomCmdTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewProcedure("PROCCMD", () => new ProcCustomCmd());
+
+            var key = "mainKey";
+            var value = "foovalue0";
+            db.StringSet(key, value);
+
+            var newValue1 = "foovalue1";
+            var newValue2 = "foovalue2";
+
+            // This conditional set should pass (prefix matches)
+            var result = db.Execute("PROCCMD", key, newValue1, "foo");
+            ClassicAssert.AreEqual("OK", (string)result);
+
+            var retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newValue1, retValue.ToString());
+
+            // This conditional set should fail (prefix does not match)
+            result = db.Execute("PROCCMD", key, newValue2, "bar");
+            ClassicAssert.AreEqual("OK", (string)result);
+
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newValue1, retValue.ToString());
+        }
+
+        [Test]
+        public void CustomTransactionInvokingCustomCmdTest()
+        {
+            var factory = new MyDictFactory();
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
+            server.Register.NewTransactionProc("TXNCMD", () => new TxnCustomCmd());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var mainKey = "mainKey";
+            var mainValue = "foovalue0";
+            var dictKey = "dictKey";
+            var dictField = "dictField";
+            var dictValue = "dictValue";
+
+            var result = db.Execute("TXNCMD", mainKey, mainValue, dictKey, dictField, dictValue);
+            ClassicAssert.AreEqual("OK", (string)result);
+
+            result = db.Execute("MYDICTGET", dictKey, dictField);
+            ClassicAssert.AreEqual(dictValue, (string)result);
+
+            var retValue = db.StringGet(mainKey);
+            ClassicAssert.AreEqual(mainValue, (string)retValue);
+        }
+
+        [Test]
+        public void CustomProcedureInvokingInvalidCommandTest()
+        {
+            server.Register.NewProcedure("PROCINVALIDCMD", () => new InvalidCommandProc());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = db.Execute("PROCINVALIDCMD", "key");
+            ClassicAssert.AreEqual("OK", (string)result);
         }
     }
 }

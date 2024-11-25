@@ -3,7 +3,7 @@
 
 namespace Garnet.server
 {
-    class CustomRawStringCommand
+    public class CustomRawStringCommand
     {
         public readonly string NameStr;
         public readonly byte[] name;

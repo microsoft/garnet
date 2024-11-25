@@ -44,8 +44,8 @@ namespace Garnet.test.cluster
             var logLevel = LogLevel.Error;
             if (!string.IsNullOrEmpty(TestContext.CurrentContext.Test.MethodName) && monitorTests.TryGetValue(TestContext.CurrentContext.Test.MethodName, out var value))
                 logLevel = value;
-            loggerFactory = TestUtils.CreateLoggerFactoryInstance(logTextWriter, logLevel, scope: TestContext.CurrentContext.Test.Name);
-            logger = loggerFactory.CreateLogger(TestContext.CurrentContext.Test.Name);
+            loggerFactory = TestUtils.CreateLoggerFactoryInstance(logTextWriter, logLevel, scope: TestContext.CurrentContext.Test.FullName);
+            logger = loggerFactory.CreateLogger(TestContext.CurrentContext.Test.FullName);
             logger.LogDebug("0. Setup >>>>>>>>>>>>");
             r = new Random(674386);
             waiter = new ManualResetEventSlim();
@@ -119,7 +119,8 @@ namespace Garnet.test.cluster
             AadAuthenticationSettings authenticationSettings = null,
             bool disablePubSub = true,
             int metricsSamplingFrequency = 0,
-            bool enableLua = false)
+            bool enableLua = false,
+            bool asyncReplay = false)
         {
             endpoints = TestUtils.GetEndPoints(shards, 7000);
             nodes = TestUtils.CreateGarnetCluster(
@@ -151,7 +152,8 @@ namespace Garnet.test.cluster
                 certificates: certificates,
                 authenticationSettings: authenticationSettings,
                 metricsSamplingFrequency: metricsSamplingFrequency,
-                enableLua: enableLua);
+                enableLua: enableLua,
+                asyncReplay: asyncReplay);
 
             foreach (var node in nodes)
                 node.Start();
@@ -204,6 +206,7 @@ namespace Garnet.test.cluster
             int gossipDelay = 5,
             bool useTLS = false,
             bool useAcl = false,
+            bool asyncReplay = false,
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential())
         {
@@ -232,6 +235,7 @@ namespace Garnet.test.cluster
                 EnableIncrementalSnapshots: EnableIncrementalSnapshots,
                 FastCommit: FastCommit,
                 useAcl: useAcl,
+                asyncReplay: asyncReplay,
                 aclFile: credManager.aclFilePath,
                 authUsername: clusterCreds.user,
                 authPassword: clusterCreds.password,
