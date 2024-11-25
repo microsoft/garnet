@@ -19,33 +19,27 @@ namespace GarnetClientSample
         readonly string address;
         readonly int port;
         readonly bool useTLS;
-        GarnetClient gc;
+
         public GarnetClientSamples(string address, int port, bool useTLS)
         {
             this.address = address;
             this.port = port;
             this.useTLS = useTLS;
-
-            gc = new GarnetClient(address, port, GetSslOpts());
-           
         }
 
-        public void  RunAll()
+        public async Task RunAll()
         {
-            //await PingAsync();
-            //await SetGetAsync();
-            string origValue = "abcdefg";
-            gc.StringSet("mykey", origValue, (c, s) => { if (s != "OK") throw new Exception("SetGetSync: Error"); });
-
+            await PingAsync();
+            await SetGetAsync();
             SetGetSync();
-            //await IncrAsync();
-            //await IncrByAsync(99);
-            //await DecrByAsync(99);
-            //await DecrAsync("test", 5);
-            //await IncrNoKeyAsync();
-            //await ExistsAsync();
-            //await DeleteAsync();
-            //await SetGetMemoryAsync();
+            await IncrAsync();
+            await IncrByAsync(99);
+            await DecrByAsync(99);
+            await DecrAsync("test", 5);
+            await IncrNoKeyAsync();
+            await ExistsAsync();
+            await DeleteAsync();
+            await SetGetMemoryAsync();
         }
 
         async Task PingAsync()
@@ -75,11 +69,16 @@ namespace GarnetClientSample
 
         void SetGetSync()
         {
-          
+            using var db = new GarnetClient(address, port, GetSslOpts());
+            db.Connect();
 
+            string origValue = "abcdefg";
+            db.StringSet("mykey", origValue, (c, s) => { if (s != "OK") throw new Exception("SetGetSync: Error"); });
 
-            gc.StringGet("mykey", (c, s) => { });
-            //Console.WriteLine("SetGetSync: Success");
+            ManualResetEventSlim e = new();
+            db.StringGet("mykey", (c, s) => { if (s != origValue) throw new Exception("SetGetSync: Error"); e.Set(); });
+            e.Wait();
+            Console.WriteLine("SetGetSync: Success");
         }
 
         async Task IncrAsync()
