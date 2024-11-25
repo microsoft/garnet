@@ -44,6 +44,8 @@ namespace Garnet.server
 
     internal enum BitFieldOverflow : byte
     {
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (SessionParseStateExtensions.TryGetBitFieldOverflow)
+
         WRAP,
         SAT,
         FAIL
@@ -389,7 +391,7 @@ namespace Garnet.server
                     isOverflowTypeSet = true;
 
                     // Validate overflow type
-                    if (!parseState.TryGetEnum(currTokenIdx, true, out BitFieldOverflow _))
+                    if (!parseState.TryGetBitFieldOverflow(currTokenIdx, out _))
                     {
                         while (!RespWriteUtils.WriteError(
                                    $"ERR Overflow type {parseState.GetString(currTokenIdx)} not supported",

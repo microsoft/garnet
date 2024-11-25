@@ -30,7 +30,8 @@ namespace Garnet.cluster
             if (parseState.Count > 0)
             {
                 // Try to parse failover option
-                if (!parseState.TryGetEnum(0, ignoreCase: true, out failoverOption) || !failoverOption.IsValid(parseState.GetArgSliceByRef(0).Span))
+                if (!parseState.TryGetFailoverOption(0, out failoverOption) ||
+                    failoverOption == FailoverOption.DEFAULT || failoverOption == FailoverOption.INVALID)
                 {
                     var failoverOptionStr = parseState.GetString(0);
 

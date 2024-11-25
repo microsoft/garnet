@@ -91,7 +91,13 @@ namespace Garnet
                 };
 
                 var json = streamReader.ReadToEnd();
-                var jsonReaderOptions = new JsonReaderOptions { CommentHandling = JsonCommentHandling.Skip };
+
+                var jsonReaderOptions = new JsonReaderOptions
+                {
+                    CommentHandling = JsonCommentHandling.Skip,
+                    AllowTrailingCommas = true
+                };
+
                 var jsonReader = new Utf8JsonReader(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(json)), jsonReaderOptions);
 
                 // No need fot the return value, as the deserializer populates the existing options instance

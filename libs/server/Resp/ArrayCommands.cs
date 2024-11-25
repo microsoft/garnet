@@ -4,8 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -237,17 +235,17 @@ namespace Garnet.server
                 return true;
             }
 
-            if (storeWrapper.serverOptions.EnableCluster)
+            if (index < storeWrapper.databaseNum)
             {
-                // Cluster mode does not allow DBID
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                if (index == 0)
+                if (storeWrapper.serverOptions.EnableCluster)
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    // Cluster mode does not allow DBID
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
                         SendAndReset();
                 }
                 else

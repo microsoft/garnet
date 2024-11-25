@@ -50,16 +50,14 @@ namespace Garnet.server
                 events = new();
                 for (int i = 0; i < parseState.Count; i++)
                 {
-                    var eventStr = parseState.GetString(i);
-
-                    if (Enum.TryParse(eventStr, ignoreCase: true, out LatencyMetricsType eventType))
+                    if (parseState.TryGetLatencyMetricsType(i, out var eventType))
                     {
                         events.Add(eventType);
                     }
                     else
                     {
                         invalid = true;
-                        invalidEvent = eventStr;
+                        invalidEvent = parseState.GetString(i);
                     }
                 }
             }
@@ -98,16 +96,14 @@ namespace Garnet.server
                 events = new();
                 for (int i = 0; i < parseState.Count; i++)
                 {
-                    var eventStr = parseState.GetString(i);
-
-                    if (Enum.TryParse(eventStr, ignoreCase: true, out LatencyMetricsType eventType))
+                    if (parseState.TryGetLatencyMetricsType(i, out var eventType))
                     {
                         events.Add(eventType);
                     }
                     else
                     {
                         invalid = true;
-                        invalidEvent = eventStr;
+                        invalidEvent = parseState.GetString(i);
                     }
                 }
             }

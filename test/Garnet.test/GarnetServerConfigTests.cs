@@ -48,7 +48,8 @@ namespace Garnet.test
             var jsonSerializerOptions = new JsonSerializerOptions
             {
                 ReadCommentHandling = JsonCommentHandling.Skip,
-                NumberHandling = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.WriteAsString
+                NumberHandling = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.WriteAsString,
+                AllowTrailingCommas = true,
             };
 
             try
@@ -78,9 +79,19 @@ namespace Garnet.test
             string dir = TestUtils.MethodTestDir;
             string configPath = $"{dir}\\test1.conf";
 
+            // Help
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(["--help"], out var options, out var invalidOptions, out var exitGracefully);
+            ClassicAssert.IsFalse(parseSuccessful);
+            ClassicAssert.IsTrue(exitGracefully);
+
+            // Version
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(["--version"], out options, out invalidOptions, out exitGracefully);
+            ClassicAssert.IsFalse(parseSuccessful);
+            ClassicAssert.IsTrue(exitGracefully);
+
             // No import path, no command line args
             // Check values match those on defaults.conf
-            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions);
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out options, out invalidOptions, out exitGracefully);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("32m", options.PageSize);
@@ -90,7 +101,7 @@ namespace Garnet.test
             // Check values from command line override values from defaults.conf
             static string GetFullExtensionBinPath(string testProjectName) => Path.GetFullPath(testProjectName, TestUtils.RootTestsProjectPath);
             var args = new string[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--extension-bin-paths", $"{GetFullExtensionBinPath("Garnet.test")},{GetFullExtensionBinPath("Garnet.test.cluster")}", "--loadmodulecs", $"{Assembly.GetExecutingAssembly().Location}" };
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("4m", options.PageSize);
@@ -108,7 +119,7 @@ namespace Garnet.test
             // Import from previous export command, no command line args
             // Check values from import path override values from default.conf
             args = ["--config-import-path", configPath];
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.IsTrue(options.PageSize == "4m");
@@ -117,7 +128,7 @@ namespace Garnet.test
             // Import from previous export command, include command line args, export to file
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
             args = ["--config-import-path", configPath, "-p", "12m", "-s", "1g", "--recover", "false", "--port", "0", "--no-obj", "--aof"];
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("12m", options.PageSize);
@@ -131,8 +142,9 @@ namespace Garnet.test
             // No import path, include command line args
             // Check that all invalid options flagged
             args = ["--bind", "1.1.1.257", "-m", "12mg", "--port", "-1", "--mutable-percent", "101", "--acl-file", "nx_dir/nx_file.txt", "--tls", "--reviv-fraction", "1.1", "--cert-file-name", "testcert.crt"];
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully);
             ClassicAssert.IsFalse(parseSuccessful);
+            ClassicAssert.IsFalse(exitGracefully);
             ClassicAssert.IsNull(options);
             ClassicAssert.AreEqual(7, invalidOptions.Count);
             ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.Address)));
@@ -158,7 +170,7 @@ namespace Garnet.test
             // Import from redis.conf file, no command line args
             // Check values from import path override values from default.conf
             var args = new[] { "--config-import-path", redisConfigPath, "--config-import-format", "RedisConf" };
-            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions);
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("127.0.0.1", options.Address);
@@ -180,7 +192,7 @@ namespace Garnet.test
             // Import from redis.conf file, include command line args
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
             args = ["--config-import-path", redisConfigPath, "--config-import-format", "RedisConf", "--config-export-path", garnetConfigPath, "-p", "12m", "--tls", "false", "--minthreads", "6", "--client-certificate-required", "true"];
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("12m", options.PageSize);
@@ -209,21 +221,21 @@ namespace Garnet.test
                 deviceFactory.Initialize(AzureTestDirectory);
                 deviceFactory.Delete(new FileDescriptor { directoryName = "" });
 
-                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions);
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions, out var exitGracefully);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(invalidOptions.Count, 0);
                 ClassicAssert.IsTrue(options.PageSize == "32m");
                 ClassicAssert.IsTrue(options.MemorySize == "16g");
 
                 var args = new string[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "128m" };
-                parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+                parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(invalidOptions.Count, 0);
                 ClassicAssert.IsTrue(options.PageSize == "4m");
                 ClassicAssert.IsTrue(options.MemorySize == "128m");
 
                 args = ["--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-import", "true", "--config-import-path", configPath];
-                parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+                parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(invalidOptions.Count, 0);
                 ClassicAssert.IsTrue(options.PageSize == "4m");
