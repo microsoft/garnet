@@ -33,8 +33,9 @@ namespace Garnet
         /// <param name="logger">Logger</param>
         /// <param name="options">Options object containing parsed configuration settings</param>
         /// <param name="invalidOptions">List of Options properties that did not pass validation</param>
+        /// <param name="exitGracefully">True if should exit gracefully when parse is unsuccessful</param>
         /// <returns>True if parsing succeeded</returns>
-        internal static bool TryParseCommandLineArguments(string[] args, out Options options, out List<string> invalidOptions, ILogger logger = null)
+        internal static bool TryParseCommandLineArguments(string[] args, out Options options, out List<string> invalidOptions, out bool exitGracefully, ILogger logger = null)
         {
             if (logger == null)
                 logger = NullLogger.Instance;
@@ -66,7 +67,7 @@ namespace Garnet
 
             var consolidatedArgs = ConsolidateFlagArguments(args);
             // Parse command line arguments
-            if (!parser.TryParseArguments<Options>(consolidatedArgs, argNameToDefaultValue, out var cmdLineOptions))
+            if (!parser.TryParseArguments<Options>(consolidatedArgs, argNameToDefaultValue, out var cmdLineOptions, out exitGracefully))
                 return false;
 
             // Check if any arguments were not parsed
@@ -113,7 +114,7 @@ Please check the syntax of your command. For detailed usage information run with
 
             // Re-parse command line arguments after initializing Options object with initialization function
             // In order to override options specified in the command line arguments
-            if (!parser.TryParseArguments(consolidatedArgs, argNameToDefaultValue, out options, () => initOptions))
+            if (!parser.TryParseArguments(consolidatedArgs, argNameToDefaultValue, out options, out exitGracefully, () => initOptions))
                 return false;
 
             // Validate options
@@ -121,6 +122,7 @@ Please check the syntax of your command. For detailed usage information run with
             {
                 logger?.LogError("Configuration validation failed.");
                 options = null;
+                exitGracefully = false;
                 return false;
             }
 
@@ -171,58 +173,71 @@ Please check the syntax of your command. For detailed usage information run with
         /// <param name="args">Command line arguments</param>
         /// <param name="argNameToDefaultValue">Argument long name to default value mapping</param>
         /// <param name="obj">Parsed object, default(T) if parse unsuccessful</param>
+        /// <param name="exitGracefully">True if should exit gracefully when parse is unsuccessful</param>
         /// <param name="factory">Optional T factory for object initialization</param>
         /// <returns>True if parse successful</returns>
-        private static bool TryParseArguments<T>(this Parser parser, string[] args, IDictionary<string, object> argNameToDefaultValue, out T obj, Func<T> factory = null) where T : new()
+        private static bool TryParseArguments<T>(this Parser parser, string[] args, IDictionary<string, object> argNameToDefaultValue, out T obj, out bool exitGracefully, Func<T> factory = null) where T : new()
         {
             var result = parser.ParseArguments(factory ?? (() => new T()), args);
+            var tmpExitGracefully = true;
 
             obj = result.MapResult(parsed => parsed,
                 notParsed =>
                 {
                     var errors = notParsed.ToList();
-                    var helpText = HelpText.AutoBuild(result, h => HelpText.DefaultParsingErrorsHandler(result, h), e => e);
-                    helpText.Heading = "GarnetServer";
-                    helpText.Copyright = "Copyright (c) Microsoft Corporation";
-
-                    // Customizing help text produced by parser
-                    // If parse errors occurred, skip printing usage options
-                    // If not (i.e. --help or --version requested), append dynamically loaded default values to usage option help text
-                    var helpTextBuilder = new StringBuilder();
-                    foreach (var line in helpText.ToString().Split(Environment.NewLine))
+                    if (errors.IsVersion()) // Check if error is version request
                     {
-                        var match = Regex.Match(line, OptionPattern);
-                        if (match.Success)
+                        var helpText = HelpText.AutoBuild(result);
+                        Console.WriteLine(helpText);
+                    }
+                    else
+                    {
+                        var helpText = HelpText.AutoBuild(result, h => HelpText.DefaultParsingErrorsHandler(result, h), e => e);
+                        helpText.Heading = "GarnetServer";
+                        helpText.Copyright = "Copyright (c) Microsoft Corporation";
+
+                        // Customizing help text produced by parser
+                        // If parse errors occurred, skip printing usage options
+                        // If not (i.e. --help or --version requested), append dynamically loaded default values to usage option help text
+                        var helpTextBuilder = new StringBuilder();
+                        foreach (var line in helpText.ToString().Split(Environment.NewLine))
                         {
-                            if (!errors.IsVersion() && !errors.IsHelp())
+                            var match = Regex.Match(line, OptionPattern);
+                            if (match.Success)
                             {
-                                helpTextBuilder.AppendLine("Encountered error(s) while parsing command line arguments.");
-                                helpTextBuilder.AppendLine("For detailed usage information run with --help.");
-                                break;
+                                if (!errors.IsVersion() && !errors.IsHelp())
+                                {
+                                    helpTextBuilder.AppendLine("Encountered error(s) while parsing command line arguments.");
+                                    helpTextBuilder.AppendLine("For detailed usage information run with --help.");
+                                    tmpExitGracefully = false;
+                                    break;
+                                }
+
+                                var longName = match.Groups[2].Value;
+                                var helpIdx = match.Groups[3].Index;
+                                if (argNameToDefaultValue.ContainsKey(longName))
+                                {
+                                    var defaultValue = argNameToDefaultValue[longName];
+                                    helpTextBuilder.Append(line.Substring(0, helpIdx));
+                                    if (defaultValue != null && !string.IsNullOrEmpty(defaultValue.ToString()))
+                                    {
+                                        helpTextBuilder.Append($"(Default: {(defaultValue is string str ? $"\"{str}\"" : defaultValue.ToString())}) ");
+                                    }
+                                    helpTextBuilder.AppendLine(line.Substring(helpIdx, line.Length - helpIdx));
+                                    continue;
+                                }
                             }
 
-                            var longName = match.Groups[2].Value;
-                            var helpIdx = match.Groups[3].Index;
-                            if (argNameToDefaultValue.ContainsKey(longName))
-                            {
-                                var defaultValue = argNameToDefaultValue[longName];
-                                helpTextBuilder.Append(line.Substring(0, helpIdx));
-                                if (defaultValue != null && !string.IsNullOrEmpty(defaultValue.ToString()))
-                                {
-                                    helpTextBuilder.Append($"(Default: {(defaultValue is string str ? $"\"{str}\"" : defaultValue.ToString())}) ");
-                                }
-                                helpTextBuilder.AppendLine(line.Substring(helpIdx, line.Length - helpIdx));
-                                continue;
-                            }
+                            helpTextBuilder.AppendLine(line);
                         }
 
-                        helpTextBuilder.AppendLine(line);
+                        Console.WriteLine(helpTextBuilder.ToString());
                     }
 
-                    Console.WriteLine(helpTextBuilder.ToString());
                     return default;
                 });
 
+            exitGracefully = tmpExitGracefully;
             return result.Tag == ParserResultType.Parsed;
         }
 

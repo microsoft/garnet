@@ -396,9 +396,10 @@ namespace Garnet.server
 
                         opts.WithCount = true;
                     }
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHCOORD"u8)) opts.WithCoord = true;
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHDIST"u8)) opts.WithDist = true;
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHHASH"u8)) opts.WithHash = true;
+                    else if (input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHCOORD"u8)) opts.WithCoord = true;
+                    else if ((input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHDIST"u8)) ||
+                             (input.header.SortedSetOp == SortedSetOperation.GEOSEARCHSTORE && tokenBytes.EqualsUpperCaseSpanIgnoringCase("STOREDIST"u8))) opts.WithDist = true;
+                    else if (input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHHASH"u8)) opts.WithHash = true;
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ANY"u8)) opts.WithCountAny = true;
                     else
                     {
@@ -422,6 +423,14 @@ namespace Garnet.server
                 if (errorMessage != default)
                 {
                     while (!RespWriteUtils.WriteError(errorMessage, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return;
+                }
+
+                // Not supported options in Garnet: WITHHASH
+                if (opts.WithHash)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     return;
                 }
@@ -464,30 +473,64 @@ namespace Garnet.server
                             }
                         }
 
-                        // Write results 
-                        while (!RespWriteUtils.WriteArrayLength(responseData.Count, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                        foreach (var item in responseData)
+                        if (responseData.Count == 0)
                         {
-                            while (!RespWriteUtils.WriteBulkString(item.Member, ref curr, end))
+                            while (!RespWriteUtils.WriteInteger(0, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        }
+                        else
+                        {
+                            var innerArrayLength = 1;
+                            if (opts.WithDist)
+                            {
+                                innerArrayLength++;
+                            }
+                            if (opts.WithHash)
+                            {
+                                innerArrayLength++;
+                            }
+                            if (opts.WithCoord)
+                            {
+                                innerArrayLength++;
+                            }
+
+                            // Write results 
+                            while (!RespWriteUtils.WriteArrayLength(responseData.Count, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            var distanceValue = (byBoxUnits.Length == 1 && (byBoxUnits[0] == (int)'M' || byBoxUnits[0] == (int)'m')) ? item.Distance
-                                                : server.GeoHash.ConvertMetersToUnits(item.Distance, byBoxUnits);
+                            foreach (var item in responseData)
+                            {
+                                if (innerArrayLength > 1)
+                                {
+                                    while (!RespWriteUtils.WriteArrayLength(innerArrayLength, ref curr, end))
+                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                }
 
-                            while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                while (!RespWriteUtils.WriteBulkString(item.Member, ref curr, end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            // Write array of 2 values
-                            while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                if (opts.WithDist)
+                                {
+                                    var distanceValue = (byBoxUnits.Length == 1 && (byBoxUnits[0] == (int)'M' || byBoxUnits[0] == (int)'m')) ? item.Distance
+                                                        : server.GeoHash.ConvertMetersToUnits(item.Distance, byBoxUnits);
 
-                            while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Longitude, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                    while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
+                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                }
 
-                            while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Latitude, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                if (opts.WithCoord)
+                                {
+                                    // Write array of 2 values
+                                    while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
+                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                                    while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Longitude, ref curr, end))
+                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                                    while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Latitude, ref curr, end))
+                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                }
+                            }
                         }
                     }
                 }

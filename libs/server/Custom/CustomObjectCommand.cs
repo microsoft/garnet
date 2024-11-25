@@ -3,7 +3,7 @@
 
 namespace Garnet.server
 {
-    class CustomObjectCommand
+    public class CustomObjectCommand
     {
         public readonly string NameStr;
         public readonly byte[] name;

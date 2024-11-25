@@ -46,7 +46,7 @@ namespace BDN.benchmark.Operations
                 new RespCommandsInfo { Arity = CustomProcs.CustomTxnSet.Arity });
 
             // Register custom procedure
-            server.Register.NewProcedure(CustomProcs.CustomProcSet.CommandName, new CustomProcSet(),
+            server.Register.NewProcedure(CustomProcs.CustomProcSet.CommandName, () => new CustomProcSet(),
                 new RespCommandsInfo { Arity = CustomProcs.CustomProcSet.Arity });
         }
 
