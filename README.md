@@ -1,7 +1,7 @@
 # Garnet
 [![.NET CI](https://github.com/microsoft/garnet/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/microsoft/garnet/actions/workflows/ci.yml)
-[![](https://img.shields.io/github/release/microsoft/garnet.svg?label=latest%20release&color=007edf)](https://github.com/microsoft/garnet/releases/latest)
-[![](https://img.shields.io/nuget/dt/microsoft.garnet.svg?label=downloads&color=007edf&logo=nuget)](https://www.nuget.org/packages/microsoft.garnet)
+[![](https://img.shields.io/nuget/dt/microsoft.garnet.svg?label=nuget%20library&color=007edf&logo=nuget)](https://www.nuget.org/packages/microsoft.garnet)
+[![](https://img.shields.io/nuget/dt/garnet-server.svg?label=dotnet%20tool&color=007edf&logo=nuget)](https://www.nuget.org/packages/garnet-server)
 [![Discord Shield](https://discordapp.com/api/guilds/1213937452272582676/widget.png?style=shield)](https://aka.ms/garnet-discord)
 
 Garnet is a new remote cache-store from Microsoft Research, that offers several unique benefits:
