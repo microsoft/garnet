@@ -185,7 +185,7 @@ namespace Garnet.server
             bool enableScripts)
             : base(networkSender)
         {
-            this.customCommandManagerSession = new CustomCommandManagerSession(storeWrapper.customCommandManager);
+            this.customCommandManagerSession = storeWrapper.serverOptions.LoadModuleCS != null ? new CustomCommandManagerSession(storeWrapper.customCommandManager) : null;
             this.sessionMetrics = storeWrapper.serverOptions.MetricsSamplingFrequency > 0 ? new GarnetSessionMetrics() : null;
             this.LatencyMetrics = storeWrapper.serverOptions.LatencyMonitor ? new GarnetLatencyMetricsSession(storeWrapper.monitor) : null;
             logger = storeWrapper.sessionLogger != null ? new SessionLogger(storeWrapper.sessionLogger, $"[{networkSender?.RemoteEndpointName}] [{GetHashCode():X8}] ") : null;
