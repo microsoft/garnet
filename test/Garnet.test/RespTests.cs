@@ -3420,7 +3420,7 @@ namespace Garnet.test
             // We use newline counting for HELLO response as the exact length can vary slightly across versions
             using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Newlines);
 
-            var expectedNewlineCount = 32; // 32 '\n' characters expected in response
+            var expectedNewlineCount = 30; // 30 '\n' characters expected in response
             var response = lightClientRequest.Execute($"hello 3", expectedNewlineCount);
             ClassicAssert.IsTrue(response.Length is > 180 and < 190);
 

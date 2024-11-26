@@ -100,10 +100,14 @@ namespace Garnet
                 this.initLogger = (MemoryLogger)memLogProvider.CreateLogger("ArgParser");
             }
 
-            if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, this.initLogger))
+            if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, out var exitGracefully, this.initLogger))
             {
+                if (exitGracefully)
+                    Environment.Exit(0);
+
                 // Flush logs from memory logger
                 FlushMemoryLogger(this.initLogger, "ArgParser", loggerFactory);
+
                 throw new GarnetException("Encountered an error when initializing Garnet server. Please see log messages above for more details.");
             }
 

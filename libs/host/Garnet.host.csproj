@@ -14,17 +14,22 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\server\Garnet.server.csproj" />
-    <ProjectReference Include="..\cluster\Garnet.cluster.csproj" />
-    <ProjectReference Include="..\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
+    <ProjectReference Include="..\server\Garnet.server.csproj" PrivateAssets="All"/>
+    <ProjectReference Include="..\cluster\Garnet.cluster.csproj" PrivateAssets="All"/>
+    <ProjectReference Include="..\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" PrivateAssets="All"/>
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommandLineParser" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+    <PackageReference Include="CommandLineParser" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
     <PackageReference Include="System.Text.Json" />
+    <PackageReference Include="Microsoft.IdentityModel.Validators" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+    <PackageReference Include="Azure.Storage.Blobs" />
+    <PackageReference Include="NLua" />
   </ItemGroup>
 
   <ItemGroup>
