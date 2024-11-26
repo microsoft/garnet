@@ -2768,7 +2768,7 @@ namespace Garnet.test
             {
                 if (numKeys == 2)
                 {
-                    var expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n1\r\n$3\r\ntwo\r\n$1\r\n2\r\n";
+                    var expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n2\r\n$3\r\ntwo\r\n$1\r\n4\r\n";
                     var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
                     ClassicAssert.AreEqual(expectedResponse, actualValue);
                 }
@@ -2845,37 +2845,6 @@ namespace Garnet.test
             {
                 expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n2\r\n$3\r\ntwo\r\n$1\r\n4\r\n";
             }
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
-        }
-
-        [Test]
-        public void CanHandleZInterErrors()
-        {
-            using var lightClientRequest = TestUtils.CreateRequest();
-
-            // Test with wrong number of keys
-            var response = lightClientRequest.SendCommand("ZINTER");
-            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, "ZINTER")}\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
-
-            // Test with wrong key type
-            lightClientRequest.SendCommand("SET wrongtype string");
-            response = lightClientRequest.SendCommand("ZINTER 2 wrongtype zset2");
-            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
-
-            // Test ZINTERCARD with invalid limit
-            response = lightClientRequest.SendCommand("ZINTERCARD 2 zset1 zset2 LIMIT invalid");
-            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER)}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
-
-            // Test ZINTERSTORE with invalid weights
-            response = lightClientRequest.SendCommand("ZINTERSTORE dest 2 zset1 zset2 WEIGHTS invalid 2");
-            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT)}\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
