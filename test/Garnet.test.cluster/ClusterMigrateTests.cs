@@ -1797,6 +1797,8 @@ namespace Garnet.test.cluster
                         MigrateSlots();
                     else
                         MigrateKeys();
+
+
                     _src++;
                     _tgt++;
                 }
@@ -1807,6 +1809,7 @@ namespace Garnet.test.cluster
                     var status = context.clusterTestUtils.SetSlot(_tgt, slot, "IMPORTING", nodeIds[_src], logger: context.logger);
                     while (string.IsNullOrEmpty(status) || !status.Equals("OK"))
                     {
+                        SetSlot(_src);
                         ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: $"{nodeIds[_src]}({nodeEndpoints[_src].Port}) > {slot} > {nodeIds[_tgt]}({nodeEndpoints[_tgt].Port})");
                         status = context.clusterTestUtils.SetSlot(_tgt, slot, "IMPORTING", nodeIds[_src], logger: context.logger);
                     }
@@ -1874,6 +1877,15 @@ namespace Garnet.test.cluster
                         if (node != null && node.NodeId.Equals(nodeIds[_tgt]))
                             break;
                         ClusterTestUtils.BackOff(cancellationToken: cancellationToken);
+                    }
+                }
+
+                void SetSlot(int nodeIndex)
+                {
+                    for (var i = 0; i < shards; i++)
+                    {
+                        var resp = context.clusterTestUtils.SetSlot(i, slot, "NODE", nodeIds[nodeIndex], logger: context.logger);
+                        ClassicAssert.AreEqual("OK", resp);
                     }
                 }
             }
