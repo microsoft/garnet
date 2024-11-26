@@ -38,6 +38,7 @@ namespace Tsavorite.core
                     break;
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, store);
+                    store._hybridLogCheckpoint.flushedSemaphore = new SemaphoreSlim(0);
                     var finalLogicalAddress = store.hlogBase.GetTailAddress();
                     Task.Run(() => store.StreamingSnapshotScanPhase2(finalLogicalAddress));
                     break;

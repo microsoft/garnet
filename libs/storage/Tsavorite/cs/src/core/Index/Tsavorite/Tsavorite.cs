@@ -188,6 +188,7 @@ namespace Tsavorite.core
         /// than current version. Actual new version may have version number greater than supplied number. If the supplied
         /// number is -1, checkpoint will unconditionally create a new version. 
         /// </param>
+        /// <param name="streamingSnapshotScanIteratorFunctions">Iterator for streaming snapshot records</param>
         /// <returns>
         /// Whether we successfully initiated the checkpoint (initiation may
         /// fail if we are already taking a checkpoint or performing some other
@@ -230,6 +231,7 @@ namespace Tsavorite.core
         /// than current version. Actual new version may have version number greater than supplied number. If the supplied
         /// number is -1, checkpoint will unconditionally create a new version. 
         /// </param>
+        /// <param name="streamingSnapshotScanIteratorFunctions">Iterator for streaming snapshot records</param>
         /// <returns>
         /// (bool success, Guid token)
         /// success: Whether we successfully initiated the checkpoint (initiation may
@@ -239,9 +241,9 @@ namespace Tsavorite.core
         /// Await task to complete checkpoint, if initiated successfully
         /// </returns>
         public async ValueTask<(bool success, Guid token)> TakeFullCheckpointAsync(CheckpointType checkpointType,
-            CancellationToken cancellationToken = default, long targetVersion = -1)
+            CancellationToken cancellationToken = default, long targetVersion = -1, IScanIteratorFunctions<TKey, TValue> streamingSnapshotScanIteratorFunctions = null)
         {
-            var success = TryInitiateFullCheckpoint(out Guid token, checkpointType, targetVersion);
+            var success = TryInitiateFullCheckpoint(out Guid token, checkpointType, targetVersion, streamingSnapshotScanIteratorFunctions);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);

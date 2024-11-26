@@ -933,4 +933,145 @@ namespace Tsavorite.test.recovery
             _ = bc3.CompletePending(true);
         }
     }
+
+    [TestFixture]
+    public class RecoveryCheckStreamingSnapshotTests : RecoveryCheckBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
+
+        public class SnapshotIterator : IScanIteratorFunctions<long, long>
+        {
+            readonly TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store2;
+            ClientSession<long, long, long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator> session2;
+            BasicContext<long, long, long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator> bc2;
+            readonly long expectedCount;
+            long actualCount;
+
+            public SnapshotIterator(TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store2, long expectedCount)
+            {
+                this.store2 = store2;
+                this.expectedCount = expectedCount;
+            }
+
+            public bool OnStart(long beginAddress, long endAddress)
+            {
+                session2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
+                bc2 = session2.BasicContext;
+                return true;
+            }
+
+            public bool SingleReader(ref long key, ref long value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
+
+            public bool ConcurrentReader(ref long key, ref long value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            {
+                _ = bc2.Upsert(ref key, ref value);
+                cursorRecordResult = CursorRecordResult.Accept;
+                actualCount = numberOfRecords;
+                return true;
+            }
+
+            public void OnException(Exception exception, long numberOfRecords)
+                => Assert.Fail(exception.Message);
+
+            public void OnStop(bool completed, long numberOfRecords)
+            {
+                Assert.That(actualCount + 1, Is.EqualTo(expectedCount));
+                session2.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+
+        public async ValueTask StreamingSnapshotBasicTest([Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+        {
+            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            using var s1 = store1.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
+            var bc1 = s1.BasicContext;
+
+            for (long key = 0; key < 1000; key++)
+            {
+                _ = bc1.Upsert(ref key, ref key);
+            }
+
+            if (useReadCache)
+            {
+                store1.Log.FlushAndEvict(true);
+                for (long key = 0; key < 1000; key++)
+                {
+                    long output = default;
+                    var status = bc1.Read(ref key, ref output);
+                    if (!status.IsPending)
+                    {
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
+                    }
+                }
+                _ = bc1.CompletePending(true);
+            }
+
+            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            var iterator = new SnapshotIterator(store2, 1000);
+            var task = store1.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotScanIteratorFunctions: iterator);
+
+
+            if (isAsync)
+            {
+                var (status, token) = await task;
+            }
+            else
+            {
+                var (status, token) = task.AsTask().GetAwaiter().GetResult();
+            }
+
+            ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
+            ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
+            ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+
+            using var s2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
+            var bc2 = s2.BasicContext;
+            for (long key = 0; key < 1000; key++)
+            {
+                long output = default;
+                var status = bc2.Read(ref key, ref output);
+                if (!status.IsPending)
+                {
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
+                }
+            }
+            _ = bc2.CompletePending(true);
+        }
+    }
 }

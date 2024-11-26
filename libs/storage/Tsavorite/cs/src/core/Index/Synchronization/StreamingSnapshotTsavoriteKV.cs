@@ -13,6 +13,11 @@ namespace Tsavorite.core
         IScanIteratorFunctions<TKey, TValue> streamingSnapshotScanIteratorFunctions;
         long scannedUntilAddressCursor;
 
+        class StreamingSnapshotSessionFunctions : SessionFunctionsBase<TKey, TValue, Empty, Empty, Empty>
+        {
+
+        }
+
         struct ScanPhase1Functions : IScanIteratorFunctions<TKey, TValue>
         {
             readonly IScanIteratorFunctions<TKey, TValue> userScanIteratorFunctions;
@@ -54,7 +59,8 @@ namespace Tsavorite.core
                 // Iterate all the read-only records in the store
                 scannedUntilAddressCursor = 0;
                 var scanFunctions = new ScanPhase1Functions(streamingSnapshotScanIteratorFunctions);
-                using var s = NewSession<Empty, Empty, Empty, SessionFunctionsBase<TKey, TValue, Empty, Empty, Empty>>(default);
+                scanFunctions.OnStart(0, long.MaxValue);
+                using var s = NewSession<Empty, Empty, Empty, StreamingSnapshotSessionFunctions>(new());
                 _ = s.ScanCursor(ref scannedUntilAddressCursor, long.MaxValue, scanFunctions);
             }
             finally
@@ -104,11 +110,13 @@ namespace Tsavorite.core
 
                 // Iterate all the (v) records in the store
                 var scanFunctions = new ScanPhase2Functions(streamingSnapshotScanIteratorFunctions);
-                using var s = NewSession<Empty, Empty, Empty, SessionFunctionsBase<TKey, TValue, Empty, Empty, Empty>>(default);
+                using var s = NewSession<Empty, Empty, Empty, StreamingSnapshotSessionFunctions>(new());
 
                 // TODO: This requires ScanCursor to provide a consistent snapshot considering only records up to untilAddress
                 // There is a bug in the current implementation of ScanCursor, where it does not provide such a consistent snapshot
-                _ = s.ScanCursor(ref scannedUntilAddressCursor, long.MaxValue, scanFunctions, untilAddress);
+                _ = s.ScanCursor(ref scannedUntilAddressCursor, long.MaxValue, scanFunctions, endAddress: untilAddress);
+
+                scanFunctions.OnStop(true, 0);
 
                 // Reset the cursor to 0
                 scannedUntilAddressCursor = 0;
