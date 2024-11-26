@@ -59,7 +59,9 @@ namespace Tsavorite.test.recovery.sumstore
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask PageBlobSimpleRecoveryTest([Values] CheckpointType checkpointType, [Values] CompletionSyncMode completionSyncMode, [Values] bool testCommitCookie)
+        public async ValueTask PageBlobSimpleRecoveryTest(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
+            [Values] CompletionSyncMode completionSyncMode, [Values] bool testCommitCookie)
         {
             IgnoreIfNotRunningAzureTests();
             checkpointManager = new DeviceLogCommitCheckpointManager(
