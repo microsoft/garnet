@@ -87,7 +87,9 @@ namespace Tsavorite.test.recovery
         [Category("CheckpointRestore")]
         [Category("Smoke")]
 
-        public async ValueTask RecoveryCheck1([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+        public async ValueTask RecoveryCheck1(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
+            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
@@ -184,7 +186,9 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask RecoveryCheck2([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+        public async ValueTask RecoveryCheck2(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
+            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
@@ -273,7 +277,9 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public void RecoveryCheck2Repeated([Values] CheckpointType checkpointType)
+        public void RecoveryCheck2Repeated(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType
+            )
         {
             Guid token = default;
 
@@ -326,7 +332,9 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public void RecoveryRollback([Values] CheckpointType checkpointType)
+        public void RecoveryRollback(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType
+            )
         {
             using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
@@ -478,7 +486,9 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask RecoveryCheck3([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+        public async ValueTask RecoveryCheck3(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
+            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
@@ -578,7 +588,9 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask RecoveryCheck4([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+        public async ValueTask RecoveryCheck4(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
+            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
@@ -682,7 +694,9 @@ namespace Tsavorite.test.recovery
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
-        public async ValueTask RecoveryCheck5([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+        public async ValueTask RecoveryCheck5(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
+            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
