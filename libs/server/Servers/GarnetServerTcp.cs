@@ -140,7 +140,7 @@ namespace Garnet.server
             if (activeHandlerCount >= 0)
             {
                 var currentActiveHandlerCount = Interlocked.Increment(ref activeHandlerCount);
-                if (currentActiveHandlerCount is > 0 && (connectionLimit == 0 || currentActiveHandlerCount <= connectionLimit))
+                if (currentActiveHandlerCount > 0 && (connectionLimit == -1 || currentActiveHandlerCount <= connectionLimit))
                 {
                     try
                     {

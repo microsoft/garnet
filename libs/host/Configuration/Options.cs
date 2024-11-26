@@ -339,9 +339,9 @@ namespace Garnet
         [Option("maxthreads", Required = false, HelpText = "Maximum worker and completion threads in thread pool, 0 uses the system default.")]
         public int ThreadPoolMaxThreads { get; set; }
 
-        [IntRangeValidation(0, int.MaxValue)]
-        [Option("connection-limit", Required = false, Default = 0, HelpText = "Maximum number of client connections")]
-        public int ConnectionLimit { get; set; }
+        [IntRangeValidation(-1, int.MaxValue)]
+        [Option("network-connection-limit", Required = false, Default = -1, HelpText = "Maximum number of simultaneously active network connections.")]
+        public int NetworkConnectionLimit { get; set; }
 
         [OptionValidation]
         [Option("use-azure-storage", Required = false, HelpText = "Use Azure Page Blobs for storage instead of local storage.")]
@@ -680,7 +680,7 @@ namespace Garnet
                 QuietMode = QuietMode.GetValueOrDefault(),
                 ThreadPoolMinThreads = ThreadPoolMinThreads,
                 ThreadPoolMaxThreads = ThreadPoolMaxThreads,
-                ConnectionLimit = ConnectionLimit,
+                NetworkConnectionLimit = NetworkConnectionLimit,
                 DeviceFactoryCreator = useAzureStorage
                     ? () => new AzureStorageNamedDeviceFactory(AzureStorageConnectionString, logger)
                     : () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
