@@ -33,7 +33,7 @@ jobs:
 
       - name: Set helm chart appVersion
         run: |
-          sed -i 's#Version.props#'"${VERSION_PROPS}"'#g' charts/garnet/Chart.yaml
+          sed -ie 's#Version.props#'"${VERSION_PROPS}"'#g' charts/garnet/Chart.yaml
 
       - name: Helm lint and package
         run: |
