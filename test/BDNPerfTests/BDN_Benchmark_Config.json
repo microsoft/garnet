@@ -1,0 +1,51 @@
+{
+  "BDN.benchmark.Operations.BasicOperations.*": {
+    "expected_InlinePing_ACL": 10,
+    "expected_InlinePing_AOF": 20,
+    "expected_InlinePing_None": 30
+  },
+  "BDN.benchmark.Operations.ObjectOperations.*": {
+    "expected_ZAddRem_ACL": 18400,
+    "expected_LPushPop_ACL": 14400,
+    "expected_SAddRem_ACL": 12800,
+    "expected_HSetDel_ACL": 43201,
+    "expected_MyDictSetGet_ACL": 24000,
+    "expected_CustomProcSet_ACL": 0,
+    "expected_ZAddRem_AOF": 18400,
+    "expected_LPushPop_AOF": 14400,
+    "expected_SAddRem_AOF": 12800,
+    "expected_HSetDel_AOF": 43201,
+    "expected_MyDictSetGet_AOF": 24000,
+    "expected_CustomProcSet_AOF": 0,
+    "expected_ZAddRem_None": 18400,
+    "expected_LPushPop_None": 14400,
+    "expected_SAddRem_None": 12800,
+    "expected_HSetDel_None": 43201,
+    "expected_MyDictSetGet_None": 24000,
+    "expected_CustomProcSet_None": 0
+  },
+  "BDN.benchmark.Cluster.ClusterOperations.*": {
+    "expected_Get_DSV": 0,
+    "expected_Set_DSV": 0,
+    "expected_MGet_DSV": 0,
+    "expected_MSet_DSV": 0,
+    "expected_CPBSet_DSV": 0,
+    "expected_Get_None": 0,
+    "expected_Set_None": 0,
+    "expected_MGet_None": 0,
+    "expected_MSet_None": 0,
+    "expected_CPBSet_None": 0
+  },
+  "BDN.benchmark.Cluster.ClusterMigrate.*": {
+    "expected_Get_None": 0,
+    "expected_Set_None": 0,
+    "expected_MGet_None": 0,
+    "expected_MSet_None": 0
+  },
+  "BDN.benchmark.Lua.*": {
+    "expected_Script1_None": 24,
+    "expected_Script2_None": 144,
+    "expected_Script3_None": 240,
+    "expected_Script4_None": 776
+  }
+}
