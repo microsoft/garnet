@@ -144,28 +144,37 @@ namespace Garnet.common
                 return;
             }
             var networkBufferProcessingTask = OnNetworkReceiveAsync(e.BytesTransferred);
-
+            if(networkBufferProcessingTask.IsCompletedSuccessfully)
+            {
+                NetworkBufferProcessed(networkBufferProcessingTask, sender, e);
+                return;
+            }
             networkBufferProcessingTask.ContinueWith((res) =>
             {
-                if (res.IsCompletedSuccessfully)
-                {
-                    e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
-                    if (!e.AcceptSocket.ReceiveAsync(e))
-                    {
-                        RecvEventArg_Completed(sender, e);
-                    }
-                }
-                else if (res.IsFaulted)
-                {
-                    var ex = res.Exception.InnerException;
-                    if (ex is ObjectDisposedException ex2 && ex2.ObjectName == "System.Net.Sockets.Socket")
-                        logger?.LogTrace("Accept socket was disposed at RecvEventArg_Completed");
-                    else
-                        logger?.LogError(ex, "An error occurred at RecvEventArg_Completed");
-                    Dispose(e);
-                }
+                NetworkBufferProcessed(res, sender, e);
 
             });
+        }
+
+        void NetworkBufferProcessed(Task result, object sender, SocketAsyncEventArgs e)
+        {
+            if (result.IsCompletedSuccessfully)
+            {
+                e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
+                if (!e.AcceptSocket.ReceiveAsync(e))
+                {
+                    RecvEventArg_Completed(sender, e);
+                }
+            }
+            else if (result.IsFaulted)
+            {
+                var ex = result.Exception.InnerException;
+                if (ex is ObjectDisposedException ex2 && ex2.ObjectName == "System.Net.Sockets.Socket")
+                    logger?.LogTrace("Accept socket was disposed at RecvEventArg_Completed");
+                else
+                    logger?.LogError(ex, "An error occurred at RecvEventArg_Completed");
+                Dispose(e);
+            }
         }
 
         unsafe void AllocateNetworkReceiveBuffer()
