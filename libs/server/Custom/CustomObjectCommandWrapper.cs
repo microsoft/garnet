@@ -8,16 +8,17 @@ namespace Garnet.server
     /// </summary>
     class CustomObjectCommandWrapper
     {
+        static readonly int MinMapSize = 8;
+
         public readonly byte id;
         public readonly CustomObjectFactory factory;
-        public int CommandId = 0;
-        public readonly CustomObjectCommand[] commandMap;
+        public readonly ExtensibleCustomCommandMap<CustomObjectCommand> commandMap;
 
         public CustomObjectCommandWrapper(byte id, CustomObjectFactory functions)
         {
             this.id = id;
             this.factory = functions;
-            this.commandMap = new CustomObjectCommand[byte.MaxValue];
+            this.commandMap = new ExtensibleCustomCommandMap<CustomObjectCommand>(MinMapSize, byte.MaxValue);
         }
     }
 }

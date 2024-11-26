@@ -13,7 +13,7 @@ namespace Garnet.server
     /// </summary>
     public sealed class GarnetObjectSerializer : BinaryObjectSerializer<IGarnetObject>
     {
-        readonly CustomObjectCommandWrapper[] customCommands;
+        readonly CustomObjectCommandMap customCommands;
 
         /// <summary>
         /// Constructor

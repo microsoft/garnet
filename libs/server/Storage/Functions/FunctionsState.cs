@@ -12,15 +12,15 @@ namespace Garnet.server
     internal sealed class FunctionsState
     {
         public readonly TsavoriteLog appendOnlyFile;
-        public readonly CustomRawStringCommand[] customCommands;
-        public readonly CustomObjectCommandWrapper[] customObjectCommands;
+        public readonly CustomCommandMap customCommands;
+        public readonly CustomObjectCommandMap customObjectCommands;
         public readonly WatchVersionMap watchVersionMap;
         public readonly MemoryPool<byte> memoryPool;
         public readonly CacheSizeTracker objectStoreSizeTracker;
         public readonly GarnetObjectSerializer garnetObjectSerializer;
         public bool StoredProcMode;
 
-        public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomRawStringCommand[] customCommands, CustomObjectCommandWrapper[] customObjectCommands,
+        public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandMap customCommands, CustomObjectCommandMap customObjectCommands,
             MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, GarnetObjectSerializer garnetObjectSerializer)
         {
             this.appendOnlyFile = appendOnlyFile;

@@ -22,10 +22,11 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi;
     }
 
-    class CustomProcedureWrapper
+    class CustomProcedureWrapper : ICustomCommand
     {
+        public byte[] Name { get; }
+
         public readonly string NameStr;
-        public readonly byte[] Name;
         public readonly byte Id;
         public readonly Func<CustomProcedure> CustomProcedureFactory;
 
@@ -40,7 +41,7 @@ namespace Garnet.server
             Debug.Assert(customCommandManager != null);
 
             NameStr = name.ToUpperInvariant();
-            Name = System.Text.Encoding.ASCII.GetBytes(NameStr);
+            this.Name = System.Text.Encoding.ASCII.GetBytes(NameStr);
             Id = id;
             CustomProcedureFactory = customProcedureFactory;
         }
