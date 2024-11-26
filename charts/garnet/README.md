@@ -32,7 +32,7 @@ helm delete garnet
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity |
-| containers.args | list | `["--port","6379","-m","128m","-i","128m"]` | Containers args |
+| containers.args | list | `[]` | Containers args |
 | containers.livenessProbe | object | `{}` | Containers livenessProbe |
 | containers.port | int | `6379` | Containers port |
 | containers.readinessProbe | object | `{}` | Containers livenessProbe |
