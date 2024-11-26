@@ -85,7 +85,7 @@ namespace Garnet.server
         {
             int idx = (int)cmd;
             disposeLock.WriteLock();
-            if(metrics != null)
+            if (metrics != null)
             {
                 metrics[idx].latency[PriorVersion].Reset();
             }
