@@ -198,6 +198,26 @@ namespace Garnet.server
             return garnetApi.SortedSetScan(key, cursor, match, count, out items);
         }
 
+        /// <inheritdoc />
+        public GarnetStatus SortedSetIntersect(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        {
+            foreach (var key in keys)
+            {
+                garnetApi.WATCH(key, StoreType.Object);
+            }
+            return garnetApi.SortedSetIntersect(keys, weights, aggregateType, out pairs);
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetIntersectCard(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+        {
+            foreach (var key in keys)
+            {
+                garnetApi.WATCH(key, StoreType.Object);
+            }
+            return garnetApi.SortedSetIntersectCard(keys, limit, out count);
+        }
+
         #endregion
 
         #region List Methods

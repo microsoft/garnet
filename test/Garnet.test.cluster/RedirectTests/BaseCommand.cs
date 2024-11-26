@@ -1921,6 +1921,93 @@ namespace Garnet.test.cluster
         }
     }
 
+    internal class ZINTER : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(ZINTER);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return ["2", ssk[0], ssk[1]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return ["2", csk[0], csk[1]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[3];
+            setup[0] = new ArraySegment<string>(["ZADD", ssk[1], "1", "a"]);
+            setup[1] = new ArraySegment<string>(["ZADD", ssk[2], "2", "b"]);
+            setup[2] = new ArraySegment<string>(["ZADD", ssk[3], "3", "c"]);
+            return setup;
+        }
+    }
+
+    internal class ZINTERCARD : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(ZINTERCARD);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return ["2", ssk[0], ssk[1]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return ["2", csk[0], csk[1]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[3];
+            setup[0] = new ArraySegment<string>(["ZADD", ssk[1], "1", "a"]);
+            setup[1] = new ArraySegment<string>(["ZADD", ssk[2], "2", "b"]);
+            setup[2] = new ArraySegment<string>(["ZADD", ssk[3], "3", "c"]);
+            return setup;
+        }
+    }
+
+    internal class ZINTERSTORE : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(ZINTERSTORE);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "2", ssk[1], ssk[2]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], "2", csk[1], csk[2]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[3];
+            setup[0] = new ArraySegment<string>(["ZADD", ssk[1], "1", "a"]);
+            setup[1] = new ArraySegment<string>(["ZADD", ssk[2], "2", "b"]);
+            setup[2] = new ArraySegment<string>(["ZADD", ssk[3], "3", "c"]);
+            return setup;
+        }
+    }
+
     #endregion
 
     #region HashCommands

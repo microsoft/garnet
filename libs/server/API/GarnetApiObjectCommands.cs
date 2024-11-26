@@ -138,6 +138,18 @@ namespace Garnet.server
         public GarnetStatus SortedSetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
             => storageSession.ObjectScan(GarnetObjectType.SortedSet, key, cursor, match, count, out items, ref objectContext);
 
+        /// <inheritdoc />
+        public GarnetStatus SortedSetIntersect(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+            => storageSession.SortedSetIntersect(keys, weights, aggregateType, out pairs);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetIntersectCard(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+            => storageSession.SortedSetIntersectCard(keys, limit, out count);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetIntersectStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)
+            => storageSession.SortedSetIntersectStore(destinationKey, keys, weights, aggregateType, out count);
+
         #endregion
 
         #region Geospatial commands

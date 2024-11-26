@@ -5954,6 +5954,51 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ZInterACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZINTER",
+                [DoZInterAsync]
+            );
+
+            static async Task DoZInterAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("ZINTER", ["2", "foo", "bar"]);
+                ClassicAssert.AreEqual(0, val.Length);
+            }
+        }
+
+        [Test]
+        public async Task ZInterCardACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZINTERCARD",
+                [DoZInterCardAsync]
+            );
+
+            static async Task DoZInterCardAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("ZINTERCARD", ["2", "foo", "bar"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task ZInterStoreACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZINTERSTORE",
+                [DoZInterStoreAsync]
+            );
+
+            static async Task DoZInterStoreAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("ZINTERSTORE", ["keyZ", "2", "foo", "bar"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
         public async Task ZScanACLsAsync()
         {
             await CheckCommandsAsync(

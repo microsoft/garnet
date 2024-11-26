@@ -5638,6 +5638,174 @@
     ]
   },
   {
+    "Command": "ZINTER",
+    "Name": "ZINTER",
+    "Summary": "Returns the intersect of multiple sorted sets.",
+    "Group": "SortedSet",
+    "Complexity": "O(N*K)\u002BO(M*log(M)) worst case with N being the smallest input sorted set, K being the number of input sorted sets and M being the number of elements in the resulting sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WEIGHT",
+        "DisplayText": "weight",
+        "Type": "Integer",
+        "Token": "WEIGHTS",
+        "ArgumentFlags": "Optional, Multiple"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "AGGREGATE",
+        "Type": "OneOf",
+        "Token": "AGGREGATE",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SUM",
+            "DisplayText": "sum",
+            "Type": "PureToken",
+            "Token": "SUM"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIN",
+            "DisplayText": "min",
+            "Type": "PureToken",
+            "Token": "MIN"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MAX",
+            "DisplayText": "max",
+            "Type": "PureToken",
+            "Token": "MAX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHSCORES",
+        "DisplayText": "withscores",
+        "Type": "PureToken",
+        "Token": "WITHSCORES",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZINTERCARD",
+    "Name": "ZINTERCARD",
+    "Summary": "Returns the number of members of the intersect of multiple sorted sets.",
+    "Group": "SortedSet",
+    "Complexity": "O(N*K) worst case with N being the smallest input sorted set, K being the number of input sorted sets.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "LIMIT",
+        "DisplayText": "limit",
+        "Type": "Integer",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZINTERSTORE",
+    "Name": "ZINTERSTORE",
+    "Summary": "Stores the intersect of multiple sorted sets in a key.",
+    "Group": "SortedSet",
+    "Complexity": "O(N*K)\u002BO(M*log(M)) worst case with N being the smallest input sorted set, K being the number of input sorted sets and M being the number of elements in the resulting sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WEIGHT",
+        "DisplayText": "weight",
+        "Type": "Integer",
+        "Token": "WEIGHTS",
+        "ArgumentFlags": "Optional, Multiple"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "AGGREGATE",
+        "Type": "OneOf",
+        "Token": "AGGREGATE",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SUM",
+            "DisplayText": "sum",
+            "Type": "PureToken",
+            "Token": "SUM"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIN",
+            "DisplayText": "min",
+            "Type": "PureToken",
+            "Token": "MIN"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MAX",
+            "DisplayText": "max",
+            "Type": "PureToken",
+            "Token": "MAX"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "ZLEXCOUNT",
     "Name": "ZLEXCOUNT",
     "Summary": "Returns the number of members in a sorted set within a lexicographical range.",

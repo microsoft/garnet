@@ -1086,6 +1086,218 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, actualMembers.Length);
         }
 
+        [Test]
+        public void CanDoZInterWithSE()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Setup test data
+            db.SortedSetAdd("zset1",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("three", 3)
+            ]);
+
+            db.SortedSetAdd("zset2",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("four", 4)
+            ]);
+
+            db.SortedSetAdd("zset3",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("three", 3),
+                new SortedSetEntry("five", 5)
+            ]);
+
+            // Test basic intersection
+            var result = db.SortedSetCombine(SetOperation.Intersect, [new RedisKey("zset1"), new RedisKey("zset2")]);
+            ClassicAssert.AreEqual(2, result.Length);
+            ClassicAssert.AreEqual("one", result[0].ToString());
+            ClassicAssert.AreEqual("two", result[1].ToString());
+
+            // Test three-way intersection
+            result = db.SortedSetCombine(SetOperation.Intersect, [new RedisKey("zset1"), new RedisKey("zset2"), new RedisKey("zset3")]);
+            ClassicAssert.AreEqual(1, result.Length);
+            ClassicAssert.AreEqual("one", result[0].ToString());
+
+            // Test with scores
+            var resultWithScores = db.SortedSetCombineWithScores(SetOperation.Intersect, [new RedisKey("zset1"), new RedisKey("zset2")]);
+            ClassicAssert.AreEqual(2, resultWithScores.Length);
+            ClassicAssert.AreEqual("one", resultWithScores[0].Element.ToString());
+            ClassicAssert.AreEqual(2, resultWithScores[0].Score);
+            ClassicAssert.AreEqual("two", resultWithScores[1].Element.ToString());
+            ClassicAssert.AreEqual(4, resultWithScores[1].Score);
+        }
+
+        [Test]
+        [TestCase(2, "ZINTER 2 zset1 zset2", new[] { "one", "two" }, new[] { 2.0, 4.0 }, Description = "Basic intersection")]
+        [TestCase(3, "ZINTER 3 zset1 zset2 zset3", new[] { "one" }, new[] { 3.0 }, Description = "Three-way intersection")]
+        [TestCase(2, "ZINTER 2 zset1 zset2 WITHSCORES", new[] { "one", "two" }, new[] { 2.0, 4.0 }, Description = "With scores")]
+        [TestCase(2, "ZINTER 2 zset1 zset2 WEIGHTS 2 3 WITHSCORES", new[] { "one", "two" }, new[] { 5.0, 10.0 }, Description = "With weights 2,3 multiplied by scores")]
+        [TestCase(2, "ZINTER 2 zset1 zset2 AGGREGATE MAX WITHSCORES", new[] { "one", "two" }, new[] { 1.0, 2.0 }, Description = "Using maximum of scores")]
+        [TestCase(2, "ZINTER 2 zset1 zset2 AGGREGATE MIN WITHSCORES", new[] { "one", "two" }, new[] { 1.0, 2.0 }, Description = "Using minimum of scores")]
+        [TestCase(2, "ZINTER 2 zset1 zset2 WEIGHTS 2 3 AGGREGATE SUM WITHSCORES", new[] { "one", "two" }, new[] { 5.0, 10.0 }, Description = "Weights with sum aggregation")]
+        public void CanDoZInterWithSE(int numKeys, string command, string[] expectedValues, double[] expectedScores)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Setup test data
+            db.SortedSetAdd("zset1",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("three", 3)
+            ]);
+
+            db.SortedSetAdd("zset2",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("four", 4)
+            ]);
+
+            db.SortedSetAdd("zset3",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("three", 3),
+                new SortedSetEntry("five", 5)
+            ]);
+
+            // Test intersection operation
+            if (command.Contains("WITHSCORES"))
+            {
+                var resultWithScores = db.SortedSetCombineWithScores(SetOperation.Intersect,
+                    command.Contains("WEIGHTS") ? [new RedisKey("zset1"), new RedisKey("zset2")] :
+                        Enumerable.Range(1, numKeys).Select(i => new RedisKey($"zset{i}")).ToArray(),
+                    command.Contains("WEIGHTS") ? [2.0, 3.0] : null,
+                    command.Contains("MAX") ? Aggregate.Max :
+                    command.Contains("MIN") ? Aggregate.Min : Aggregate.Sum);
+
+                ClassicAssert.AreEqual(expectedValues.Length, resultWithScores.Length);
+                for (int i = 0; i < expectedValues.Length; i++)
+                {
+                    ClassicAssert.AreEqual(expectedValues[i], resultWithScores[i].Element.ToString());
+                    ClassicAssert.AreEqual(expectedScores[i], resultWithScores[i].Score);
+                }
+            }
+            else
+            {
+                var result = db.SortedSetCombine(SetOperation.Intersect,
+                    Enumerable.Range(1, numKeys).Select(i => new RedisKey($"zset{i}")).ToArray());
+
+                ClassicAssert.AreEqual(expectedValues.Length, result.Length);
+                for (int i = 0; i < expectedValues.Length; i++)
+                {
+                    ClassicAssert.AreEqual(expectedValues[i], result[i].ToString());
+                }
+            }
+        }
+
+        [Test]
+        public void CanDoZInterCardWithSE()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Setup test data
+            db.SortedSetAdd("zset1",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("three", 3)
+            ]);
+
+            db.SortedSetAdd("zset2",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("four", 4)
+            ]);
+
+            db.SortedSetAdd("zset3",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("three", 3),
+                new SortedSetEntry("five", 5)
+            ]);
+
+            // Test basic intersection cardinality
+            var result = (long)db.Execute("ZINTERCARD", "2", "zset1", "zset2");
+            ClassicAssert.AreEqual(2, result);
+
+            // Test three-way intersection cardinality
+            result = (long)db.Execute("ZINTERCARD", "3", "zset1", "zset2", "zset3");
+            ClassicAssert.AreEqual(1, result);
+
+            // Test with limit
+            result = (long)db.Execute("ZINTERCARD", "2", "zset1", "zset2", "LIMIT", "1");
+            ClassicAssert.AreEqual(1, result);
+        }
+
+        [Test]
+        public void CanDoZInterStoreWithSE()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Setup test data
+            db.SortedSetAdd("zset1",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("three", 3)
+            ]);
+
+            db.SortedSetAdd("zset2",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("four", 4)
+            ]);
+
+            // Test basic intersection store
+            var result = db.SortedSetCombineAndStore(SetOperation.Intersect, "dest", [new RedisKey("zset1"), new RedisKey("zset2")]);
+            ClassicAssert.AreEqual(2, result);
+
+            var storedValues = db.SortedSetRangeByScoreWithScores("dest");
+            ClassicAssert.AreEqual(2, storedValues.Length);
+            ClassicAssert.AreEqual("one", storedValues[0].Element.ToString());
+            ClassicAssert.AreEqual(2, storedValues[0].Score); // Sum of scores
+            ClassicAssert.AreEqual("two", storedValues[1].Element.ToString());
+            ClassicAssert.AreEqual(4, storedValues[1].Score); // Sum of scores
+
+            // Test with weights
+            var weights = new double[] { 2, 3 };
+            result = db.SortedSetCombineAndStore(SetOperation.Intersect, "dest", [new RedisKey("zset1"), new RedisKey("zset2")], weights);
+            ClassicAssert.AreEqual(2, result);
+
+            storedValues = db.SortedSetRangeByScoreWithScores("dest");
+            ClassicAssert.AreEqual(2, storedValues.Length);
+            ClassicAssert.AreEqual("one", storedValues[0].Element.ToString());
+            ClassicAssert.AreEqual(5, storedValues[0].Score); // Weighted sum
+            ClassicAssert.AreEqual("two", storedValues[1].Element.ToString());
+            ClassicAssert.AreEqual(10, storedValues[1].Score); // Weighted sum
+
+            // Test with MAX aggregate
+            var result2 = (long)db.Execute("ZINTERSTORE", "dest", "2", "zset1", "zset2", "AGGREGATE", "MAX");
+            ClassicAssert.AreEqual(2, result2);
+
+            storedValues = db.SortedSetRangeByScoreWithScores("dest");
+            ClassicAssert.AreEqual(2, storedValues.Length);
+            ClassicAssert.AreEqual(1, storedValues[0].Score); // MAX of scores
+            ClassicAssert.AreEqual(2, storedValues[1].Score); // MAX of scores
+
+            // Test error cases
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("ZINTERSTORE", "dest"));
+            ClassicAssert.AreEqual(string.Format(CmdStrings.GenericErrWrongNumArgs, "ZINTERSTORE"), ex.Message);
+        }
+
         #endregion
 
         #region LightClientTests
@@ -2079,6 +2291,7 @@ namespace Garnet.test
             zdiffResult = lightClientRequest.SendCommandChunks("ZDIFF 2 dadi seconddadi", bytesSent, 3);
             expectedResponse = "*2\r\n$6\r\ncinque\r\n$3\r\nsei\r\n";
             actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
@@ -2536,6 +2749,136 @@ namespace Garnet.test
         }
 
         private static string FormatWrongNumOfArgsError(string commandName) => $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";
+    
+        [Test]
+        [TestCase(2, "ZINTER 2 zset1 zset2", Description = "Basic intersection")]
+        [TestCase(3, "ZINTER 3 zset1 zset2 zset3", Description = "Three-way intersection")]
+        [TestCase(2, "ZINTER 2 zset1 zset2 WITHSCORES", Description = "With scores")]
+        public void CanDoZInter(int numKeys, string command)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            
+            // Setup test data
+            lightClientRequest.SendCommand("ZADD zset1 1 one 2 two 3 three");
+            lightClientRequest.SendCommand("ZADD zset2 1 one 2 two 4 four");
+            lightClientRequest.SendCommand("ZADD zset3 1 one 3 three 5 five");
+
+            var response = lightClientRequest.SendCommand(command);
+            if (command.Contains("WITHSCORES"))
+            {
+                if (numKeys == 2)
+                {
+                    var expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n1\r\n$3\r\ntwo\r\n$1\r\n2\r\n";
+                    var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+                    ClassicAssert.AreEqual(expectedResponse, actualValue);
+                }
+            }
+            else
+            {
+                if (numKeys == 2)
+                {
+                    var expectedResponse = "*2\r\n$3\r\none\r\n$3\r\ntwo\r\n";
+                    var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+                    ClassicAssert.AreEqual(expectedResponse, actualValue);
+                }
+                else if (numKeys == 3)
+                {
+                    var expectedResponse = "*1\r\n$3\r\none\r\n";
+                    var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+                    ClassicAssert.AreEqual(expectedResponse, actualValue);
+                }
+            }
+        }
+
+        [Test]
+        [TestCase("ZINTERCARD 2 zset1 zset2", 2, Description = "Basic intersection cardinality")]
+        [TestCase("ZINTERCARD 3 zset1 zset2 zset3", 1, Description = "Three-way intersection cardinality")]
+        [TestCase("ZINTERCARD 2 zset1 zset2 LIMIT 1", 1, Description = "With limit")]
+        public void CanDoZInterCard(string command, int expectedCount)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            
+            // Setup test data
+            lightClientRequest.SendCommand("ZADD zset1 1 one 2 two 3 three");
+            lightClientRequest.SendCommand("ZADD zset2 1 one 2 two 4 four");
+            lightClientRequest.SendCommand("ZADD zset3 1 one 3 three 5 five");
+
+            var response = lightClientRequest.SendCommand(command);
+            var expectedResponse = $":{expectedCount}\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        [TestCase("ZINTERSTORE dest 2 zset1 zset2", 2, Description = "Basic intersection store")]
+        [TestCase("ZINTERSTORE dest 2 zset1 zset2 WEIGHTS 2 3", 2, Description = "With weights")]
+        [TestCase("ZINTERSTORE dest 2 zset1 zset2 AGGREGATE MAX", 2, Description = "With MAX aggregation")]
+        [TestCase("ZINTERSTORE dest 2 zset1 zset2 AGGREGATE MIN", 2, Description = "With MIN aggregation")]
+        public void CanDoZInterStore(string command, int expectedCount)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            
+            // Setup test data
+            lightClientRequest.SendCommand("ZADD zset1 1 one 2 two 3 three");
+            lightClientRequest.SendCommand("ZADD zset2 1 one 2 two 4 four");
+
+            var response = lightClientRequest.SendCommand(command);
+            var expectedResponse = $":{expectedCount}\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // Verify stored results
+            response = lightClientRequest.SendCommand("ZRANGE dest 0 -1 WITHSCORES");
+            if (command.Contains("WEIGHTS"))
+            {
+                expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n5\r\n$3\r\ntwo\r\n$2\r\n10\r\n";
+            }
+            else if (command.Contains("MAX"))
+            {
+                expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n1\r\n$3\r\ntwo\r\n$1\r\n2\r\n";
+            }
+            else if (command.Contains("MIN"))
+            {
+                expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n1\r\n$3\r\ntwo\r\n$1\r\n2\r\n";
+            }
+            else
+            {
+                expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n2\r\n$3\r\ntwo\r\n$1\r\n4\r\n";
+            }
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanHandleZInterErrors()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            
+            // Test with wrong number of keys
+            var response = lightClientRequest.SendCommand("ZINTER");
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, "ZINTER")}\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // Test with wrong key type
+            lightClientRequest.SendCommand("SET wrongtype string");
+            response = lightClientRequest.SendCommand("ZINTER 2 wrongtype zset2");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // Test ZINTERCARD with invalid limit
+            response = lightClientRequest.SendCommand("ZINTERCARD 2 zset1 zset2 LIMIT invalid");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER)}\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // Test ZINTERSTORE with invalid weights
+            response = lightClientRequest.SendCommand("ZINTERSTORE dest 2 zset1 zset2 WEIGHTS invalid 2");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT)}\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
     }
 
     public class SortedSetComparer : IComparer<(double, byte[])>

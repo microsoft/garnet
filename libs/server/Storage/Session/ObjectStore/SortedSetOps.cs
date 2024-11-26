@@ -927,5 +927,194 @@ namespace Garnet.server
 
             return GarnetStatus.OK;
         }
+
+        /// <summary>
+        /// Computes the intersection of multiple sorted sets and returns the members and their scores.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="keys"></param>
+        /// <param name="pairs"></param>
+        /// <param name="objectContext"></param>
+        /// <returns></returns>
+        public GarnetStatus SortedSetIntersection<TObjectContext>(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, ref TObjectContext objectContext, out Dictionary<byte[], double> pairs)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            pairs = default;
+
+            var statusOp = GET(keys[0].ToArray(), out var firstObj, ref objectContext);
+            if (statusOp == GarnetStatus.OK)
+            {
+                if (firstObj.garnetObject is not SortedSetObject firstSortedSet)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                if (keys.Length == 1)
+                {
+                    pairs = firstSortedSet.Dictionary;
+                    return GarnetStatus.OK;
+                }
+
+                // Initialize result with first set
+                pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
+                foreach (var kvp in firstSortedSet.Dictionary)
+                {
+                    pairs[kvp.Key] = kvp.Value * (weights?.Length > 0 ? weights[0] : 1.0);
+                }
+
+                // Intersect with remaining sets
+                for (var i = 1; i < keys.Length; i++)
+                {
+                    statusOp = GET(keys[i].ToArray(), out var nextObj, ref objectContext);
+                    if (statusOp != GarnetStatus.OK)
+                    {
+                        pairs = default;
+                        return statusOp;
+                    }
+
+                    if (nextObj.garnetObject is not SortedSetObject nextSortedSet)
+                    {
+                        pairs = default;
+                        return GarnetStatus.WRONGTYPE;
+                    }
+
+                    foreach (var kvp in pairs)
+                    {
+                        if (!nextSortedSet.Dictionary.TryGetValue(kvp.Key, out var score))
+                        {
+                            pairs.Remove(kvp.Key);
+                        }
+                        else
+                        {
+                            var weightedScore = score * (weights?.Length > i ? weights[i] : 1.0);
+                            pairs[kvp.Key] = aggregateType switch
+                            {
+                                SortedSetAggregateType.Sum => kvp.Value + weightedScore,
+                                SortedSetAggregateType.Min => Math.Min(kvp.Value, weightedScore),
+                                SortedSetAggregateType.Max => Math.Max(kvp.Value, weightedScore),
+                                _ => kvp.Value + weightedScore // Default to SUM
+                            };
+                        }
+                    }
+
+                    // If intersection becomes empty, we can stop early
+                    if (pairs.Count == 0)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// Computes the cardinality of the intersection of multiple sorted sets.
+        /// </summary>
+        public GarnetStatus SortedSetIntersectCard(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+        {
+            count = 0;
+
+            var status = SortedSetIntersect(keys, null, SortedSetAggregateType.Sum, out var pairs);
+            if (status == GarnetStatus.OK && pairs != null)
+            {
+                count = limit.HasValue ? Math.Min(pairs.Count, limit.Value) : pairs.Count;
+            }
+
+            return status;
+        }
+
+        /// <summary>
+        /// Computes the intersection of multiple sorted sets and stores the resulting sorted set at destinationKey.
+        /// </summary>
+        public GarnetStatus SortedSetIntersectStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)
+        {
+            count = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            var objectContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                var status = SortedSetIntersection(keys, weights, aggregateType, ref objectContext, out var pairs);
+
+                if (status != GarnetStatus.OK)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                count = pairs?.Count ?? 0;
+
+                if (count > 0)
+                {
+                    SortedSetObject newSetObject = new();
+                    foreach (var (element, score) in pairs)
+                    {
+                        newSetObject.Add(element, score);
+                    }
+                    _ = SET(destinationKey.ToArray(), newSetObject, ref objectContext);
+                }
+                else
+                {
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                        ref lockableContext, ref objectContext);
+                }
+
+                return status;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
+
+        /// <summary>
+        /// Computes the intersection of multiple sorted sets and returns the result with optional weights and aggregate type.
+        /// </summary>
+        public GarnetStatus SortedSetIntersect(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        {
+            pairs = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                txnManager.Run(true);
+            }
+
+            var objectContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                return SortedSetIntersection(keys, weights, aggregateType, ref objectContext, out pairs);
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
     }
 }

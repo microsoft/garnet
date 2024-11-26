@@ -500,6 +500,17 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref ObjectInput input, ref SpanByteAndMemory output);
 
+        /// <summary>
+        /// Intersects multiple sorted sets and stores the result in the destination key.
+        /// </summary>
+        /// <param name="destinationKey">The key where the result will be stored.</param>
+        /// <param name="keys">The keys of the sorted sets to intersect.</param>
+        /// <param name="weights">The weights to apply to each sorted set during the intersection.</param>
+        /// <param name="aggregateType">The type of aggregation to use for the intersection.</param>
+        /// <param name="count">The number of elements in the resulting sorted set.</param>
+        /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
+        GarnetStatus SortedSetIntersectStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count);
+
         #endregion
 
         #region Set Methods
@@ -1273,6 +1284,25 @@ namespace Garnet.server
         /// <param name="items">The list of items for the response</param>
         /// <returns></returns>
         GarnetStatus SortedSetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items);
+
+        /// <summary>
+        /// Intersects multiple sorted sets and returns the result.
+        /// </summary>
+        /// <param name="keys">The keys of the sorted sets to intersect.</param>
+        /// <param name="weights">The weights to apply to each sorted set.</param>
+        /// <param name="aggregateType">The type of aggregation to perform.</param>
+        /// <param name="pairs">The resulting dictionary of intersected elements and their scores.</param>
+        /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
+        GarnetStatus SortedSetIntersect(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs);
+
+        /// <summary>
+        /// Computes the intersection of multiple sorted sets and counts the elements.
+        /// </summary>
+        /// <param name="keys">Input sorted set keys</param>
+        /// <param name="limit">Optional max count limit</param> 
+        /// <param name="count">The count of elements in the intersection</param>
+        /// <returns>Operation status</returns>
+        GarnetStatus SortedSetIntersectCard(ReadOnlySpan<ArgSlice> keys, int? limit, out int count);
 
         #endregion
 

@@ -111,6 +111,11 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> STOREDIST => "STOREDIST"u8;
         public static ReadOnlySpan<byte> WITHDIST => "WITHDIST"u8;
         public static ReadOnlySpan<byte> WITHHASH => "WITHHASH"u8;
+        public static ReadOnlySpan<byte> WEIGHTS => "WEIGHTS"u8;
+        public static ReadOnlySpan<byte> AGGREGATE => "AGGREGATE"u8;
+        public static ReadOnlySpan<byte> SUM => "SUM"u8;
+        public static ReadOnlySpan<byte> MIN => "MIN"u8;
+        public static ReadOnlySpan<byte> MAX => "MAX"u8;
 
         /// <summary>
         /// Response strings
