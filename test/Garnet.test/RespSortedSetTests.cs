@@ -2749,7 +2749,7 @@ namespace Garnet.test
         }
 
         private static string FormatWrongNumOfArgsError(string commandName) => $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";
-    
+
         [Test]
         [TestCase(2, "ZINTER 2 zset1 zset2", Description = "Basic intersection")]
         [TestCase(3, "ZINTER 3 zset1 zset2 zset3", Description = "Three-way intersection")]
@@ -2757,7 +2757,7 @@ namespace Garnet.test
         public void CanDoZInter(int numKeys, string command)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            
+
             // Setup test data
             lightClientRequest.SendCommand("ZADD zset1 1 one 2 two 3 three");
             lightClientRequest.SendCommand("ZADD zset2 1 one 2 two 4 four");
@@ -2797,7 +2797,7 @@ namespace Garnet.test
         public void CanDoZInterCard(string command, int expectedCount)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            
+
             // Setup test data
             lightClientRequest.SendCommand("ZADD zset1 1 one 2 two 3 three");
             lightClientRequest.SendCommand("ZADD zset2 1 one 2 two 4 four");
@@ -2817,7 +2817,7 @@ namespace Garnet.test
         public void CanDoZInterStore(string command, int expectedCount)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            
+
             // Setup test data
             lightClientRequest.SendCommand("ZADD zset1 1 one 2 two 3 three");
             lightClientRequest.SendCommand("ZADD zset2 1 one 2 two 4 four");
@@ -2853,7 +2853,7 @@ namespace Garnet.test
         public void CanHandleZInterErrors()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            
+
             // Test with wrong number of keys
             var response = lightClientRequest.SendCommand("ZINTER");
             var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, "ZINTER")}\r\n";

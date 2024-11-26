@@ -920,7 +920,7 @@ namespace Garnet.server
             while (currentArg < parseState.Count)
             {
                 var arg = parseState.GetArgSliceByRef(currentArg).ReadOnlySpan;
-                
+
                 if (arg.SequenceEqual(CmdStrings.WITHSCORES))
                 {
                     includeWithScores = true;
@@ -1116,7 +1116,7 @@ namespace Garnet.server
             while (currentArg < parseState.Count)
             {
                 var arg = parseState.GetArgSliceByRef(currentArg).ReadOnlySpan;
-                
+
                 if (arg.SequenceEqual(CmdStrings.WEIGHTS))
                 {
                     currentArg++;
