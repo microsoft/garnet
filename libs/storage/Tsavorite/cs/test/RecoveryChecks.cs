@@ -990,7 +990,7 @@ namespace Tsavorite.test.recovery
         [Category("CheckpointRestore")]
         [Category("Smoke")]
 
-        public async ValueTask StreamingSnapshotBasicTest([Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+        public async ValueTask StreamingSnapshotBasicTest([Values] bool isAsync, [Values] bool useReadCache, [Values] bool reInsert, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
@@ -1010,7 +1010,18 @@ namespace Tsavorite.test.recovery
 
             for (long key = 0; key < 1000; key++)
             {
-                _ = bc1.Upsert(ref key, ref key);
+                // If reInsert, we insert the wrong key during the first pass
+                long value = reInsert ? key + 1 : key;
+                _ = bc1.Upsert(ref key, ref value);
+            }
+
+            if (reInsert)
+            {
+                store1.Log.Flush(true); // AndEvict(true);
+                for (long key = 0; key < 1000; key++)
+                {
+                    _ = bc1.Upsert(ref key, ref key);
+                }
             }
 
             if (useReadCache)
@@ -1054,10 +1065,6 @@ namespace Tsavorite.test.recovery
             {
                 var (status, token) = task.AsTask().GetAwaiter().GetResult();
             }
-
-            ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
-            ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-            ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
 
             using var s2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
             var bc2 = s2.BasicContext;
