@@ -27,6 +27,14 @@ jobs:
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
+      - name: Extract version number from Version.props
+        run: |
+          export VERSION_PROPS=$(awk -F'[<>]' '/VersionPrefix/{print $3}' Version.props)
+
+      - name: Set helm chart appVersion
+        run: |
+          sed -i 's#Version.props#'"${VERSION_PROPS}"'#g' charts/garnet/Chart.yaml
+
       - name: Helm lint and package
         run: |
           mkdir .cr-release-packages
