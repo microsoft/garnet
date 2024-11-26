@@ -10,56 +10,56 @@ using System.Threading.Tasks;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Tsavorite Context implementation that allows manual control of record locking and epoch management. For advanced use only.
+    /// Tsavorite Context implementation that allows Transactional control of locking and automatic epoch management. For advanced use only.
     /// </summary>
-    public readonly struct LockableContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> : ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>, ILockableContext<TKey>
+    public readonly struct TransactionalContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> : ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>, ITransactionalContext<TKey>
         where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession;
-        readonly SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator> sessionFunctions;
+        readonly SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, TransactionalSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator> sessionFunctions;
 
         /// <inheritdoc/>
         public bool IsNull => clientSession is null;
 
         const int KeyLockMaxRetryAttempts = 1000;
 
-        internal LockableContext(ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
+        internal TransactionalContext(ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
         {
             this.clientSession = clientSession;
             sessionFunctions = new(clientSession);
         }
 
-        #region Begin/EndLockable
+        #region Begin/EndTransaction
 
         /// <inheritdoc/>
-        public void BeginLockable() => clientSession.AcquireLockable(sessionFunctions);
+        public void BeginTransaction() => clientSession.AcquireTransactional(sessionFunctions);
 
         /// <inheritdoc/>
-        public void EndLockable() => clientSession.ReleaseLockable();
+        public void EndTransaction() => clientSession.ReleaseTransactional();
 
-        #endregion Begin/EndLockable
+        #endregion Begin/EndTransaction
 
         #region Key Locking
 
         /// <inheritdoc/>
-        public int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareKeyHashes(ref key1, ref key2);
+        public int CompareKeyHashes<TTransactionalKey>(TTransactionalKey key1, TTransactionalKey key2) where TTransactionalKey : ITransactionalKey => clientSession.CompareKeyHashes(ref key1, ref key2);
 
         /// <inheritdoc/>
-        public int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareKeyHashes(ref key1, ref key2);
+        public int CompareKeyHashes<TTransactionalKey>(ref TTransactionalKey key1, ref TTransactionalKey key2) where TTransactionalKey : ITransactionalKey => clientSession.CompareKeyHashes(ref key1, ref key2);
 
         /// <inheritdoc/>
-        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => clientSession.SortKeyHashes(keys);
+        public void SortKeyHashes<TTransactionalKey>(TTransactionalKey[] keys) where TTransactionalKey : ITransactionalKey => clientSession.SortKeyHashes(keys);
 
         /// <inheritdoc/>
-        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => clientSession.SortKeyHashes(keys, start, count);
+        public void SortKeyHashes<TTransactionalKey>(TTransactionalKey[] keys, int start, int count) where TTransactionalKey : ITransactionalKey => clientSession.SortKeyHashes(keys, start, count);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool DoManualLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession,
-                                                                   TLockableKey[] keys, int start, int count)
+        internal static bool DoTransactionalLock<TSessionFunctionsWrapper, TTransactionalKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession,
+                                                                   TTransactionalKey[] keys, int start, int count)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TLockableKey : ILockableKey
+            where TTransactionalKey : ITransactionalKey
         {
             // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code,
             // which of course allows the session to do shared operations as well, so we take the first occurrence of each key code.
@@ -77,7 +77,7 @@ namespace Tsavorite.core
                 if (currBucketIndex != prevBucketIndex)
                 {
                     prevBucketIndex = currBucketIndex;
-                    OperationStatus status = DoManualLock(clientSession, key);
+                    OperationStatus status = DoTransactionalLock(clientSession, key);
                     if (status == OperationStatus.SUCCESS)
                         continue;   // Success; continue to the next key.
 
@@ -98,14 +98,14 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool DoManualTryLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession,
-                                                                   TLockableKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken)
+        internal static bool DoTransactionalTryLock<TSessionFunctionsWrapper, TTransactionalKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession,
+                                                                   TTransactionalKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TLockableKey : ILockableKey
+            where TTransactionalKey : ITransactionalKey
         {
             // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code,
             // which of course allows the session to do shared operations as well, so we take the first occurrence of each key code.
-            // This is the same as DoManualLock but with timeout.
+            // This is the same as DoTransactionalLock but with timeout.
             var end = start + count - 1;
 
             // We can't start each retry with a full timeout because we might always fail if someone is not unlocking (e.g. another thread hangs
@@ -129,7 +129,7 @@ namespace Tsavorite.core
                         status = OperationStatus.CANCELED;
                     else
                     {
-                        status = DoManualLock(clientSession, key);
+                        status = DoTransactionalLock(clientSession, key);
                         if (status == OperationStatus.SUCCESS)
                             continue;   // Success; continue to the next key.
                     }
@@ -153,10 +153,10 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool DoManualTryPromoteLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession,
-                                                                   TLockableKey key, TimeSpan timeout, CancellationToken cancellationToken)
+        internal static bool DoManualTryPromoteLock<TSessionFunctionsWrapper, TTransactionalKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession,
+                                                                   TTransactionalKey key, TimeSpan timeout, CancellationToken cancellationToken)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TLockableKey : ILockableKey
+            where TTransactionalKey : ITransactionalKey
         {
             var startTime = DateTime.UtcNow;
             while (true)
@@ -166,7 +166,7 @@ namespace Tsavorite.core
                     ++clientSession.exclusiveLockCount;
                     --clientSession.sharedLockCount;
 
-                    // Success; the caller should update the ILockableKey.LockType so the unlock has the right type
+                    // Success; the caller should update the ITransactionalKey.LockType so the unlock has the right type
                     return true;
                 }
 
@@ -184,8 +184,8 @@ namespace Tsavorite.core
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static OperationStatus DoManualLock<TLockableKey>(ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession, TLockableKey key)
-            where TLockableKey : ILockableKey
+        internal static OperationStatus DoTransactionalLock<TTransactionalKey>(ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession, TTransactionalKey key)
+            where TTransactionalKey : ITransactionalKey
         {
             if (key.LockType == LockType.Shared)
             {
@@ -203,9 +203,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void DoManualUnlock<TLockableKey>(ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession,
-                                                                   TLockableKey[] keys, int start, int keyIdx)
-            where TLockableKey : ILockableKey
+        internal static void DoManualUnlock<TTransactionalKey>(ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession,
+                                                                   TTransactionalKey[] keys, int start, int keyIdx)
+            where TTransactionalKey : ITransactionalKey
         {
             // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code.
             // Unlock has to be done in the reverse order of locking, so we take the *last* occurrence of each key there, and keyIdx moves backward.
@@ -230,21 +230,21 @@ namespace Tsavorite.core
 
 
         /// <inheritdoc/>
-        public void Lock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Lock(keys, 0, keys.Length);
+        public void Lock<TTransactionalKey>(TTransactionalKey[] keys) where TTransactionalKey : ITransactionalKey => Lock(keys, 0, keys.Length);
 
         /// <inheritdoc/>
-        public void Lock<TLockableKey>(TLockableKey[] keys, int start, int count)
-            where TLockableKey : ILockableKey
+        public void Lock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count)
+            where TTransactionalKey : ITransactionalKey
         {
-            clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Lock()");
+            clientSession.CheckIsAcquiredTransactional();
+            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.Lock()");
             bool lockAquired = false;
             while (!lockAquired)
             {
                 clientSession.UnsafeResumeThread(sessionFunctions);
                 try
                 {
-                    lockAquired = DoManualLock(sessionFunctions, clientSession, keys, start, count);
+                    lockAquired = DoTransactionalLock(sessionFunctions, clientSession, keys, start, count);
                 }
                 finally
                 {
@@ -254,46 +254,46 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys)
-            where TLockableKey : ILockableKey
+        public bool TryLock<TTransactionalKey>(TTransactionalKey[] keys)
+            where TTransactionalKey : ITransactionalKey
             => TryLock(keys, 0, keys.Length, Timeout.InfiniteTimeSpan, cancellationToken: default);
 
         /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, TimeSpan timeout)
-            where TLockableKey : ILockableKey
+        public bool TryLock<TTransactionalKey>(TTransactionalKey[] keys, TimeSpan timeout)
+            where TTransactionalKey : ITransactionalKey
             => TryLock(keys, 0, keys.Length, timeout, cancellationToken: default);
 
         /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, TimeSpan timeout)
-            where TLockableKey : ILockableKey
+        public bool TryLock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count, TimeSpan timeout)
+            where TTransactionalKey : ITransactionalKey
             => TryLock(keys, start, count, timeout, cancellationToken: default);
 
         /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
+        public bool TryLock<TTransactionalKey>(TTransactionalKey[] keys, CancellationToken cancellationToken)
+            where TTransactionalKey : ITransactionalKey
             => TryLock(keys, 0, keys.Length, Timeout.InfiniteTimeSpan, cancellationToken);
 
         /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
+        public bool TryLock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count, CancellationToken cancellationToken)
+            where TTransactionalKey : ITransactionalKey
             => TryLock(keys, start, count, Timeout.InfiniteTimeSpan, cancellationToken);
 
         /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, TimeSpan timeout, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
+        public bool TryLock<TTransactionalKey>(TTransactionalKey[] keys, TimeSpan timeout, CancellationToken cancellationToken)
+            where TTransactionalKey : ITransactionalKey
             => TryLock(keys, 0, keys.Length, timeout, cancellationToken);
 
         /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
+        public bool TryLock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken)
+            where TTransactionalKey : ITransactionalKey
         {
-            clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Lock()");
+            clientSession.CheckIsAcquiredTransactional();
+            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.Lock()");
 
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                return DoManualTryLock(sessionFunctions, clientSession, keys, start, count, timeout, cancellationToken);
+                return DoTransactionalTryLock(sessionFunctions, clientSession, keys, start, count, timeout, cancellationToken);
             }
             finally
             {
@@ -302,26 +302,26 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public bool TryPromoteLock<TLockableKey>(TLockableKey key)
-            where TLockableKey : ILockableKey
+        public bool TryPromoteLock<TTransactionalKey>(TTransactionalKey key)
+            where TTransactionalKey : ITransactionalKey
             => TryPromoteLock(key, Timeout.InfiniteTimeSpan, cancellationToken: default);
 
         /// <inheritdoc/>
-        public bool TryPromoteLock<TLockableKey>(TLockableKey key, TimeSpan timeout)
-            where TLockableKey : ILockableKey
+        public bool TryPromoteLock<TTransactionalKey>(TTransactionalKey key, TimeSpan timeout)
+            where TTransactionalKey : ITransactionalKey
             => TryPromoteLock(key, timeout, cancellationToken: default);
 
         /// <inheritdoc/>
-        public bool TryPromoteLock<TLockableKey>(TLockableKey key, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
+        public bool TryPromoteLock<TTransactionalKey>(TTransactionalKey key, CancellationToken cancellationToken)
+            where TTransactionalKey : ITransactionalKey
             => TryPromoteLock(key, Timeout.InfiniteTimeSpan, cancellationToken);
 
         /// <inheritdoc/>
-        public bool TryPromoteLock<TLockableKey>(TLockableKey key, TimeSpan timeout, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
+        public bool TryPromoteLock<TTransactionalKey>(TTransactionalKey key, TimeSpan timeout, CancellationToken cancellationToken)
+            where TTransactionalKey : ITransactionalKey
         {
-            clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Lock()");
+            clientSession.CheckIsAcquiredTransactional();
+            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.Lock()");
 
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
@@ -335,14 +335,14 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public void Unlock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Unlock(keys, 0, keys.Length);
+        public void Unlock<TTransactionalKey>(TTransactionalKey[] keys) where TTransactionalKey : ITransactionalKey => Unlock(keys, 0, keys.Length);
 
         /// <inheritdoc/>
-        public void Unlock<TLockableKey>(TLockableKey[] keys, int start, int count)
-            where TLockableKey : ILockableKey
+        public void Unlock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count)
+            where TTransactionalKey : ITransactionalKey
         {
-            clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Unlock()");
+            clientSession.CheckIsAcquiredTransactional();
+            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.Unlock()");
 
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
@@ -740,7 +740,7 @@ namespace Tsavorite.core
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                return clientSession.store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
+                return clientSession.store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, TransactionalSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
                     ref key, keyHash, userContext, sessionFunctions);
             }
             finally
@@ -776,7 +776,7 @@ namespace Tsavorite.core
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                clientSession.store.InternalRefresh<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(sessionFunctions);
+                clientSession.store.InternalRefresh<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, TransactionalSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(sessionFunctions);
             }
             finally
             {

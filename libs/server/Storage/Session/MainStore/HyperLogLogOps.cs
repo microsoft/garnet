@@ -113,7 +113,7 @@ namespace Garnet.server
                 txnManager.Run(true);
             }
 
-            var currLockableContext = txnManager.LockableContext;
+            var currTransactionalContext = txnManager.TransactionalContext;
 
             try
             {
@@ -133,7 +133,7 @@ namespace Garnet.server
 
                     var srcKey = input.parseState.GetArgSliceByRef(i).SpanByte;
 
-                    var status = GET(ref srcKey, ref currInput, ref srcMergeBuffer, ref currLockableContext);
+                    var status = GET(ref srcKey, ref currInput, ref srcMergeBuffer, ref currTransactionalContext);
                     // Handle case merging source key does not exist
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
@@ -206,7 +206,7 @@ namespace Garnet.server
                 txnManager.Run(true);
             }
 
-            var currLockableContext = txnManager.LockableContext;
+            var currTransactionalContext = txnManager.TransactionalContext;
 
             try
             {
@@ -224,7 +224,7 @@ namespace Garnet.server
                     var mergeBuffer = new SpanByteAndMemory(readBuffer, hllBufferSize);
                     var srcKey = input.parseState.GetArgSliceByRef(i).SpanByte;
 
-                    var status = GET(ref srcKey, ref currInput, ref mergeBuffer, ref currLockableContext);
+                    var status = GET(ref srcKey, ref currInput, ref mergeBuffer, ref currTransactionalContext);
                     // Handle case merging source key does not exist
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
@@ -244,7 +244,7 @@ namespace Garnet.server
                     parseState.InitializeWithArgument(mergeSlice);
 
                     currInput.parseState = parseState;
-                    SET_Conditional(ref dstKey, ref currInput, ref mergeBuffer, ref currLockableContext);
+                    SET_Conditional(ref dstKey, ref currInput, ref mergeBuffer, ref currTransactionalContext);
 
                     #endregion
                 }

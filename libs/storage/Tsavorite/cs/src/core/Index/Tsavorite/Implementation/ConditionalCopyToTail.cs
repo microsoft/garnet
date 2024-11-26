@@ -32,7 +32,7 @@ namespace Tsavorite.core
                 ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, WriteReason writeReason, bool wantIO = true)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            bool callerHasTransientLock = stackCtx.recSrc.HasTransientSLock;
+            bool callerHasEphemeralLock = stackCtx.recSrc.HasEphemeralSLock;
 
             // We are called by one of ReadFromImmutable, CompactionConditionalCopyToTail, or ContinuePendingConditionalCopyToTail;
             // these have already searched to see if the record is present above minAddress, and stackCtx is set up for the first try.
@@ -43,7 +43,7 @@ namespace Tsavorite.core
             {
                 // ConditionalCopyToTail is different from the usual procedures, in that if we find a source record we don't lock--we exit with success.
                 // So we only lock for tag-chain stability during search.
-                if (callerHasTransientLock || TryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
+                if (callerHasEphemeralLock || TryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
                 {
                     try
                     {
@@ -53,8 +53,8 @@ namespace Tsavorite.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnException(this);
-                        if (!callerHasTransientLock)
-                            TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                        if (!callerHasEphemeralLock)
+                            EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
                     }
                 }
 

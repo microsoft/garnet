@@ -14,16 +14,16 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        bool IsManualLocking { get; }
+        bool IsTransactionalLocking { get; }
 
-        bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
-        bool TryLockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
-        void UnlockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
-        void UnlockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
+        bool TryLockEphemeralExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
+        bool TryLockEphemeralShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
+        void UnlockEphemeralExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
+        void UnlockEphemeralShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
     }
 
     /// <summary>
-    /// Basic (non-lockable) sessions must do transient locking.
+    /// Basic (non-lockable) sessions must do Ephemeral locking.
     /// </summary>
     /// <remarks>
     /// This struct contains no data fields; SessionFunctionsWrapper redirects with its ClientSession.
@@ -32,84 +32,84 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        public bool IsManualLocking => false;
+        public bool IsTransactionalLocking => false;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public bool TryLockEphemeralExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             if (!store.LockTable.TryLockExclusive(ref stackCtx.hei))
                 return false;
-            stackCtx.recSrc.SetHasTransientXLock();
+            stackCtx.recSrc.SetHasEphemeralXLock();
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public bool TryLockEphemeralShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             if (!store.LockTable.TryLockShared(ref stackCtx.hei))
                 return false;
-            stackCtx.recSrc.SetHasTransientSLock();
+            stackCtx.recSrc.SetHasEphemeralSLock();
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public void UnlockEphemeralExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             store.LockTable.UnlockExclusive(ref stackCtx.hei);
-            stackCtx.recSrc.ClearHasTransientXLock();
+            stackCtx.recSrc.ClearHasEphemeralXLock();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public void UnlockEphemeralShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             store.LockTable.UnlockShared(ref stackCtx.hei);
-            stackCtx.recSrc.ClearHasTransientSLock();
+            stackCtx.recSrc.ClearHasEphemeralSLock();
         }
     }
 
     /// <summary>
-    /// Lockable sessions are manual locking and thus must have already locked the record prior to an operation on it, so assert that.
+    /// Transactional sessions must have already locked the record prior to an operation on it, so assert that.
     /// </summary>
-    internal struct LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator> : ISessionLocker<TKey, TValue, TStoreFunctions, TAllocator>
+    internal struct TransactionalSessionLocker<TKey, TValue, TStoreFunctions, TAllocator> : ISessionLocker<TKey, TValue, TStoreFunctions, TAllocator>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        public bool IsManualLocking => true;
+        public bool IsTransactionalLocking => true;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public bool TryLockEphemeralExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             Debug.Assert(store.LockTable.IsLockedExclusive(ref stackCtx.hei),
-                        $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"
+                        $"Attempting to use a non-XLocked key in a Transactional context (requesting XLock):"
                         + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
                         + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public bool TryLockEphemeralShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             Debug.Assert(store.LockTable.IsLocked(ref stackCtx.hei),
-                        $"Attempting to use a non-Locked (S or X) key in a Lockable context (requesting SLock):"
+                        $"Attempting to use a non-Locked (S or X) key in a Transactional context (requesting SLock):"
                         + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
                         + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public void UnlockEphemeralExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             Debug.Assert(store.LockTable.IsLockedExclusive(ref stackCtx.hei),
-                        $"Attempting to unlock a non-XLocked key in a Lockable context (requesting XLock):"
+                        $"Attempting to unlock a non-XLocked key in a Transactional context (requesting XLock):"
                         + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
                         + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public void UnlockEphemeralShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             Debug.Assert(store.LockTable.IsLockedShared(ref stackCtx.hei),
-                        $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"
+                        $"Attempting to use a non-XLocked key in a Transactional context (requesting XLock):"
                         + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
                         + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
         }

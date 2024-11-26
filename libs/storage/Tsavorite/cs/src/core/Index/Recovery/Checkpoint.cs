@@ -89,7 +89,7 @@ namespace Tsavorite.core
         internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, long version)
         {
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
-            _hybridLogCheckpoint.info.manualLockingActive = hlogBase.NumActiveLockingSessions > 0;
+            _hybridLogCheckpoint.info.transactionsActive = hlogBase.NumActiveTransactionalSessions > 0;
         }
 
         internal long Compact<T1, T2, T3, T4, CompactionFunctions>(ISessionFunctions<TKey, TValue, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType)

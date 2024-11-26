@@ -59,9 +59,9 @@ namespace Tsavorite.core
         struct InternalStates
         {
             internal const int None = 0;
-            internal const int TransientSLock = 0x0001;    // LockTable
-            internal const int TransientXLock = 0x0002;    // LockTable
-            internal const int LockBits = TransientSLock | TransientXLock;
+            internal const int EphemeralSLock = 0x0001;    // LockTable
+            internal const int EphemeralXLock = 0x0002;    // LockTable
+            internal const int LockBits = EphemeralSLock | EphemeralXLock;
 
             internal const int MainLogSrc = 0x0100;
             internal const int ReadCacheSrc = 0x0200;
@@ -84,8 +84,8 @@ namespace Tsavorite.core
                     }
                 }
 
-                append(TransientSLock, nameof(TransientSLock));
-                append(TransientXLock, nameof(TransientXLock));
+                append(EphemeralSLock, nameof(EphemeralSLock));
+                append(EphemeralXLock, nameof(EphemeralXLock));
                 append(MainLogSrc, nameof(MainLogSrc));
                 append(ReadCacheSrc, nameof(ReadCacheSrc));
                 return sb.ToString();
@@ -95,22 +95,22 @@ namespace Tsavorite.core
         int internalState;
 
         /// <summary>
-        /// Set (and cleared) by caller to indicate whether we have a LockTable-based Transient Shared lock (does not include Manual locks; this is per-operation only).
+        /// Set (and cleared) by caller to indicate whether we have a LockTable-based Ephemeral Shared lock (does not include Manual locks; this is per-operation only).
         /// </summary>
-        internal readonly bool HasTransientSLock => (internalState & InternalStates.TransientSLock) != 0;
+        internal readonly bool HasEphemeralSLock => (internalState & InternalStates.EphemeralSLock) != 0;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetHasTransientSLock() => internalState |= InternalStates.TransientSLock;
+        internal void SetHasEphemeralSLock() => internalState |= InternalStates.EphemeralSLock;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearHasTransientSLock() => internalState &= ~InternalStates.TransientSLock;
+        internal void ClearHasEphemeralSLock() => internalState &= ~InternalStates.EphemeralSLock;
 
         /// <summary>
-        /// Set (and cleared) by caller to indicate whether we have a LockTable-based Transient Exclusive lock (does not include Manual locks; this is per-operation only).
+        /// Set (and cleared) by caller to indicate whether we have a LockTable-based Ephemeral Exclusive lock (does not include Manual locks; this is per-operation only).
         /// </summary>
-        internal readonly bool HasTransientXLock => (internalState & InternalStates.TransientXLock) != 0;
+        internal readonly bool HasEphemeralXLock => (internalState & InternalStates.EphemeralXLock) != 0;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetHasTransientXLock() => internalState |= InternalStates.TransientXLock;
+        internal void SetHasEphemeralXLock() => internalState |= InternalStates.EphemeralXLock;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearHasTransientXLock() => internalState &= ~InternalStates.TransientXLock;
+        internal void ClearHasEphemeralXLock() => internalState &= ~InternalStates.EphemeralXLock;
 
         /// <summary>
         /// Indicates whether we have any type of non-Manual lock.
@@ -158,7 +158,7 @@ namespace Tsavorite.core
             ClearHasMainLogSrc();
             ClearHasReadCacheSrc();
 
-            // HasTransientLock = ...;   Do not clear this; it is in the LockTable and must be preserved until unlocked
+            // HasEphemeralLock = ...;   Do not clear this; it is in the LockTable and must be preserved until unlocked
 
             LatestLogicalAddress = LogicalAddress = AbsoluteAddress(latestLogicalAddress);
             SetAllocator(srcAllocatorBase);

@@ -98,7 +98,7 @@ namespace Garnet.server
             }
 
             // Perform under unsafe epoch control for pointer safety.
-            var uc = txnManager.LockableUnsafeContext;
+            var uc = txnManager.TransactionalUnsafeContext;
 
             try
             {

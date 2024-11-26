@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Tsavorite Operations implementation that allows manual control of record epoch management. For advanced use only.
+    /// Tsavorite Operations implementation that allows manual control of epoch management. For advanced use only.
     /// </summary>
     public readonly struct UnsafeContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
         : ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>, IUnsafeContext

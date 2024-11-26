@@ -14,16 +14,16 @@ namespace Garnet.server
 
     internal sealed class TxnKeyComparison
     {
-        public LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
-        public LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext;
+        public TransactionalContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> transactionalContext;
+        public TransactionalContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreTransactionalContext;
 
         public readonly Comparison<TxnKeyEntry> comparisonDelegate;
 
-        internal TxnKeyComparison(LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext,
-                LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext)
+        internal TxnKeyComparison(TransactionalContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> transactionalContext,
+                TransactionalContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreTransactionalContext)
         {
-            this.lockableContext = lockableContext;
-            this.objectStoreLockableContext = objectStoreLockableContext;
+            this.transactionalContext = transactionalContext;
+            this.objectStoreTransactionalContext = objectStoreTransactionalContext;
             comparisonDelegate = Compare;
         }
 
@@ -35,9 +35,9 @@ namespace Garnet.server
             if (cmp != 0)
                 return cmp;
             if (key1.isObject)
-                return objectStoreLockableContext.CompareKeyHashes(ref key1, ref key2);
+                return objectStoreTransactionalContext.CompareKeyHashes(ref key1, ref key2);
             else
-                return lockableContext.CompareKeyHashes(ref key1, ref key2);
+                return transactionalContext.CompareKeyHashes(ref key1, ref key2);
         }
     }
 }

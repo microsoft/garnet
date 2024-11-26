@@ -206,7 +206,7 @@ namespace Garnet.server
         public GarnetStatus ListMove(ArgSlice sourceKey, ArgSlice destinationKey, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element)
         {
             element = default;
-            var objectLockableContext = txnManager.ObjectStoreLockableContext;
+            var objectTransactionalContext = txnManager.ObjectStoreTransactionalContext;
 
             if (itemBroker == null)
                 ThrowObjectStoreUninitializedException();
@@ -224,12 +224,12 @@ namespace Garnet.server
                 txnManager.Run(true);
             }
 
-            var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+            var objectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
 
             try
             {
                 // Get the source key
-                var statusOp = GET(sourceKey.ToArray(), out var sourceList, ref objectLockableContext);
+                var statusOp = GET(sourceKey.ToArray(), out var sourceList, ref objectTransactionalContext);
 
                 if (statusOp == GarnetStatus.NOTFOUND)
                 {
@@ -248,7 +248,7 @@ namespace Garnet.server
                     {
                         // Read destination key
                         var arrDestKey = destinationKey.ToArray();
-                        statusOp = GET(arrDestKey, out var destinationList, ref objectStoreLockableContext);
+                        statusOp = GET(arrDestKey, out var destinationList, ref objectStoreTransactionalContext);
 
                         if (statusOp == GarnetStatus.NOTFOUND)
                         {
@@ -281,7 +281,7 @@ namespace Garnet.server
                         if (srcListObject.LnkList.Count == 0)
                         {
                             _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                                ref lockableContext, ref objectLockableContext);
+                                ref transactionalContext, ref objectTransactionalContext);
                         }
 
                         // Left push (addfirst) to destination
@@ -294,7 +294,7 @@ namespace Garnet.server
                         newListValue = new ListObject(dstListObject.LnkList, dstListObject.Expiration, dstListObject.Size);
 
                         // Upsert
-                        SET(destinationKey.ToArray(), newListValue, ref objectStoreLockableContext);
+                        SET(destinationKey.ToArray(), newListValue, ref objectStoreTransactionalContext);
                     }
                     else
                     {

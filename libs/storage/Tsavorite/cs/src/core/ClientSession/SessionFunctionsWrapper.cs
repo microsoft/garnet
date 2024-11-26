@@ -170,25 +170,25 @@ namespace Tsavorite.core
         public void ConvertOutputToHeap(ref TInput input, ref TOutput output) => _clientSession.functions.ConvertOutputToHeap(ref input, ref output);
         #endregion Utilities
 
-        #region Transient locking
-        public bool IsManualLocking => _sessionLocker.IsManualLocking;
+        #region Ephemeral locking
+        public bool IsTransactionalLocking => _sessionLocker.IsTransactionalLocking;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientExclusive(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx) =>
-            _sessionLocker.TryLockTransientExclusive(Store, ref stackCtx);
+        public bool TryLockEphemeralExclusive(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx) =>
+            _sessionLocker.TryLockEphemeralExclusive(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientShared(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
-            => _sessionLocker.TryLockTransientShared(Store, ref stackCtx);
+        public bool TryLockEphemeralShared(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+            => _sessionLocker.TryLockEphemeralShared(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientExclusive(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
-            => _sessionLocker.UnlockTransientExclusive(Store, ref stackCtx);
+        public void UnlockEphemeralExclusive(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+            => _sessionLocker.UnlockEphemeralExclusive(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientShared(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
-            => _sessionLocker.UnlockTransientShared(Store, ref stackCtx);
-        #endregion Transient locking
+        public void UnlockEphemeralShared(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+            => _sessionLocker.UnlockEphemeralShared(Store, ref stackCtx);
+        #endregion Ephemeral locking
 
         #region Internal utilities
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

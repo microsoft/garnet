@@ -26,7 +26,7 @@ namespace Garnet.server
         /// Session Contexts for main store
         /// </summary>
         public BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
-        public LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
+        public TransactionalContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> transactionalContext;
 
         SectorAlignedMemory sectorAlignedMemoryHll1;
         SectorAlignedMemory sectorAlignedMemoryHll2;
@@ -39,7 +39,7 @@ namespace Garnet.server
         /// Session Contexts for object store
         /// </summary>
         public BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
-        public LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext;
+        public TransactionalContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreTransactionalContext;
 
         public readonly ScratchBufferManager scratchBufferManager;
         public readonly FunctionsState functionsState;
@@ -76,11 +76,11 @@ namespace Garnet.server
             var objectStoreSession = storeWrapper.objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
 
             basicContext = session.BasicContext;
-            lockableContext = session.LockableContext;
+            transactionalContext = session.TransactionalContext;
             if (objectStoreSession != null)
             {
                 objectStoreBasicContext = objectStoreSession.BasicContext;
-                objectStoreLockableContext = objectStoreSession.LockableContext;
+                objectStoreTransactionalContext = objectStoreSession.TransactionalContext;
             }
 
             HeadAddress = storeWrapper.store.Log.HeadAddress;

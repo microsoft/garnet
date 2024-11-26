@@ -272,14 +272,14 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
-            var objectLockableContext = txnManager.ObjectStoreLockableContext;
+            var objectTransactionalContext = txnManager.ObjectStoreTransactionalContext;
 
             try
             {
                 var arrDstKey = destinationKey.ToArray();
                 var arrSrcKey = sourceKey.ToArray();
 
-                var srcGetStatus = GET(arrSrcKey, out var srcObject, ref objectLockableContext);
+                var srcGetStatus = GET(arrSrcKey, out var srcObject, ref objectTransactionalContext);
 
                 if (srcGetStatus == GarnetStatus.NOTFOUND)
                     return GarnetStatus.NOTFOUND;
@@ -292,7 +292,7 @@ namespace Garnet.server
                 if (sameKey)
                     return GarnetStatus.OK;
 
-                var dstGetStatus = GET(arrDstKey, out var dstObject, ref objectLockableContext);
+                var dstGetStatus = GET(arrDstKey, out var dstObject, ref objectTransactionalContext);
 
                 SetObject dstSetObject;
                 if (dstGetStatus == GarnetStatus.OK)
@@ -317,7 +317,7 @@ namespace Garnet.server
                 if (srcSetObject.Set.Count == 0)
                 {
                     _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                        ref lockableContext, ref objectLockableContext);
+                        ref transactionalContext, ref objectTransactionalContext);
                 }
 
                 dstSetObject.Set.Add(arrMember);
@@ -325,7 +325,7 @@ namespace Garnet.server
 
                 if (dstGetStatus == GarnetStatus.NOTFOUND)
                 {
-                    var setStatus = SET(arrDstKey, dstSetObject, ref objectLockableContext);
+                    var setStatus = SET(arrDstKey, dstSetObject, ref objectTransactionalContext);
                     if (setStatus == GarnetStatus.OK)
                         smoveResult = 1;
                 }
@@ -370,11 +370,11 @@ namespace Garnet.server
             }
 
             // SetObject
-            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+            var setObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
 
             try
             {
-                return SetIntersect(keys, ref setObjectStoreLockableContext, out output);
+                return SetIntersect(keys, ref setObjectStoreTransactionalContext, out output);
             }
             finally
             {
@@ -415,11 +415,11 @@ namespace Garnet.server
             }
 
             // SetObject
-            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+            var setObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
 
             try
             {
-                var status = SetIntersect(keys, ref setObjectStoreLockableContext, out var members);
+                var status = SetIntersect(keys, ref setObjectStoreTransactionalContext, out var members);
 
                 if (status == GarnetStatus.OK)
                 {
@@ -432,12 +432,12 @@ namespace Garnet.server
                             newSetObject.UpdateSize(item);
                         }
 
-                        _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                        _ = SET(key, newSetObject, ref setObjectStoreTransactionalContext);
                     }
                     else
                     {
                         _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                            ref lockableContext, ref setObjectStoreLockableContext);
+                            ref transactionalContext, ref setObjectStoreTransactionalContext);
                     }
 
                     count = members.Count;
@@ -536,11 +536,11 @@ namespace Garnet.server
             }
 
             // SetObject
-            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+            var setObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
 
             try
             {
-                return SetUnion(keys, ref setObjectStoreLockableContext, out output);
+                return SetUnion(keys, ref setObjectStoreTransactionalContext, out output);
             }
             finally
             {
@@ -579,11 +579,11 @@ namespace Garnet.server
             }
 
             // SetObject
-            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+            var setObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
 
             try
             {
-                var status = SetUnion(keys, ref setObjectStoreLockableContext, out var members);
+                var status = SetUnion(keys, ref setObjectStoreTransactionalContext, out var members);
 
                 if (status == GarnetStatus.OK)
                 {
@@ -596,12 +596,12 @@ namespace Garnet.server
                             newSetObject.UpdateSize(item);
                         }
 
-                        _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                        _ = SET(key, newSetObject, ref setObjectStoreTransactionalContext);
                     }
                     else
                     {
                         _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                            ref lockableContext, ref setObjectStoreLockableContext);
+                            ref transactionalContext, ref setObjectStoreTransactionalContext);
                     }
 
                     count = members.Count;
@@ -800,11 +800,11 @@ namespace Garnet.server
             }
 
             // SetObject
-            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+            var setObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
 
             try
             {
-                return SetDiff(keys, ref setObjectStoreLockableContext, out members);
+                return SetDiff(keys, ref setObjectStoreTransactionalContext, out members);
             }
             finally
             {
@@ -843,11 +843,11 @@ namespace Garnet.server
             }
 
             // SetObject
-            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+            var setObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
 
             try
             {
-                var status = SetDiff(keys, ref setObjectStoreLockableContext, out var diffSet);
+                var status = SetDiff(keys, ref setObjectStoreTransactionalContext, out var diffSet);
 
                 if (status == GarnetStatus.OK)
                 {
@@ -859,12 +859,12 @@ namespace Garnet.server
                             _ = newSetObject.Set.Add(item);
                             newSetObject.UpdateSize(item);
                         }
-                        _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                        _ = SET(key, newSetObject, ref setObjectStoreTransactionalContext);
                     }
                     else
                     {
                         _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                            ref lockableContext, ref setObjectStoreLockableContext);
+                            ref transactionalContext, ref setObjectStoreTransactionalContext);
                     }
 
                     count = diffSet.Count;

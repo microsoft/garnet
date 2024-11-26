@@ -46,7 +46,7 @@ namespace Garnet.server
             state.State.Encoding = Encoding.UTF8;
             if (txnMode)
             {
-                this.txnKeyEntries = new TxnKeyEntries(16, respServerSession.storageSession.lockableContext, respServerSession.storageSession.objectStoreLockableContext);
+                this.txnKeyEntries = new TxnKeyEntries(16, respServerSession.storageSession.transactionalContext, respServerSession.storageSession.objectStoreTransactionalContext);
                 garnetCall = state.RegisterFunction("garnet_call", this, this.GetType().GetMethod(nameof(garnet_call_txn)));
             }
             else
@@ -168,7 +168,7 @@ namespace Garnet.server
         /// <param name="args">Parameters</param>
         /// <returns></returns>
         public object garnet_call_txn(string cmd, params object[] args)
-            => respServerSession == null ? null : ProcessCommandFromScripting(respServerSession.lockableGarnetApi, cmd, args);
+            => respServerSession == null ? null : ProcessCommandFromScripting(respServerSession.transactionalGarnetApi, cmd, args);
 
         /// <summary>
         /// Entry point method for executing commands from a Lua Script
@@ -283,7 +283,7 @@ namespace Garnet.server
                     {
                         var key = parseState.GetArgSliceByRef(offset);
                         txnKeyEntries.AddKey(key, false, Tsavorite.core.LockType.Exclusive);
-                        if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
+                        if (!respServerSession.storageSession.objectStoreTransactionalContext.IsNull)
                             txnKeyEntries.AddKey(key, true, Tsavorite.core.LockType.Exclusive);
                     }
                     keyTable[i + 1] = parseState.GetString(offset++);
@@ -329,7 +329,7 @@ namespace Garnet.server
                 {
                     var _key = scratchBufferManager.CreateArgSlice(key);
                     txnKeyEntries.AddKey(_key, false, Tsavorite.core.LockType.Exclusive);
-                    if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
+                    if (!respServerSession.storageSession.objectStoreTransactionalContext.IsNull)
                         txnKeyEntries.AddKey(_key, true, Tsavorite.core.LockType.Exclusive);
                 }
                 return RunTransaction();
@@ -344,9 +344,9 @@ namespace Garnet.server
         {
             try
             {
-                respServerSession.storageSession.lockableContext.BeginLockable();
-                if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                    respServerSession.storageSession.objectStoreLockableContext.BeginLockable();
+                respServerSession.storageSession.transactionalContext.BeginTransaction();
+                if (!respServerSession.storageSession.objectStoreTransactionalContext.IsNull)
+                    respServerSession.storageSession.objectStoreTransactionalContext.BeginTransaction();
                 respServerSession.SetTransactionMode(true);
                 txnKeyEntries.LockAllKeys();
                 return Run();
@@ -355,9 +355,9 @@ namespace Garnet.server
             {
                 txnKeyEntries.UnlockAllKeys();
                 respServerSession.SetTransactionMode(false);
-                respServerSession.storageSession.lockableContext.EndLockable();
-                if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                    respServerSession.storageSession.objectStoreLockableContext.EndLockable();
+                respServerSession.storageSession.transactionalContext.EndTransaction();
+                if (!respServerSession.storageSession.objectStoreTransactionalContext.IsNull)
+                    respServerSession.storageSession.objectStoreTransactionalContext.EndTransaction();
             }
         }
 

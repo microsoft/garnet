@@ -67,7 +67,7 @@ namespace Garnet.server
                 txnManager.SaveKeyEntryToLock(key, true, LockType.Shared);
                 _ = txnManager.Run(true);
             }
-            var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+            var objectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
 
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -80,7 +80,7 @@ namespace Garnet.server
                 var sourceKey = key.ToArray();
                 SpanByteAndMemory searchOutMem = default;
                 var searchOut = new GarnetObjectStoreOutput { spanByteAndMemory = searchOutMem };
-                var status = GeoCommands(sourceKey, ref input, ref searchOut, ref objectStoreLockableContext);
+                var status = GeoCommands(sourceKey, ref input, ref searchOut, ref objectStoreTransactionalContext);
                 searchOutMem = searchOut.spanByteAndMemory;
 
                 if (status == GarnetStatus.WRONGTYPE)
@@ -91,7 +91,7 @@ namespace Garnet.server
                 if (status == GarnetStatus.NOTFOUND)
                 {
                     // Expire/Delete the destination key if the source key is not found
-                    _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None, ref lockableContext, ref objectStoreLockableContext);
+                    _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None, ref transactionalContext, ref objectStoreTransactionalContext);
                     while (!RespWriteUtils.WriteInteger(0, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     return GarnetStatus.OK;
@@ -114,7 +114,7 @@ namespace Garnet.server
                     }
 
                     var destinationKey = destination.ToArray();
-                    objectStoreLockableContext.Delete(ref destinationKey);
+                    objectStoreTransactionalContext.Delete(ref destinationKey);
 
                     RespReadUtils.ReadUnsignedArrayLength(out var foundItems, ref currOutPtr, endOutPtr);
 
@@ -140,7 +140,7 @@ namespace Garnet.server
                     }, ref parseState);
 
                     var zAddOutput = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-                    RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
+                    RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreTransactionalContext, ref zAddOutput);
 
                     while (!RespWriteUtils.WriteInteger(foundItems, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);

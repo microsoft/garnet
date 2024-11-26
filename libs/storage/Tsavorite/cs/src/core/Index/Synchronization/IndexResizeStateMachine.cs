@@ -97,7 +97,7 @@ namespace Tsavorite.core
                 case Phase.PREPARE_GROW:
                     // Using bumpEpoch: true allows us to guarantee that when system state proceeds, all threads in prior state
                     // will see that hlog.NumActiveLockingSessions == 0, ensuring that they can potentially block for the next state.
-                    if (allThreadsInPrepareGrow && store.hlogBase.NumActiveLockingSessions == 0)
+                    if (allThreadsInPrepareGrow && store.hlogBase.NumActiveTransactionalSessions == 0)
                         store.GlobalStateMachineStep(current, bumpEpoch: true);
                     break;
 

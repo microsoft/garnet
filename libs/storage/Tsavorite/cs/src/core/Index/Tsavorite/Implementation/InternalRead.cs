@@ -60,7 +60,7 @@ namespace Tsavorite.core
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
-            if (!FindTagAndTryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
+            if (!FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
                 return status;
             stackCtx.SetRecordSourceToHashEntry(hlogBase);
 
@@ -152,7 +152,7 @@ namespace Tsavorite.core
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.BeginAddress)
                 {
                     // On-Disk Region
-                    Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLocked(ref stackCtx.hei), "A Lockable-session Read() of an on-disk key requires a LockTable lock");
+                    Debug.Assert(!sessionFunctions.IsTransactionalLocking || LockTable.IsLocked(ref stackCtx.hei), "A Transactional-session Read() of an on-disk key requires a LockTable lock");
 
                     // Note: we do not lock here; we wait until reading from disk, then lock in the ContinuePendingRead chain.
                     if (hlogBase.IsNullDevice)
@@ -162,13 +162,13 @@ namespace Tsavorite.core
                 }
 
                 // No record found
-                Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLocked(ref stackCtx.hei), "A Lockable-session Read() of a non-existent key requires a LockTable lock");
+                Debug.Assert(!sessionFunctions.IsTransactionalLocking || LockTable.IsLocked(ref stackCtx.hei), "A Transactional-session Read() of a non-existent key requires a LockTable lock");
                 return OperationStatus.NOTFOUND;
             }
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
             }
         }
 
@@ -280,7 +280,7 @@ namespace Tsavorite.core
                 pendingContext.keyHash = storeFunctions.GetKeyHashCode64(ref hlog.GetKey(physicalAddress));
 
 #pragma warning disable CS9085 // "This ref-assigns a value that has a narrower escape scope than the target", but we don't return the reference.
-                // Note: With bucket-based locking the key is not used for Transient locks (only the key's hashcode is used). A key-based locking system
+                // Note: With bucket-based locking the key is not used for Ephemeral locks (only the key's hashcode is used). A key-based locking system
                 // would require this to be the actual key. We do *not* set this to the record key in case that is reclaimed by revivification.
                 key = ref defaultKey;
 #pragma warning restore CS9085
@@ -290,7 +290,7 @@ namespace Tsavorite.core
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
-            if (!FindTagAndTryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
+            if (!FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
                 return status;
 
             stackCtx.SetRecordSourceToHashEntry(hlogBase);
@@ -338,7 +338,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
             }
             return status;
         }

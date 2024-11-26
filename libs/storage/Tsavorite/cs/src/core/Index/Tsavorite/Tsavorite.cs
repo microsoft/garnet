@@ -68,12 +68,12 @@ namespace Tsavorite.core
         internal readonly bool CheckpointVersionSwitchBarrier;  // version switch barrier
         internal readonly OverflowBucketLockTable<TKey, TValue, TStoreFunctions, TAllocator> LockTable;
 
-        internal void IncrementNumLockingSessions()
+        internal void IncrementNumTransactionalSessions()
         {
-            _hybridLogCheckpoint.info.manualLockingActive = true;
-            Interlocked.Increment(ref hlogBase.NumActiveLockingSessions);
+            _hybridLogCheckpoint.info.transactionsActive = true;
+            Interlocked.Increment(ref hlogBase.NumActiveTransactionalSessions);
         }
-        internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref hlogBase.NumActiveLockingSessions);
+        internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref hlogBase.NumActiveTransactionalSessions);
 
         internal readonly int ThrottleCheckpointFlushDelayMs = -1;
 

@@ -27,8 +27,8 @@ namespace Tsavorite.core
         internal CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs;
 
         readonly UnsafeContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> uContext;
-        readonly LockableUnsafeContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> luContext;
-        readonly LockableContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> lContext;
+        readonly TransactionalUnsafeContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> luContext;
+        readonly TransactionalContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> lContext;
         readonly BasicContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> bContext;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
@@ -40,14 +40,14 @@ namespace Tsavorite.core
         internal ulong sharedLockCount;
         internal ulong exclusiveLockCount;
 
-        bool isAcquiredLockable;
+        bool isAcquiredTransactional;
 
         ScanCursorState<TKey, TValue> scanCursorState;
 
-        internal void AcquireLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
+        internal void AcquireTransactional<TSessionFunctions>(TSessionFunctions sessionFunctions)
             where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            CheckIsNotAcquiredLockable();
+            CheckIsNotAcquiredTransactional();
 
             while (true)
             {
@@ -59,41 +59,41 @@ namespace Tsavorite.core
                     Thread.Yield();
                 }
 
-                store.IncrementNumLockingSessions();
-                isAcquiredLockable = true;
+                store.IncrementNumTransactionalSessions();
+                isAcquiredTransactional = true;
 
                 if (!IsInPreparePhase())
                     break;
-                InternalReleaseLockable();
+                InternalReleaseTransactional();
                 _ = Thread.Yield();
             }
         }
 
-        internal void ReleaseLockable()
+        internal void ReleaseTransactional()
         {
-            CheckIsAcquiredLockable();
+            CheckIsAcquiredTransactional();
             if (TotalLockCount > 0)
-                throw new TsavoriteException($"EndLockable called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
-            InternalReleaseLockable();
+                throw new TsavoriteException($"ReleaseTransactional called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
+            InternalReleaseTransactional();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InternalReleaseLockable()
+        private void InternalReleaseTransactional()
         {
-            isAcquiredLockable = false;
+            isAcquiredTransactional = false;
             store.DecrementNumLockingSessions();
         }
 
-        internal void CheckIsAcquiredLockable()
+        internal void CheckIsAcquiredTransactional()
         {
-            if (!isAcquiredLockable)
-                throw new TsavoriteException("Lockable method call when BeginLockable has not been called");
+            if (!isAcquiredTransactional)
+                throw new TsavoriteException("Transactional method call when AcquireTransactional has not been called");
         }
 
-        void CheckIsNotAcquiredLockable()
+        void CheckIsNotAcquiredTransactional()
         {
-            if (isAcquiredLockable)
-                throw new TsavoriteException("BeginLockable cannot be called twice (call EndLockable first)");
+            if (isAcquiredTransactional)
+                throw new TsavoriteException("AcquireTransactional cannot be called twice (call ReleaseTransactional first)");
         }
 
         internal ClientSession(
@@ -142,14 +142,14 @@ namespace Tsavorite.core
         public UnsafeContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> UnsafeContext => uContext;
 
         /// <summary>
-        /// Return a new interface to Tsavorite operations that supports manual locking and epoch control.
+        /// Return a new interface to Tsavorite operations that supports Transactional locking and manual epoch control.
         /// </summary>
-        public LockableUnsafeContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> LockableUnsafeContext => luContext;
+        public TransactionalUnsafeContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalUnsafeContext => luContext;
 
         /// <summary>
-        /// Return a session wrapper that supports manual locking.
+        /// Return a session wrapper that supports Transactional locking.
         /// </summary>
-        public LockableContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> LockableContext => lContext;
+        public TransactionalContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalContext => lContext;
 
         /// <summary>
         /// Return a session wrapper struct that passes through to client session
@@ -195,16 +195,16 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => store.LockTable.CompareKeyHashes(key1, key2);
+        public int CompareKeyHashes<TTransactionalKey>(TTransactionalKey key1, TTransactionalKey key2) where TTransactionalKey : ITransactionalKey => store.LockTable.CompareKeyHashes(key1, key2);
 
         /// <inheritdoc/>
-        public int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => store.LockTable.CompareKeyHashes(ref key1, ref key2);
+        public int CompareKeyHashes<TTransactionalKey>(ref TTransactionalKey key1, ref TTransactionalKey key2) where TTransactionalKey : ITransactionalKey => store.LockTable.CompareKeyHashes(ref key1, ref key2);
 
         /// <inheritdoc/>
-        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => store.LockTable.SortKeyHashes(keys);
+        public void SortKeyHashes<TTransactionalKey>(TTransactionalKey[] keys) where TTransactionalKey : ITransactionalKey => store.LockTable.SortKeyHashes(keys);
 
         /// <inheritdoc/>
-        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => store.LockTable.SortKeyHashes(keys, start, count);
+        public void SortKeyHashes<TTransactionalKey>(TTransactionalKey[] keys, int start, int count) where TTransactionalKey : ITransactionalKey => store.LockTable.SortKeyHashes(keys, start, count);
 
         #endregion ITsavoriteContext
 

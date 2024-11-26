@@ -448,12 +448,12 @@ namespace Garnet.server
                 _ = storageSession.txnManager.Run(true);
             }
 
-            var objectLockableContext = storageSession.txnManager.ObjectStoreLockableContext;
+            var objectTransactionalContext = storageSession.txnManager.ObjectStoreTransactionalContext;
 
             try
             {
                 // Get the object stored at key
-                var statusOp = storageSession.GET(key, out var osObject, ref objectLockableContext);
+                var statusOp = storageSession.GET(key, out var osObject, ref objectTransactionalContext);
                 if (statusOp == GarnetStatus.NOTFOUND) return false;
 
                 IGarnetObject dstObj = null;
@@ -461,7 +461,7 @@ namespace Garnet.server
                 if (command == RespCommand.BLMOVE)
                 {
                     arrDstKey = dstKey.ToArray();
-                    var dstStatusOp = storageSession.GET(arrDstKey, out var osDstObject, ref objectLockableContext);
+                    var dstStatusOp = storageSession.GET(arrDstKey, out var osDstObject, ref objectTransactionalContext);
                     if (dstStatusOp != GarnetStatus.NOTFOUND) dstObj = osDstObject.garnetObject;
                 }
 
@@ -496,7 +496,7 @@ namespace Garnet.server
 
                                 if (isSuccessful && newObj)
                                 {
-                                    isSuccessful = storageSession.SET(arrDstKey, dstList, ref objectLockableContext) ==
+                                    isSuccessful = storageSession.SET(arrDstKey, dstList, ref objectTransactionalContext) ==
                                                    GarnetStatus.OK;
                                 }
 

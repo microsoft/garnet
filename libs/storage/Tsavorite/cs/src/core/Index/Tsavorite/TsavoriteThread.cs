@@ -39,7 +39,7 @@ namespace Tsavorite.core
                 //   have reached PREPARE and all multi-key ops have drained (see VersionChangeTask.OnThreadState).
                 if (CheckpointVersionSwitchBarrier &&
                     sessionFunctions.Ctx.phase == Phase.PREPARE &&
-                    hlogBase.NumActiveLockingSessions == 0)
+                    hlogBase.NumActiveTransactionalSessions == 0)
                 {
                     epoch.ProtectAndDrain();
                     _ = Thread.Yield();
@@ -47,7 +47,7 @@ namespace Tsavorite.core
                 }
 
                 if (sessionFunctions.Ctx.phase == Phase.PREPARE_GROW &&
-                    hlogBase.NumActiveLockingSessions == 0)
+                    hlogBase.NumActiveTransactionalSessions == 0)
                 {
                     epoch.ProtectAndDrain();
                     _ = Thread.Yield();

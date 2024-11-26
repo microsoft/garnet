@@ -557,7 +557,7 @@ namespace Garnet.server
                 txnManager.Run(true);
             }
 
-            var objectContext = txnManager.ObjectStoreLockableContext;
+            var objectContext = txnManager.ObjectStoreTransactionalContext;
 
             try
             {
@@ -596,7 +596,7 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
-            var objectContext = txnManager.ObjectStoreLockableContext;
+            var objectContext = txnManager.ObjectStoreTransactionalContext;
 
             try
             {
@@ -621,7 +621,7 @@ namespace Garnet.server
                 else
                 {
                     _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                        ref lockableContext, ref objectContext);
+                        ref transactionalContext, ref objectContext);
                 }
 
                 return status;

@@ -11,7 +11,7 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        bool IsManualLocking { get; }
+        bool IsTransactionalLocking { get; }
         TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> Store { get; }
 
         #region Reads
@@ -57,11 +57,11 @@ namespace Tsavorite.core
         void ConvertOutputToHeap(ref TInput input, ref TOutput output);
         #endregion Utilities
 
-        #region Transient locking
-        bool TryLockTransientExclusive(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
-        bool TryLockTransientShared(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
-        void UnlockTransientExclusive(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
-        void UnlockTransientShared(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
+        #region Ephemeral locking
+        bool TryLockEphemeralExclusive(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
+        bool TryLockEphemeralShared(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
+        void UnlockEphemeralExclusive(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
+        void UnlockEphemeralShared(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
         #endregion 
 
         bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false);

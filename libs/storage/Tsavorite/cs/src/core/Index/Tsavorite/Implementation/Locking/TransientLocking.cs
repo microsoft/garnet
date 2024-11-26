@@ -11,12 +11,12 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
+        private bool TryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
                                     ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
                                     out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (sessionFunctions.TryLockTransientExclusive(ref key, ref stackCtx))
+            if (sessionFunctions.TryLockEphemeralExclusive(ref key, ref stackCtx))
             {
                 status = OperationStatus.SUCCESS;
                 return true;
@@ -26,21 +26,21 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
+        private static void EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
                                     ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (stackCtx.recSrc.HasTransientXLock)
-                sessionFunctions.UnlockTransientExclusive(ref key, ref stackCtx);
+            if (stackCtx.recSrc.HasEphemeralXLock)
+                sessionFunctions.UnlockEphemeralExclusive(ref key, ref stackCtx);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
+        internal bool TryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
                                     ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
                                     out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (sessionFunctions.TryLockTransientShared(ref key, ref stackCtx))
+            if (sessionFunctions.TryLockEphemeralShared(ref key, ref stackCtx))
             {
                 status = OperationStatus.SUCCESS;
                 return true;
@@ -50,12 +50,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
+        internal static void EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
                                     ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (stackCtx.recSrc.HasTransientSLock)
-                sessionFunctions.UnlockTransientShared(ref key, ref stackCtx);
+            if (stackCtx.recSrc.HasEphemeralSLock)
+                sessionFunctions.UnlockEphemeralShared(ref key, ref stackCtx);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -63,23 +63,23 @@ namespace Tsavorite.core
         {
             Debug.Assert(!stackCtx.recSrc.HasLock, $"Should not call LockForScan if recSrc already has a lock ({stackCtx.recSrc.LockStateString()})");
 
-            // This will always be a transient lock as it is not session-based
+            // This will always be a Ephemeral lock as it is not session-based
             stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
             _ = FindTag(ref stackCtx.hei);
             stackCtx.SetRecordSourceToHashEntry(hlogBase);
 
             while (!LockTable.TryLockShared(ref stackCtx.hei))
                 epoch.ProtectAndDrain();
-            stackCtx.recSrc.SetHasTransientSLock();
+            stackCtx.recSrc.SetHasEphemeralSLock();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void UnlockForScan(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
-            if (stackCtx.recSrc.HasTransientSLock)
+            if (stackCtx.recSrc.HasEphemeralSLock)
             {
                 LockTable.UnlockShared(ref stackCtx.hei);
-                stackCtx.recSrc.ClearHasTransientSLock();
+                stackCtx.recSrc.ClearHasEphemeralSLock();
             }
         }
     }

@@ -587,8 +587,8 @@ namespace Garnet.server
                 txnManager.Run(true);
             }
 
-            var context = txnManager.LockableContext;
-            var objectContext = txnManager.ObjectStoreLockableContext;
+            var context = txnManager.TransactionalContext;
+            var objectContext = txnManager.ObjectStoreTransactionalContext;
             var oldKey = oldKeySlice.SpanByte;
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
