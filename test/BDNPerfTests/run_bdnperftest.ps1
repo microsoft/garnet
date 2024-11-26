@@ -93,6 +93,10 @@ $configFile = "BDN_Benchmark_Config.json"
 if ($currentTest -notmatch "\.\*$") {
     $currentTest += ".*"
 }
+# Actions also don't have BDN on beginning, so add that
+if ($currentTest -notlike "BDN.benchmark.*") {
+    $currentTest = "BDN.benchmark." + $currentTest  
+}
 
 # Get base path since paths can differ from machine to machine
 $pathstring = $pwd.Path
@@ -144,7 +148,7 @@ foreach ($property in $basicOperations.PSObject.Properties) {
     $splitTextArray = $property.Name -split '_'
    
     # get the expected Method, Parameter and value
-    $expectedResultsArray[$currentRow,0] = "| " + $splitTextArray[1]  # Add | at beginning so it is part of summary block and not every other line in the file that matches it
+    $expectedResultsArray[$currentRow,0] = "| " + $splitTextArray[1]  # Add | at beginning so it is part of summary block and not every other line in the file that matches the Method name
     $expectedResultsArray[$currentRow,1] = $splitTextArray[2]
     $expectedResultsArray[$currentRow,2] = $property.value
 
