@@ -118,7 +118,7 @@ namespace Garnet.server
         // Track whether the incoming network batch contains slow commands that should not be counter in NET_RS histogram
         bool containsSlowCommand;
 
-        readonly CustomCommandManagerSession customCommandManagerSession;
+        readonly Lazy<CustomCommandManagerSession> customCommandManagerSession;
 
         /// <summary>
         /// Cluster session
@@ -185,7 +185,7 @@ namespace Garnet.server
             bool enableScripts)
             : base(networkSender)
         {
-            this.customCommandManagerSession = storeWrapper.serverOptions.LoadModuleCS != null ? new CustomCommandManagerSession(storeWrapper.customCommandManager) : null;
+            this.customCommandManagerSession = new Lazy<CustomCommandManagerSession>(() => new CustomCommandManagerSession(storeWrapper.customCommandManager));
             this.sessionMetrics = storeWrapper.serverOptions.MetricsSamplingFrequency > 0 ? new GarnetSessionMetrics() : null;
             this.LatencyMetrics = storeWrapper.serverOptions.LatencyMonitor ? new GarnetLatencyMetricsSession(storeWrapper.monitor) : null;
             logger = storeWrapper.sessionLogger != null ? new SessionLogger(storeWrapper.sessionLogger, $"[{networkSender?.RemoteEndpointName}] [{GetHashCode():X8}] ") : null;
@@ -757,7 +757,7 @@ namespace Garnet.server
 
                 // Perform the operation
                 TryTransactionProc(currentCustomTransaction.id,
-                    customCommandManagerSession
+                    customCommandManagerSession.Value
                         .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager, scratchBufferManager)
                         .Item1);
                 currentCustomTransaction = null;
@@ -772,7 +772,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                TryCustomProcedure(customCommandManagerSession.GetCustomProcedure(currentCustomProcedure.Id, this));
+                TryCustomProcedure(customCommandManagerSession.Value.GetCustomProcedure(currentCustomProcedure.Id, this));
 
                 currentCustomProcedure = null;
                 return true;
