@@ -24,7 +24,7 @@ namespace Garnet.server
         readonly int networkSendThrottleMax;
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
-        readonly int connectionLimit;
+        readonly int networkConnectionLimit;
 
         public IPEndPoint GetEndPoint
         {
@@ -70,10 +70,10 @@ namespace Garnet.server
         /// <param name="tlsOptions"></param>
         /// <param name="networkSendThrottleMax"></param>
         /// <param name="logger"></param>
-        public GarnetServerTcp(string address, int port, int networkBufferSize = default, IGarnetTlsOptions tlsOptions = null, int networkSendThrottleMax = 8, int connectionLimit = -1, ILogger logger = null)
+        public GarnetServerTcp(string address, int port, int networkBufferSize = default, IGarnetTlsOptions tlsOptions = null, int networkSendThrottleMax = 8, int networkConnectionLimit = -1, ILogger logger = null)
             : base(address, port, networkBufferSize, logger)
         {
-            this.connectionLimit = connectionLimit;
+            this.networkConnectionLimit = networkConnectionLimit;
             this.tlsOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
             var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
@@ -140,7 +140,7 @@ namespace Garnet.server
             if (activeHandlerCount >= 0)
             {
                 var currentActiveHandlerCount = Interlocked.Increment(ref activeHandlerCount);
-                if (currentActiveHandlerCount > 0 && (connectionLimit == -1 || currentActiveHandlerCount <= connectionLimit))
+                if (currentActiveHandlerCount > 0 && (networkConnectionLimit == -1 || currentActiveHandlerCount <= networkConnectionLimit))
                 {
                     try
                     {

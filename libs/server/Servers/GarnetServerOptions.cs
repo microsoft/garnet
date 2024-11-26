@@ -249,7 +249,7 @@ namespace Garnet.server
         /// <summary>
         /// Maximum client connection limit
         /// </summary>
-        public int NetworkConnectionLimit = 0;
+        public int NetworkConnectionLimit = -1;
 
         /// <summary>
         /// Creator of device factories
