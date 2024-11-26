@@ -197,13 +197,16 @@ namespace Tsavorite.core
             using var session = store.NewSession<TInput, TOutput, Empty, LogScanCursorFunctions<TInput, TOutput>>(new LogScanCursorFunctions<TInput, TOutput>());
             var bContext = session.BasicContext;
 
-            if (cursor >= GetTailAddress())
-                goto IterationComplete;
-
             if (cursor < BeginAddress) // This includes 0, which means to start the Scan
                 cursor = BeginAddress;
             else if (validateCursor)
                 iter.SnapCursorToLogicalAddress(ref cursor);
+
+            if (!scanFunctions.OnStart(cursor, iter.EndAddress))
+                return false;
+
+            if (cursor >= GetTailAddress())
+                goto IterationComplete;
 
             scanCursorState.Initialize(scanFunctions);
 
@@ -236,7 +239,10 @@ namespace Tsavorite.core
                 if (scanCursorState.stop)
                     goto IterationComplete;
                 if (scanCursorState.acceptedCount >= count || scanCursorState.endBatch)
+                {
+                    scanFunctions.OnStop(true, scanCursorState.acceptedCount);
                     return true;
+                }
             }
 
             // Drain any pending pushes. We have ended the iteration; there are no more records, so drop through to end it.
@@ -245,6 +251,7 @@ namespace Tsavorite.core
 
             IterationComplete:
             cursor = 0;
+            scanFunctions.OnStop(false, scanCursorState.acceptedCount);
             return false;
         }
 

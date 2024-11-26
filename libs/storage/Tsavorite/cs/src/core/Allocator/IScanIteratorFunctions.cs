@@ -47,7 +47,7 @@ namespace Tsavorite.core
         /// <param name="key">Reference to the current record's key</param>
         /// <param name="value">Reference to the current record's Value</param>
         /// <param name="recordMetadata">Record metadata, including <see cref="RecordInfo"/> and the current record's logical address</param>
-        /// <param name="numberOfRecords">The number of records returned so far, including the current one.</param>
+        /// <param name="numberOfRecords">The number of records accepted so far, not including the current one.</param>
         /// <param name="cursorRecordResult">Indicates whether the current record was accepted, or whether to end the current ScanCursor call.
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>
@@ -57,7 +57,7 @@ namespace Tsavorite.core
         /// <param name="key">Reference to the current record's key</param>
         /// <param name="value">Reference to the current record's Value</param>
         /// <param name="recordMetadata">Record metadata, including <see cref="RecordInfo"/> and the current record's logical address</param>
-        /// <param name="numberOfRecords">The number of records returned so far, including the current one.</param>
+        /// <param name="numberOfRecords">The number of records accepted so far, not including the current one.</param>
         /// <param name="cursorRecordResult">Indicates whether the current record was accepted, or whether to end the current ScanCursor call.
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>

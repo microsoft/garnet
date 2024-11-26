@@ -12,15 +12,17 @@ namespace Tsavorite.core
     {
         IScanIteratorFunctions<TKey, TValue> streamingSnapshotScanIteratorFunctions;
         long scannedUntilAddressCursor;
+        long numberOfRecords;
 
         class StreamingSnapshotSessionFunctions : SessionFunctionsBase<TKey, TValue, Empty, Empty, Empty>
         {
 
         }
 
-        struct ScanPhase1Functions : IScanIteratorFunctions<TKey, TValue>
+        class ScanPhase1Functions : IScanIteratorFunctions<TKey, TValue>
         {
             readonly IScanIteratorFunctions<TKey, TValue> userScanIteratorFunctions;
+            public long numberOfRecords;
 
             public ScanPhase1Functions(IScanIteratorFunctions<TKey, TValue> userScanIteratorFunctions)
             {
@@ -33,10 +35,7 @@ namespace Tsavorite.core
 
             /// <inheritdoc />
             public bool ConcurrentReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-            {
-                cursorRecordResult = CursorRecordResult.EndBatch | CursorRecordResult.RetryLastRecord;
-                return false;
-            }
+                => userScanIteratorFunctions.ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
 
             /// <inheritdoc />
             public void OnException(Exception exception, long numberOfRecords)
@@ -44,10 +43,13 @@ namespace Tsavorite.core
 
             /// <inheritdoc />
             public bool OnStart(long beginAddress, long endAddress)
-                => userScanIteratorFunctions.OnStart(beginAddress, long.MaxValue);
+                => userScanIteratorFunctions.OnStart(beginAddress, endAddress);
 
             /// <inheritdoc />
-            public void OnStop(bool completed, long numberOfRecords) { }
+            public void OnStop(bool completed, long numberOfRecords)
+            {
+                this.numberOfRecords = numberOfRecords;
+            }
         }
 
         internal void StreamingSnapshotScanPhase1()
@@ -57,11 +59,12 @@ namespace Tsavorite.core
                 Debug.Assert(systemState.Phase == Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT);
 
                 // Iterate all the read-only records in the store
-                scannedUntilAddressCursor = 0;
+                scannedUntilAddressCursor = Log.SafeReadOnlyAddress;
                 var scanFunctions = new ScanPhase1Functions(streamingSnapshotScanIteratorFunctions);
-                scanFunctions.OnStart(0, long.MaxValue);
                 using var s = NewSession<Empty, Empty, Empty, StreamingSnapshotSessionFunctions>(new());
-                _ = s.ScanCursor(ref scannedUntilAddressCursor, long.MaxValue, scanFunctions);
+                long cursor = 0;
+                _ = s.ScanCursor(ref cursor, long.MaxValue, scanFunctions, scannedUntilAddressCursor);
+                this.numberOfRecords = scanFunctions.numberOfRecords;
             }
             finally
             {
@@ -70,13 +73,15 @@ namespace Tsavorite.core
             }
         }
 
-        struct ScanPhase2Functions : IScanIteratorFunctions<TKey, TValue>
+        class ScanPhase2Functions : IScanIteratorFunctions<TKey, TValue>
         {
             readonly IScanIteratorFunctions<TKey, TValue> userScanIteratorFunctions;
+            readonly long phase1NumberOfRecords;
 
-            public ScanPhase2Functions(IScanIteratorFunctions<TKey, TValue> userScanIteratorFunctions)
+            public ScanPhase2Functions(IScanIteratorFunctions<TKey, TValue> userScanIteratorFunctions, long acceptedRecordCount)
             {
                 this.userScanIteratorFunctions = userScanIteratorFunctions;
+                this.phase1NumberOfRecords = acceptedRecordCount;
             }
 
             /// <inheritdoc />
@@ -85,10 +90,7 @@ namespace Tsavorite.core
 
             /// <inheritdoc />
             public bool ConcurrentReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-            {
-                // NOTE: SingleReader is invoked here, because records in (v) are read-only during the WAIT_FLUSH phase
-                return userScanIteratorFunctions.SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-            }
+                => userScanIteratorFunctions.ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
 
             /// <inheritdoc />
             public void OnException(Exception exception, long numberOfRecords)
@@ -99,7 +101,7 @@ namespace Tsavorite.core
 
             /// <inheritdoc />
             public void OnStop(bool completed, long numberOfRecords)
-                => userScanIteratorFunctions.OnStop(completed, numberOfRecords);
+                => userScanIteratorFunctions.OnStop(completed, phase1NumberOfRecords + numberOfRecords);
         }
 
         internal void StreamingSnapshotScanPhase2(long untilAddress)
@@ -109,17 +111,16 @@ namespace Tsavorite.core
                 Debug.Assert(systemState.Phase == Phase.WAIT_FLUSH);
 
                 // Iterate all the (v) records in the store
-                var scanFunctions = new ScanPhase2Functions(streamingSnapshotScanIteratorFunctions);
+                var scanFunctions = new ScanPhase2Functions(streamingSnapshotScanIteratorFunctions, this.numberOfRecords);
                 using var s = NewSession<Empty, Empty, Empty, StreamingSnapshotSessionFunctions>(new());
 
                 // TODO: This requires ScanCursor to provide a consistent snapshot considering only records up to untilAddress
                 // There is a bug in the current implementation of ScanCursor, where it does not provide such a consistent snapshot
                 _ = s.ScanCursor(ref scannedUntilAddressCursor, long.MaxValue, scanFunctions, endAddress: untilAddress);
 
-                scanFunctions.OnStop(true, 0);
-
                 // Reset the cursor to 0
                 scannedUntilAddressCursor = 0;
+                numberOfRecords = 0;
 
                 // Reset the callback functions
                 streamingSnapshotScanIteratorFunctions = null;

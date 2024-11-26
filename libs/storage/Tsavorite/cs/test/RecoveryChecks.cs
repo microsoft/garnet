@@ -949,7 +949,6 @@ namespace Tsavorite.test.recovery
             ClientSession<long, long, long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator> session2;
             BasicContext<long, long, long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator> bc2;
             readonly long expectedCount;
-            long actualCount;
 
             public SnapshotIterator(TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store2, long expectedCount)
             {
@@ -971,7 +970,6 @@ namespace Tsavorite.test.recovery
             {
                 _ = bc2.Upsert(ref key, ref value);
                 cursorRecordResult = CursorRecordResult.Accept;
-                actualCount = numberOfRecords;
                 return true;
             }
 
@@ -980,7 +978,7 @@ namespace Tsavorite.test.recovery
 
             public void OnStop(bool completed, long numberOfRecords)
             {
-                Assert.That(actualCount + 1, Is.EqualTo(expectedCount));
+                Assert.That(numberOfRecords, Is.EqualTo(expectedCount));
                 session2.Dispose();
             }
         }
@@ -1008,17 +1006,21 @@ namespace Tsavorite.test.recovery
             using var s1 = store1.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
             var bc1 = s1.BasicContext;
 
-            for (long key = 0; key < 1000; key++)
+            for (long key = 0; key < (reInsert ? 800 : 1000); key++)
             {
-                // If reInsert, we insert the wrong key during the first pass
-                long value = reInsert ? key + 1 : key;
+                // If reInsert, we insert the wrong key during the first pass for the first 500 keys
+                long value = reInsert && key < 500 ? key + 1 : key;
                 _ = bc1.Upsert(ref key, ref value);
             }
 
             if (reInsert)
             {
-                store1.Log.Flush(true); // AndEvict(true);
-                for (long key = 0; key < 1000; key++)
+                store1.Log.FlushAndEvict(true);
+                for (long key = 0; key < 500; key++)
+                {
+                    _ = bc1.Upsert(ref key, ref key);
+                }
+                for (long key = 800; key < 1000; key++)
                 {
                     _ = bc1.Upsert(ref key, ref key);
                 }
