@@ -271,11 +271,11 @@ namespace Garnet.networking
         /// On network receive
         /// </summary>
         /// <param name="bytesTransferred">Number of bytes transferred</param>
-        public unsafe void OnNetworkReceive(int bytesTransferred)
+        public async Task OnNetworkReceiveAsync(int bytesTransferred)
         {
             // Wait for SslStream async processing to complete, if any (e.g., authentication phase)
             while (readerStatus == TlsReaderStatus.Active)
-                expectingData.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false).GetAwaiter().GetResult();
+                await expectingData.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false);
 
             // Increment network bytes read
             networkBytesRead += bytesTransferred;
@@ -287,7 +287,10 @@ namespace Garnet.networking
                     if (sslStream == null)
                     {
                         transportReceiveBuffer = networkReceiveBuffer;
-                        transportReceiveBufferPtr = networkReceiveBufferPtr;
+                        unsafe
+                        {
+                            transportReceiveBufferPtr = networkReceiveBufferPtr;
+                        }
                         transportBytesRead = networkBytesRead;
 
                         // We do not have an active read task, so we will process on the network thread
@@ -298,7 +301,7 @@ namespace Garnet.networking
                         readerStatus = TlsReaderStatus.Active;
                         Read();
                         while (readerStatus == TlsReaderStatus.Active)
-                            expectingData.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false).GetAwaiter().GetResult();
+                            await expectingData.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false);
                     }
                     break;
                 case TlsReaderStatus.Waiting:
@@ -309,7 +312,7 @@ namespace Garnet.networking
                     _ = receivedData.Release();
 
                     while (readerStatus == TlsReaderStatus.Active)
-                        expectingData.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false).GetAwaiter().GetResult();
+                        await expectingData.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false);
                     break;
                 default:
                     ThrowInvalidOperationException($"Unexpected reader status {readerStatus}");
