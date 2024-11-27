@@ -116,7 +116,7 @@ namespace Tsavorite.core
 
                 // TODO: This requires ScanCursor to provide a consistent snapshot considering only records up to untilAddress
                 // There is a bug in the current implementation of ScanCursor, where it does not provide such a consistent snapshot
-                _ = s.ScanCursor(ref scannedUntilAddressCursor, long.MaxValue, scanFunctions, endAddress: untilAddress);
+                _ = s.ScanCursor(ref scannedUntilAddressCursor, long.MaxValue, scanFunctions, endAddress: untilAddress, maxAddress: untilAddress);
 
                 // Reset the cursor to 0
                 scannedUntilAddressCursor = 0;
