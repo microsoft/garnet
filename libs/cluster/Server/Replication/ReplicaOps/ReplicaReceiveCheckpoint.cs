@@ -40,6 +40,7 @@ namespace Garnet.cluster
             if (!replicateLock.TryWriteLock())
             {
                 errorMessage = "ERR Replicate already in progress"u8;
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_REPLICATE_LOCK;
                 return false;
             }
 
