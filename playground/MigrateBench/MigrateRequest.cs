@@ -133,11 +133,8 @@ namespace MigrateBench
             try
             {
                 var slots = opts.Slots.ToArray();
-                if ((slots.Length & 0x1) > 0)
-                {
-                    logger?.LogError("Malformed SLOTRANGES input; please provide pair of ranges");
+                if (!Common.Validate(slots, logger))
                     return;
-                }
 
                 // migrate 192.168.1.20 7001 "" 0 5000 SLOTSRANGE 1000 7000
                 ICollection<string> migrate = ["MIGRATE", targetNodeEndpoint.Address.ToString(), targetNodeEndpoint.Port.ToString(), "", "0", timeout.ToString(), "REPLACE", "SLOTSRANGE"];
@@ -171,21 +168,8 @@ namespace MigrateBench
         {
             try
             {
-                var slots = opts.Slots.ToArray();
-                if ((slots.Length & 0x1) > 0)
-                {
-                    logger?.LogError("Malformed SLOTSRANGES input; please provide pair of ranges");
-                    return;
-                }
-
-                var _slots = new List<int>();
-                for (var i = 0; i < slots.Length; i += 2)
-                {
-                    var startSlot = slots[i];
-                    var endSlot = slots[i + 1];
-                    for (var j = startSlot; j <= endSlot; j++)
-                        _slots.Add(j);
-                }
+                var _slots = Common.GetSingleSlots(opts, logger);
+                if (_slots == null) return;
 
                 ICollection<string> migrate = ["MIGRATE", targetNodeEndpoint.Address.ToString(), targetNodeEndpoint.Port.ToString(), "", "0", timeout.ToString(), "REPLACE", "SLOTS"];
                 foreach (var slot in _slots)
@@ -218,21 +202,8 @@ namespace MigrateBench
         {
             try
             {
-                var slots = opts.Slots.ToArray();
-                if ((slots.Length & 0x1) > 0)
-                {
-                    logger?.LogError("Malformed SLOTSRANGES input; please provide pair of ranges");
-                    return;
-                }
-
-                var _slots = new List<int>();
-                for (var i = 0; i < slots.Length; i += 2)
-                {
-                    var startSlot = slots[i];
-                    var endSlot = slots[i + 1];
-                    for (var j = startSlot; j < endSlot; j++)
-                        _slots.Add(j);
-                }
+                var _slots = Common.GetSingleSlots(opts, logger);
+                if (_slots == null) return;
 
                 long myIdElapsed = 0;
                 long setSlotElapsed = 0;
@@ -259,11 +230,11 @@ namespace MigrateBench
                     countkeysinslot[2] = slotStr;
                     getkeysinslot[2] = slotStr;
 
-                    var resp = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(stable).GetAwaiter(), "SETSLOT_STABLE", ref setSlotElapsed, opts.Verbose, logger);
-                    resp = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(migrating).GetAwaiter(), "SETSLOT_MIGRATING", ref setSlotElapsed, opts.Verbose, logger);
-
-                    resp = MeasureElapsed(Stopwatch.GetTimestamp(), targetNode.ExecuteAsync(stable).GetAwaiter(), "SETSLOT_STABLE", ref setSlotElapsed, opts.Verbose, logger);
+                    var resp = MeasureElapsed(Stopwatch.GetTimestamp(), targetNode.ExecuteAsync(stable).GetAwaiter(), "SETSLOT_STABLE", ref setSlotElapsed, opts.Verbose, logger);
                     resp = MeasureElapsed(Stopwatch.GetTimestamp(), targetNode.ExecuteAsync(importing).GetAwaiter(), "SETSLOT_IMPORTING", ref setSlotElapsed, opts.Verbose, logger);
+
+                    resp = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(stable).GetAwaiter(), "SETSLOT_STABLE", ref setSlotElapsed, opts.Verbose, logger);
+                    resp = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(migrating).GetAwaiter(), "SETSLOT_MIGRATING", ref setSlotElapsed, opts.Verbose, logger);
 
                     getkeysinslot[3] = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(countkeysinslot).GetAwaiter(), "COUNTKEYSINSLOT", ref countKeysElapsed, opts.Verbose, logger);
                     var keys = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteForArrayAsync(getkeysinslot).GetAwaiter(), "GETKEYSINSLOT", ref getKeysElapsed, opts.Verbose, logger);
@@ -272,8 +243,11 @@ namespace MigrateBench
                     foreach (var key in keys)
                         migrate.Add(key);
 
-                    var request = migrate.ToArray();
-                    resp = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(request).GetAwaiter(), $"MIGRATE ({slot}, {keys.Length})", ref migrateKeysElapsed, opts.Verbose, logger);
+                    if (keys.Length > 0)
+                    {
+                        var request = migrate.ToArray();
+                        resp = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(request).GetAwaiter(), $"MIGRATE ({slot}, {keys.Length})", ref migrateKeysElapsed, opts.Verbose, logger);
+                    }
 
                     resp = MeasureElapsed(Stopwatch.GetTimestamp(), targetNode.ExecuteAsync(node).GetAwaiter(), "NODE_TARGET", ref setSlotElapsed, opts.Verbose, logger);
                     resp = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(node).GetAwaiter(), "NODE_SOURCE", ref setSlotElapsed, opts.Verbose, logger);

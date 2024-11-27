@@ -20,6 +20,8 @@ namespace Garnet.test.cluster
     [TestFixture(false), NonParallelizable]
     public unsafe class ClusterMigrateTests(bool UseTLS)
     {
+        const int testTimeout = 100000;
+
         public (Action, string)[] GetUnitTests()
         {
             (Action, string)[] x =
@@ -70,7 +72,8 @@ namespace Garnet.test.cluster
 
         readonly Dictionary<string, LogLevel> monitorTests = new()
         {
-            {"ClusterTLSSlotChangeStatus", LogLevel.Error }
+            {"ClusterTLSSlotChangeStatus", LogLevel.Error },
+            {"ClusterMigrateSlotWalk", LogLevel.Warning }
         };
 
         public TextWriter logTextWriter = TestContext.Progress;
@@ -636,7 +639,7 @@ namespace Garnet.test.cluster
                     moved |= movedPort == targetPort;
                 }
 
-                // Check if slot is accesible only from target and not source,
+                // Check if slot is accessible only from target and not source,
                 // and other nodes have been informed.
                 if (moved && targetSlotPortMap.ContainsKey((ushort)slot) &&
                     !sourceSlotPortMap.ContainsKey((ushort)slot))
@@ -1606,7 +1609,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(16)]
+        [Test, Order(17)]
         [Category("CLUSTER")]
         public void ClusterMigrateDataSlotsRange()
         {
@@ -1667,7 +1670,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(16)]
+        [Test, Order(18)]
         [Category("CLUSTER")]
         public void ClusterMigrateLargePayload([Values] bool expiration, [Values] bool largePayload)
         {
@@ -1681,7 +1684,7 @@ namespace Garnet.test.cluster
             ClusterMigrateExpirationWithVaryingPayload(expiration, data);
         }
 
-        [Test, Order(16)]
+        [Test, Order(19)]
         [Category("CLUSTER")]
         public void ClusterMigrateIncreasingPayload([Values] bool expiration, [Values] bool largeSameSize)
         {
@@ -1768,6 +1771,163 @@ namespace Garnet.test.cluster
             {
                 foreach (var pair in data)
                     ClassicAssert.IsNotNull(db.KeyTimeToLive(pair.Item1), "key does not have expiry after migration");
+            }
+        }
+
+        [Order(20), CancelAfter(testTimeout)]
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ClusterMigrateSlotWalk(bool slots, CancellationToken cancellationToken)
+        {
+            var sourceNode = 0;
+            var shards = 5;
+            var targetNode = shards - 1;
+            var slotCount = 10;
+
+            SetupInstances(sourceNode, out var nodeIds, out var nodeEndpoints);
+
+            for (var slot = 0; slot < slotCount; slot++)
+            {
+                var _src = sourceNode;
+                var _tgt = _src + 1;
+
+                while (_tgt < shards)
+                {
+                    if (slots)
+                        MigrateSlots();
+                    else
+                        MigrateKeys();
+                    _src++;
+                    _tgt++;
+                }
+
+                void MigrateKeys()
+                {
+                    // Issue IMPORTING and spinWait until it succeeds
+                    var status = context.clusterTestUtils.SetSlot(_tgt, slot, "IMPORTING", nodeIds[_src], logger: context.logger);
+                    while (string.IsNullOrEmpty(status) || !status.Equals("OK"))
+                    {
+                        ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: $"{nodeIds[_src]}({nodeEndpoints[_src].Port}) > {slot} > {nodeIds[_tgt]}({nodeEndpoints[_tgt].Port})");
+                        status = context.clusterTestUtils.SetSlot(_tgt, slot, "IMPORTING", nodeIds[_src], logger: context.logger);
+                    }
+
+                    // Issue MIGRATING and spinWait until it succeeds
+                    status = context.clusterTestUtils.SetSlot(_src, slot, "MIGRATING", nodeIds[_tgt], logger: context.logger);
+                    while (string.IsNullOrEmpty(status) || !status.Equals("OK"))
+                    {
+                        ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: $"{nodeIds[_src]}({nodeEndpoints[_src].Port}) > {slot} > {nodeIds[_tgt]}({nodeEndpoints[_tgt].Port})");
+                        status = context.clusterTestUtils.SetSlot(_src, slot, "MIGRATING", nodeIds[_tgt], logger: context.logger);
+                    }
+
+                    // Transfer keys if any
+                    var countKeys = context.clusterTestUtils.CountKeysInSlot(_src, slot, context.logger);
+                    if (countKeys > 0)
+                    {
+                        var keysInSlot = context.clusterTestUtils.GetKeysInSlot(_src, slot, countKeys, context.logger);
+                        context.logger.LogDebug("6. GetKeysInSlot {keysInSlot.Count}", keysInSlot.Count);
+
+                        context.logger.LogDebug("7. MigrateKeys starting");
+                        context.clusterTestUtils.MigrateKeys(nodeEndpoints[_src], nodeEndpoints[_tgt], keysInSlot, context.logger);
+                        context.logger.LogDebug("8. MigrateKeys done");
+                    }
+
+                    // Set slot to stable state
+                    _ = context.clusterTestUtils.SetSlot(_tgt, slot, "NODE", nodeIds[_tgt], logger: context.logger);
+                    _ = context.clusterTestUtils.SetSlot(_src, slot, "NODE", nodeIds[_tgt], logger: context.logger);
+                }
+
+                void MigrateSlots()
+                {
+                    // Check src node owns slots
+                    while (true)
+                    {
+                        var config = context.clusterTestUtils.ClusterNodes(_src, logger: context.logger);
+                        var node = config.GetBySlot(slot);
+                        if (node != null && node.NodeId.Equals(nodeIds[_src]))
+                            break;
+                        ClusterTestUtils.BackOff(cancellationToken: cancellationToken);
+                    }
+
+                    // Check tgt node knows that src owns slot
+                    while (true)
+                    {
+                        var config = context.clusterTestUtils.ClusterNodes(_tgt, logger: context.logger);
+                        var node = config.GetBySlot(slot);
+                        if (node != null && node.NodeId.Equals(nodeIds[_src]))
+                            break;
+                        ClusterTestUtils.BackOff(cancellationToken: cancellationToken);
+                    }
+
+                    var sourceEndPoint = context.clusterTestUtils.GetEndPoint(_src);
+                    var targetEndPoint = context.clusterTestUtils.GetEndPoint(_tgt);
+                    context.clusterTestUtils.MigrateSlots(
+                        sourceEndPoint,
+                        targetEndPoint,
+                        [slot],
+                        range: false,
+                        logger: context.logger);
+
+                    while (true)
+                    {
+                        var config = context.clusterTestUtils.ClusterNodes(_tgt, logger: context.logger);
+                        var node = config.GetBySlot(slot);
+                        if (node != null && node.NodeId.Equals(nodeIds[_tgt]))
+                            break;
+                        ClusterTestUtils.BackOff(cancellationToken: cancellationToken);
+                    }
+                }
+            }
+
+            ValidateConfig();
+
+            void SetupInstances(int sourceNode, out string[] nodeIds, out IPEndPoint[] nodeEndpoints)
+            {
+                context.CreateInstances(shards, useTLS: UseTLS);
+                context.CreateConnection(useTLS: UseTLS);
+
+                // Assign all slots to first node
+                _ = context.clusterTestUtils.AddSlotsRange(sourceNode, [(0, 16383)], logger: context.logger);
+
+                // Set config epoch
+                for (var i = 0; i < shards; i++)
+                    context.clusterTestUtils.SetConfigEpoch(i, i + 1, logger: context.logger);
+
+                // Introduce nodes to each other
+                for (var i = 1; i < shards; i++)
+                    context.clusterTestUtils.Meet(0, i, logger: context.logger);
+
+                context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(0, logger: context.logger);
+                for (var i = 0; i < shards; i++)
+                    context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(i, logger: context.logger);
+
+                // Acquire node ids
+                nodeIds = new string[shards];
+                for (var i = 0; i < shards; i++)
+                    nodeIds[i] = context.clusterTestUtils.ClusterMyId(i, logger: context.logger);
+
+                nodeEndpoints = new IPEndPoint[shards];
+                for (var i = 0; i < shards; i++)
+                    nodeEndpoints[i] = context.clusterTestUtils.GetEndPoint(i);
+            }
+
+            void ValidateConfig()
+            {
+                for (var i = 0; i < shards; i++)
+                {
+                    var config = context.clusterTestUtils.ClusterNodes(i, logger: context.logger);
+                    for (var slot = 0; slot < slotCount; slot++)
+                    {
+                        var node = config.GetBySlot(slot);
+
+                        if (node == null || nodeIds[shards - 1] != node.NodeId)
+                        {
+                            i = 0;
+                            ClusterTestUtils.BackOff(cancellationToken: cancellationToken);
+                            continue;
+                        }
+                        ClassicAssert.AreEqual(nodeIds[shards - 1], node.NodeId);
+                    }
+                }
             }
         }
     }
