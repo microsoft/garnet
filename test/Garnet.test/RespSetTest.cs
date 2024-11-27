@@ -748,7 +748,7 @@ namespace Garnet.test
                 db.SetAdd("key2", value);
             }
 
-            var result = limit == null ? 
+            var result = limit == null ?
                 (long)db.Execute("SINTERCARD", 2, "key1", "key2") :
                 (long)db.Execute("SINTERCARD", 2, "key1", "key2", "LIMIT", limit);
 

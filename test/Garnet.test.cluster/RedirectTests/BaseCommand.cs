@@ -1132,7 +1132,7 @@ namespace Garnet.test.cluster
         public override string[] GetCrossSlotRequest()
         {
             var csk = GetCrossSlotKeys;
-            return ["3", csk[0], csk[1], csk[2]]; 
+            return ["3", csk[0], csk[1], csk[2]];
         }
 
         public override ArraySegment<string>[] SetupSingleSlotRequest()
