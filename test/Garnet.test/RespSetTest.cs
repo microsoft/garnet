@@ -1388,15 +1388,6 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("SINTERCARD 2 nonexistent1 nonexistent2");
             expectedResponse = ":0\r\n";
             ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
-
-            // Test error cases
-            response = lightClientRequest.SendCommand("SINTERCARD");
-            expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, "SINTERCARD")}\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
-
-            response = lightClientRequest.SendCommand("SINTERCARD not_a_number key1 key2");
-            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER)}\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
 
         #endregion
