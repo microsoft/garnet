@@ -151,6 +151,79 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Returns the cardinality of the intersection between multiple sets.
+        /// </summary>
+        /// <param name="storageApi"></param>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <returns></returns>
+        private bool SetIntersectCard<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 2) // Need at least numkeys + 1 key
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SINTERCARD));
+            }
+
+            // Number of keys
+            if (!parseState.TryGetInt(0, out var nKeys))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var keys = new ArgSlice[nKeys];
+            int? limit = null;
+
+            if ((parseState.Count - 1) < nKeys)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            for (var i = 1; i <= nKeys; i++)
+            {
+                keys[i - 1] = parseState.GetArgSliceByRef(i);
+            }
+
+            // Optional LIMIT argument
+            if (parseState.Count > nKeys + 1)
+            {
+                var limitArg = parseState.GetArgSliceByRef(nKeys + 1);
+                if (!limitArg.ReadOnlySpan.SequenceEqual(CmdStrings.LIMIT))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (parseState.Count != nKeys + 3 || !parseState.TryGetInt(nKeys + 2, out var limitVal))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                limit = limitVal;
+            }
+
+            var status = storageApi.SetIntersectCard(keys, limit, out var result);
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }
 
         /// <summary>
         /// Returns the members of the set resulting from the union of all the given sets.

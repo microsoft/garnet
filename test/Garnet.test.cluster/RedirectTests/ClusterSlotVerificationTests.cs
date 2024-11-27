@@ -122,6 +122,7 @@ namespace Garnet.test.cluster
                 new WATCH(),
                 new WATCHMS(),
                 new WATCHOS(),
+                new SINTERCARD(),
             };
 
         ClusterTestContext context;
@@ -301,6 +302,7 @@ namespace Garnet.test.cluster
         [TestCase("WATCH")]
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
+        [TestCase("SINTERCARD")]
         public void ClusterCLUSTERDOWNTest(string commandName)
         {
             var requestNodeIndex = otherIndex;
@@ -439,6 +441,7 @@ namespace Garnet.test.cluster
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
+        [TestCase("SINTERCARD")]
         public void ClusterOKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -588,6 +591,7 @@ namespace Garnet.test.cluster
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
+        [TestCase("SINTERCARD")]
         public void ClusterCROSSSLOTTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -729,6 +733,7 @@ namespace Garnet.test.cluster
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
+        [TestCase("SINTERCARD")]
         public void ClusterMOVEDTest(string commandName)
         {
             var requestNodeIndex = targetIndex;
@@ -877,6 +882,7 @@ namespace Garnet.test.cluster
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
+        [TestCase("SINTERCARD")]
         public void ClusterASKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -1042,6 +1048,7 @@ namespace Garnet.test.cluster
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
+        [TestCase("SINTERCARD")]
         public void ClusterTRYAGAINTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;

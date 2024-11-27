@@ -674,6 +674,19 @@ If **destination** already exists, it is overwritten.
 
 ---
 
+### SINTERCARD
+
+#### Syntax
+
+```bash
+    SINTERCARD key [key ...]
+```
+
+Returns the number of members in the resulting set from the intersection of all the given sets.
+Keys that do not exist are considered to be empty sets.
+
+---
+
 ### SDIFF
 
 #### Syntax
