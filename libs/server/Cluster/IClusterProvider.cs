@@ -50,10 +50,18 @@ namespace Garnet.server
         MetricsItem[] GetBufferPoolStats();
 
         /// <summary>
-        /// Purger buffer pool for provided manager
+        /// Purge buffer pool for provided manager
         /// </summary>
         /// <param name="managerType"></param>
         void PurgeBufferPool(ManagerType managerType);
+
+        /// <summary>
+        /// Extract key specs
+        /// </summary>
+        /// <param name="commandInfo"></param>
+        /// <param name="cmd"></param>
+        /// <param name="csvi"></param>
+        void ExtractKeySpecs(RespCommandsInfo commandInfo, RespCommand cmd, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi);
 
         /// <summary>
         /// Is replica
