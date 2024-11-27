@@ -18,6 +18,8 @@ namespace Garnet.server
         public int PriorVersion => 1 - Version;
         public LatencyMetricsEntrySession[] metrics;
 
+        private SingleWriterMultiReaderLock disposeLock;
+
         public GarnetLatencyMetricsSession(GarnetServerMonitor monitor)
         {
             this.monitor = monitor;
@@ -30,7 +32,15 @@ namespace Garnet.server
             {
                 metrics[(int)cmd].Return();
             }
-            metrics = null;
+            try
+            {
+                disposeLock.WriteLock();
+                metrics = null;
+            }
+            finally
+            {
+                disposeLock.WriteUnlock();
+            }
         }
 
         private void Init()
@@ -80,7 +90,18 @@ namespace Garnet.server
         public void Reset(LatencyMetricsType cmd)
         {
             int idx = (int)cmd;
-            metrics[idx].latency[PriorVersion].Reset();
+            try
+            {
+                disposeLock.WriteLock();
+                if (metrics != null)
+                {
+                    metrics[idx].latency[PriorVersion].Reset();
+                }
+            }
+            finally
+            {
+                disposeLock.WriteUnlock();
+            }
         }
     }
 }
