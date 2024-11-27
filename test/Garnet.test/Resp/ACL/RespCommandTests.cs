@@ -5954,6 +5954,36 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ZUnionACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZUNION",
+                [DoZUnionAsync]
+            );
+
+            static async Task DoZUnionAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZUNION", ["2", "foo", "bar"]);
+                ClassicAssert.AreEqual(0, val.Length);
+            }
+        }
+
+        [Test]
+        public async Task ZUnionStoreACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZUNIONSTORE",
+                [DoZUnionStoreAsync]
+            );
+
+            static async Task DoZUnionStoreAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("ZUNIONSTORE", ["keyZ", "2", "foo", "bar"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
         public async Task ZScanACLsAsync()
         {
             await CheckCommandsAsync(

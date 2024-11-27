@@ -280,6 +280,8 @@ namespace CommandInfoUpdater
             new("ZREVRANK", RespCommand.ZREVRANK),
             new("ZSCAN", RespCommand.ZSCAN),
             new("ZSCORE", RespCommand.ZSCORE),
+            new("ZUNION", RespCommand.ZUNION),
+            new("ZUNIONSTORE", RespCommand.ZUNIONSTORE),
             new("EVAL", RespCommand.EVAL),
             new("EVALSHA", RespCommand.EVALSHA),
             new("SCRIPT", RespCommand.SCRIPT),

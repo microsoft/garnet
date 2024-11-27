@@ -6241,5 +6241,142 @@
         "Type": "String"
       }
     ]
+  },
+  {
+    "Command": "ZUNION",
+    "Name": "ZUNION",
+    "Summary": "Returns the union of multiple sorted sets.",
+    "Group": "SortedSet",
+    "Complexity": "O(N)\u002BO(M*log(M)) with N being the sum of the sizes of the input sorted sets, and M being the number of elements in the resulting sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WEIGHT",
+        "DisplayText": "weight",
+        "Type": "Integer",
+        "Token": "WEIGHTS",
+        "ArgumentFlags": "Optional, Multiple"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "AGGREGATE",
+        "Type": "OneOf",
+        "Token": "AGGREGATE",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SUM",
+            "DisplayText": "sum",
+            "Type": "PureToken",
+            "Token": "SUM"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIN",
+            "DisplayText": "min",
+            "Type": "PureToken",
+            "Token": "MIN"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MAX",
+            "DisplayText": "max",
+            "Type": "PureToken",
+            "Token": "MAX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHSCORES",
+        "DisplayText": "withscores",
+        "Type": "PureToken",
+        "Token": "WITHSCORES",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZUNIONSTORE",
+    "Name": "ZUNIONSTORE",
+    "Summary": "Stores the union of multiple sorted sets in a key.",
+    "Group": "SortedSet",
+    "Complexity": "O(N)\u002BO(M log(M)) with N being the sum of the sizes of the input sorted sets, and M being the number of elements in the resulting sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WEIGHT",
+        "DisplayText": "weight",
+        "Type": "Integer",
+        "Token": "WEIGHTS",
+        "ArgumentFlags": "Optional, Multiple"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "AGGREGATE",
+        "Type": "OneOf",
+        "Token": "AGGREGATE",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SUM",
+            "DisplayText": "sum",
+            "Type": "PureToken",
+            "Token": "SUM"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIN",
+            "DisplayText": "min",
+            "Type": "PureToken",
+            "Token": "MIN"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MAX",
+            "DisplayText": "max",
+            "Type": "PureToken",
+            "Token": "MAX"
+          }
+        ]
+      }
+    ]
   }
 ]

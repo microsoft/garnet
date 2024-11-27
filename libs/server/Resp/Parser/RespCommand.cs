@@ -85,6 +85,7 @@ namespace Garnet.server
         ZREVRANK,
         ZSCAN,
         ZSCORE, // Note: Last read command should immediately precede FirstWriteCommand
+        ZUNION,
 
         // Write commands
         APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
@@ -163,6 +164,7 @@ namespace Garnet.server
         ZREMRANGEBYLEX,
         ZREMRANGEBYRANK,
         ZREMRANGEBYSCORE,
+        ZUNIONSTORE,
 
         // BITOP is the true command, AND|OR|XOR|NOT are pseudo-subcommands
         BITOP,
@@ -1161,6 +1163,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.ZRANGE;
                                         }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZUNION\r\n"u8))
+                                        {
+                                            return RespCommand.ZUNION;
+                                        }
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZSCORE\r\n"u8))
                                         {
                                             return RespCommand.ZSCORE;
@@ -1400,6 +1406,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nINCRB"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("YFLOAT\r\n"u8))
                                 {
                                     return RespCommand.INCRBYFLOAT;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZUNIO"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("NSTORE\r\n"u8))
+                                {
+                                    return RespCommand.ZUNIONSTORE;
                                 }
                                 break;
 

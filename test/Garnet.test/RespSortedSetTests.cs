@@ -1086,6 +1086,152 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, actualMembers.Length);
         }
 
+        [Test]
+        [TestCase("SUM", new double[] { 5, 7, 3, 6 }, new string[] { "a", "b", "c", "d" }, Description = "Tests ZUNION with SUM aggregate")]
+        [TestCase("MIN", new double[] { 1, 2, 3, 6 }, new string[] { "a", "b", "c", "d" }, Description = "Tests ZUNION with MIN aggregate")]
+        [TestCase("MAX", new double[] { 4, 5, 3, 6 }, new string[] { "a", "b", "c", "d" }, Description = "Tests ZUNION with MAX aggregate")]
+        public void CanUseZUnionWithAggregateOption(string aggregateType, double[] expectedScores, string[] expectedElements)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Setup test data
+            db.SortedSetAdd("zset1",
+            [
+                new SortedSetEntry("a", 1),
+                new SortedSetEntry("b", 2),
+                new SortedSetEntry("c", 3)
+            ]);
+            db.SortedSetAdd("zset2",
+            [
+                new SortedSetEntry("a", 4),
+                new SortedSetEntry("b", 5),
+                new SortedSetEntry("d", 6)
+            ]);
+
+            var result = db.SortedSetCombineWithScores(SetOperation.Union, ["zset1", "zset2"],
+                weights: null, aggregate: aggregateType switch
+                {
+                    "SUM" => Aggregate.Sum,
+                    "MIN" => Aggregate.Min,
+                    "MAX" => Aggregate.Max,
+                    _ => throw new ArgumentException("Invalid aggregate type")
+                });
+
+            ClassicAssert.AreEqual(expectedScores.Length, result.Length);
+            for (int i = 0; i < result.Length; i++)
+            {
+                ClassicAssert.AreEqual(expectedScores[i], result[i].Score);
+                ClassicAssert.AreEqual(expectedElements[i], result[i].Element.ToString());
+            }
+        }
+
+        [Test]
+        [TestCase(new double[] { 2, 3 }, new double[] { 14, 19, 6, 18 }, new string[] { "a", "b", "c", "d" }, Description = "Tests ZUNION with multiple weights")]
+        public void CanUseZUnionWithWeights(double[] weights, double[] expectedScores, string[] expectedElements)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Setup test data
+            db.SortedSetAdd("zset1", [
+                new("a", 1),
+                new("b", 2),
+                new("c", 3)
+            ]);
+            db.SortedSetAdd("zset2", [
+                new("a", 4),
+                new("b", 5),
+                new("d", 6)
+            ]);
+
+            var result = db.SortedSetCombineWithScores(SetOperation.Union,
+                ["zset1", "zset2"],
+                weights: weights);
+
+            ClassicAssert.AreEqual(expectedScores.Length, result.Length);
+            for (int i = 0; i < result.Length; i++)
+            {
+                ClassicAssert.AreEqual(expectedScores[i], result[i].Score);
+                ClassicAssert.AreEqual(expectedElements[i], result[i].Element.ToString());
+            }
+        }
+
+        [Test]
+        [TestCase("SUM", new double[] { 3, 5, 6, 7 }, new string[] { "c", "a", "d", "b" }, Description = "Tests ZUNIONSTORE with SUM aggregate")]
+        [TestCase("MIN", new double[] { 1, 2, 3, 6 }, new string[] { "a", "b", "c", "d" }, Description = "Tests ZUNIONSTORE with MIN aggregate")]
+        [TestCase("MAX", new double[] { 3, 4, 5, 6 }, new string[] { "c", "a", "b", "d" }, Description = "Tests ZUNIONSTORE with MAX aggregate")]
+        public void CanUseZUnionStoreWithAggregateOption(string aggregateType, double[] expectedScores, string[] expectedElements)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Setup test data
+            db.SortedSetAdd("zset1",
+            [
+                new SortedSetEntry("a", 1),
+                new SortedSetEntry("b", 2),
+                new SortedSetEntry("c", 3)
+            ]);
+            db.SortedSetAdd("zset2",
+            [
+                new SortedSetEntry("a", 4),
+                new SortedSetEntry("b", 5),
+                new SortedSetEntry("d", 6)
+            ]);
+
+            db.SortedSetCombineAndStore(SetOperation.Union, "zset3", ["zset1", "zset2"],
+                weights: null, aggregate: aggregateType switch
+                {
+                    "SUM" => Aggregate.Sum,
+                    "MIN" => Aggregate.Min,
+                    "MAX" => Aggregate.Max,
+                    _ => throw new ArgumentException("Invalid aggregate type")
+                });
+
+            var result = db.SortedSetRangeByRankWithScores("zset3");
+
+            ClassicAssert.AreEqual(expectedScores.Length, result.Length);
+            for (int i = 0; i < result.Length; i++)
+            {
+                ClassicAssert.AreEqual(expectedScores[i], result[i].Score);
+                ClassicAssert.AreEqual(expectedElements[i], result[i].Element.ToString());
+            }
+        }
+
+        [Test]
+        [TestCase(new double[] { 2, 3 }, new double[] { 14, 19, 6, 18 }, new string[] { "a", "b", "c", "d" }, Description = "Tests ZUNIONSTORE with multiple weights")]
+        public void CanUseZUnionStoreWithWeights(double[] weights, double[] expectedScores, string[] expectedElements)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Setup test data
+            db.SortedSetAdd("zset1", [
+                new("a", 1),
+                new("b", 2),
+                new("c", 3)
+            ]);
+            db.SortedSetAdd("zset2", [
+                new("a", 4),
+                new("b", 5),
+                new("d", 6)
+            ]);
+
+            db.SortedSetCombineAndStore(SetOperation.Union, "zset3",
+                ["zset1", "zset2"],
+                weights: weights);
+
+            var result = db.SortedSetRangeByRankWithScores("zset3");
+
+            ClassicAssert.AreEqual(expectedScores.Length, result.Length);
+            for (int i = 0; i < result.Length; i++)
+            {
+                ClassicAssert.AreEqual(expectedScores[i], result[i].Score);
+                ClassicAssert.AreEqual(expectedElements[i], result[i].Element.ToString());
+            }
+        }
+
         #endregion
 
         #region LightClientTests
@@ -1428,6 +1574,67 @@ namespace Garnet.test
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
+
+        [Test]
+        [TestCase(10)]
+        [TestCase(30)]
+        [TestCase(100)]
+        public void CanUseZUnion(int bytesSent)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("ZADD zset1 1 uno 2 due 3 tre 4 quattro");
+            lightClientRequest.SendCommand("ZADD zset2 1 uno 2 due 3 tre 4 quattro 5 cinque 6 sei");
+
+            // Basic ZUNION
+            var response = lightClientRequest.SendCommandChunks("ZUNION 2 zset1 zset2", bytesSent, 7);
+            var expectedResponse = "*6\r\n$3\r\nuno\r\n$3\r\ndue\r\n$3\r\ntre\r\n$7\r\nquattro\r\n$6\r\ncinque\r\n$3\r\nsei\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // ZUNION with WITHSCORES
+            response = lightClientRequest.SendCommandChunks("ZUNION 2 zset1 zset2 WITHSCORES", bytesSent, 13);
+            expectedResponse = "*12\r\n$3\r\nuno\r\n$1\r\n2\r\n$3\r\ndue\r\n$1\r\n4\r\n$3\r\ntre\r\n$1\r\n6\r\n$7\r\nquattro\r\n$1\r\n8\r\n$6\r\ncinque\r\n$1\r\n5\r\n$3\r\nsei\r\n$1\r\n6\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        [TestCase(10)]
+        [TestCase(30)]
+        [TestCase(100)]
+        public void CanUseZUnionStore(int bytesSent)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("ZADD zset1 1 uno 2 due 3 tre 4 quattro");
+            lightClientRequest.SendCommand("ZADD zset2 1 uno 2 due 3 tre 4 quattro 5 cinque 6 sei");
+
+            // Basic ZUNIONSTORE
+            var response = lightClientRequest.SendCommandChunks("ZUNIONSTORE destset 2 zset1 zset2", bytesSent);
+            var expectedResponse = ":6\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // Verify stored result
+            response = lightClientRequest.SendCommandChunks("ZRANGE destset 0 -1 WITHSCORES", bytesSent, 13);
+            expectedResponse = "*12\r\n$3\r\nuno\r\n$1\r\n2\r\n$3\r\ndue\r\n$1\r\n4\r\n$6\r\ncinque\r\n$1\r\n5\r\n$3\r\nsei\r\n$1\r\n6\r\n$3\r\ntre\r\n$1\r\n6\r\n$7\r\nquattro\r\n$1\r\n8\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanUseZUnionWithMultipleOptions()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("ZADD zset1 1 uno 2 due 3 tre");
+            lightClientRequest.SendCommand("ZADD zset2 4 uno 5 due 6 quattro");
+
+            // Test WEIGHTS and AGGREGATE together
+            var response = lightClientRequest.SendCommand("ZUNION 2 zset1 zset2 WEIGHTS 2 3 AGGREGATE MAX WITHSCORES");
+            var expectedResponse = "*8\r\n$3\r\nuno\r\n$2\r\n12\r\n$3\r\ndue\r\n$2\r\n15\r\n$3\r\ntre\r\n$1\r\n6\r\n$7\r\nquattro\r\n$2\r\n18\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
         #endregion
 
         #region NegativeTestsLC
