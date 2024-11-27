@@ -38,7 +38,7 @@ namespace Garnet.server
                 metrics = null;
             }
             finally
-            { 
+            {
                 disposeLock.WriteUnlock();
             }
         }
