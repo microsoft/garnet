@@ -1200,7 +1200,7 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase(new double[] { 2, 3 }, new double[] { 14, 19, 6, 18 }, new string[] { "a", "b", "c", "d" }, Description = "Tests ZUNIONSTORE with multiple weights")]
+        [TestCase(new double[] { 2, 3 }, new double[] { 6, 14, 18, 19 }, new string[] { "c", "a", "d", "b" }, Description = "Tests ZUNIONSTORE with multiple weights")]
         public void CanUseZUnionStoreWithWeights(double[] weights, double[] expectedScores, string[] expectedElements)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1218,9 +1218,7 @@ namespace Garnet.test
                 new("d", 6)
             ]);
 
-            db.SortedSetCombineAndStore(SetOperation.Union, "zset3",
-                ["zset1", "zset2"],
-                weights: weights);
+            db.SortedSetCombineAndStore(SetOperation.Union, "zset3", ["zset1", "zset2"], weights: weights);
 
             var result = db.SortedSetRangeByRankWithScores("zset3");
 
