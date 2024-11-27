@@ -792,6 +792,43 @@ An error is returned when **key** exists but does not hold a sorted set.
 
 The score value should be the string representation of a numeric value, and accepts double precision floating point numbers. It is possible to provide a negative value to decrement the score.
 
+---
+
+### ZINTER
+
+#### Syntax
+
+```bash
+    ZINTER numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM|MIN|MAX>] [WITHSCORES]
+```
+
+Computes the intersection of the sorted sets given by the specified keys and returns the result. It is possible to specify multiple keys.
+
+The result is a new sorted set with the same elements as the input sets, but with scores equal to the sum of the scores of the elements in the input sets.
+
+---
+
+### ZINTERCARD
+
+#### Syntax
+
+```bash
+    ZINTERCARD numkeys key [key ...] [LIMIT limit]
+```
+
+Returns the number of elements in the intersection of the sorted sets given by the specified keys.
+
+---
+
+### ZINTERSTORE
+
+#### Syntax
+
+```bash
+    ZINTERSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM|MIN|MAX>]
+```
+
+Computes the intersection of the sorted sets given by the specified keys and stores the result in the destination key.
 
 ---
 
@@ -1210,4 +1247,3 @@ This command is like [GEOSEARCH](#geosearch), but stores the result in destinati
 Integer reply: the number of elements in the resulting set
 
 ---
-
