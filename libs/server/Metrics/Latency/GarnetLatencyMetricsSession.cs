@@ -32,9 +32,15 @@ namespace Garnet.server
             {
                 metrics[(int)cmd].Return();
             }
-            disposeLock.WriteLock();
-            metrics = null;
-            disposeLock.WriteUnlock();
+            try
+            {
+                disposeLock.WriteLock();
+                metrics = null;
+            }
+            finally
+            { 
+                disposeLock.WriteUnlock();
+            }
         }
 
         private void Init()
@@ -84,12 +90,18 @@ namespace Garnet.server
         public void Reset(LatencyMetricsType cmd)
         {
             int idx = (int)cmd;
-            disposeLock.WriteLock();
-            if (metrics != null)
+            try
             {
-                metrics[idx].latency[PriorVersion].Reset();
+                disposeLock.WriteLock();
+                if (metrics != null)
+                {
+                    metrics[idx].latency[PriorVersion].Reset();
+                }
             }
-            disposeLock.WriteUnlock();
+            finally
+            {
+                disposeLock.WriteUnlock();
+            }
         }
     }
 }
