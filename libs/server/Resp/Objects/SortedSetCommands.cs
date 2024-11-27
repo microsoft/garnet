@@ -1025,7 +1025,7 @@ namespace Garnet.server
         {
             if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments("ZINTERCARD");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZINTERCARD));
             }
 
             // Number of keys
@@ -1048,7 +1048,7 @@ namespace Garnet.server
             if (parseState.Count > nKeys + 1)
             {
                 var limitArg = parseState.GetArgSliceByRef(nKeys + 1);
-                if (!limitArg.ReadOnlySpan.SequenceEqual("LIMIT"u8))
+                if (!limitArg.ReadOnlySpan.SequenceEqual(CmdStrings.LIMIT))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
                         SendAndReset();
