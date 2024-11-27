@@ -82,6 +82,7 @@ namespace CommandInfoUpdater
                 new("CLUSTER|MYID", RespCommand.CLUSTER_MYID),
                 new("CLUSTER|MYPARENTID", RespCommand.CLUSTER_MYPARENTID),
                 new("CLUSTER|NODES", RespCommand.CLUSTER_NODES),
+                new("CLUSTER|PUBLISH", RespCommand.CLUSTER_PUBLISH),
                 new("CLUSTER|REPLICAS", RespCommand.CLUSTER_REPLICAS),
                 new("CLUSTER|REPLICATE", RespCommand.CLUSTER_REPLICATE),
                 new("CLUSTER|RESET", RespCommand.CLUSTER_RESET),
@@ -92,7 +93,7 @@ namespace CommandInfoUpdater
                 new("CLUSTER|SETSLOTSRANGE", RespCommand.CLUSTER_SETSLOTSRANGE),
                 new("CLUSTER|SHARDS", RespCommand.CLUSTER_SHARDS),
                 new("CLUSTER|SLOTS", RespCommand.CLUSTER_SLOTS),
-                new("CLUSTER|SLOTSTATE", RespCommand.CLUSTER_SLOTSTATE),
+                new("CLUSTER|SLOTSTATE", RespCommand.CLUSTER_SLOTSTATE)
             ]),
             new("COMMAND", RespCommand.COMMAND,
             [
