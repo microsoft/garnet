@@ -18,7 +18,7 @@ namespace Garnet.server
         {
             this.id = id;
             this.factory = functions;
-            this.commandMap = new ExtensibleCustomCommandMap<CustomObjectCommand>(MinMapSize, byte.MaxValue);
+            this.commandMap = new ExtensibleCustomCommandMap<CustomObjectCommand>(MinMapSize, byte.MaxValue, 0);
         }
     }
 }

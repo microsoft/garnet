@@ -25,6 +25,6 @@ namespace Garnet.server
             this.functions = functions;
         }
 
-        internal GarnetObjectType GetObjectType() => (GarnetObjectType)(id + CustomCommandManager.TypeIdStartOffset);
+        internal GarnetObjectType GetObjectType() => (GarnetObjectType)(byte.MaxValue - CustomCommandManager.TypeIdStartOffset - id);
     }
 }

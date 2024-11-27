@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace Garnet.server
 {
@@ -11,16 +12,16 @@ namespace Garnet.server
     /// </summary>
     public class CustomCommandManager
     {
-        static readonly int MinMapSize = 8;
-        internal static readonly ushort StartOffset = 1;
-        internal static readonly int MaxRegistrations = ushort.MaxValue - (ushort)RespCommandExtensions.LastValidCommand - 1;
-        internal static readonly byte TypeIdStartOffset = (byte)(GarnetObjectTypeExtensions.LastObjectType + 1);
-        internal static readonly int MaxTypeRegistrations = (byte)(GarnetObjectTypeExtensions.FirstSpecialObjectType) - TypeIdStartOffset;
+        internal static readonly int MinMapSize = 8;
+        internal static readonly byte CommandIdStartOffset = 1;
+        internal static readonly int MaxCommandRegistrations = ushort.MaxValue - (ushort)RespCommandExtensions.LastValidCommand - 1;
+        internal static readonly byte TypeIdStartOffset = byte.MaxValue - (byte)GarnetObjectTypeExtensions.FirstSpecialObjectType;
+        internal static readonly int MaxTypeRegistrations = byte.MaxValue - ((byte)GarnetObjectTypeExtensions.LastObjectType + 1) - TypeIdStartOffset;
 
-        internal readonly CustomCommandMap rawStringCommandMap;
-        internal readonly CustomObjectCommandMap objectCommandMap;
-        internal readonly CustomTransactionMap transactionProcMap;
-        internal readonly CustomProcedureMap customProcedureMap;
+        private readonly CustomCommandMap rawStringCommandMap;
+        private readonly CustomObjectCommandMap objectCommandMap;
+        private readonly CustomTransactionMap transactionProcMap;
+        private readonly CustomProcedureMap customProcedureMap;
 
         internal int CustomCommandsInfoCount => CustomCommandsInfo.Count;
         internal readonly Dictionary<string, RespCommandsInfo> CustomCommandsInfo = new(StringComparer.OrdinalIgnoreCase);
@@ -31,32 +32,36 @@ namespace Garnet.server
         /// </summary>
         public CustomCommandManager()
         {
-            rawStringCommandMap = new CustomCommandMap(MinMapSize, MaxRegistrations);
+            rawStringCommandMap = new CustomCommandMap(MinMapSize, MaxCommandRegistrations, CommandIdStartOffset);
             objectCommandMap = new CustomObjectCommandMap(MinMapSize, MaxTypeRegistrations);
-            transactionProcMap = new CustomTransactionMap(MinMapSize, MaxRegistrations);
-            customProcedureMap = new CustomProcedureMap(MinMapSize, MaxRegistrations);
+            transactionProcMap = new CustomTransactionMap(MinMapSize, byte.MaxValue, 0);
+            customProcedureMap = new CustomProcedureMap(MinMapSize, byte.MaxValue, 0);
         }
 
         internal int Register(string name, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo, RespCommandDocs commandDocs, long expirationTicks)
         {
-            if (!rawStringCommandMap.TryGetNextId(out var id))
+            if (!rawStringCommandMap.TryGetNextIndex(out var index))
                 throw new Exception("Out of registration space");
+            var cmdId = rawStringCommandMap.GetIdFromIndex(index);
+            Debug.Assert(cmdId <= ushort.MaxValue);
 
-            rawStringCommandMap[id] = new CustomRawStringCommand(name, (ushort)id, type, customFunctions, expirationTicks);
+            rawStringCommandMap[index] = new CustomRawStringCommand(name, (ushort)cmdId, type, customFunctions, expirationTicks);
             if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
-            return id;
+            return cmdId;
         }
 
         internal int Register(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
         {
-            if (!transactionProcMap.TryGetNextId(out var id))
+            if (!transactionProcMap.TryGetNextIndex(out var index))
                 throw new Exception("Out of registration space");
+            var cmdId = transactionProcMap.GetIdFromIndex(index);
+            Debug.Assert(cmdId <= byte.MaxValue);
 
-            transactionProcMap[id] = new CustomTransaction(name, (byte)id, proc);
+            transactionProcMap[index] = new CustomTransaction(name, (byte)cmdId, proc);
             if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
-            return id;
+            return cmdId;
         }
 
         internal int RegisterType(CustomObjectFactory factory)
@@ -65,36 +70,43 @@ namespace Garnet.server
             if (dupRegistrationIdx != -1)
                 throw new Exception($"Type already registered with ID {dupRegistrationIdx}");
 
-            if (!objectCommandMap.TryGetNextId(out var type))
+            if (!objectCommandMap.TryGetNextIndex(out var index))
                 throw new Exception("Out of registration space");
+            var cmdId = objectCommandMap.GetIdFromIndex(index);
+            Debug.Assert(cmdId <= byte.MaxValue);
 
-            objectCommandMap[type] = new CustomObjectCommandWrapper((byte)type, factory);
+            objectCommandMap[index] = new CustomObjectCommandWrapper((byte)cmdId, factory);
 
-            return type;
+            return cmdId;
         }
 
         internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo, RespCommandDocs commandDocs, CustomObjectFunctions customObjectFunctions = null)
         {
-            var objectTypeId = objectCommandMap.FirstIndexSafe(c => c.factory == factory);
+            var index = objectCommandMap.FirstIndexSafe(c => c.factory == factory);
 
-            if (objectTypeId == -1)
+            if (index == -1)
             {
-                if (!objectCommandMap.TryGetNextId(out objectTypeId))
+                if (!objectCommandMap.TryGetNextIndex(out index))
                     throw new Exception("Out of registration space");
 
-                objectCommandMap[objectTypeId] = new CustomObjectCommandWrapper((byte)objectTypeId, factory);
+                var typeId = transactionProcMap.GetIdFromIndex(index);
+                Debug.Assert(typeId <= byte.MaxValue);
+
+                objectCommandMap[index] = new CustomObjectCommandWrapper((byte)typeId, factory);
             }
 
-            var wrapper = objectCommandMap[objectTypeId];
-            if (!wrapper.commandMap.TryGetNextId(out var subCommand))
+            var wrapper = objectCommandMap[index];
+            if (!wrapper.commandMap.TryGetNextIndex(out var scIndex))
                 throw new Exception("Out of registration space");
 
-            wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, commandType, wrapper.factory, customObjectFunctions);
+            var scId = transactionProcMap.GetIdFromIndex(index);
+            Debug.Assert(scId <= byte.MaxValue);
+            wrapper.commandMap[scIndex] = new CustomObjectCommand(name, (byte)scId, (byte)scIndex, commandType, wrapper.factory, customObjectFunctions);
 
             if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
 
-            return (objectTypeId, subCommand);
+            return (scId, scIndex);
         }
 
         /// <summary>
@@ -108,13 +120,35 @@ namespace Garnet.server
         /// <exception cref="Exception"></exception>
         internal int Register(string name, Func<CustomProcedure> customProcedure, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
         {
-            if (!customProcedureMap.TryGetNextId(out var id))
+            if (!customProcedureMap.TryGetNextIndex(out var index))
                 throw new Exception("Out of registration space");
 
-            customProcedureMap[id] = new CustomProcedureWrapper(name, (byte)id, customProcedure, this);
+            var cmdId = transactionProcMap.GetIdFromIndex(index);
+            Debug.Assert(cmdId <= byte.MaxValue);
+
+            customProcedureMap[index] = new CustomProcedureWrapper(name, (byte)cmdId, customProcedure, this);
             if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
-            return id;
+            return cmdId;
+        }
+
+        internal CustomProcedureWrapper GetCustomProcedure(int id)
+            => customProcedureMap[customProcedureMap.GetIndexFromId(id)];
+
+        internal CustomTransaction GetCustomTransactionProcedure(int id)
+            => transactionProcMap[transactionProcMap.GetIndexFromId(id)];
+
+        internal CustomRawStringCommand GetCustomCommand(int id)
+            => rawStringCommandMap[rawStringCommandMap.GetIndexFromId(id)];
+
+        internal CustomObjectCommandWrapper GetCustomObjectCommand(int id)
+            => objectCommandMap[objectCommandMap.GetIndexFromId(id)];
+
+        internal CustomObjectCommand GetCustomObjectSubCommand(int id, int subId)
+        {
+            var typeIdx = objectCommandMap.GetIdFromIndex(id);
+            var subCommandMap = objectCommandMap[typeIdx].commandMap;
+            return subCommandMap[subCommandMap.GetIndexFromId(subId)];
         }
 
         internal bool Match(ReadOnlySpan<byte> command, out CustomRawStringCommand cmd)

@@ -11,25 +11,33 @@ namespace Garnet.server
     /// </summary>
     internal sealed class FunctionsState
     {
+        private readonly CustomCommandManager customCommandManager;
+
         public readonly TsavoriteLog appendOnlyFile;
-        public readonly CustomCommandMap customCommands;
-        public readonly CustomObjectCommandMap customObjectCommands;
         public readonly WatchVersionMap watchVersionMap;
         public readonly MemoryPool<byte> memoryPool;
         public readonly CacheSizeTracker objectStoreSizeTracker;
         public readonly GarnetObjectSerializer garnetObjectSerializer;
         public bool StoredProcMode;
 
-        public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandMap customCommands, CustomObjectCommandMap customObjectCommands,
+        public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
             MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, GarnetObjectSerializer garnetObjectSerializer)
         {
             this.appendOnlyFile = appendOnlyFile;
             this.watchVersionMap = watchVersionMap;
-            this.customCommands = customCommands;
-            this.customObjectCommands = customObjectCommands;
+            this.customCommandManager = customCommandManager;
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
             this.objectStoreSizeTracker = objectStoreSizeTracker;
             this.garnetObjectSerializer = garnetObjectSerializer;
         }
+
+        public CustomRawStringFunctions GetCustomCommandFunctions(int id)
+            => customCommandManager.GetCustomCommand(id).functions;
+
+        public CustomObjectFactory GetCustomObjectFactory(int id)
+            => customCommandManager.GetCustomObjectCommand(id).factory;
+
+        public CustomObjectFunctions GetCustomObjectSubCommandFunctions(int id, int subId)
+            => customCommandManager.GetCustomObjectSubCommand(id, subId).functions;
     }
 }

@@ -9,14 +9,20 @@ namespace Garnet.server
     internal class ExtensibleMap<T>
     {
         protected T[] map;
-        protected int currId;
+        protected int currIndex = -1;
         protected readonly int maxSize;
+        protected readonly int startOffset;
         protected ReaderWriterLockSlim mapLock = new();
 
-        public ExtensibleMap(int minSize, int maxSize)
+        public int GetIdFromIndex(int index) => maxSize - startOffset - index;
+
+        public int GetIndexFromId(int cmdId) => maxSize - startOffset - cmdId;
+
+        public ExtensibleMap(int minSize, int maxSize, int startOffset)
         {
             this.map = new T[minSize];
             this.maxSize = maxSize;
+            this.startOffset = startOffset;
         }
 
         public T this[int index]
@@ -25,9 +31,9 @@ namespace Garnet.server
             set => SetSafe(index, value);
         }
 
-        public bool TryGetNextId(out int id)
+        public bool TryGetNextIndex(out int id)
         {
-            id = Interlocked.Increment(ref currId);
+            id = Interlocked.Increment(ref currIndex);
             return id < maxSize;
         }
 
@@ -36,9 +42,9 @@ namespace Garnet.server
             mapLock.EnterReadLock();
             try
             {
-                for (var i = 0; i <= currId; i++)
+                for (var i = 0; i <= currIndex; i++)
                 {
-                    if (predicate(this[i]))
+                    if (predicate(map[i]))
                         return i;
                 }
             }
@@ -108,7 +114,7 @@ namespace Garnet.server
         }
     }
 
-    internal class ExtensibleCustomCommandMap<T>(int minSize, int maxSize) : ExtensibleMap<T>(minSize, maxSize)
+    internal class ExtensibleCustomCommandMap<T>(int minSize, int maxSize, int startOffset) : ExtensibleMap<T>(minSize, maxSize, startOffset)
         where T : ICustomCommand
     {
         public bool MatchCommandSafe(ReadOnlySpan<byte> cmd, out T value)
@@ -117,7 +123,7 @@ namespace Garnet.server
             mapLock.EnterReadLock();
             try
             {
-                for (var i = 0; i <= currId; i++)
+                for (var i = 0; i <= currIndex; i++)
                 {
                     if (cmd.SequenceEqual(new ReadOnlySpan<byte>(map[i].Name)))
                     {
@@ -135,11 +141,13 @@ namespace Garnet.server
         }
     }
 
-    internal class CustomCommandMap(int minSize, int maxSize) : ExtensibleCustomCommandMap<CustomRawStringCommand>(minSize, maxSize);
-    internal class CustomTransactionMap(int minSize, int maxSize) : ExtensibleCustomCommandMap<CustomTransaction>(minSize, maxSize);
-    internal class CustomProcedureMap(int minSize, int maxSize) : ExtensibleCustomCommandMap<CustomProcedureWrapper>(minSize, maxSize);
+    internal class CustomCommandMap(int minSize, int maxSize, int startOffset) : ExtensibleCustomCommandMap<CustomRawStringCommand>(minSize, maxSize, startOffset);
 
-    internal class CustomObjectCommandMap(int minSize, int maxSize) : ExtensibleMap<CustomObjectCommandWrapper>(minSize, maxSize)
+    internal class CustomTransactionMap(int minSize, int maxSize, int startOffset) : ExtensibleCustomCommandMap<CustomTransaction>(minSize, maxSize, startOffset);
+
+    internal class CustomProcedureMap(int minSize, int maxSize, int startOffset) : ExtensibleCustomCommandMap<CustomProcedureWrapper>(minSize, maxSize, startOffset);
+
+    internal class CustomObjectCommandMap(int minSize, int maxSize) : ExtensibleMap<CustomObjectCommandWrapper>(minSize, maxSize, CustomCommandManager.TypeIdStartOffset)
     {
         public bool MatchSubCommandSafe(ReadOnlySpan<byte> cmd, out CustomObjectCommand value)
         {
@@ -147,7 +155,7 @@ namespace Garnet.server
             mapLock.EnterReadLock();
             try
             {
-                for (var i = 0; i <= currId; i++)
+                for (var i = 0; i <= currIndex; i++)
                 {
                     if (map[i].commandMap.MatchCommandSafe(cmd, out value))
                         return true;

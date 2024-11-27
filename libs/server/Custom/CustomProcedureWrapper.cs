@@ -27,10 +27,10 @@ namespace Garnet.server
         public byte[] Name { get; }
 
         public readonly string NameStr;
-        public readonly byte Id;
+        public readonly ushort Id;
         public readonly Func<CustomProcedure> CustomProcedureFactory;
 
-        internal CustomProcedureWrapper(string name, byte id, Func<CustomProcedure> customProcedureFactory, CustomCommandManager customCommandManager)
+        internal CustomProcedureWrapper(string name, ushort id, Func<CustomProcedure> customProcedureFactory, CustomCommandManager customCommandManager)
         {
             if (string.IsNullOrEmpty(name))
                 throw new ArgumentNullException(nameof(name));

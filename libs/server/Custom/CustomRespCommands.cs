@@ -52,7 +52,7 @@ namespace Garnet.server
         public bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             var proc = customCommandManagerSession
-                .GetCustomTransactionProcedure(id, this, txnManager, scratchBufferManager).Item1;
+                .GetCustomTransactionProcedure(id, this, txnManager, scratchBufferManager, out _);
             return txnManager.RunTransactionProc(id, ref procInput, proc, ref output);
 
         }

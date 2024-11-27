@@ -758,8 +758,8 @@ namespace Garnet.server
                 // Perform the operation
                 TryTransactionProc(currentCustomTransaction.id,
                     customCommandManagerSession
-                        .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager, scratchBufferManager)
-                        .Item1);
+                        .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager,
+                            scratchBufferManager, out _));
                 currentCustomTransaction = null;
                 return true;
             }
