@@ -114,7 +114,9 @@ namespace Garnet.cluster
                 {
                     var current = currentConfig;
                     var currentCopy = current.Copy();
-                    var next = currentCopy.Merge(senderConfig, workerBanList, logger).HandleConfigEpochCollision(senderConfig, logger);
+                    var next = clusterProvider.serverOptions.DisableEpochCollision ?
+                        currentCopy.Merge(senderConfig, workerBanList, logger) :
+                        currentCopy.Merge(senderConfig, workerBanList, logger).HandleConfigEpochCollision(senderConfig, logger);
                     if (currentCopy == next) return false;
                     if (Interlocked.CompareExchange(ref currentConfig, next, current) == current)
                         break;

@@ -164,6 +164,10 @@ namespace Garnet
         public bool? EnableCluster { get; set; }
 
         [OptionValidation]
+        [Option("no-epoch-collision", Required = false, Default = false, HelpText = "Disable epoch collision resolution algorithm.")]
+        public bool? DisableEpochCollision { get; set; }
+
+        [OptionValidation]
         [Option("clean-cluster-config", Required = false, HelpText = "Start with clean cluster config.")]
         public bool? CleanClusterConfig { get; set; }
 
@@ -640,6 +644,7 @@ namespace Garnet
                 PubSubPageSize = PubSubPageSize,
                 DisableObjects = DisableObjects.GetValueOrDefault(),
                 EnableCluster = EnableCluster.GetValueOrDefault(),
+                DisableEpochCollision = DisableEpochCollision.GetValueOrDefault(),
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
                 AuthSettings = GetAuthenticationSettings(logger),
                 EnableAOF = EnableAOF.GetValueOrDefault(),

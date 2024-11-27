@@ -63,6 +63,11 @@ namespace Garnet.server
         public bool EnableCluster = false;
 
         /// <summary>
+        /// Disable epoch collision resolution algorithm.
+        /// </summary>
+        public bool DisableEpochCollision = false;
+
+        /// <summary>
         /// Start with clean cluster config
         /// </summary>
         public bool CleanClusterConfig = false;
