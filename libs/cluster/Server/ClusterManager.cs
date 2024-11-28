@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Reflection;
 using System.Threading;
 using Garnet.common;
 using Garnet.server.TLS;
