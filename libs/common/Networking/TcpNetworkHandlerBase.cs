@@ -143,7 +143,7 @@ namespace Garnet.common
                 return;
             }
             var networkBufferProcessingTask = OnNetworkReceiveAsync(e.BytesTransferred);
-            if(networkBufferProcessingTask.IsCompletedSuccessfully)
+            if (networkBufferProcessingTask.IsCompletedSuccessfully)
             {
                 NetworkBufferProcessed(networkBufferProcessingTask, sender, e);
                 return;
@@ -151,7 +151,6 @@ namespace Garnet.common
             networkBufferProcessingTask.ContinueWith((res) =>
             {
                 NetworkBufferProcessed(res, sender, e);
-
             });
         }
 
