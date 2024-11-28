@@ -156,23 +156,35 @@ namespace Garnet.common
 
         void NetworkBufferProcessed(Task result, object sender, SocketAsyncEventArgs e)
         {
-            if (result.IsCompletedSuccessfully)
+            try
             {
-                e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
-                if (!e.AcceptSocket.ReceiveAsync(e))
+                if (result.IsCompletedSuccessfully)
                 {
-                    RecvEventArg_Completed(sender, e);
+                    e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
+                    if (!e.AcceptSocket.ReceiveAsync(e))
+                    {
+                        RecvEventArg_Completed(sender, e);
+                    }
+                }
+                else if (result.IsFaulted)
+                {
+                    var ex = result.Exception.InnerException;
+                    HandleReceiveFailure(ex, e);
                 }
             }
-            else if (result.IsFaulted)
+            catch (Exception ex)
             {
-                var ex = result.Exception.InnerException;
-                if (ex is ObjectDisposedException ex2 && ex2.ObjectName == "System.Net.Sockets.Socket")
-                    logger?.LogTrace("Accept socket was disposed at RecvEventArg_Completed");
-                else
-                    logger?.LogError(ex, "An error occurred at RecvEventArg_Completed");
-                Dispose(e);
+                HandleReceiveFailure(ex, e);
             }
+        }
+
+        void HandleReceiveFailure(Exception ex, SocketAsyncEventArgs e)
+        {
+            if (ex is ObjectDisposedException ex2 && ex2.ObjectName == "System.Net.Sockets.Socket")
+                logger?.LogTrace("Accept socket was disposed at RecvEventArg_Completed");
+            else
+                logger?.LogError(ex, "An error occurred at RecvEventArg_Completed");
+            Dispose(e);
         }
 
         unsafe void AllocateNetworkReceiveBuffer()
