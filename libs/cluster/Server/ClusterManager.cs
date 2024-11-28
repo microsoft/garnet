@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Reflection;
 using System.Threading;
 using Garnet.common;
 using Garnet.server.TLS;
@@ -43,7 +44,9 @@ namespace Garnet.cluster
             this.clusterProvider = clusterProvider;
             var opts = clusterProvider.serverOptions;
             var clusterFolder = "/cluster";
-            var clusterDataPath = opts.CheckpointDir + clusterFolder;
+            string clusterDataPath = !string.IsNullOrEmpty(opts.ConfigDir) 
+                ? opts.ConfigDir + clusterFolder 
+                : opts.CheckpointDir + clusterFolder;
             var deviceFactory = opts.GetInitializedDeviceFactory(clusterDataPath);
 
             clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "nodes.conf"));
