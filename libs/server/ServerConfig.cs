@@ -125,6 +125,7 @@ namespace Garnet.server
             string certPassword = null;
             string clusterUsername = null;
             string clusterPassword = null;
+            string checkpointDir = null;
             var unknownOption = false;
             var unknownKey = "";
 
@@ -141,6 +142,8 @@ namespace Garnet.server
                     clusterUsername = Encoding.ASCII.GetString(value);
                 else if (key.SequenceEqual(CmdStrings.ClusterPassword))
                     clusterPassword = Encoding.ASCII.GetString(value);
+                else if (key.SequenceEqual(CmdStrings.CheckpointDir))
+                    checkpointDir = Encoding.ASCII.GetString(value);              
                 else
                 {
                     if (!unknownOption)
@@ -158,6 +161,17 @@ namespace Garnet.server
             }
             else
             {
+                if (checkpointDir != null)
+                {
+                    if (storeWrapper.serverOptions.EnableAOF)
+                    {
+                        storeWrapper.UpdateCheckpointDir(checkpointDir);
+                    }
+                    else
+                    {
+                        errorMsg = "ERR AOF is disabled.";
+                    }
+                }
                 if (clusterUsername != null || clusterPassword != null)
                 {
                     if (clusterUsername == null)

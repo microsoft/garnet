@@ -8,6 +8,7 @@ namespace Tsavorite.devices
     using System.Threading;
     using System.Threading.Tasks;
     using Azure.Core;
+    using Azure.Identity;
     using Azure.Core.Pipeline;
     using Azure.Storage.Blobs;
     using Azure.Storage.Blobs.Models;
@@ -59,6 +60,36 @@ namespace Tsavorite.devices
                 Default = new BlobServiceClient(connectionString, defaultOptions),
                 Aggressive = new BlobServiceClient(connectionString, aggressiveOptions),
                 WithRetries = new BlobServiceClient(connectionString, withRetriesOptions),
+            };
+        }
+
+        internal static ServiceClients GetServiceClients(Uri serviceUri,string managedIdentityClientId)
+        {
+            var aggressiveOptions = new BlobClientOptions();
+            aggressiveOptions.Retry.MaxRetries = 0;
+            aggressiveOptions.Retry.NetworkTimeout = TimeSpan.FromSeconds(3);
+            aggressiveOptions.AddPolicy(new ServerTimeoutPolicy(2), HttpPipelinePosition.PerCall);
+
+            var defaultOptions = new BlobClientOptions();
+            defaultOptions.Retry.MaxRetries = 0;
+            defaultOptions.Retry.NetworkTimeout = TimeSpan.FromSeconds(16);
+            defaultOptions.AddPolicy(new ServerTimeoutPolicy(15), HttpPipelinePosition.PerCall);
+
+            var withRetriesOptions = new BlobClientOptions();
+            withRetriesOptions.Retry.MaxRetries = 10;
+            withRetriesOptions.Retry.Mode = RetryMode.Exponential;
+            withRetriesOptions.Retry.Delay = TimeSpan.FromSeconds(1);
+            withRetriesOptions.Retry.MaxDelay = TimeSpan.FromSeconds(30);
+
+            var tokenCredential = new DefaultAzureCredential(new DefaultAzureCredentialOptions{
+                 ManagedIdentityClientId = managedIdentityClientId,
+            });
+
+            return new ServiceClients()
+            {
+                Default = new BlobServiceClient(serviceUri,tokenCredential, defaultOptions),
+                Aggressive = new BlobServiceClient(serviceUri,tokenCredential, aggressiveOptions),
+                WithRetries = new BlobServiceClient(serviceUri,tokenCredential, withRetriesOptions),
             };
         }
 

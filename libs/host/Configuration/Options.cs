@@ -291,6 +291,9 @@ namespace Garnet
         [Option("logger-level", Required = false, HelpText = "Logging level. Value options: Trace, Debug, Information, Warning, Error, Critical, None")]
         public LogLevel LogLevel { get; set; }
 
+        [Option("config-dir", Required = false, HelpText = "Directory to store configuration files.")]
+        public string ConfigDir { get; set; }
+
         [IntRangeValidation(0, int.MaxValue)]
         [Option("logger-freq", Required = false, Default = 5, HelpText = "Frequency (in seconds) of logging (used for tracking progress of long running operations e.g. migration)")]
         public int LoggingFrequency { get; set; }
@@ -317,6 +320,12 @@ namespace Garnet
 
         [Option("storage-string", Required = false, HelpText = "The connection string to use when establishing connection to Azure Blobs Storage.")]
         public string AzureStorageConnectionString { get; set; }
+
+        [Option("client-id", Required = false, HelpText = "The client id to use when establishing connection to Azure Blobs Storage.")]
+        public string AzureStorageClientId { get; set; }
+
+        [Option("storage-account-uri", Required = false, HelpText = "The storage account uri to use when establishing connection to Azure Blobs Storage.")]
+        public string AzureStorageAccountUri { get; set; }
 
         [IntRangeValidation(-1, int.MaxValue)]
         [Option("checkpoint-throttle-delay", Required = false, HelpText = "Whether and by how much should we throttle the disk IO for checkpoints: -1 - disable throttling; >= 0 - run checkpoint flush in separate task, sleep for specified time after each WriteAsync")]
@@ -510,10 +519,20 @@ namespace Garnet
             var useAzureStorage = UseAzureStorage.GetValueOrDefault();
             var enableStorageTier = EnableStorageTier.GetValueOrDefault();
             var enableRevivification = EnableRevivification.GetValueOrDefault();
+            Uri azureStorageUri = null; 
 
-            if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString))
+            if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString)  && string.IsNullOrEmpty(AzureStorageAccountUri))
                 throw new Exception("Cannot enable use-azure-storage without supplying storage-string.");
-
+            if (useAzureStorage)
+            {
+                if (string.IsNullOrEmpty(AzureStorageConnectionString)){
+                    azureStorageUri= new Uri(AzureStorageAccountUri);
+                    logger?.LogInformation("Azure Storage URI: {azureStorageUri}", azureStorageUri);
+                }
+            }
+            Func<INamedDeviceFactory> azureFactoryCreator = string.IsNullOrEmpty(AzureStorageConnectionString)
+                ? () => new AzureStorageNamedDeviceFactory(azureStorageUri,AzureStorageClientId, logger)
+                : () => new AzureStorageNamedDeviceFactory(AzureStorageConnectionString, logger);
             var logDir = LogDir;
             if (!useAzureStorage && enableStorageTier) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
             var checkpointDir = CheckpointDir;
@@ -594,6 +613,7 @@ namespace Garnet
                 DisableObjects = DisableObjects.GetValueOrDefault(),
                 EnableCluster = EnableCluster.GetValueOrDefault(),
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
+                ConfigDir = ConfigDir,
                 AuthSettings = GetAuthenticationSettings(logger),
                 EnableAOF = EnableAOF.GetValueOrDefault(),
                 EnableLua = EnableLua.GetValueOrDefault(),
@@ -633,8 +653,7 @@ namespace Garnet
                 QuietMode = QuietMode.GetValueOrDefault(),
                 ThreadPoolMinThreads = ThreadPoolMinThreads,
                 ThreadPoolMaxThreads = ThreadPoolMaxThreads,
-                DeviceFactoryCreator = useAzureStorage
-                    ? () => new AzureStorageNamedDeviceFactory(AzureStorageConnectionString, logger)
+                DeviceFactoryCreator = useAzureStorage ? azureFactoryCreator
                     : () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),

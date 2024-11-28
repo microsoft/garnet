@@ -130,6 +130,10 @@ namespace Garnet.server
         /// Aof size limit in bytes
         /// </summary>
         public string AofSizeLimit = "";
+        /// <summary>
+        /// (priyanjgupta): Temp fix to import config
+        /// </summary>
+        public string ConfigDir = "";
 
         /// <summary>
         /// Hybrid log compaction frequency in seconds. 0 = disabled

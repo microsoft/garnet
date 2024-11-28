@@ -289,6 +289,7 @@ namespace Garnet.server
         CLUSTER_MEET,
         CLUSTER_MIGRATE,
         CLUSTER_MTASKS,
+        CLUSTER_RELOAD,
         CLUSTER_MYID,
         CLUSTER_MYPARENTID,
         CLUSTER_NODES,
@@ -1753,6 +1754,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.mtasks))
                 {
                     return RespCommand.CLUSTER_MTASKS;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.reload))
+                {
+                    return RespCommand.CLUSTER_RELOAD;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.aofsync))
                 {

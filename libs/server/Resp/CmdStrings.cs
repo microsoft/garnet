@@ -24,6 +24,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> rewrite => "rewrite"u8;
         public static ReadOnlySpan<byte> CONFIG => "CONFIG"u8;
         public static ReadOnlySpan<byte> CertFileName => "cert-file-name"u8;
+        public static ReadOnlySpan<byte> CheckpointDir => "checkpointdir"u8;
         public static ReadOnlySpan<byte> CertPassword => "cert-password"u8;
         public static ReadOnlySpan<byte> ClusterUsername => "cluster-username"u8;
         public static ReadOnlySpan<byte> ClusterPassword => "cluster-password"u8;
@@ -303,6 +304,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> setslotsrange => "SETSLOTSRANGE"u8;
         public static ReadOnlySpan<byte> slotstate => "SLOTSTATE"u8;
         public static ReadOnlySpan<byte> mtasks => "MTASKS"u8;
+        public static ReadOnlySpan<byte> reload => "RELOAD"u8;
         public static ReadOnlySpan<byte> aofsync => "AOFSYNC"u8;
         public static ReadOnlySpan<byte> appendlog => "APPENDLOG"u8;
         public static ReadOnlySpan<byte> banlist => "BANLIST"u8;

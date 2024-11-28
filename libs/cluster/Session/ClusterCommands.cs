@@ -162,6 +162,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_MEET => NetworkClusterMeet(out invalidParameters),
                 RespCommand.CLUSTER_MIGRATE => NetworkClusterMigrate(out invalidParameters),
                 RespCommand.CLUSTER_MTASKS => NetworkClusterMTasks(out invalidParameters),
+                RespCommand.CLUSTER_RELOAD => NetworkClusterReload(out invalidParameters),
                 RespCommand.CLUSTER_MYID => NetworkClusterMyId(out invalidParameters),
                 RespCommand.CLUSTER_MYPARENTID => NetworkClusterMyParentId(out invalidParameters),
                 RespCommand.CLUSTER_NODES => NetworkClusterNodes(out invalidParameters),

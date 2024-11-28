@@ -30,13 +30,13 @@ namespace Garnet.server
     {
         internal readonly string version;
         internal readonly string redisProtocolVersion;
-        readonly IGarnetServer server;
+        public IGarnetServer server;
         internal readonly long startupTime;
 
         /// <summary>
         /// Store
         /// </summary>
-        public readonly TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
+        public  TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
 
         /// <summary>
         /// Object store
@@ -47,7 +47,7 @@ namespace Garnet.server
         /// Server options
         /// </summary>
         public readonly GarnetServerOptions serverOptions;
-        internal readonly IClusterProvider clusterProvider;
+        internal  IClusterProvider clusterProvider;
 
         /// <summary>
         /// Get server
@@ -62,7 +62,7 @@ namespace Garnet.server
         /// <summary>
         /// AOF
         /// </summary>
-        public readonly TsavoriteLog appendOnlyFile;
+        public  TsavoriteLog appendOnlyFile;
 
         /// <summary>
         /// Last save time
@@ -102,6 +102,8 @@ namespace Garnet.server
         // Lua script cache
         public readonly ConcurrentDictionary<byte[], byte[]> storeScriptCache;
 
+        public readonly IClusterFactory clusterFactory;
+
         public readonly TimeSpan loggingFrequncy;
 
         /// <summary>
@@ -130,6 +132,7 @@ namespace Garnet.server
             this.objectStore = objectStore;
             this.appendOnlyFile = appendOnlyFile;
             this.serverOptions = serverOptions;
+            this.clusterFactory= clusterFactory;
             lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
             this.customCommandManager = customCommandManager;
             this.monitor = serverOptions.MetricsSamplingFrequency > 0 ? new GarnetServerMonitor(this, serverOptions, server, loggerFactory?.CreateLogger("GarnetServerMonitor")) : null;
@@ -182,7 +185,38 @@ namespace Garnet.server
             ctsCommit = new();
             run_id = Generator.CreateHexId();
         }
+        public void UpdateCheckpointDir(string checkpointDir ){
+            this.serverOptions.CheckpointDir = checkpointDir;
+            
+            var kvSettings = serverOptions.GetSettings(loggerFactory, out var logFactory);
+            
+            kvSettings.ThrottleCheckpointFlushDelayMs = serverOptions.CheckpointThrottleFlushDelayMs;
+            kvSettings.CheckpointVersionSwitchBarrier = serverOptions.EnableCluster;
 
+            var checkpointFactory = serverOptions.DeviceFactoryCreator();
+            if (serverOptions.EnableCluster)
+            {
+                kvSettings.CheckpointManager = this.clusterFactory.CreateCheckpointManager(checkpointFactory,
+                    new DefaultCheckpointNamingScheme(checkpointDir + "/Store/checkpoints"), isMainStore: true, logger);
+            }
+            this.store = new(kvSettings
+                , StoreFunctions<SpanByte, SpanByte>.Create()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+            // CREATE AOF
+            serverOptions.GetAofSettings(out var aofSettings);
+            var aofDevice = aofSettings.LogDevice;
+            this.appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
+            this.clusterProvider = clusterFactory.CreateClusterProvider(this);
+            // var subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true);
+            // Provider = new GarnetProvider(this, subscribeBroker);
+
+            // this.server.Unregister(this.server.GetSessionProviders());
+            // Dispose(true);
+           // var garnetServer= new GarnetServer(this.serverOptions, this.loggerFactory,this.server);
+            
+            // UpdateCheckpointDir(checkpointDir);
+        }
         /// <summary>
         /// Get IP
         /// </summary>
@@ -243,6 +277,7 @@ namespace Garnet.server
             long storeVersion = -1, objectStoreVersion = -1;
             try
             {
+                logger?.LogInformation($"Recovering store; recoverMainStoreFromToken = {recoverMainStoreFromToken}, StoreIndexToken = {storeIndexToken}, StoreHlogToken = {storeHlogToken}; recoverObjectStoreFromToken = {recoverObjectStoreFromToken}, ObjectStoreIndexToken = {objectStoreIndexToken}, ObjectStoreHlogToken = {objectStoreHlogToken}");
                 storeVersion = !recoverMainStoreFromToken ? store.Recover() : store.Recover(storeIndexToken, storeHlogToken);
                 if (objectStore != null) objectStoreVersion = !recoverObjectStoreFromToken ? objectStore.Recover() : objectStore.Recover(objectStoreIndexToken, objectStoreHlogToken);
                 if (storeVersion > 0 || objectStoreVersion > 0)

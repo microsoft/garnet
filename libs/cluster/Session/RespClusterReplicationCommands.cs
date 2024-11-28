@@ -241,6 +241,23 @@ namespace Garnet.cluster
             return true;
         }
 
+        private bool NetworkClusterReload(out bool invalidParameters)
+        {
+            invalidParameters = false;
+                
+                if (parseState.Count != 0)
+                {
+                    invalidParameters = true;
+                    return true;
+                }
+    
+                clusterProvider.replicationManager.Recover();
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            
+        }
+
         /// <summary>
         /// Implement CLUSTER send_ckpt_metadata command (only for internode use)
         /// </summary>
