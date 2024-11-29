@@ -1164,7 +1164,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            string[] keys = { "board1", "board2" };
+            string[] keys = ["board1", "board2"];
             db.SortedSetAdd("board1", entries);
             db.SortedSetAdd("board2", leaderBoard);
 

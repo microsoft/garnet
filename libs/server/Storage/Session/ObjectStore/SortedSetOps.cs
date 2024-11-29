@@ -965,7 +965,7 @@ namespace Garnet.server
                         poppedKey = key;
                         return status;
                     }
-                    
+
                     if (status != GarnetStatus.OK && status != GarnetStatus.NOTFOUND)
                     {
                         return status;
