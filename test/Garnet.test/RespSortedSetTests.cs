@@ -1086,6 +1086,101 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, actualMembers.Length);
         }
 
+        [Test]
+        [TestCase("board1", 1, Description = "Pop from single key")]
+        [TestCase("board2", 3, Description = "Pop multiple elements")]
+        public void SortedSetMultiPopTest(string key, int count)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.SortedSetAdd(key, entries);
+
+            var result = db.Execute("ZMPOP", 1, key, "MIN", "COUNT", count);
+            ClassicAssert.IsNotNull(result);
+            var popResult = (RedisResult[])result;
+            ClassicAssert.AreEqual(key, (string)popResult[0]);
+
+            var poppedItems = (RedisResult[])popResult[1];
+            ClassicAssert.AreEqual(Math.Min(count, entries.Length), poppedItems.Length / 2);
+
+            if (count == 1)
+            {
+                ClassicAssert.AreEqual("a", (string)poppedItems[0]);
+                ClassicAssert.AreEqual("1", (string)poppedItems[1]);
+            }
+        }
+
+        [Test]
+        [TestCase(new string[] { "board1" }, "MAX", 1, new string[] { "j" }, new double[] { 10.0 }, Description = "Pop maximum element from single key with count")]
+        [TestCase(new string[] { "board1" }, "MIN", 1, new string[] { "a" }, new double[] { 1.0 }, Description = "Pop minimum element from single key with count")]
+        [TestCase(new string[] { "board1" }, "MAX", 3, new string[] { "j", "i", "h" }, new double[] { 10.0, 9.0, 8.0 }, Description = "Pop multiple maximum elements from single key with count")]
+        [TestCase(new string[] { "board1" }, "MIN", 3, new string[] { "a", "b", "c" }, new double[] { 1.0, 2.0, 3.0 }, Description = "Pop multiple minimum elements from single key with count")]
+        [TestCase(new string[] { "board1", "nokey1" }, "MAX", 1, new string[] { "j" }, new double[] { 10.0 }, Description = "Pop maximum element from mixed existing and missing keys with count")]
+        [TestCase(new string[] { "board1", "nokey1" }, "MIN", 1, new string[] { "a" }, new double[] { 1.0 }, Description = "Pop minimum element from mixed existing and missing keys with count")]
+        [TestCase(new string[] { "nokey1", "nokey2" }, "MAX", 1, new string[] { }, new double[] { }, Description = "Pop maximum element from all missing keys with count")]
+        [TestCase(new string[] { "nokey1", "nokey2" }, "MIN", 1, new string[] { }, new double[] { }, Description = "Pop minimum element from all missing keys with count")]
+        [TestCase(new string[] { "board1", "nokey1" }, "MAX", null, new string[] { "j" }, new double[] { 10.0 }, Description = "Pop maximum element from mixed existing and missing keys without count")]
+        [TestCase(new string[] { "board1", "nokey1" }, "MIN", null, new string[] { "a" }, new double[] { 1.0 }, Description = "Pop minimum element from mixed existing and missing keys without count")]
+        public void SortedSetMultiPopWithOptionsTest(string[] keys, string direction, int? count, string[] expectedValues, double[] expectedScores)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            if (keys[0] == "board1")
+            {
+                db.SortedSetAdd(keys[0], entries);
+            }
+
+            List<object> commandArgs = [keys.Length, .. keys, direction];
+            if (count.HasValue)
+            {
+                commandArgs.AddRange(["COUNT", count.Value]);
+            }
+
+            var result = db.Execute("ZMPOP", commandArgs);
+
+            if (keys[0] == "board1")
+            {
+                ClassicAssert.IsNotNull(result);
+                var popResult = (RedisResult[])result;
+                ClassicAssert.AreEqual(keys[0], (string)popResult[0]);
+
+                var valuesAndScores = (RedisResult[])popResult[1];
+                for (int i = 0; i < expectedValues.Length; i++)
+                {
+                    ClassicAssert.AreEqual(expectedValues[i], (string)valuesAndScores[i * 2]);
+                    ClassicAssert.AreEqual(expectedScores[i], (double)valuesAndScores[i * 2 + 1]);
+                }
+            }
+            else
+            {
+                ClassicAssert.IsTrue(result.IsNull);
+            }
+        }
+
+        [Test]
+        public void SortedSetMultiPopWithFirstKeyEmptyOnSecondPopTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string[] keys = { "board1", "board2" };
+            db.SortedSetAdd("board1", entries);
+            db.SortedSetAdd("board2", leaderBoard);
+
+            // First pop
+            var result1 = db.Execute("ZMPOP", [keys.Length, keys[0], keys[1], "MAX", "COUNT", entries.Length]);
+            ClassicAssert.IsNotNull(result1);
+            var popResult1 = (RedisResult[])result1;
+            ClassicAssert.AreEqual("board1", (string)popResult1[0]);
+
+            // Second pop
+            var result2 = db.Execute("ZMPOP", [keys.Length, keys[0], keys[1], "MIN"]);
+            ClassicAssert.IsNotNull(result2);
+            var popResult2 = (RedisResult[])result2;
+            ClassicAssert.AreEqual("board2", (string)popResult2[0]);
+        }
+
         #endregion
 
         #region LightClientTests
@@ -1428,6 +1523,47 @@ namespace Garnet.test
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
+
+        [Test]
+        [TestCase(10, "MIN", 1, "*2\r\n$5\r\nboard\r\n*2\r\n$3\r\none\r\n$1\r\n1\r\n", Description = "Pop minimum with small chunk size")]
+        [TestCase(100, "MAX", 3, "*2\r\n$5\r\nboard\r\n*6\r\n$4\r\nfive\r\n$1\r\n5\r\n$4\r\nfour\r\n$1\r\n4\r\n$5\r\nthree\r\n$1\r\n3\r\n", Description = "Pop maximum with large chunk size")]
+        public void CanDoZMPopLC(int bytesSent, string direction, int count, string expectedResponse)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("ZADD board 1 one 2 two 3 three 4 four 5 five");
+
+            var response = lightClientRequest.SendCommandChunks($"ZMPOP 1 board {direction} COUNT {count}", bytesSent);
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        [TestCase("COUNT", Description = "Missing count value")]
+        [TestCase("INVALID", Description = "Invalid direction")]
+        public void CanManageZMPopErrorsLC(string invalidArg)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("ZADD board 1 one 2 two 3 three");
+
+            var response = lightClientRequest.SendCommand($"ZMPOP 1 board MIN {invalidArg}");
+            var expectedResponse = "-ERR syntax error\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanDoZMPopWithMultipleKeysLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("ZADD board1 1 one 2 two");
+            lightClientRequest.SendCommand("ZADD board2 3 three 4 four");
+
+            var response = lightClientRequest.SendCommand("ZMPOP 2 board1 board2 MIN");
+            var expectedResponse = "*2\r\n$6\r\nboard1\r\n*2\r\n$3\r\none\r\n$1\r\n1\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
         #endregion
 
         #region NegativeTestsLC

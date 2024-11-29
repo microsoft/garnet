@@ -357,6 +357,122 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Removes and returns up to count members from the first non-empty sorted set key from the list of keys.
+        /// </summary>
+        private unsafe bool SortedSetMPop<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            // ZMPOP requires at least 3 args: numkeys, key [key...], <MIN|MAX> [COUNT count]
+            if (parseState.Count < 3)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZMPOP));
+            }
+
+            // Get number of keys
+            if (!parseState.TryGetInt(0, out var numKeys) || numKeys < 1)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // Validate we have enough arguments (no of keys + (MIN or MAX))
+            if (parseState.Count < numKeys + 2)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // Get MIN/MAX argument
+            var orderArg = parseState.GetArgSliceByRef(numKeys + 1);
+            var orderSpan = orderArg.ReadOnlySpan;
+            var lowScoresFirst = true;
+
+            if (orderSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MIN))
+                lowScoresFirst = true;
+            else if (orderSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MAX))
+                lowScoresFirst = false;
+            else
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // Parse optional COUNT argument
+            var count = 1;
+            if (parseState.Count > numKeys + 2)
+            {
+                if (parseState.Count != numKeys + 4)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                var countArg = parseState.GetArgSliceByRef(numKeys + 2);
+                if (!countArg.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (!parseState.TryGetInt(numKeys + 3, out count) || count < 1)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+            }
+
+            var keys = parseState.Parameters.Slice(1, numKeys);
+            var status = storageApi.SortedSetMPop(keys, count, lowScoresFirst, out var poppedKey, out var pairs);
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    if (pairs == null || pairs.Length == 0)
+                    {
+                        // No elements found
+                        while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        // Write array with 2 elements: key and array of elements
+                        while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                            SendAndReset();
+
+                        // Write key
+                        while (!RespWriteUtils.WriteBulkString(poppedKey.ReadOnlySpan, ref dcurr, dend))
+                            SendAndReset();
+
+                        // Write array of member-score pairs
+                        while (!RespWriteUtils.WriteArrayLength(pairs.Length * 2, ref dcurr, dend))
+                            SendAndReset();
+
+                        foreach (var (member, score) in pairs)
+                        {
+                            while (!RespWriteUtils.WriteBulkString(member.ReadOnlySpan, ref dcurr, dend))
+                                SendAndReset();
+                            while (!RespWriteUtils.WriteBulkString(score.ReadOnlySpan, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                    }
+                    break;
+
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Returns the number of elements in the sorted set at key with a score between min and max.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>

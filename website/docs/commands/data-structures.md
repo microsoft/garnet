@@ -828,6 +828,18 @@ _Array reply:_ a list of string **member** scores as double-precision floating p
 
 ---
 
+### ZMPOP
+
+#### Syntax
+
+```bash
+    ZMPOP numkeys key [key ...] <MIN | MAX> [COUNT count]
+```
+
+Removes and returns one or more members with the lowest scores (default) or highest scores from the sorted set or sorted sets.
+
+---
+
 ### ZPOPMAX
 
 #### Syntax

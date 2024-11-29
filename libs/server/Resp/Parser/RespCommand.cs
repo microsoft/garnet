@@ -157,6 +157,7 @@ namespace Garnet.server
         ZADD,
         ZDIFFSTORE,
         ZINCRBY,
+        ZMPOP,
         ZPOPMAX,
         ZPOPMIN,
         ZREM,
@@ -1033,6 +1034,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZSCAN\r\n"u8))
                                         {
                                             return RespCommand.ZSCAN;
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZMPOP\r\n"u8))
+                                        {
+                                            return RespCommand.ZMPOP;
                                         }
                                         break;
                                 }
