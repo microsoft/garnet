@@ -1924,7 +1924,7 @@ namespace Garnet.test.cluster
     internal class ZMPOP : BaseCommand
     {
         public override bool IsArrayCommand => true;
-        public override bool ArrayResponse => true;
+        public override bool ArrayResponse => false;
         public override string Command => nameof(ZMPOP);
 
         public override string[] GetSingleSlotRequest()
