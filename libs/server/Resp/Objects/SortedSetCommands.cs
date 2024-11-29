@@ -436,7 +436,7 @@ namespace Garnet.server
                     if (pairs == null || pairs.Length == 0)
                     {
                         // No elements found
-                        while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                        while (!RespWriteUtils.WriteNull(ref dcurr, dend))
                             SendAndReset();
                     }
                     else

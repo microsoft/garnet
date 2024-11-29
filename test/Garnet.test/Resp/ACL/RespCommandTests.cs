@@ -5596,13 +5596,15 @@ namespace Garnet.test.Resp.ACL
             static async Task DoZMPopAsync(GarnetClient client)
             {
                 string[] val = await client.ExecuteForStringArrayResultAsync("ZMPOP", ["2", "foo", "bar", "MIN"]);
-                ClassicAssert.AreEqual(0, val.Length);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.IsNull(val[0]);
             }
 
             static async Task DoZMPopCountAsync(GarnetClient client)
             {
                 string[] val = await client.ExecuteForStringArrayResultAsync("ZMPOP", ["2", "foo", "bar", "MAX", "COUNT", "10"]);
-                ClassicAssert.AreEqual(0, val.Length);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.IsNull(val[0]);
             }
         }
 
