@@ -306,6 +306,28 @@
     ]
   },
   {
+    "Command": "BLMPOP",
+    "Name": "BLMPOP",
+    "Arity": -5,
+    "Flags": "Blocking, MovableKeys, Write",
+    "AclCategories": "Blocking, List, Slow, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysKeyNum",
+          "KeyNumIdx": 0,
+          "FirstKey": 1,
+          "KeyStep": 1
+        },
+        "Flags": "RW, Access, Delete"
+      }
+    ]
+  },
+  {
     "Command": "BLPOP",
     "Name": "BLPOP",
     "Arity": -3,

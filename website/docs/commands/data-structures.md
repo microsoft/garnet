@@ -232,6 +232,18 @@ BLMOVE is the blocking variant of [LMOVE](#lmove-lmove). When source contains el
 
 ---
 
+### BLMPOP
+
+#### Syntax
+
+```bash
+    BLMPOP timeout numkeys key [key ...] <LEFT | RIGHT> [COUNT count]
+```
+
+BLMPOP is the blocking variant of [LMPOP](#lmpop). When any of the lists contains elements, this command behaves exactly like LMPOP. When used inside a MULTI/EXEC block, this command behaves exactly like LMPOP. When all lists are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+
+---
+
 ### BLPOP
 
 #### Syntax

@@ -869,5 +869,110 @@ namespace Garnet.server
 
             return true;
         }
+
+        /// <summary>
+        /// BLMPOP timeout numkeys key [key ...] LEFT|RIGHT [COUNT count]
+        /// </summary>
+        /// <returns></returns>
+        private unsafe bool ListBlockingPopMultiple()
+        {
+            if (parseState.Count < 4)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BLMPOP));
+            }
+
+            var currTokenId = 0;
+
+            // Read timeout
+            if (!parseState.TryGetDouble(currTokenId++, out var timeout))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // Read count of keys
+            if (!parseState.TryGetInt(currTokenId++, out var numKeys))
+            {
+                var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys");
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
+            }
+
+            if (parseState.Count != numKeys + 3 && parseState.Count != numKeys + 5)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            // Get the keys for Lists
+            var keysBytes = new byte[numKeys][];
+            for (var i = 0; i < keysBytes.Length; i++)
+            {
+                keysBytes[i] = parseState.GetArgSliceByRef(currTokenId++).SpanByte.ToByteArray();
+            }
+
+            var cmdArgs = new ArgSlice[2];
+
+            // Get the direction
+            var dir = parseState.GetArgSliceByRef(currTokenId++);
+            var popDirection = GetOperationDirection(dir);
+
+            if (popDirection == OperationDirection.Unknown)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+            cmdArgs[0] = new ArgSlice((byte*)&popDirection, 1);
+
+            var popCount = 1;
+
+            // Get the COUNT keyword & parameter value, if specified
+            if (parseState.Count == numKeys + 5)
+            {
+                var countKeyword = parseState.GetArgSliceByRef(currTokenId++);
+
+                if (!countKeyword.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                }
+
+                // Read count
+                if (!parseState.TryGetInt(currTokenId, out popCount) || popCount < 1)
+                {
+                    var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "count");
+                    return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
+                }
+
+                cmdArgs[1] = parseState.GetArgSliceByRef(currTokenId);
+            }
+
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs).Result;
+
+            if (!result.Found)
+            {
+                while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.WriteBulkString(result.Key, ref dcurr, dend))
+                SendAndReset();
+
+            var elements = result.Items;
+            while (!RespWriteUtils.WriteArrayLength(elements.Length, ref dcurr, dend))
+                SendAndReset();
+
+            foreach (var element in elements)
+            {
+                while (!RespWriteUtils.WriteBulkString(element, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
     }
 }

@@ -36,6 +36,7 @@ namespace CommandInfoUpdater
             new("BLPOP", RespCommand.BLPOP),
             new("BRPOP", RespCommand.BRPOP),
             new("BLMOVE", RespCommand.BLMOVE),
+            new("BLMPOP", RespCommand.BLMPOP),
             new("CLIENT", RespCommand.CLIENT,
             [
                 new("CLIENT|ID", RespCommand.CLIENT_ID),
