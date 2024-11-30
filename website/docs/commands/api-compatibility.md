@@ -397,7 +397,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SETNX](raw-string.md#setnx) | ➕ |  |
 |  | [SETRANGE](raw-string.md#setrange) | ➕ |  |
 |  | [STRLEN](raw-string.md#strlen) | ➕ |  |
-|  | SUBSTR | ➖ | (Deprecated) |
+|  | [SUBSTR](raw-string.md#substr) | ➖ | (Deprecated) |
 | <span id="transactions">**TRANSACTIONS**</span> | [DISCARD](transactions.md#discard) | ➕ |  |
 |  | [EXEC](transactions.md#exec) | ➕ |  |
 |  | [MULTI](transactions.md#multi) | ➕ |  |
