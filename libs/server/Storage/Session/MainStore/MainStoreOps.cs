@@ -2,7 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
@@ -1189,6 +1192,300 @@ namespace Garnet.server
             }
 
             return status;
+        }
+
+        public unsafe GarnetStatus LCS(ArgSlice key1, ArgSlice key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
+        {
+            var createTransaction = false;
+            if (txnManager.state != TxnState.Running)
+            {
+                txnManager.SaveKeyEntryToLock(key1, false, LockType.Shared);
+                txnManager.SaveKeyEntryToLock(key2, false, LockType.Shared);
+                txnManager.Run(true);
+                createTransaction = true;
+            }
+
+            var context = txnManager.LockableContext;
+            try
+            {
+                var status = LCSInternal(key1, key2, ref output, ref context, lenOnly, withIndices, withMatchLen, minMatchLen);
+                return status;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
+
+        private unsafe GarnetStatus LCSInternal<TContext>(ArgSlice key1, ArgSlice key2, ref SpanByteAndMemory output, ref TContext context, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            try
+            {
+                if (lenOnly && withIndices)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_LENGTH_AND_INDEXES, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return GarnetStatus.OK;
+                }
+
+                ArgSlice val1, val2;
+                var status1 = GET(key1, out val1, ref context);
+                var status2 = GET(key2, out val2, ref context);
+
+                if (lenOnly)
+                {
+                    if (status1 != GarnetStatus.OK || status2 != GarnetStatus.OK)
+                    {
+                        while (!RespWriteUtils.WriteInteger(0, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        return GarnetStatus.OK;
+                    }
+
+                    var len = ComputeLCSLength(val1.ReadOnlySpan, val2.ReadOnlySpan, minMatchLen);
+                    while (!RespWriteUtils.WriteInteger(len, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+                else if (withIndices)
+                {
+                    List<LCSMatch> matches;
+                    int len;
+                    if (status1 != GarnetStatus.OK || status2 != GarnetStatus.OK)
+                    {
+                        matches = new List<LCSMatch>();
+                        len = 0;
+                    }
+                    else
+                    {
+                        matches = ComputeLCSWithIndices(val1.ReadOnlySpan, val2.ReadOnlySpan, minMatchLen, out len);
+                    }
+
+                    WriteLCSMatches(matches, withMatchLen, len, ref curr, end, ref output, ref isMemory, ref ptr, ref ptrHandle);
+                }
+                else
+                {
+                    if (status1 != GarnetStatus.OK || status2 != GarnetStatus.OK)
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_EMPTY, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        return GarnetStatus.OK;
+                    }
+
+                    var lcs = ComputeLCS(val1.ReadOnlySpan, val2.ReadOnlySpan, minMatchLen);
+                    while (!RespWriteUtils.WriteBulkString(lcs, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+            }
+            finally
+            {
+                if (isMemory)
+                    ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+
+            return GarnetStatus.OK;
+        }
+
+        private static int ComputeLCSLength(ReadOnlySpan<byte> str1, ReadOnlySpan<byte> str2, int minMatchLen)
+        {
+            var m = str1.Length;
+            var n = str2.Length;
+            var dp = new int[m + 1, n + 1];
+
+            for (int i = 1; i <= m; i++)
+            {
+                for (int j = 1; j <= n; j++)
+                {
+                    if (str1[i - 1] == str2[j - 1])
+                        dp[i, j] = dp[i - 1, j - 1] + 1;
+                    else
+                        dp[i, j] = Math.Max(dp[i - 1, j], dp[i, j - 1]);
+                }
+            }
+
+            return dp[m, n] >= minMatchLen ? dp[m, n] : 0;
+        }
+
+        private static List<LCSMatch> ComputeLCSWithIndices(ReadOnlySpan<byte> str1, ReadOnlySpan<byte> str2, int minMatchLen, out int lcsLength)
+        {
+            var m = str1.Length;
+            var n = str2.Length;
+            var dp = new int[m + 1, n + 1];
+            var matches = new List<LCSMatch>();
+
+            // Fill the dp table
+            for (int i = 1; i <= m; i++)
+            {
+                for (int j = 1; j <= n; j++)
+                {
+                    if (str1[i - 1] == str2[j - 1])
+                        dp[i, j] = dp[i - 1, j - 1] + 1;
+                    else
+                        dp[i, j] = Math.Max(dp[i - 1, j], dp[i, j - 1]);
+                }
+            }
+
+            lcsLength = dp[m, n];
+
+            // Backtrack to find matches
+            if (dp[m, n] >= minMatchLen)
+            {
+                int i = m, j = n;
+                var currentMatch = new List<(int, int)>();
+
+                while (i > 0 && j > 0)
+                {
+                    if (str1[i - 1] == str2[j - 1])
+                    {
+                        currentMatch.Insert(0, (i - 1, j - 1));
+                        i--; j--;
+                    }
+                    else if (dp[i - 1, j] > dp[i, j - 1])
+                        i--;
+                    else
+                        j--;
+                }
+
+                // Convert consecutive matches into LCSMatch objects
+                if (currentMatch.Count > 0)
+                {
+                    int start = 0;
+                    for (int k = 1; k <= currentMatch.Count; k++)
+                    {
+                        if (k == currentMatch.Count || 
+                            currentMatch[k].Item1 != currentMatch[k - 1].Item1 + 1 || 
+                            currentMatch[k].Item2 != currentMatch[k - 1].Item2 + 1)
+                        {
+                            int length = k - start;
+                            if (length >= minMatchLen)
+                            {
+                                matches.Add(new LCSMatch 
+                                {
+                                    Start1 = currentMatch[start].Item1, 
+                                    Start2 = currentMatch[start].Item2,
+                                    Length = length
+                                });
+                            }
+                            start = k;
+                        }
+                    }
+                }
+            }
+
+            matches.Reverse();
+
+            return matches;
+        }
+
+        private static unsafe void WriteLCSMatches(List<LCSMatch> matches, bool withMatchLen, int lcsLength,
+            ref byte* curr, byte* end, ref SpanByteAndMemory output,
+            ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle)
+        {
+            while (!RespWriteUtils.WriteArrayLength(4, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+            // Write "matches" section identifier
+            while (!RespWriteUtils.WriteBulkString("matches"u8, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+            // Write matches array
+            while (!RespWriteUtils.WriteArrayLength(matches.Count, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+            foreach (var match in matches)
+            {
+                while (!RespWriteUtils.WriteArrayLength(withMatchLen ? 3 : 2, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (!RespWriteUtils.WriteInteger(match.Start1, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (!RespWriteUtils.WriteInteger(match.Start1 + match.Length - 1, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (!RespWriteUtils.WriteInteger(match.Start2, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (!RespWriteUtils.WriteInteger(match.Start2 + match.Length - 1, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (withMatchLen)
+                {
+                    while (!RespWriteUtils.WriteInteger(match.Length, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+            }
+
+            // Write "len" section identifier
+            while (!RespWriteUtils.WriteBulkString("len"u8, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+            // Write LCS length
+            while (!RespWriteUtils.WriteInteger(lcsLength, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+        }
+
+        private static byte[] ComputeLCS(ReadOnlySpan<byte> str1, ReadOnlySpan<byte> str2, int minMatchLen)
+        {
+            var m = str1.Length;
+            var n = str2.Length;
+            var dp = new int[m + 1, n + 1];
+            
+            // Fill the dp table
+            for (int i = 1; i <= m; i++)
+            {
+                for (int j = 1; j <= n; j++)
+                {
+                    if (str1[i - 1] == str2[j - 1])
+                        dp[i, j] = dp[i - 1, j - 1] + 1;
+                    else
+                        dp[i, j] = Math.Max(dp[i - 1, j], dp[i, j - 1]);
+                }
+            }
+
+            // If result is shorter than minMatchLen, return empty array
+            if (dp[m, n] < minMatchLen)
+                return [];
+
+            // Backtrack to build the LCS
+            var result = new byte[dp[m, n]];
+            int index = dp[m, n] - 1;
+            int k = m, l = n;
+
+            while (k > 0 && l > 0)
+            {
+                if (str1[k - 1] == str2[l - 1])
+                {
+                    result[index] = str1[k - 1];
+                    k--; l--; index--;
+                }
+                else if (dp[k - 1, l] > dp[k, l - 1])
+                    k--;
+                else
+                    l--;
+            }
+
+            return result;
+        }
+
+        private struct LCSMatch
+        {
+            public int Start1;
+            public int Start2;
+            public int Length;
         }
     }
 }

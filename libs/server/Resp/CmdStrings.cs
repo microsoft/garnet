@@ -111,6 +111,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> STOREDIST => "STOREDIST"u8;
         public static ReadOnlySpan<byte> WITHDIST => "WITHDIST"u8;
         public static ReadOnlySpan<byte> WITHHASH => "WITHHASH"u8;
+        public static ReadOnlySpan<byte> LEN => "LEN"u8;
+        public static ReadOnlySpan<byte> IDX => "IDX"u8;
+        public static ReadOnlySpan<byte> MINMATCHLEN => "MINMATCHLEN"u8;
+        public static ReadOnlySpan<byte> WITHMATCHLEN => "WITHMATCHLEN"u8;
 
         /// <summary>
         /// Response strings
@@ -200,6 +204,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GT_LT_NX_NOT_COMPATIBLE => "ERR GT, LT, and/or NX options at the same time are not compatible"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR => "ERR INCR option supports a single increment-element pair"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_BITFIELD_TYPE => "ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_LENGTH_AND_INDEXES => "If you want both the length and indexes, please just use IDX."u8;
 
         /// <summary>
         /// Response string templates

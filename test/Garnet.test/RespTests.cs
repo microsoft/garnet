@@ -4182,5 +4182,211 @@ namespace Garnet.test
         }
 
         #endregion
+
+        #region LCS
+
+        [Test]
+        [TestCase("abc", "abc", "abc", Description = "Identical strings")]
+        [TestCase("hello", "world", "o", Description = "Different strings with common subsequence")]
+        [TestCase("", "abc", "", Description = "Empty first string")]
+        [TestCase("abc", "", "", Description = "Empty second string")]
+        [TestCase("", "", "", Description = "Both empty strings")]
+        [TestCase("abc", "def", "", Description = "No common subsequence")]
+        [TestCase("A string", "Another string", "A string", Description = "Strings with spaces")]
+        [TestCase("ABCDEF", "ACDF", "ACDF", Description = "Multiple common subsequences")]
+        [TestCase("ABCDEF", "ACEDF", "ACEF", Description = "Multiple common subsequences")]
+        public void LCSBasicTest(string key1Value, string key2Value, string expectedLCS)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("key1", key1Value);
+            db.StringSet("key2", key2Value);
+
+            var result = (string)db.Execute("LCS", "key1", "key2");
+            ClassicAssert.AreEqual(expectedLCS, result);
+        }
+
+        [Test]
+        [TestCase("hello", "world", 1, Description = "Basic length check")]
+        [TestCase("", "world", 0, Description = "Empty first string length")]
+        [TestCase("hello", "", 0, Description = "Empty second string length")]
+        [TestCase("", "", 0, Description = "Both empty strings length")]
+        [TestCase("abc", "def", 0, Description = "No common subsequence length")]
+        [TestCase("ABCDEF", "ACEDF", 4, Description = "Multiple common subsequences")]
+        [TestCase("A string", "Another string", 8, Description = "Strings with spaces")]
+        public void LCSWithLenOption(string key1Value, string key2Value, int expectedLength)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("key1", key1Value);
+            db.StringSet("key2", key2Value);
+
+            var result = (long)db.Execute("LCS", "key1", "key2", "LEN");
+            ClassicAssert.AreEqual(expectedLength, result);
+        }
+
+        [Test]
+        [TestCase("ABCDEF", "ACEDF", 4, new[] { 5, 4, 2, 0 }, new[] { 5, 4, 2, 0 }, new[] { 4, 2, 1, 0 }, new[] { 4, 2, 1, 0 }, Description = "Multiple matches")]
+        [TestCase("hello", "world", 1, new[] { 4 }, new[] { 4 }, new[] { 1 }, new[] { 1 }, Description = "Basic IDX test")]
+        [TestCase("abc", "def", 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "No matches")]
+        [TestCase("", "", 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "Empty strings")]
+        [TestCase("abc", "", 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "One empty string")]
+        [TestCase("Hello World!", "Hello Earth!", 8, new[] { 11, 8, 0 }, new[] { 11, 8, 5 }, new[] { 11, 8, 0 }, new[] { 11, 8, 5 }, Description = "Multiple words with punctuation")]
+        [TestCase("AAABBB", "AAABBB", 6, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Identical strings")]
+        [TestCase("    abc", "abc   ", 3, new[] { 4 }, new[] { 6 }, new[] { 0 }, new[] { 2 }, Description = "Strings with spaces")]
+        public void LCSWithIdxOption(string key1Value, string key2Value, int expectedLength,
+            int[] expectedKey1StartPositions, int[] expectedKey1EndPositions, 
+            int[] expectedKey2StartPositions, int[] expectedKey2EndPositions)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("key1", key1Value);
+            db.StringSet("key2", key2Value);
+
+            var result = db.Execute("LCS", "key1", "key2", "IDX");
+            var resultDict = result.ToDictionary();
+
+            ClassicAssert.AreEqual(expectedLength, (int)resultDict["len"]);
+
+            if (expectedLength > 0)
+            {
+                var matches = (RedisResult[])resultDict["matches"];
+                for (int i = 0; i < matches.Length; i++)
+                {
+                    var match = (RedisResult[])matches[i];
+                    var positions1 = Array.ConvertAll((RedisValue[])match[0], x => (int)x);
+                    var positions2 = Array.ConvertAll((RedisValue[])match[1], x => (int)x);
+
+                    ClassicAssert.AreEqual(expectedKey1StartPositions[i], positions1[0]);
+                    ClassicAssert.AreEqual(expectedKey1EndPositions[i], positions1[1]);
+                    ClassicAssert.AreEqual(expectedKey2StartPositions[i], positions2[0]);
+                    ClassicAssert.AreEqual(expectedKey2EndPositions[i], positions2[1]);
+                }
+            }
+            else
+            {
+                ClassicAssert.IsEmpty((RedisResult[])resultDict["matches"]);
+            }
+        }
+
+        [Test]
+        [TestCase("ABCDEF", "ACEDF", 2, 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "Basic MINMATCHLEN test")]
+        [TestCase("hello world12", "hello earth12", 3, 1, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Multiple matches with spaces")]
+        [TestCase("", "", 0, 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "Empty strings")]
+        [TestCase("abc", "", 0, 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "One empty string")] 
+        [TestCase("abcdef", "abcdef", 1, 1, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Identical strings")]
+        [TestCase("AAABBBCCC", "AAACCC", 3, 2, new[] { 6, 0 }, new[] { 8, 2 }, new[] { 3, 0 }, new[] { 5, 2 }, Description = "Repeated characters")]
+        [TestCase("Hello World!", "Hello Earth!", 4, 1, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Words with punctuation")]
+        [TestCase("    abc    ", "abc", 2, 1, new[] { 4 }, new[] { 6 }, new[] { 0 }, new[] { 2 }, Description = "Strings with leading/trailing spaces")]
+        public void LCSWithIdxAndMinMatchLen(string key1Value, string key2Value, int minMatchLen, 
+            int expectedMatchCount, int[] expectedKey1StartPositions, int[] expectedKey1EndPositions, 
+            int[] expectedKey2StartPositions, int[] expectedKey2EndPositions)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("key1", key1Value);
+            db.StringSet("key2", key2Value);
+
+            var result = db.Execute("LCS", "key1", "key2", "IDX", "MINMATCHLEN", minMatchLen);
+            var resultDict = result.ToDictionary();
+            var matches = (RedisResult[])resultDict["matches"];
+
+            ClassicAssert.AreEqual(expectedMatchCount, matches.Length);
+
+            for (int i = 0; i < expectedMatchCount; i++)
+            {
+                var match = (RedisResult[])matches[i];
+                var positions1 = Array.ConvertAll((RedisValue[])match[0], x => (int)x);
+                var positions2 = Array.ConvertAll((RedisValue[])match[1], x => (int)x);
+
+                ClassicAssert.AreEqual(expectedKey1StartPositions[i], positions1[0]);
+                ClassicAssert.AreEqual(expectedKey1EndPositions[i], positions1[1]);
+                ClassicAssert.AreEqual(expectedKey2StartPositions[i], positions2[0]);
+                ClassicAssert.AreEqual(expectedKey2EndPositions[i], positions2[1]);
+            }
+        }
+
+        [Test]
+        [TestCase("ABCDEF", "ACEDF", 0, 4, new[] { 1, 1, 1, 1 }, new[] { 5, 4, 2, 0 }, new[] { 5, 4, 2, 0 }, new[] { 4, 2, 1, 0 }, new[] { 4, 2, 1, 0 }, Description = "Basic WITHMATCHLEN test")]
+        [TestCase("hello world12", "hello earth12", 3, 1, new[] { 6 }, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Multiple matches with lengths")]
+        [TestCase("", "", 0, 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "Empty strings")]
+        [TestCase("abc", "", 0, 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "One empty string")]
+        [TestCase("abcdef", "abcdef", 0, 1, new[] { 6 }, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Identical strings")]
+        [TestCase("AAABBBCCC", "AAACCC", 3, 2, new[] { 3, 3 }, new[] { 6, 0 }, new[] { 8, 2 }, new[] { 3, 0 }, new[] { 5, 2 }, Description = "Repeated characters")]
+        [TestCase("Hello World!", "Hello Earth!", 2, 1, new[] { 6 }, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Words with punctuation")]
+        [TestCase("    abc    ", "abc", 2, 1, new[] { 3 }, new[] { 4 }, new[] { 6 }, new[] { 0 }, new[] { 2 }, Description = "Strings with leading/trailing spaces")]
+        public void LCSWithIdxAndWithMatchLen(string key1Value, string key2Value, int minMatchLen, 
+            int expectedMatchCount, int[] expectedMatchLengths, int[] expectedKey1StartPositions, 
+            int[] expectedKey1EndPositions, int[] expectedKey2StartPositions, int[] expectedKey2EndPositions)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("key1", key1Value);
+            db.StringSet("key2", key2Value);
+
+            var result = db.Execute("LCS", "key1", "key2", "IDX", "MINMATCHLEN", minMatchLen, "WITHMATCHLEN");
+            var resultDict = result.ToDictionary();
+            var matches = (RedisResult[])resultDict["matches"];
+
+            ClassicAssert.AreEqual(expectedMatchCount, matches.Length);
+
+            for (int i = 0; i < expectedMatchCount; i++)
+            {
+                var match = (RedisResult[])matches[i];
+                var positions1 = Array.ConvertAll((RedisValue[])match[0], x => (int)x);
+                var positions2 = Array.ConvertAll((RedisValue[])match[1], x => (int)x);
+
+                ClassicAssert.AreEqual(expectedKey1StartPositions[i], positions1[0]);
+                ClassicAssert.AreEqual(expectedKey1EndPositions[i], positions1[1]);
+                ClassicAssert.AreEqual(expectedKey2StartPositions[i], positions2[0]);
+                ClassicAssert.AreEqual(expectedKey2EndPositions[i], positions2[1]);
+                ClassicAssert.AreEqual(expectedMatchLengths[i], (int)match[2]);
+            }
+        }
+
+        [Test]
+        public void LCSWithInvalidOptions()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("key1", "hello");
+            db.StringSet("key2", "world");
+
+            // Invalid option
+            Assert.Throws<RedisServerException>(() => db.Execute("LCS", "key1", "key2", "INVALID"));
+
+            // Invalid MINMATCHLEN value
+            Assert.Throws<RedisServerException>(() => db.Execute("LCS", "key1", "key2", "IDX", "MINMATCHLEN", -1));
+            Assert.Throws<RedisServerException>(() => db.Execute("LCS", "key1", "key2", "IDX", "MINMATCHLEN", "abc"));
+        }
+
+        [Test]
+        public void LCSWithNonExistentKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Basic LCS with non-existent keys
+            var result = (string)db.Execute("LCS", "nonexistent1", "nonexistent2");
+            ClassicAssert.AreEqual("", result);
+
+            // LCS LEN with non-existent keys
+            result = db.Execute("LCS", "nonexistent1", "nonexistent2", "LEN").ToString();
+            ClassicAssert.AreEqual("0", result);
+
+            // LCS IDX with non-existent keys
+            var idxResult = db.Execute("LCS", "nonexistent1", "nonexistent2", "IDX");
+            var resultDict = idxResult.ToDictionary();
+            ClassicAssert.AreEqual(0, (int)resultDict["len"]);
+            ClassicAssert.IsEmpty((RedisResult[])resultDict["matches"]);
+        }
+
+        #endregion
     }
 }

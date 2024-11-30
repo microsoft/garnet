@@ -453,5 +453,65 @@ namespace Garnet.server
             WriteDirectLargeRespString(message);
             return true;
         }
+
+        private bool NetworkLCS<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 2)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.LCS));
+
+            var key1 = parseState.GetArgSliceByRef(0);
+            var key2 = parseState.GetArgSliceByRef(1);
+
+            // Parse options
+            var lenOnly = false;
+            var withIndices = false;
+            var minMatchLen = 0;
+            var withMatchLen = false;
+            var tokenIdx = 2;
+            while (tokenIdx < parseState.Count)
+            {
+                var option = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
+                
+                if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LEN))
+                {
+                    lenOnly = true;
+                }
+                else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.IDX))
+                {
+                    withIndices = true;
+                }
+                else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MINMATCHLEN))
+                {
+                    if (!parseState.TryGetInt(tokenIdx++, out var minLen) || minLen < 0)
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
+                    minMatchLen = minLen;
+                }
+                else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMATCHLEN))
+                {
+                    withMatchLen = true;
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+            }
+
+            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var status = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
+
+            if (!output.IsSpanByte)
+                SendAndReset(output.Memory, output.Length);
+            else
+                dcurr += output.Length;
+
+            return true;
+        }
     }
 }

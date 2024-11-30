@@ -193,6 +193,34 @@ namespace Garnet.test.cluster
     }
 
     #region BasicCommands
+    internal class LCS : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(LCS);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[2];
+            setup[0] = new(["SET", ssk[0], "hello"]);
+            setup[1] = new(["SET", ssk[1], "world"]);
+            return setup;
+        }
+    }
+
     internal class GET : BaseCommand
     {
         public override bool IsArrayCommand => false;

@@ -45,6 +45,7 @@ namespace Garnet.server
         HSTRLEN,
         HVALS,
         KEYS,
+        LCS,
         LINDEX,
         LLEN,
         LPOS,
@@ -751,6 +752,10 @@ namespace Garnet.server
                                 if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("3\r\nDEL\r\n"u8))
                                 {
                                     return RespCommand.DEL;
+                                }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("3\r\nLCS\r\n"u8))
+                                {
+                                    return RespCommand.LCS;
                                 }
 
                                 break;

@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using Garnet.common;
 using Tsavorite.core;
+using static Garnet.server.StorageSession;
 
 namespace Garnet.server
 {
@@ -1079,6 +1080,19 @@ namespace Garnet.server
         /// <param name="value"></param>
         /// <returns></returns>
         GarnetStatus GET(byte[] key, out GarnetObjectStoreOutput value);
+
+        /// <summary>
+        /// Finds the longest common subsequence (LCS) between two keys.
+        /// </summary>
+        /// <param name="key1">The first key to compare.</param>
+        /// <param name="key2">The second key to compare.</param>
+        /// <param name="output">The output containing the LCS result.</param>
+        /// <param name="lenOnly">If true, only the length of the LCS is returned.</param>
+        /// <param name="withIndices">If true, the indices of the LCS in both keys are returned.</param>
+        /// <param name="withMatchLen">If true, the length of each match is returned.</param>
+        /// <param name="minMatchLen">The minimum length of a match to be considered.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus LCS(ArgSlice key1, ArgSlice key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0);
         #endregion
 
         #region GETRANGE

@@ -3189,6 +3189,61 @@
     ]
   },
   {
+    "Command": "LCS",
+    "Name": "LCS",
+    "Summary": "Finds the longest common substring.",
+    "Group": "String",
+    "Complexity": "O(N*M) where N and M are the lengths of s1 and s2, respectively",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY1",
+        "DisplayText": "key1",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY2",
+        "DisplayText": "key2",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "LEN",
+        "DisplayText": "len",
+        "Type": "PureToken",
+        "Token": "LEN",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "IDX",
+        "DisplayText": "idx",
+        "Type": "PureToken",
+        "Token": "IDX",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN-MATCH-LEN",
+        "DisplayText": "min-match-len",
+        "Type": "Integer",
+        "Token": "MINMATCHLEN",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHMATCHLEN",
+        "DisplayText": "withmatchlen",
+        "Type": "PureToken",
+        "Token": "WITHMATCHLEN",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
     "Command": "LINDEX",
     "Name": "LINDEX",
     "Summary": "Returns an element from a list by its index.",

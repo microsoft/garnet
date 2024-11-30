@@ -232,8 +232,7 @@ namespace CommandInfoUpdater
                 updatedCommandsDocs.Add(updatedCommandDoc.Name, updatedCommandDoc);
             }
 
-            // Update commands docs with commands to add
-            foreach (var command in commandsToAdd.Keys)
+            // Update commands docs with commands to a)
             {
                 RespCommandDocs baseCommandDocs;
                 List<RespCommandDocs> updatedSubCommandsDocs;

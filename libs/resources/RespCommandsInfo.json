@@ -2044,6 +2044,31 @@
     ]
   },
   {
+    "Command": "LCS",
+    "Name": "LCS",
+    "Arity": -3,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 2,
+    "Step": 1,
+    "AclCategories": "Read, Slow, String",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
     "Command": "LINDEX",
     "Name": "LINDEX",
     "Arity": 3,
