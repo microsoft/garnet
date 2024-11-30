@@ -4237,7 +4237,7 @@ namespace Garnet.test
         [TestCase("AAABBB", "AAABBB", 6, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Identical strings")]
         [TestCase("    abc", "abc   ", 3, new[] { 4 }, new[] { 6 }, new[] { 0 }, new[] { 2 }, Description = "Strings with spaces")]
         public void LCSWithIdxOption(string key1Value, string key2Value, int expectedLength,
-            int[] expectedKey1StartPositions, int[] expectedKey1EndPositions, 
+            int[] expectedKey1StartPositions, int[] expectedKey1EndPositions,
             int[] expectedKey2StartPositions, int[] expectedKey2EndPositions)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -4276,13 +4276,13 @@ namespace Garnet.test
         [TestCase("ABCDEF", "ACEDF", 2, 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "Basic MINMATCHLEN test")]
         [TestCase("hello world12", "hello earth12", 3, 1, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Multiple matches with spaces")]
         [TestCase("", "", 0, 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "Empty strings")]
-        [TestCase("abc", "", 0, 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "One empty string")] 
+        [TestCase("abc", "", 0, 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "One empty string")]
         [TestCase("abcdef", "abcdef", 1, 1, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Identical strings")]
         [TestCase("AAABBBCCC", "AAACCC", 3, 2, new[] { 6, 0 }, new[] { 8, 2 }, new[] { 3, 0 }, new[] { 5, 2 }, Description = "Repeated characters")]
         [TestCase("Hello World!", "Hello Earth!", 4, 1, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Words with punctuation")]
         [TestCase("    abc    ", "abc", 2, 1, new[] { 4 }, new[] { 6 }, new[] { 0 }, new[] { 2 }, Description = "Strings with leading/trailing spaces")]
-        public void LCSWithIdxAndMinMatchLen(string key1Value, string key2Value, int minMatchLen, 
-            int expectedMatchCount, int[] expectedKey1StartPositions, int[] expectedKey1EndPositions, 
+        public void LCSWithIdxAndMinMatchLen(string key1Value, string key2Value, int minMatchLen,
+            int expectedMatchCount, int[] expectedKey1StartPositions, int[] expectedKey1EndPositions,
             int[] expectedKey2StartPositions, int[] expectedKey2EndPositions)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -4319,8 +4319,8 @@ namespace Garnet.test
         [TestCase("AAABBBCCC", "AAACCC", 3, 2, new[] { 3, 3 }, new[] { 6, 0 }, new[] { 8, 2 }, new[] { 3, 0 }, new[] { 5, 2 }, Description = "Repeated characters")]
         [TestCase("Hello World!", "Hello Earth!", 2, 1, new[] { 6 }, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Words with punctuation")]
         [TestCase("    abc    ", "abc", 2, 1, new[] { 3 }, new[] { 4 }, new[] { 6 }, new[] { 0 }, new[] { 2 }, Description = "Strings with leading/trailing spaces")]
-        public void LCSWithIdxAndWithMatchLen(string key1Value, string key2Value, int minMatchLen, 
-            int expectedMatchCount, int[] expectedMatchLengths, int[] expectedKey1StartPositions, 
+        public void LCSWithIdxAndWithMatchLen(string key1Value, string key2Value, int minMatchLen,
+            int expectedMatchCount, int[] expectedMatchLengths, int[] expectedKey1StartPositions,
             int[] expectedKey1EndPositions, int[] expectedKey2StartPositions, int[] expectedKey2EndPositions)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

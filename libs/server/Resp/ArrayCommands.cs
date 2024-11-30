@@ -472,7 +472,7 @@ namespace Garnet.server
             while (tokenIdx < parseState.Count)
             {
                 var option = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
-                
+
                 if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LEN))
                 {
                     lenOnly = true;

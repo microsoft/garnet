@@ -1359,16 +1359,16 @@ namespace Garnet.server
                     int start = 0;
                     for (int k = 1; k <= currentMatch.Count; k++)
                     {
-                        if (k == currentMatch.Count || 
-                            currentMatch[k].Item1 != currentMatch[k - 1].Item1 + 1 || 
+                        if (k == currentMatch.Count ||
+                            currentMatch[k].Item1 != currentMatch[k - 1].Item1 + 1 ||
                             currentMatch[k].Item2 != currentMatch[k - 1].Item2 + 1)
                         {
                             int length = k - start;
                             if (length >= minMatchLen)
                             {
-                                matches.Add(new LCSMatch 
+                                matches.Add(new LCSMatch
                                 {
-                                    Start1 = currentMatch[start].Item1, 
+                                    Start1 = currentMatch[start].Item1,
                                     Start2 = currentMatch[start].Item2,
                                     Length = length
                                 });
@@ -1443,7 +1443,7 @@ namespace Garnet.server
             var m = str1.Length;
             var n = str2.Length;
             var dp = new int[m + 1, n + 1];
-            
+
             // Fill the dp table
             for (int i = 1; i <= m; i++)
             {
