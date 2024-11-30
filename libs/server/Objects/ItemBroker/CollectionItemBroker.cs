@@ -510,14 +510,14 @@ namespace Garnet.server
                                 popCount = Math.Min(popCount, listObj.LnkList.Count);
 
                                 var items = new byte[popCount][];
-                                for(var i = 0; i < popCount; i++)
+                                for (var i = 0; i < popCount; i++)
                                 {
                                     if (!TryGetNextListItem(listObj, popDirection == OperationDirection.Left ? RespCommand.BLPOP : RespCommand.BRPOP, out items[i]))
                                     {
                                         return false;
                                     }
                                 }
-                                
+
                                 result = new CollectionItemResult(key, items);
                                 return true;
                             default:

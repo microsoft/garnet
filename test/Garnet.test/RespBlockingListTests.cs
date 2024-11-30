@@ -239,7 +239,7 @@ namespace Garnet.test
         {
             var key = "mykey";
             using var lightClientRequest = TestUtils.CreateRequest();
-            
+
             lightClientRequest.SendCommand($"RPUSH {key} value1 value2 value3");
             var response = lightClientRequest.SendCommand($"BLMPOP 1 1 {key} {direction}");
             var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*1\r\n${expectedValue.Length}\r\n{expectedValue}\r\n";
@@ -254,8 +254,8 @@ namespace Garnet.test
         {
             var keys = new[] { "key1", "key2", "key3" };
             using var lightClientRequest = TestUtils.CreateRequest();
-            
-            lightClientRequest.SendCommand($"RPUSH {keys[valueKeyIndex-1]} {expectedValue}");
+
+            lightClientRequest.SendCommand($"RPUSH {keys[valueKeyIndex - 1]} {expectedValue}");
             var response = lightClientRequest.SendCommand($"BLMPOP 1 {keys.Length} {string.Join(" ", keys)} LEFT");
             var expectedResponse = $"*2\r\n${expectedKey.Length}\r\n{expectedKey}\r\n*1\r\n${expectedValue.Length}\r\n{expectedValue}\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
