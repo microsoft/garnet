@@ -1392,7 +1392,7 @@ namespace Garnet.server
                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
             // Write "matches" section identifier
-            while (!RespWriteUtils.WriteBulkString("matches"u8, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(CmdStrings.matches, ref curr, end))
                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
             // Write matches array
@@ -1430,7 +1430,7 @@ namespace Garnet.server
             }
 
             // Write "len" section identifier
-            while (!RespWriteUtils.WriteBulkString("len"u8, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(CmdStrings.len, ref curr, end))
                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
             // Write LCS length

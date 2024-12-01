@@ -130,6 +130,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_PONG => "+PONG\r\n"u8;
         public static ReadOnlySpan<byte> RESP_EMPTY => "$0\r\n\r\n"u8;
         public static ReadOnlySpan<byte> RESP_QUEUED => "+QUEUED\r\n"u8;
+        public static ReadOnlySpan<byte> matches => "matches"u8;
+        public static ReadOnlySpan<byte> len => "len"u8;
 
         /// <summary>
         /// Simple error response strings, i.e. these are of the form "-errorString\r\n"
