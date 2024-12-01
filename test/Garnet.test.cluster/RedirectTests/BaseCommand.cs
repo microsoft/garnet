@@ -195,7 +195,7 @@ namespace Garnet.test.cluster
     #region BasicCommands
     internal class LCS : BaseCommand
     {
-        public override bool IsArrayCommand => true;
+        public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(LCS);
 
