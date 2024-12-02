@@ -922,8 +922,6 @@ namespace Garnet.test.cluster
             context.kvPairs = [];
             context.kvPairsObj = [];
 
-            _ = context.clusterTestUtils.ClusterMyId(oldPrimaryIndex, context.logger);
-
             // Populate Primary
             if (disableObjects)
             {
@@ -1010,7 +1008,13 @@ namespace Garnet.test.cluster
                 _ = Thread.Yield();
             }
 
-            _ = context.clusterTestUtils.ReplicaOf(replicaIndex, newPrimaryIndex, logger: context.logger);
+            var resp = context.clusterTestUtils.ReplicaOf(replicaIndex, newPrimaryIndex, failEx: false, logger: context.logger);
+            // Retry to avoid lock error
+            while (string.IsNullOrEmpty(resp) || !resp.Equals("OK"))
+            {
+                ClusterTestUtils.BackOff(cancellationToken: TestContext.CurrentContext.CancellationToken);
+                resp = context.clusterTestUtils.ReplicaOf(replicaIndex, newPrimaryIndex, failEx: false, logger: context.logger);
+            }
             context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
             context.clusterTestUtils.WaitForReplicaAofSync(newPrimaryIndex, replicaIndex, context.logger);
 
