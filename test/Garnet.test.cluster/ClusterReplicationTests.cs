@@ -812,44 +812,46 @@ namespace Garnet.test.cluster
             context.CreateInstances(nodes_count, disableObjects: true, MainMemoryReplication: MainMemoryReplication, OnDemandCheckpoint: onDemandCheckpoint, CommitFrequencyMs: -1, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
 
+            var primaryNodeIndex = 0;
+            var replicaNodeIndex = 1;
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
-            context.clusterTestUtils.SetConfigEpoch(0, 1, logger: context.logger);
-            context.clusterTestUtils.SetConfigEpoch(1, 2, logger: context.logger);
-            context.clusterTestUtils.Meet(0, 1, logger: context.logger);
-            context.clusterTestUtils.WaitUntilNodeIsKnown(0, 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaNodeIndex, 2, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
 
-            var replicaId = context.clusterTestUtils.ClusterMyId(1, logger: context.logger);
-            _ = context.clusterTestUtils.ClusterForget(0, replicaId, 5, logger: context.logger);
+            var replicaId = context.clusterTestUtils.ClusterMyId(replicaNodeIndex, logger: context.logger);
+            _ = context.clusterTestUtils.ClusterForget(primaryNodeIndex, replicaId, 60, logger: context.logger);
 
-            var primaryId = context.clusterTestUtils.ClusterMyId(0, logger: context.logger);
+            var primaryId = context.clusterTestUtils.ClusterMyId(primaryNodeIndex, logger: context.logger);
             string resp;
             if (!useReplicaOf)
-                resp = context.clusterTestUtils.ClusterReplicate(1, primaryId, failEx: false, logger: context.logger);
+                resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryId, failEx: false, logger: context.logger);
             else
-                resp = context.clusterTestUtils.ReplicaOf(1, 0, failEx: false, logger: context.logger);
+                resp = context.clusterTestUtils.ReplicaOf(replicaNodeIndex, primaryNodeIndex, failEx: false, logger: context.logger);
             ClassicAssert.IsTrue(resp.StartsWith("PRIMARY-ERR"));
 
             while (true)
             {
-                context.clusterTestUtils.Meet(0, 1, logger: context.logger);
-                context.clusterTestUtils.BumpEpoch(1, logger: context.logger);
-                var config = context.clusterTestUtils.ClusterNodes(0, logger: context.logger);
+                context.clusterTestUtils.Meet(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
+                context.clusterTestUtils.BumpEpoch(replicaNodeIndex, logger: context.logger);
+                var config = context.clusterTestUtils.ClusterNodes(primaryNodeIndex, logger: context.logger);
                 if (config.Nodes.Count == 2) break;
                 ClusterTestUtils.BackOff();
             }
 
-            _ = context.clusterTestUtils.ClusterReplicate(1, primaryId, logger: context.logger);
+            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryId, logger: context.logger);
 
             context.kvPairs = [];
             var keyLength = 32;
             var kvpairCount = keyCount;
             var addCount = 5;
             if (!performRMW)
-                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
+                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryNodeIndex);
             else
-                context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, 0, addCount);
+                context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, primaryNodeIndex, addCount);
 
-            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaNodeIndex);
         }
 
         [Test, Order(16), CancelAfter(testTimeout)]
