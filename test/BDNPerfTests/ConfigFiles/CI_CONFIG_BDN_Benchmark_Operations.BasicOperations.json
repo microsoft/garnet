@@ -1,8 +1,0 @@
-{
-    "filter": "BDN.benchmark.Operations.BasicOperations.*",
-
-    "_comment": "All these values are the expected Allocated.",
-    "expectedInlinePing_ACL_Allocated": 0,
-    "expectedInlinePing_AOF_Allocated": 0,
-    "expectedInlinePing_None_Allocated": 0
-}

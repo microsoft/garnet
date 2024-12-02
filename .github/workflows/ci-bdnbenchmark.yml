@@ -42,7 +42,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
-        test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts' ]   
+        test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -90,7 +90,7 @@ jobs:
           benchmark-data-dir-path: 'website/static/charts'
           auto-push: true
 
-      # Run `github-action-benchmark` action for the Continuous Benchmarking Charts
+      # Run `github-action-benchmark` action for the Continuous Benchmarking Charts (https://microsoft.github.io/garnet/charts/)
       - name: Store benchmark result for charts
         uses: benchmark-action/github-action-benchmark@v1
         with:
@@ -103,3 +103,4 @@ jobs:
           benchmark-data-dir-path: 'website/static/charts'
           auto-push: true
           max-items-in-chart: 50
+          
