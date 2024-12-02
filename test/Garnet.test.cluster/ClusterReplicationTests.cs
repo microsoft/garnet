@@ -821,7 +821,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitUntilNodeIsKnown(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
 
             var replicaId = context.clusterTestUtils.ClusterMyId(replicaNodeIndex, logger: context.logger);
-            _ = context.clusterTestUtils.ClusterForget(primaryNodeIndex, replicaId, 60, logger: context.logger);
+            _ = context.clusterTestUtils.ClusterForget(primaryNodeIndex, replicaId, 5, logger: context.logger);
 
             var primaryId = context.clusterTestUtils.ClusterMyId(primaryNodeIndex, logger: context.logger);
             string resp;

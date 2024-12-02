@@ -96,7 +96,6 @@ namespace Garnet.test.cluster
         /// <param name="certificates"></param>
         public void CreateInstances(
             int shards,
-            bool disableEpochCollision = false,
             bool cleanClusterConfig = true,
             bool tryRecover = false,
             bool disableObjects = false,
@@ -128,7 +127,6 @@ namespace Garnet.test.cluster
                 TestFolder,
                 disablePubSub: disablePubSub,
                 disableObjects: disableObjects,
-                disableEpochCollision: disableEpochCollision,
                 endpoints: endpoints,
                 enableAOF: enableAOF,
                 timeout: timeout,
@@ -220,7 +218,6 @@ namespace Garnet.test.cluster
                 Port,
                 disablePubSub: true,
                 disableObjects: disableObjects,
-                disableEpochCollision: disableEpochCollision,
                 enableAOF: enableAOF,
                 timeout: timeout,
                 gossipDelay: gossipDelay,

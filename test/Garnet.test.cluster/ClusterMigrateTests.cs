@@ -1775,10 +1775,9 @@ namespace Garnet.test.cluster
         }
 
         [Order(20), CancelAfter(testTimeout)]
-        [TestCase(true, false)]
-        [TestCase(false, false)]
-        [TestCase(false, true)]
-        public void ClusterMigrateSlotWalk(bool slots, bool disableEpochCollision, CancellationToken cancellationToken)
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ClusterMigrateSlotWalk(bool slots, CancellationToken cancellationToken)
         {
             var sourceNode = 0;
             var shards = 5;
@@ -1894,7 +1893,7 @@ namespace Garnet.test.cluster
 
             void SetupInstances(int sourceNode, out string[] nodeIds, out IPEndPoint[] nodeEndpoints)
             {
-                context.CreateInstances(shards, useTLS: UseTLS, disableEpochCollision: disableEpochCollision);
+                context.CreateInstances(shards, useTLS: UseTLS);
                 context.CreateConnection(useTLS: UseTLS);
 
                 // Assign all slots to first node
