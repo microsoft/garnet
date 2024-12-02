@@ -10,19 +10,23 @@ namespace Garnet.server
     {
         protected T[] map;
         protected int currIndex = -1;
+        protected readonly bool descIds;
+        protected readonly int maxValue;
         protected readonly int maxSize;
         protected readonly int startOffset;
         protected ReaderWriterLockSlim mapLock = new();
 
-        public int GetIdFromIndex(int index) => maxSize - startOffset - index;
+        public int GetIdFromIndex(int index) => descIds ? maxValue - index : index;
 
-        public int GetIndexFromId(int cmdId) => maxSize - startOffset - cmdId;
+        public int GetIndexFromId(int cmdId) => descIds ? maxValue - cmdId : cmdId;
 
-        public ExtensibleMap(int minSize, int maxSize, int startOffset)
+        public ExtensibleMap(int minSize, int maxSize, int startOffset, int maxValue, bool descIds = true)
         {
             this.map = new T[minSize];
             this.maxSize = maxSize;
             this.startOffset = startOffset;
+            this.maxValue = maxValue;
+            this.descIds = descIds;
         }
 
         public T this[int index]
@@ -114,7 +118,7 @@ namespace Garnet.server
         }
     }
 
-    internal class ExtensibleCustomCommandMap<T>(int minSize, int maxSize, int startOffset) : ExtensibleMap<T>(minSize, maxSize, startOffset)
+    internal class ExtensibleCustomCommandMap<T>(int minSize, int maxSize, int startOffset, int maxValue, bool descIds = true) : ExtensibleMap<T>(minSize, maxSize, startOffset, maxValue, descIds)
         where T : ICustomCommand
     {
         public bool MatchCommandSafe(ReadOnlySpan<byte> cmd, out T value)
@@ -141,13 +145,13 @@ namespace Garnet.server
         }
     }
 
-    internal class CustomCommandMap(int minSize, int maxSize, int startOffset) : ExtensibleCustomCommandMap<CustomRawStringCommand>(minSize, maxSize, startOffset);
+    internal class CustomCommandMap(int minSize, int maxSize, int startOffset) : ExtensibleCustomCommandMap<CustomRawStringCommand>(minSize, maxSize, startOffset, ushort.MaxValue - 1);
 
-    internal class CustomTransactionMap(int minSize, int maxSize, int startOffset) : ExtensibleCustomCommandMap<CustomTransaction>(minSize, maxSize, startOffset);
+    internal class CustomTransactionMap(int minSize, int maxSize, int startOffset) : ExtensibleCustomCommandMap<CustomTransaction>(minSize, maxSize, startOffset, byte.MaxValue);
 
-    internal class CustomProcedureMap(int minSize, int maxSize, int startOffset) : ExtensibleCustomCommandMap<CustomProcedureWrapper>(minSize, maxSize, startOffset);
+    internal class CustomProcedureMap(int minSize, int maxSize, int startOffset) : ExtensibleCustomCommandMap<CustomProcedureWrapper>(minSize, maxSize, startOffset, byte.MaxValue);
 
-    internal class CustomObjectCommandMap(int minSize, int maxSize) : ExtensibleMap<CustomObjectCommandWrapper>(minSize, maxSize, CustomCommandManager.TypeIdStartOffset)
+    internal class CustomObjectCommandMap(int minSize, int maxSize) : ExtensibleMap<CustomObjectCommandWrapper>(minSize, maxSize, CustomCommandManager.TypeIdStartOffset, (byte)GarnetObjectTypeExtensions.FirstSpecialObjectType - 1)
     {
         public bool MatchSubCommandSafe(ReadOnlySpan<byte> cmd, out CustomObjectCommand value)
         {

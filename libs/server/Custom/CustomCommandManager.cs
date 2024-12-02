@@ -82,31 +82,33 @@ namespace Garnet.server
 
         internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo, RespCommandDocs commandDocs, CustomObjectFunctions customObjectFunctions = null)
         {
-            var index = objectCommandMap.FirstIndexSafe(c => c.factory == factory);
+            var typeIndex = objectCommandMap.FirstIndexSafe(c => c.factory == factory);
 
-            if (index == -1)
+            int typeId;
+            if (typeIndex == -1)
             {
-                if (!objectCommandMap.TryGetNextIndex(out index))
+                if (!objectCommandMap.TryGetNextIndex(out typeIndex))
                     throw new Exception("Out of registration space");
 
-                var typeId = transactionProcMap.GetIdFromIndex(index);
+                typeId = objectCommandMap.GetIdFromIndex(typeIndex);
                 Debug.Assert(typeId <= byte.MaxValue);
 
-                objectCommandMap[index] = new CustomObjectCommandWrapper((byte)typeId, factory);
+                objectCommandMap[typeIndex] = new CustomObjectCommandWrapper((byte)typeId, factory);
             }
 
-            var wrapper = objectCommandMap[index];
+            var wrapper = objectCommandMap[typeIndex];
             if (!wrapper.commandMap.TryGetNextIndex(out var scIndex))
                 throw new Exception("Out of registration space");
 
-            var scId = transactionProcMap.GetIdFromIndex(index);
+            var scId = wrapper.commandMap.GetIdFromIndex(scIndex);
             Debug.Assert(scId <= byte.MaxValue);
-            wrapper.commandMap[scIndex] = new CustomObjectCommand(name, (byte)scId, (byte)scIndex, commandType, wrapper.factory, customObjectFunctions);
+            typeId = objectCommandMap.GetIdFromIndex(typeIndex);
+            wrapper.commandMap[scIndex] = new CustomObjectCommand(name, (byte)typeId, (byte)scId, commandType, wrapper.factory, customObjectFunctions);
 
             if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
 
-            return (scId, scIndex);
+            return (typeId, scId);
         }
 
         /// <summary>
@@ -123,7 +125,7 @@ namespace Garnet.server
             if (!customProcedureMap.TryGetNextIndex(out var index))
                 throw new Exception("Out of registration space");
 
-            var cmdId = transactionProcMap.GetIdFromIndex(index);
+            var cmdId = customProcedureMap.GetIdFromIndex(index);
             Debug.Assert(cmdId <= byte.MaxValue);
 
             customProcedureMap[index] = new CustomProcedureWrapper(name, (byte)cmdId, customProcedure, this);

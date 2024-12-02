@@ -21,9 +21,9 @@ namespace Garnet.server
         {
             this.customCommandManager = customCommandManager;
             sessionTransactionProcMap = new ExtensibleMap<CustomTransactionProcedureWithArity>(
-                CustomCommandManager.MinMapSize, byte.MaxValue, 0);
+                CustomCommandManager.MinMapSize, byte.MaxValue, 0, byte.MaxValue);
             sessionCustomProcMap = new ExtensibleMap<CustomProcedure>(CustomCommandManager.MinMapSize,
-                byte.MaxValue, 0);
+                byte.MaxValue, 0, byte.MaxValue);
         }
 
         public CustomProcedure GetCustomProcedure(int id, RespServerSession respServerSession)

@@ -23,6 +23,6 @@ namespace Garnet.server
             this.expirationTicks = expirationTicks;
         }
 
-        internal RespCommand GetRespCommand() => (RespCommand)(ushort.MaxValue - 1 - id);
+        internal RespCommand GetRespCommand() => (RespCommand)id;
     }
 }
