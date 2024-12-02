@@ -18,7 +18,7 @@ using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
-    internal class ClusterTestContext
+    public class ClusterTestContext
     {
         public CredentialManager credManager;
         public string TestFolder;
@@ -38,8 +38,12 @@ namespace Garnet.test.cluster
 
         public ClusterTestUtils clusterTestUtils = null;
 
-        public void Setup(Dictionary<string, LogLevel> monitorTests)
+        public CancellationTokenSource cts;
+
+        public void Setup(Dictionary<string, LogLevel> monitorTests, int testTimeoutSeconds = 60)
         {
+            cts = new CancellationTokenSource(TimeSpan.FromSeconds(testTimeoutSeconds));
+
             TestFolder = TestUtils.UnitTestWorkingDir() + "\\";
             var logLevel = LogLevel.Error;
             if (!string.IsNullOrEmpty(TestContext.CurrentContext.Test.MethodName) && monitorTests.TryGetValue(TestContext.CurrentContext.Test.MethodName, out var value))
@@ -54,6 +58,8 @@ namespace Garnet.test.cluster
 
         public void TearDown()
         {
+            cts.Cancel();
+            cts.Dispose();
             logger.LogDebug("0. Dispose <<<<<<<<<<<");
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
@@ -280,6 +286,7 @@ namespace Garnet.test.cluster
             clusterTestUtils?.Dispose();
             clusterTestUtils = new ClusterTestUtils(
                 endpoints,
+                context: this,
                 textWriter: logTextWriter,
                 UseTLS: useTLS,
                 authUsername: clientCreds.user,
@@ -440,7 +447,7 @@ namespace Garnet.test.cluster
                 while (responseState != ResponseState.OK || retVal == null || (value != int.Parse(retVal)))
                 {
                     retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out var _, out var _, out var _, out responseState, logger: logger);
-                    ClusterTestUtils.BackOff();
+                    ClusterTestUtils.BackOff(cancellationToken: cts.Token);
                 }
                 ClassicAssert.AreEqual(ResponseState.OK, responseState);
                 ClassicAssert.AreEqual(value, int.Parse(retVal), $"replOffset > p:{clusterTestUtils.GetReplicationOffset(primaryIndex, logger: logger)}, s[{replicaIndex}]:{clusterTestUtils.GetReplicationOffset(replicaIndex)}");
@@ -464,7 +471,7 @@ namespace Garnet.test.cluster
                         result = clusterTestUtils.Lrange(nodeIndex, key, logger);
                     else
                         result = clusterTestUtils.Smembers(nodeIndex, key, logger);
-                    ClusterTestUtils.BackOff();
+                    ClusterTestUtils.BackOff(cancellationToken: cts.Token);
                 }
                 if (!set)
                     ClassicAssert.AreEqual(elements, result);
@@ -489,7 +496,7 @@ namespace Garnet.test.cluster
                 while (responseState != ResponseState.OK || retVal == null || (value != int.Parse(retVal)))
                 {
                     retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out int _, out string _, out int _, out responseState, logger: logger);
-                    ClusterTestUtils.BackOff();
+                    ClusterTestUtils.BackOff(cancellationToken: cts.Token);
                 }
                 ClassicAssert.AreEqual(ResponseState.OK, responseState);
                 ClassicAssert.AreEqual(value, int.Parse(retVal), $"replOffset > p:{clusterTestUtils.GetReplicationOffset(primaryIndex, logger: logger)}, s[{replicaIndex}]:{clusterTestUtils.GetReplicationOffset(replicaIndex)}");

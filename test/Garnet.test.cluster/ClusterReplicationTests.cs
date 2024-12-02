@@ -85,8 +85,6 @@ namespace Garnet.test.cluster
         readonly int timeout = 60;
         readonly int keyCount = 256;
 
-        const int testTimeout = 60000;
-
         public Dictionary<string, LogLevel> monitorTests = new()
         {
             {"ClusterReplicationSimpleFailover", LogLevel.Warning},
@@ -105,7 +103,7 @@ namespace Garnet.test.cluster
             context?.TearDown();
         }
 
-        [Test, Order(1), CancelAfter(testTimeout)]
+        [Test, Order(1)]
         [Category("REPLICATION")]
         public void ClusterSRTest([Values] bool disableObjects)
         {
@@ -142,7 +140,7 @@ namespace Garnet.test.cluster
                 context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, i);
         }
 
-        [Test, Order(2), CancelAfter(testTimeout)]
+        [Test, Order(2)]
         [Category("REPLICATION")]
         public void ClusterSRNoCheckpointRestartSecondary([Values] bool performRMW, [Values] bool disableObjects)
         {
@@ -208,7 +206,7 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
         }
 
-        [Test, Order(3), CancelAfter(testTimeout)]
+        [Test, Order(3)]
         [Category("REPLICATION")]
         public void ClusterSRPrimaryCheckpoint([Values] bool performRMW, [Values] bool disableObjects)
         {
@@ -285,21 +283,21 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
         }
 
-        [Test, Order(4), CancelAfter(testTimeout)]
+        [Test, Order(4)]
         [Category("REPLICATION")]
         public void ClusterCheckpointRetrieveDisableStorageTier([Values] bool performRMW, [Values] bool disableObjects)
         {
             ClusterSRPrimaryCheckpointRetrieve(performRMW, disableObjects, false, false, true, false);
         }
 
-        [Test, Order(5), CancelAfter(testTimeout)]
+        [Test, Order(5)]
         [Category("REPLICATION")]
         public void ClusterCheckpointRetrieveDelta([Values] bool performRMW)
         {
             ClusterSRPrimaryCheckpointRetrieve(performRMW, true, false, false, false, true);
         }
 
-        [Test, Order(6), CancelAfter(testTimeout)]
+        [Test, Order(6)]
         [Category("REPLICATION")]
         public void ClusterSRPrimaryCheckpointRetrieve([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory, [Values] bool manySegments)
             => ClusterSRPrimaryCheckpointRetrieve(performRMW: performRMW, disableObjects: disableObjects, lowMemory: lowMemory, manySegments: manySegments, false, false);
@@ -383,7 +381,7 @@ namespace Garnet.test.cluster
                 context.ValidateNodeObjects(ref context.kvPairsObj, replicaIndex);
         }
 
-        [Test, Order(7), CancelAfter(testTimeout)]
+        [Test, Order(7)]
         [Category("REPLICATION")]
         public void ClusterSRAddReplicaAfterPrimaryCheckpoint([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory)
         {
@@ -442,7 +440,7 @@ namespace Garnet.test.cluster
                 context.ValidateNodeObjects(ref context.kvPairsObj, 1);
         }
 
-        [Test, Order(8), CancelAfter(testTimeout)]
+        [Test, Order(8)]
         [Category("REPLICATION")]
         public void ClusterSRPrimaryRestart([Values] bool performRMW, [Values] bool disableObjects)
         {
@@ -509,7 +507,7 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual(objectStoreCurrentAofAddress, objectStoreRecoveredAofAddress);
         }
 
-        [Test, Order(9), CancelAfter(testTimeout)]
+        [Test, Order(9)]
         [Category("REPLICATION")]
         public void ClusterSRRedirectWrites()
         {
@@ -537,7 +535,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(ResponseState.MOVED, resp);
         }
 
-        [Test, Order(10), CancelAfter(testTimeout)]
+        [Test, Order(10)]
         [Category("REPLICATION")]
         public void ClusterSRReplicaOfTest([Values] bool performRMW)
         {
@@ -573,7 +571,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
         }
 
-        [Test, Order(11), CancelAfter(testTimeout)]
+        [Test, Order(11)]
         [Category("REPLICATION")]
         public void ClusterReplicationSimpleFailover([Values] bool performRMW, [Values] bool checkpoint)
         {
@@ -643,7 +641,7 @@ namespace Garnet.test.cluster
                 context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, 0, addCount, slotMap: slotMap);
         }
 
-        [Test, Order(12), CancelAfter(testTimeout)]
+        [Test, Order(12)]
         [Category("REPLICATION")]
         public void ClusterFailoverAttachReplicas([Values] bool performRMW, [Values] bool takePrimaryCheckpoint, [Values] bool takeNewPrimaryCheckpoint, [Values] bool enableIncrementalSnapshots)
         {
@@ -724,7 +722,7 @@ namespace Garnet.test.cluster
             context.SendAndValidateKeys(1, 2, keyLength, 5);
         }
 
-        [Test, Order(13), CancelAfter(testTimeout)]
+        [Test, Order(13)]
         [Category("REPLICATION")]
         public void ClusterReplicationCheckpointCleanupTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool enableIncrementalSnapshots)
         {
@@ -757,7 +755,7 @@ namespace Garnet.test.cluster
                 Assert.Fail("attachReplicaTask timeout");
         }
 
-        [Test, Order(14), CancelAfter(testTimeout)]
+        [Test, Order(14)]
         [Category("REPLICATION")]
         public void ClusterMainMemoryReplicationAttachReplicas()
         {
@@ -801,7 +799,7 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 2);
         }
 
-        [Test, Order(15), CancelAfter(testTimeout)]
+        [Test, Order(15)]
         [Category("REPLICATION")]
         public void ClusterDontKnowReplicaFailTest([Values] bool performRMW, [Values] bool MainMemoryReplication, [Values] bool onDemandCheckpoint, [Values] bool useReplicaOf)
         {
@@ -837,7 +835,7 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.BumpEpoch(replicaNodeIndex, logger: context.logger);
                 var config = context.clusterTestUtils.ClusterNodes(primaryNodeIndex, logger: context.logger);
                 if (config.Nodes.Count == 2) break;
-                ClusterTestUtils.BackOff();
+                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token);
             }
 
             _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryId, logger: context.logger);
@@ -854,12 +852,12 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaNodeIndex);
         }
 
-        [Test, Order(16), CancelAfter(testTimeout)]
+        [Test, Order(16)]
         [Category("REPLICATION")]
         public void ClusterDivergentReplicasTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool ckptBeforeDivergence)
             => ClusterDivergentReplicasTest(performRMW, disableObjects, ckptBeforeDivergence, false, false, fastCommit: false);
 
-        [Test, Order(17), CancelAfter(testTimeout)]
+        [Test, Order(17)]
         [Category("REPLICATION")]
         public void ClusterDivergentCheckpointTest([Values] bool performRMW, [Values] bool disableObjects)
             => ClusterDivergentReplicasTest(
@@ -870,7 +868,7 @@ namespace Garnet.test.cluster
                 mainMemoryReplication: false,
                 fastCommit: false);
 
-        [Test, Order(18), CancelAfter(testTimeout)]
+        [Test, Order(18)]
         [Category("REPLICATION")]
         public void ClusterDivergentReplicasMMTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool ckptBeforeDivergence)
             => ClusterDivergentReplicasTest(
@@ -881,7 +879,7 @@ namespace Garnet.test.cluster
                 mainMemoryReplication: true,
                 fastCommit: false);
 
-        [Test, Order(19), CancelAfter(testTimeout)]
+        [Test, Order(19)]
         [Category("REPLICATION")]
         public void ClusterDivergentCheckpointMMTest([Values] bool performRMW, [Values] bool disableObjects)
             => ClusterDivergentReplicasTest(
@@ -892,7 +890,7 @@ namespace Garnet.test.cluster
                 mainMemoryReplication: true,
                 fastCommit: false);
 
-        [Test, Order(20), CancelAfter(testTimeout)]
+        [Test, Order(20)]
         [Category("REPLICATION")]
         public void ClusterDivergentCheckpointMMFastCommitTest([Values] bool disableObjects, [Values] bool mainMemoryReplication)
             => ClusterDivergentReplicasTest(
@@ -1016,7 +1014,7 @@ namespace Garnet.test.cluster
             // Retry to avoid lock error
             while (string.IsNullOrEmpty(resp) || !resp.Equals("OK"))
             {
-                ClusterTestUtils.BackOff(cancellationToken: TestContext.CurrentContext.CancellationToken);
+                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token);
                 resp = context.clusterTestUtils.ReplicaOf(replicaIndex, newPrimaryIndex, failEx: false, logger: context.logger);
             }
             context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
@@ -1029,7 +1027,7 @@ namespace Garnet.test.cluster
                 context.ValidateNodeObjects(ref context.kvPairsObj, nodeIndex: newPrimaryIndex, set: set);
         }
 
-        [Test, Order(21), CancelAfter(testTimeout)]
+        [Test, Order(21)]
         [Category("REPLICATION")]
         public void ClusterReplicateFails()
         {
@@ -1064,7 +1062,7 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(exc.Message.StartsWith("ERR I don't know about node "));
         }
 
-        [Test, Order(22), CancelAfter(testTimeout)]
+        [Test, Order(22)]
         public void ClusterReplicationCheckpointAlignmentTest([Values] bool performRMW)
         {
             var replica_count = 1;// Per primary
