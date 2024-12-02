@@ -1,9 +1,0 @@
-{
-    "filter": "BDN.benchmark.Cluster.ClusterMigrate.*",
-
-    "_comment": "All these values are the expected Allocated.",
-    "expectedGet_None": 0,
-    "expectedSet_None": 0,
-    "expectedMGet_None": 0,
-    "expectedMSet_None": 0
-}

@@ -1,11 +1,11 @@
 <#$f
 .SYNOPSIS
-    This script is designed for to run BDN Benchmarking and use the results as a gate in the GitHub CIs to ensure performance isn't declining
+    This script is designed for to run BDN Benchmarking and use the results as a gate in the GitHub CIs to ensure performance isn't declining. 
 
 .DESCRIPTION
 
     Script to test for performance regressions in Allocated Memory using BDN Benchmark tool. The various tests are in the configuration file (BDN_Benchmark_Config.json) and are associated with each test that contains name and expected values of the BDN benchmark.
-    Any of these (ie BDN.benchmark.Operations.BasicOperations.*) can be sent as the parameter to the file.
+    Any of the BDN benchmark tests (ie BDN.benchmark.Operations.BasicOperations.*) can be sent as the parameter to the file.
 
     NOTE: The expected values are specific for the CI Machine. If you run these on your machine, you will need to change the expected values.
 
@@ -14,7 +14,7 @@
 .EXAMPLE
     ./run_bdnperftest.ps1
     ./run_bdnperftest.ps1 BDN.benchmark.Operations.BasicOperations.*
-    ./run_bdnperftest.ps1 Operations.BasicOperations    <-- this is how specify in ci-bdnbenchmark.yml
+    ./run_bdnperftest.ps1 Operations.BasicOperations    <-- can run this way but this is how specify in ci-bdnbenchmark.yml
 #>
 
 param (
@@ -34,23 +34,23 @@ function AnalyzeResult {
     param ($foundResultValue, $expectedResultValue, $acceptablePercentRange, $warnonly)
 
     # Calculate the upper bounds of the expected value
-    [double] $Tolerance = $acceptablePercentRange / 100
-    [double] $UpperBound = $expectedResultValue * (1 + $Tolerance)
-    [double] $dblfoundResultValue = $foundResultValue
+    $Tolerance = [double]$acceptablePercentRange / 100
+    $UpperBound = [double]$expectedResultValue * (1 + $Tolerance)
+    $dblfoundResultValue = [double]$foundResultValue
 
     # Check if the actual value is within the bounds
     if ($dblfoundResultValue -le $UpperBound) {
-        Write-Host "**             ** PASS! **  The Allocated Value result ($dblfoundResultValue) is under the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%)"
+        Write-Host "**             ** PASS! **  The found Allocated value ($dblfoundResultValue) is below the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%)"
         Write-Host "** "
         return $true # the values are close enough
     }
     else {
         if ($warnonly) {
-            Write-Host "**   << PERF REGRESSION WARNING! >>  The BDN benchmark Allocated Value result ($dblfoundResultValue) is above the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%)"
+            Write-Host "**   << PERF REGRESSION WARNING! >>  The BDN benchmark found Allocated value ($dblfoundResultValue) is above the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%)"
             Write-Host "** "
         }
         else {
-            Write-Host "**   << PERF REGRESSION FAIL! >> The BDN benchmark Allocated Value result ($dblfoundResultValue) is above the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%)"
+            Write-Host "**   << PERF REGRESSION FAIL! >> The BDN benchmark found Allocated value ($dblfoundResultValue) is above the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%)"
             Write-Host "** "
         }
         return $false # the values are too different
@@ -131,7 +131,7 @@ Write-Host " "
 
 # Access the properties under the specific test in the config file
 $json = Get-Content -Raw -Path "$configFile" | ConvertFrom-Json
-$basicOperations = $json.$currentTest
+$testProperties = $json.$currentTest
 
 # create a matrix of expected results for specific test
 $splitTextArray = New-Object 'string[]' 3
@@ -140,7 +140,8 @@ $expectedResultsArray = New-Object 'string[,]' 20, 3
 [int]$currentRow = 0
 
 # Iterate through each property for the expected value - getting method, params and value
-foreach ($property in $basicOperations.PSObject.Properties) {
+foreach ($property in $testProperties.PSObject.Properties) {
+
     # Split the property name into parts
     $splitTextArray = $property.Name -split '_'
    
@@ -239,7 +240,7 @@ Write-Output "**"
 if ($testSuiteResult) {
     Write-Output "**   PASS!  All tests in the suite passed."
 } else {
-    Write-Error -Message "**   BDN Benchmark PERFORMANCE REGRESSION FAIL!  At least one test had benchmark value outside of expected range. NOTE: Expected results are based on CI machine and may differ from the machine that this was ran on."
+    Write-Error -Message "**   BDN Benchmark PERFORMANCE REGRESSION FAIL!  At least one test had benchmark Allocated Memory value outside of expected range. NOTE: Expected results are based on CI machine and may differ from the machine that this was ran on."
 }
 Write-Output "**"
 Write-Output "************************"

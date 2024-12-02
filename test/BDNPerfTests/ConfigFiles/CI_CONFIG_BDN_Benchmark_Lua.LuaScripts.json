@@ -1,9 +1,0 @@
-{
-    "filter": "BDN.benchmark.Lua.*",
-    
-    "_comment": "All these values are the expected Allocated.",
-    "expectedScript1_None": 24,
-    "expectedScript2_None": 144,
-    "expectedScript3_None": 240,
-    "expectedScript4_None": 776
-}
