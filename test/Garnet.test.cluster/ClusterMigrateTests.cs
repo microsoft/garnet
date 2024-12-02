@@ -1809,7 +1809,7 @@ namespace Garnet.test.cluster
                     var status = context.clusterTestUtils.SetSlot(_tgt, slot, "IMPORTING", nodeIds[_src], logger: context.logger);
                     while (string.IsNullOrEmpty(status) || !status.Equals("OK"))
                     {
-                        if (!disableEpochCollision) SetSlot(_src);
+                        SetSlot(_src);
                         ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: $"{nodeIds[_src]}({nodeEndpoints[_src].Port}) > {slot} > {nodeIds[_tgt]}({nodeEndpoints[_tgt].Port})");
                         status = context.clusterTestUtils.SetSlot(_tgt, slot, "IMPORTING", nodeIds[_src], logger: context.logger);
                     }
