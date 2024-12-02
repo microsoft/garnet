@@ -930,6 +930,7 @@ namespace Garnet.test.cluster
             }
             else context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, primaryIndex: oldPrimaryIndex, set: set);
 
+            // Take a checkpoint at the original primary
             if (ckptBeforeDivergence)
             {
                 var oldPrimaryLastSaveTime = context.clusterTestUtils.LastSave(oldPrimaryIndex, logger: context.logger);
@@ -941,6 +942,7 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.WaitCheckpoint(replicaIndex, replicaLastSaveTime, logger: context.logger);
             }
 
+            // Wait for replicas to catch up
             context.clusterTestUtils.WaitForReplicaAofSync(oldPrimaryIndex, newPrimaryIndex, context.logger);
             context.clusterTestUtils.WaitForReplicaAofSync(oldPrimaryIndex, replicaIndex, context.logger);
 
