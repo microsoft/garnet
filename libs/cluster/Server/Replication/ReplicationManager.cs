@@ -163,10 +163,14 @@ namespace Garnet.cluster
         public bool StartRecovery()
         {
             if (!clusterProvider.storeWrapper.TryPauseCheckpoints())
+            {
+                logger?.LogError("Error could not acquire checkpoint lock");
                 return false;
+            }
 
             if (!recoverLock.TryWriteLock())
             {
+                logger?.LogError("Error could not acquire recover lock");
                 // If failed to acquire recoverLock re-enable checkpoint taking
                 clusterProvider.storeWrapper.ResumeCheckpoints();
                 return false;
