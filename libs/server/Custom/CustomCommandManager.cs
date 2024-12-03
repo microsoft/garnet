@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -41,12 +42,11 @@ namespace Garnet.server
 
         internal int Register(string name, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo, RespCommandDocs commandDocs, long expirationTicks)
         {
-            if (!rawStringCommandMap.TryGetNextIndex(out var index))
+            if (!rawStringCommandMap.TryGetNextId(out var cmdId))
                 throw new Exception("Out of registration space");
-            var cmdId = rawStringCommandMap.GetIdFromIndex(index);
             Debug.Assert(cmdId <= ushort.MaxValue);
-
-            rawStringCommandMap[index] = new CustomRawStringCommand(name, (ushort)cmdId, type, customFunctions, expirationTicks);
+            var newCmd = new CustomRawStringCommand(name, (ushort)cmdId, type, customFunctions, expirationTicks);
+            rawStringCommandMap.TrySetValue(cmdId, ref newCmd);
             if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
             return cmdId;
@@ -54,12 +54,12 @@ namespace Garnet.server
 
         internal int Register(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
         {
-            if (!transactionProcMap.TryGetNextIndex(out var index))
+            if (!transactionProcMap.TryGetNextId(out var cmdId))
                 throw new Exception("Out of registration space");
-            var cmdId = transactionProcMap.GetIdFromIndex(index);
             Debug.Assert(cmdId <= byte.MaxValue);
 
-            transactionProcMap[index] = new CustomTransaction(name, (byte)cmdId, proc);
+            var newCmd = new CustomTransaction(name, (byte)cmdId, proc);
+            transactionProcMap.TrySetValue(cmdId, ref newCmd);
             if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
             return cmdId;
@@ -67,44 +67,43 @@ namespace Garnet.server
 
         internal int RegisterType(CustomObjectFactory factory)
         {
-            var dupRegistrationIdx = objectCommandMap.FirstIndexSafe(c => c.factory == factory);
-            if (dupRegistrationIdx != -1)
-                throw new Exception($"Type already registered with ID {dupRegistrationIdx}");
+            var dupRegistrationId = objectCommandMap.FirstIdSafe(c => c.factory == factory);
+            if (dupRegistrationId != -1)
+                throw new Exception($"Type already registered with ID {dupRegistrationId}");
 
-            if (!objectCommandMap.TryGetNextIndex(out var index))
+            if (!objectCommandMap.TryGetNextId(out var cmdId))
                 throw new Exception("Out of registration space");
-            var cmdId = objectCommandMap.GetIdFromIndex(index);
             Debug.Assert(cmdId <= byte.MaxValue);
 
-            objectCommandMap[index] = new CustomObjectCommandWrapper((byte)cmdId, factory);
+            var newCmd = new CustomObjectCommandWrapper((byte)cmdId, factory);
+            objectCommandMap.TrySetValue(cmdId, ref newCmd);
 
             return cmdId;
         }
 
         internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo, RespCommandDocs commandDocs, CustomObjectFunctions customObjectFunctions = null)
         {
-            var typeIndex = objectCommandMap.FirstIndexSafe(c => c.factory == factory);
+            var typeId = objectCommandMap.FirstIdSafe(c => c.factory == factory);
 
-            int typeId;
-            if (typeIndex == -1)
+            if (typeId == -1)
             {
-                if (!objectCommandMap.TryGetNextIndex(out typeIndex))
+                if (!objectCommandMap.TryGetNextId(out typeId))
                     throw new Exception("Out of registration space");
 
-                typeId = objectCommandMap.GetIdFromIndex(typeIndex);
                 Debug.Assert(typeId <= byte.MaxValue);
 
-                objectCommandMap[typeIndex] = new CustomObjectCommandWrapper((byte)typeId, factory);
+                var newCmd = new CustomObjectCommandWrapper((byte)typeId, factory);
+                objectCommandMap.TrySetValue(typeId, ref newCmd);
             }
 
-            var wrapper = objectCommandMap[typeIndex];
-            if (!wrapper.commandMap.TryGetNextIndex(out var scIndex))
+            objectCommandMap.TryGetValue(typeId, out var wrapper);
+            if (!wrapper.commandMap.TryGetNextId(out var scId))
                 throw new Exception("Out of registration space");
 
-            var scId = wrapper.commandMap.GetIdFromIndex(scIndex);
             Debug.Assert(scId <= byte.MaxValue);
-            typeId = objectCommandMap.GetIdFromIndex(typeIndex);
-            wrapper.commandMap[scIndex] = new CustomObjectCommand(name, (byte)typeId, (byte)scId, commandType, wrapper.factory, customObjectFunctions);
+            var newSubCmd = new CustomObjectCommand(name, (byte)typeId, (byte)scId, commandType, wrapper.factory,
+                customObjectFunctions);
+            wrapper.commandMap.TrySetValue(scId, ref newSubCmd);
 
             if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
@@ -123,35 +122,35 @@ namespace Garnet.server
         /// <exception cref="Exception"></exception>
         internal int Register(string name, Func<CustomProcedure> customProcedure, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
         {
-            if (!customProcedureMap.TryGetNextIndex(out var index))
+            if (!customProcedureMap.TryGetNextId(out var cmdId))
                 throw new Exception("Out of registration space");
 
-            var cmdId = customProcedureMap.GetIdFromIndex(index);
             Debug.Assert(cmdId <= byte.MaxValue);
 
-            customProcedureMap[index] = new CustomProcedureWrapper(name, (byte)cmdId, customProcedure, this);
+            var newCmd = new CustomProcedureWrapper(name, (byte)cmdId, customProcedure, this);
+            customProcedureMap.TrySetValue(cmdId, ref newCmd);
             if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
             return cmdId;
         }
 
-        internal CustomProcedureWrapper GetCustomProcedure(int id)
-            => customProcedureMap[customProcedureMap.GetIndexFromId(id)];
+        internal bool TryGetCustomProcedure(int id, out CustomProcedureWrapper value)
+            => customProcedureMap.TryGetValue(id, out value);
 
-        internal CustomTransaction GetCustomTransactionProcedure(int id)
-            => transactionProcMap[transactionProcMap.GetIndexFromId(id)];
+        internal bool TryGetCustomTransactionProcedure(int id, out CustomTransaction value)
+            => transactionProcMap.TryGetValue(id, out value);
 
-        internal CustomRawStringCommand GetCustomCommand(int id)
-            => rawStringCommandMap[rawStringCommandMap.GetIndexFromId(id)];
+        internal bool TryGetCustomCommand(int id, out CustomRawStringCommand value)
+            => rawStringCommandMap.TryGetValue(id, out value);
 
-        internal CustomObjectCommandWrapper GetCustomObjectCommand(int id)
-            => objectCommandMap[objectCommandMap.GetIndexFromId(id)];
+        internal bool TryGetCustomObjectCommand(int id, out CustomObjectCommandWrapper value)
+            => objectCommandMap.TryGetValue(id, out value);
 
-        internal CustomObjectCommand GetCustomObjectSubCommand(int id, int subId)
+        internal bool TryGetCustomObjectSubCommand(int id, int subId, out CustomObjectCommand value)
         {
-            var typeIdx = objectCommandMap.GetIdFromIndex(id);
-            var subCommandMap = objectCommandMap[typeIdx].commandMap;
-            return subCommandMap[subCommandMap.GetIndexFromId(subId)];
+            value = default;
+            return objectCommandMap.TryGetValue(id, out var wrapper) &&
+                   wrapper.commandMap.TryGetValue(subId, out value);
         }
 
         internal bool Match(ReadOnlySpan<byte> command, out CustomRawStringCommand cmd)

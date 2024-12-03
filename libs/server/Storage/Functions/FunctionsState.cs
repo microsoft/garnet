@@ -32,12 +32,12 @@ namespace Garnet.server
         }
 
         public CustomRawStringFunctions GetCustomCommandFunctions(int id)
-            => customCommandManager.GetCustomCommand(id).functions;
+            => customCommandManager.TryGetCustomCommand(id, out var cmd) ? cmd.functions : null;
 
         public CustomObjectFactory GetCustomObjectFactory(int id)
-            => customCommandManager.GetCustomObjectCommand(id).factory;
+            => customCommandManager.TryGetCustomObjectCommand(id, out var cmd) ? cmd.factory : null;
 
         public CustomObjectFunctions GetCustomObjectSubCommandFunctions(int id, int subId)
-            => customCommandManager.GetCustomObjectSubCommand(id, subId).functions;
+            => customCommandManager.TryGetCustomObjectSubCommand(id, subId, out var cmd) ? cmd.functions : null;
     }
 }

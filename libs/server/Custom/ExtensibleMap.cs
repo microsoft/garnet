@@ -15,9 +15,9 @@ namespace Garnet.server
         readonly int maxSize;
         internal readonly ReaderWriterLockSlim mapLock = new();
 
-        public int GetIdFromIndex(int index) => descIds ? minId - index : index;
+        private int GetIdFromIndex(int index) => descIds ? minId - index : index;
 
-        public int GetIndexFromId(int cmdId) => descIds ? minId - cmdId : cmdId;
+        private int GetIndexFromId(int id) => descIds ? minId - id : id;
 
         public ExtensibleMap(int minSize, int minId, int maxId)
         {
@@ -27,19 +27,32 @@ namespace Garnet.server
             this.descIds = minId > maxId;
         }
 
-        public T this[int index]
+        public bool TryGetValue(int id, out T value)
         {
-            get => GetSafe(index);
-            set => SetSafe(index, value);
+            value = default;
+            var idx = GetIndexFromId(id);
+            return TryGetSafe(idx, out value);
         }
 
-        public bool TryGetNextIndex(out int id)
+        public bool TrySetValue(int id, ref T value)
         {
-            id = Interlocked.Increment(ref currIndex);
-            return id < maxSize;
+            var idx = GetIndexFromId(id);
+            return TrySetSafe(idx, ref value);
         }
 
-        public int FirstIndexSafe(Func<T, bool> predicate)
+        public bool TryGetNextId(out int id)
+        {
+            id = -1;
+            var nextIdx = Interlocked.Increment(ref currIndex);
+            
+            if (nextIdx >= maxSize)
+                return false;
+            id = GetIdFromIndex(nextIdx);
+
+            return true;
+        }
+
+        public int FirstIdSafe(Func<T, bool> predicate)
         {
             mapLock.EnterReadLock();
             try
@@ -47,7 +60,7 @@ namespace Garnet.server
                 for (var i = 0; i <= currIndex; i++)
                 {
                     if (predicate(map[i]))
-                        return i;
+                        return GetIdFromIndex(i);
                 }
             }
             finally
@@ -58,12 +71,16 @@ namespace Garnet.server
             return -1;
         }
 
-        private T GetSafe(int index)
+        private bool TryGetSafe(int index, out T value)
         {
+            value = default;
             mapLock.EnterReadLock();
             try
             {
-                return map[index];
+                if (index < 0 || index > map.Length) return false;
+
+                value = map[index];
+                return value != null;
             }
             finally
             {
@@ -71,9 +88,9 @@ namespace Garnet.server
             }
         }
 
-        private void SetSafe(int index, T value)
+        private bool TrySetSafe(int index, ref T value)
         {
-            ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, maxSize, nameof(index));
+            if (index < 0 || index >= maxSize) return false;
 
             mapLock.EnterUpgradeableReadLock();
             try
@@ -81,7 +98,7 @@ namespace Garnet.server
                 if (index < map.Length)
                 {
                     map[index] = value;
-                    return;
+                    return true;
                 }
 
                 mapLock.EnterWriteLock();
@@ -90,7 +107,7 @@ namespace Garnet.server
                     if (index < map.Length)
                     {
                         map[index] = value;
-                        return;
+                        return true;
                     }
 
                     var newSize = map.Length;
@@ -103,6 +120,7 @@ namespace Garnet.server
                     Array.Copy(map, newMap, map.Length);
                     map = newMap;
                     map[index] = value;
+                    return true;
                 }
                 finally
                 {
