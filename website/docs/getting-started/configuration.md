@@ -7,7 +7,7 @@ title: Garnet Configuration
 ## How to Configure Garnet
 
 The Garnet server (GarnetServer.exe) can be configured using a configuration file (e.g. `garnet.conf` or `redis.conf`), while command line arguments can be used to override any settings specified in the file. /
-Any settings not specified in either configuration file or command line arguments are set to default valued specified in the [defaults.conf](../../../libs/host/defaults.conf) file (path to this file can be overridden via the command line arguments).
+Any settings not specified in either configuration file or command line arguments are set to default valued specified in the [defaults.conf](https://github.com/microsoft/garnet/blob/main/libs/host/defaults.conf) file (path to this file can be overridden via the command line arguments).
 
 Garnet currently supports two configuration file formats:
 1) The [`garnet.conf`](#garnetconf) file format (default) - a JSON-formatted collection of settings
