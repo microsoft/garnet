@@ -13,7 +13,7 @@ namespace Garnet.server
     public class CustomCommandManager
     {
         internal static readonly ushort StartOffset = (ushort)(RespCommandExtensions.LastValidCommand + 1);
-        internal static readonly int MaxRegistrations = ushort.MaxValue - StartOffset;
+        internal static readonly int MaxRegistrations = 512 - StartOffset; // Temporary fix to reduce map sizes
         internal static readonly byte TypeIdStartOffset = (byte)(GarnetObjectTypeExtensions.LastObjectType + 1);
         internal static readonly int MaxTypeRegistrations = (byte)(GarnetObjectTypeExtensions.FirstSpecialObjectType) - TypeIdStartOffset;
 
