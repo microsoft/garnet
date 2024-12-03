@@ -41,7 +41,7 @@ namespace Garnet.server
             Debug.Assert(customCommandManager != null);
 
             NameStr = name.ToUpperInvariant();
-            this.Name = System.Text.Encoding.ASCII.GetBytes(NameStr);
+            Name = System.Text.Encoding.ASCII.GetBytes(NameStr);
             Id = id;
             CustomProcedureFactory = customProcedureFactory;
         }

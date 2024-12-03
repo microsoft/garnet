@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
+using System.Diagnostics;
 using Garnet.common;
 
 namespace Garnet.server
@@ -33,7 +33,8 @@ namespace Garnet.server
 
                 customProc = entry.CustomProcedureFactory();
                 customProc.respServerSession = respServerSession;
-                sessionCustomProcMap.TrySetValue(id, ref customProc);
+                var setSuccessful = sessionCustomProcMap.TrySetValue(id, ref customProc);
+                Debug.Assert(setSuccessful);
             }
 
             return customProc;
@@ -67,16 +68,17 @@ namespace Garnet.server
                     respServerSession = respServerSession
                 }
             };
-            sessionTransactionProcMap.TrySetValue(id, ref customTranProc);
+            var setSuccessful = sessionTransactionProcMap.TrySetValue(id, ref customTranProc);
+            Debug.Assert(setSuccessful);
 
             return customTranProc.Procedure;
         }
 
-        private class CustomTransactionProcedureWithArity
+        private struct CustomTransactionProcedureWithArity
         {
-            public CustomTransactionProcedure Procedure { get; set; }
+            public CustomTransactionProcedure Procedure { get; }
 
-            public int Arity { get; set; }
+            public int Arity { get; }
 
             public CustomTransactionProcedureWithArity(CustomTransactionProcedure procedure, int arity)
             {

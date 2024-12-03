@@ -6,19 +6,41 @@ using System.Threading;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// This class defines a map of items of type T whose keys are a specified range of IDs (can be descending / ascending)
+    /// The size of the underlying array containing the items doubles in size as needed
+    /// </summary>
+    /// <typeparam name="T">Type of command to store</typeparam>
     internal struct ExtensibleMap<T>
     {
+        /// <summary>
+        /// The underlying array containing the commands
+        /// </summary>
         internal T[] map;
-        internal int currIndex = -1;
-        readonly bool descIds;
-        readonly int minId;
-        readonly int maxSize;
+
+        /// <summary>
+        /// Reader-writer lock for the underlying command array
+        /// </summary>
         internal readonly ReaderWriterLockSlim mapLock = new();
 
-        private int GetIdFromIndex(int index) => descIds ? minId - index : index;
+        /// <summary>
+        /// The last requested index for assignment
+        /// </summary>
+        internal int currIndex = -1;
 
-        private int GetIndexFromId(int id) => descIds ? minId - id : id;
+        // Value of min item ID
+        readonly int minId;
+        // Value of max item ID
+        readonly int maxSize;
+        // True if item IDs are in descending order
+        readonly bool descIds;
 
+        /// <summary>
+        /// Creates a new instance of ExtensibleMap
+        /// </summary>
+        /// <param name="minSize">Initial size of underlying array</param>
+        /// <param name="minId">The minimal item ID value</param>
+        /// <param name="maxId">The maximal item ID value (can be smaller than minId for descending order of IDs)</param>
         public ExtensibleMap(int minSize, int minId, int maxId)
         {
             this.map = new T[minSize];
@@ -27,6 +49,12 @@ namespace Garnet.server
             this.descIds = minId > maxId;
         }
 
+        /// <summary>
+        /// Try to get item by ID
+        /// </summary>
+        /// <param name="id">Item ID</param>
+        /// <param name="value">Item value</param>
+        /// <returns>True of item found</returns>
         public bool TryGetValue(int id, out T value)
         {
             value = default;
@@ -34,17 +62,28 @@ namespace Garnet.server
             return TryGetSafe(idx, out value);
         }
 
+        /// <summary>
+        /// Try to set item by ID
+        /// </summary>
+        /// <param name="id">Item ID</param>
+        /// <param name="value">Item value</param>
+        /// <returns>True if assignment succeeded</returns>
         public bool TrySetValue(int id, ref T value)
         {
             var idx = GetIndexFromId(id);
             return TrySetSafe(idx, ref value);
         }
 
+        /// <summary>
+        /// Get next item ID for assignment
+        /// </summary>
+        /// <param name="id">Item ID</param>
+        /// <returns>True if item ID available</returns>
         public bool TryGetNextId(out int id)
         {
             id = -1;
             var nextIdx = Interlocked.Increment(ref currIndex);
-            
+
             if (nextIdx >= maxSize)
                 return false;
             id = GetIdFromIndex(nextIdx);
@@ -52,15 +91,25 @@ namespace Garnet.server
             return true;
         }
 
-        public int FirstIdSafe(Func<T, bool> predicate)
+        /// <summary>
+        /// Find first ID in map of item that fulfills specified predicate
+        /// </summary>
+        /// <param name="predicate">Predicate</param>
+        /// <param name="id">ID if found, otherwise -1</param>
+        /// <returns>True if ID found</returns>
+        public bool TryFirstIdSafe(Func<T, bool> predicate, out int id)
         {
+            id = -1;
             mapLock.EnterReadLock();
             try
             {
                 for (var i = 0; i <= currIndex; i++)
                 {
                     if (predicate(map[i]))
-                        return GetIdFromIndex(i);
+                    {
+                        id = GetIdFromIndex(i);
+                        return true;
+                    }
                 }
             }
             finally
@@ -68,16 +117,36 @@ namespace Garnet.server
                 mapLock.ExitReadLock();
             }
 
-            return -1;
+            return false;
         }
 
+        /// <summary>
+        /// Maps map index to item ID
+        /// </summary>
+        /// <param name="index">Map index</param>
+        /// <returns>Item ID</returns>
+        private int GetIdFromIndex(int index) => descIds ? minId - index : index;
+
+        /// <summary>
+        /// Maps an item ID to a map index
+        /// </summary>
+        /// <param name="id">Item ID</param>
+        /// <returns>Map index</returns>
+        private int GetIndexFromId(int id) => descIds ? minId - id : id;
+
+        /// <summary>
+        /// Thread-safe method for retrieving an item from the underlying item array
+        /// </summary>
+        /// <param name="index">Index of item</param>
+        /// <param name="value">Value of item</param>
+        /// <returns>True if item found</returns>
         private bool TryGetSafe(int index, out T value)
         {
             value = default;
             mapLock.EnterReadLock();
             try
             {
-                if (index < 0 || index > map.Length) return false;
+                if (index < 0 || index >= map.Length) return false;
 
                 value = map[index];
                 return value != null;
@@ -88,6 +157,12 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Thread-safe method for setting an item in the underlying array at a specified index
+        /// </summary>
+        /// <param name="index">Index of item</param>
+        /// <param name="value">Value of item</param>
+        /// <returns>True if set successful</returns>
         private bool TrySetSafe(int index, ref T value)
         {
             if (index < 0 || index >= maxSize) return false;
@@ -95,6 +170,7 @@ namespace Garnet.server
             mapLock.EnterUpgradeableReadLock();
             try
             {
+                // If index within array bounds, set item
                 if (index < map.Length)
                 {
                     map[index] = value;
@@ -104,18 +180,21 @@ namespace Garnet.server
                 mapLock.EnterWriteLock();
                 try
                 {
+                    // If index within array bounds, set item
                     if (index < map.Length)
                     {
                         map[index] = value;
                         return true;
                     }
 
+                    // Double new array size until item can fit
                     var newSize = map.Length;
                     while (index >= newSize)
                     {
                         newSize = Math.Min(maxSize, newSize * 2);
                     }
 
+                    // Create new array, copy existing items and set new item
                     var newMap = new T[newSize];
                     Array.Copy(map, newMap, map.Length);
                     map = newMap;
@@ -134,8 +213,19 @@ namespace Garnet.server
         }
     }
 
+    /// <summary>
+    /// Extension methods for ExtensibleMap
+    /// </summary>
     internal static class ExtensibleMapExtensions
     {
+        /// <summary>
+        /// Match command name with existing commands in map and return first matching instance
+        /// </summary>
+        /// <typeparam name="T">Type of command</typeparam>
+        /// <param name="eMap">Current instance of ExtensibleMap</param>
+        /// <param name="cmd">Command name to match</param>
+        /// <param name="value">Value of command found</param>
+        /// <returns>True if command found</returns>
         internal static bool MatchCommandSafe<T>(this ExtensibleMap<T> eMap, ReadOnlySpan<byte> cmd, out T value)
             where T : ICustomCommand
         {
@@ -161,6 +251,14 @@ namespace Garnet.server
             return false;
         }
 
+        /// <summary>
+        /// Match sub-command name with existing sub-commands in map and return first matching instance
+        /// </summary>
+        /// <typeparam name="T">Type of command</typeparam>
+        /// <param name="eMap">Current instance of ExtensibleMap</param>
+        /// <param name="cmd">Sub-command name to match</param>
+        /// <param name="value">Value of sub-command found</param>
+        /// <returns></returns>
         internal static bool MatchSubCommandSafe<T>(this ExtensibleMap<T> eMap, ReadOnlySpan<byte> cmd, out CustomObjectCommand value)
             where T : CustomObjectCommandWrapper
         {

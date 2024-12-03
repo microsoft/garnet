@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -46,7 +45,8 @@ namespace Garnet.server
                 throw new Exception("Out of registration space");
             Debug.Assert(cmdId <= ushort.MaxValue);
             var newCmd = new CustomRawStringCommand(name, (ushort)cmdId, type, customFunctions, expirationTicks);
-            rawStringCommandMap.TrySetValue(cmdId, ref newCmd);
+            var setSuccessful = rawStringCommandMap.TrySetValue(cmdId, ref newCmd);
+            Debug.Assert(setSuccessful);
             if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
             return cmdId;
@@ -59,7 +59,8 @@ namespace Garnet.server
             Debug.Assert(cmdId <= byte.MaxValue);
 
             var newCmd = new CustomTransaction(name, (byte)cmdId, proc);
-            transactionProcMap.TrySetValue(cmdId, ref newCmd);
+            var setSuccessful = transactionProcMap.TrySetValue(cmdId, ref newCmd);
+            Debug.Assert(setSuccessful);
             if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
             return cmdId;
@@ -67,8 +68,7 @@ namespace Garnet.server
 
         internal int RegisterType(CustomObjectFactory factory)
         {
-            var dupRegistrationId = objectCommandMap.FirstIdSafe(c => c.factory == factory);
-            if (dupRegistrationId != -1)
+            if (!objectCommandMap.TryFirstIdSafe(c => c.factory == factory, out var dupRegistrationId))
                 throw new Exception($"Type already registered with ID {dupRegistrationId}");
 
             if (!objectCommandMap.TryGetNextId(out var cmdId))
@@ -76,16 +76,15 @@ namespace Garnet.server
             Debug.Assert(cmdId <= byte.MaxValue);
 
             var newCmd = new CustomObjectCommandWrapper((byte)cmdId, factory);
-            objectCommandMap.TrySetValue(cmdId, ref newCmd);
+            var setSuccessful = objectCommandMap.TrySetValue(cmdId, ref newCmd);
+            Debug.Assert(setSuccessful);
 
             return cmdId;
         }
 
         internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo, RespCommandDocs commandDocs, CustomObjectFunctions customObjectFunctions = null)
         {
-            var typeId = objectCommandMap.FirstIdSafe(c => c.factory == factory);
-
-            if (typeId == -1)
+            if (!objectCommandMap.TryFirstIdSafe(c => c.factory == factory, out var typeId))
             {
                 if (!objectCommandMap.TryGetNextId(out typeId))
                     throw new Exception("Out of registration space");
@@ -93,7 +92,8 @@ namespace Garnet.server
                 Debug.Assert(typeId <= byte.MaxValue);
 
                 var newCmd = new CustomObjectCommandWrapper((byte)typeId, factory);
-                objectCommandMap.TrySetValue(typeId, ref newCmd);
+                var setSuccessful = objectCommandMap.TrySetValue(typeId, ref newCmd);
+                Debug.Assert(setSuccessful);
             }
 
             objectCommandMap.TryGetValue(typeId, out var wrapper);
@@ -103,7 +103,8 @@ namespace Garnet.server
             Debug.Assert(scId <= byte.MaxValue);
             var newSubCmd = new CustomObjectCommand(name, (byte)typeId, (byte)scId, commandType, wrapper.factory,
                 customObjectFunctions);
-            wrapper.commandMap.TrySetValue(scId, ref newSubCmd);
+            var scSetSuccessful = wrapper.commandMap.TrySetValue(scId, ref newSubCmd);
+            Debug.Assert(scSetSuccessful);
 
             if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
@@ -128,7 +129,9 @@ namespace Garnet.server
             Debug.Assert(cmdId <= byte.MaxValue);
 
             var newCmd = new CustomProcedureWrapper(name, (byte)cmdId, customProcedure, this);
-            customProcedureMap.TrySetValue(cmdId, ref newCmd);
+            var setSuccessful = customProcedureMap.TrySetValue(cmdId, ref newCmd);
+            Debug.Assert(setSuccessful);
+
             if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
             return cmdId;

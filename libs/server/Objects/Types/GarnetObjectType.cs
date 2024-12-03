@@ -49,6 +49,16 @@ namespace Garnet.server
         PExpireTime = 0xfa,
 
         /// <summary>
+        /// Indicating a Custom Object command
+        /// </summary>
+        All = 0xfb,
+
+        /// <summary>
+        /// Special type indicating PTTL command
+        /// </summary>
+        PTtl = 0xfc,
+
+        /// <summary>
         /// Special type indicating PERSIST command
         /// </summary>
         Persist = 0xfd,
@@ -62,16 +72,6 @@ namespace Garnet.server
         /// Special type indicating EXPIRE command
         /// </summary>
         Expire = 0xff,
-
-        /// <summary>
-        /// Special type indicating PTTL command
-        /// </summary>
-        PTtl = 0xfc,
-
-        /// <summary>
-        /// Indicating a Custom Object command
-        /// </summary>
-        All = 0xfb
     }
 
     public static class GarnetObjectTypeExtensions
