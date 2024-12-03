@@ -24,7 +24,5 @@ namespace Garnet.server
             this.factory = factory;
             this.functions = functions;
         }
-
-        internal GarnetObjectType GetObjectType() => (GarnetObjectType)id;
     }
 }

@@ -13,29 +13,30 @@ namespace Garnet.server
     public class CustomCommandManager
     {
         internal static readonly int MinMapSize = 8;
-        internal static readonly byte CommandIdStartOffset = 1;
-        internal static readonly int MaxCommandRegistrations = ushort.MaxValue - (ushort)RespCommandExtensions.LastValidCommand - 1;
         internal static readonly byte TypeIdStartOffset = byte.MaxValue - (byte)GarnetObjectTypeExtensions.FirstSpecialObjectType;
-        internal static readonly int MaxTypeRegistrations = byte.MaxValue - ((byte)GarnetObjectTypeExtensions.LastObjectType + 1) - TypeIdStartOffset;
 
-        private readonly CustomCommandMap rawStringCommandMap;
-        private readonly CustomObjectCommandMap objectCommandMap;
-        private readonly CustomTransactionMap transactionProcMap;
-        private readonly CustomProcedureMap customProcedureMap;
+        private ExtensibleMap<CustomRawStringCommand> rawStringCommandMap;
+        private ExtensibleMap<CustomObjectCommandWrapper> objectCommandMap;
+        private ExtensibleMap<CustomTransaction> transactionProcMap;
+        private ExtensibleMap<CustomProcedureWrapper> customProcedureMap;
 
-        internal int CustomCommandsInfoCount => CustomCommandsInfo.Count;
-        internal readonly Dictionary<string, RespCommandsInfo> CustomCommandsInfo = new(StringComparer.OrdinalIgnoreCase);
-        internal readonly Dictionary<string, RespCommandDocs> CustomCommandsDocs = new(StringComparer.OrdinalIgnoreCase);
+        internal int CustomCommandsInfoCount => customCommandsInfo.Count;
+        internal readonly Dictionary<string, RespCommandsInfo> customCommandsInfo = new(StringComparer.OrdinalIgnoreCase);
+        internal readonly Dictionary<string, RespCommandDocs> customCommandsDocs = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Create new custom command manager
         /// </summary>
         public CustomCommandManager()
         {
-            rawStringCommandMap = new CustomCommandMap(MinMapSize, MaxCommandRegistrations, CommandIdStartOffset);
-            objectCommandMap = new CustomObjectCommandMap(MinMapSize, MaxTypeRegistrations);
-            transactionProcMap = new CustomTransactionMap(MinMapSize, byte.MaxValue, 0);
-            customProcedureMap = new CustomProcedureMap(MinMapSize, byte.MaxValue, 0);
+            rawStringCommandMap = new ExtensibleMap<CustomRawStringCommand>(MinMapSize, 
+                (ushort)RespCommand.INVALID - 1,
+                (ushort)RespCommandExtensions.LastValidCommand + 1);
+            objectCommandMap = new ExtensibleMap<CustomObjectCommandWrapper>(MinMapSize,
+                (byte)GarnetObjectTypeExtensions.FirstSpecialObjectType - 1,
+                (byte)GarnetObjectTypeExtensions.LastObjectType + 1);
+            transactionProcMap = new ExtensibleMap<CustomTransaction>(MinMapSize, 0, byte.MaxValue);
+            customProcedureMap = new ExtensibleMap<CustomProcedureWrapper>(MinMapSize, 0, byte.MaxValue);
         }
 
         internal int Register(string name, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo, RespCommandDocs commandDocs, long expirationTicks)
@@ -46,8 +47,8 @@ namespace Garnet.server
             Debug.Assert(cmdId <= ushort.MaxValue);
 
             rawStringCommandMap[index] = new CustomRawStringCommand(name, (ushort)cmdId, type, customFunctions, expirationTicks);
-            if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
-            if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
+            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
+            if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
             return cmdId;
         }
 
@@ -59,8 +60,8 @@ namespace Garnet.server
             Debug.Assert(cmdId <= byte.MaxValue);
 
             transactionProcMap[index] = new CustomTransaction(name, (byte)cmdId, proc);
-            if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
-            if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
+            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
+            if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
             return cmdId;
         }
 
@@ -105,8 +106,8 @@ namespace Garnet.server
             typeId = objectCommandMap.GetIdFromIndex(typeIndex);
             wrapper.commandMap[scIndex] = new CustomObjectCommand(name, (byte)typeId, (byte)scId, commandType, wrapper.factory, customObjectFunctions);
 
-            if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
-            if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
+            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
+            if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
 
             return (typeId, scId);
         }
@@ -129,8 +130,8 @@ namespace Garnet.server
             Debug.Assert(cmdId <= byte.MaxValue);
 
             customProcedureMap[index] = new CustomProcedureWrapper(name, (byte)cmdId, customProcedure, this);
-            if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
-            if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
+            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
+            if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
             return cmdId;
         }
 
@@ -167,12 +168,12 @@ namespace Garnet.server
 
         internal bool TryGetCustomCommandInfo(string cmdName, out RespCommandsInfo respCommandsInfo)
         {
-            return this.CustomCommandsInfo.TryGetValue(cmdName, out respCommandsInfo);
+            return this.customCommandsInfo.TryGetValue(cmdName, out respCommandsInfo);
         }
 
         internal bool TryGetCustomCommandDocs(string cmdName, out RespCommandDocs respCommandsDocs)
         {
-            return this.CustomCommandsDocs.TryGetValue(cmdName, out respCommandsDocs);
+            return this.customCommandsDocs.TryGetValue(cmdName, out respCommandsDocs);
         }
     }
 }

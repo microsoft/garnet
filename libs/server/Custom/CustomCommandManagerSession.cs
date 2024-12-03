@@ -14,16 +14,14 @@ namespace Garnet.server
         readonly CustomCommandManager customCommandManager;
 
         // These session specific arrays are indexed by the same ID as the arrays in CustomCommandManager
-        readonly ExtensibleMap<CustomTransactionProcedureWithArity> sessionTransactionProcMap;
-        readonly ExtensibleMap<CustomProcedure> sessionCustomProcMap;
+        ExtensibleMap<CustomTransactionProcedureWithArity> sessionTransactionProcMap;
+        ExtensibleMap<CustomProcedure> sessionCustomProcMap;
 
         public CustomCommandManagerSession(CustomCommandManager customCommandManager)
         {
             this.customCommandManager = customCommandManager;
-            sessionTransactionProcMap = new ExtensibleMap<CustomTransactionProcedureWithArity>(
-                CustomCommandManager.MinMapSize, byte.MaxValue, 0, byte.MaxValue);
-            sessionCustomProcMap = new ExtensibleMap<CustomProcedure>(CustomCommandManager.MinMapSize,
-                byte.MaxValue, 0, byte.MaxValue);
+            sessionTransactionProcMap = new ExtensibleMap<CustomTransactionProcedureWithArity>(CustomCommandManager.MinMapSize, 0, byte.MaxValue);
+            sessionCustomProcMap = new ExtensibleMap<CustomProcedure>(CustomCommandManager.MinMapSize, 0, byte.MaxValue);
         }
 
         public CustomProcedure GetCustomProcedure(int id, RespServerSession respServerSession)
@@ -47,7 +45,7 @@ namespace Garnet.server
             if (sessionTransactionProcMap[index]?.Procedure == null)
             {
                 var entry = customCommandManager.GetCustomTransactionProcedure(id) ?? throw new GarnetException($"Transaction procedure {id} not found");
-                _ = customCommandManager.CustomCommandsInfo.TryGetValue(entry.NameStr, out var cmdInfo);
+                _ = customCommandManager.customCommandsInfo.TryGetValue(entry.NameStr, out var cmdInfo);
                 arity = cmdInfo?.Arity ?? 0;
                 return GetCustomTransactionProcedureAndSetArity(entry, respServerSession, txnManager, scratchBufferManager, cmdInfo?.Arity ?? 0);
             }

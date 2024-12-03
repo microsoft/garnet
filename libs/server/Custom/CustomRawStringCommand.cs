@@ -22,7 +22,5 @@ namespace Garnet.server
             this.functions = functions;
             this.expirationTicks = expirationTicks;
         }
-
-        internal RespCommand GetRespCommand() => (RespCommand)id;
     }
 }

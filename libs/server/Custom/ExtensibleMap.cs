@@ -6,27 +6,25 @@ using System.Threading;
 
 namespace Garnet.server
 {
-    internal class ExtensibleMap<T>
+    internal struct ExtensibleMap<T>
     {
-        protected T[] map;
-        protected int currIndex = -1;
-        protected readonly bool descIds;
-        protected readonly int maxValue;
-        protected readonly int maxSize;
-        protected readonly int startOffset;
-        protected ReaderWriterLockSlim mapLock = new();
+        internal T[] map;
+        internal int currIndex = -1;
+        readonly bool descIds;
+        readonly int minId;
+        readonly int maxSize;
+        internal readonly ReaderWriterLockSlim mapLock = new();
 
-        public int GetIdFromIndex(int index) => descIds ? maxValue - index : index;
+        public int GetIdFromIndex(int index) => descIds ? minId - index : index;
 
-        public int GetIndexFromId(int cmdId) => descIds ? maxValue - cmdId : cmdId;
+        public int GetIndexFromId(int cmdId) => descIds ? minId - cmdId : cmdId;
 
-        public ExtensibleMap(int minSize, int maxSize, int startOffset, int maxValue, bool descIds = true)
+        public ExtensibleMap(int minSize, int minId, int maxId)
         {
             this.map = new T[minSize];
-            this.maxSize = maxSize;
-            this.startOffset = startOffset;
-            this.maxValue = maxValue;
-            this.descIds = descIds;
+            this.minId = minId;
+            this.maxSize = Math.Abs(maxId - minId) + 1;
+            this.descIds = minId > maxId;
         }
 
         public T this[int index]
@@ -118,56 +116,49 @@ namespace Garnet.server
         }
     }
 
-    internal class ExtensibleCustomCommandMap<T>(int minSize, int maxSize, int startOffset, int maxValue, bool descIds = true) : ExtensibleMap<T>(minSize, maxSize, startOffset, maxValue, descIds)
-        where T : ICustomCommand
+    internal static class ExtensibleMapExtensions
     {
-        public bool MatchCommandSafe(ReadOnlySpan<byte> cmd, out T value)
+        internal static bool MatchCommandSafe<T>(this ExtensibleMap<T> eMap, ReadOnlySpan<byte> cmd, out T value)
+            where T : ICustomCommand
         {
             value = default;
-            mapLock.EnterReadLock();
+            eMap.mapLock.EnterReadLock();
             try
             {
-                for (var i = 0; i <= currIndex; i++)
+                for (var i = 0; i <= eMap.currIndex; i++)
                 {
-                    if (cmd.SequenceEqual(new ReadOnlySpan<byte>(map[i].Name)))
+                    var currCmd = eMap.map[i];
+                    if (cmd.SequenceEqual(new ReadOnlySpan<byte>(currCmd.Name)))
                     {
-                        value = map[i];
+                        value = currCmd;
                         return true;
                     }
                 }
             }
             finally
             {
-                mapLock.ExitReadLock();
+                eMap.mapLock.ExitReadLock();
             }
 
             return false;
         }
-    }
 
-    internal class CustomCommandMap(int minSize, int maxSize, int startOffset) : ExtensibleCustomCommandMap<CustomRawStringCommand>(minSize, maxSize, startOffset, ushort.MaxValue - 1);
-
-    internal class CustomTransactionMap(int minSize, int maxSize, int startOffset) : ExtensibleCustomCommandMap<CustomTransaction>(minSize, maxSize, startOffset, byte.MaxValue);
-
-    internal class CustomProcedureMap(int minSize, int maxSize, int startOffset) : ExtensibleCustomCommandMap<CustomProcedureWrapper>(minSize, maxSize, startOffset, byte.MaxValue);
-
-    internal class CustomObjectCommandMap(int minSize, int maxSize) : ExtensibleMap<CustomObjectCommandWrapper>(minSize, maxSize, CustomCommandManager.TypeIdStartOffset, (byte)GarnetObjectTypeExtensions.FirstSpecialObjectType - 1)
-    {
-        public bool MatchSubCommandSafe(ReadOnlySpan<byte> cmd, out CustomObjectCommand value)
+        internal static bool MatchSubCommandSafe<T>(this ExtensibleMap<T> eMap, ReadOnlySpan<byte> cmd, out CustomObjectCommand value)
+            where T : CustomObjectCommandWrapper
         {
             value = default;
-            mapLock.EnterReadLock();
+            eMap.mapLock.EnterReadLock();
             try
             {
-                for (var i = 0; i <= currIndex; i++)
+                for (var i = 0; i <= eMap.currIndex; i++)
                 {
-                    if (map[i].commandMap.MatchCommandSafe(cmd, out value))
+                    if (eMap.map[i].commandMap.MatchCommandSafe(cmd, out value))
                         return true;
                 }
             }
             finally
             {
-                mapLock.ExitReadLock();
+                eMap.mapLock.ExitReadLock();
             }
 
             return false;
