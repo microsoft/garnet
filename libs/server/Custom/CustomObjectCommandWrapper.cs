@@ -13,13 +13,13 @@ namespace Garnet.server
 
         public readonly byte id;
         public readonly CustomObjectFactory factory;
-        public ExtensibleMap<CustomObjectCommand> commandMap;
+        public ExpandableMap<CustomObjectCommand> commandMap;
 
         public CustomObjectCommandWrapper(byte id, CustomObjectFactory functions)
         {
             this.id = id;
             this.factory = functions;
-            this.commandMap = new ExtensibleMap<CustomObjectCommand>(MinMapSize, 0, MaxSubId);
+            this.commandMap = new ExpandableMap<CustomObjectCommand>(MinMapSize, 0, MaxSubId);
         }
     }
 }

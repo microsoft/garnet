@@ -14,14 +14,14 @@ namespace Garnet.server
         readonly CustomCommandManager customCommandManager;
 
         // These session specific arrays are indexed by the same ID as the arrays in CustomCommandManager
-        ExtensibleMap<CustomTransactionProcedureWithArity> sessionTransactionProcMap;
-        ExtensibleMap<CustomProcedure> sessionCustomProcMap;
+        ExpandableMap<CustomTransactionProcedureWithArity> sessionTransactionProcMap;
+        ExpandableMap<CustomProcedure> sessionCustomProcMap;
 
         public CustomCommandManagerSession(CustomCommandManager customCommandManager)
         {
             this.customCommandManager = customCommandManager;
-            sessionTransactionProcMap = new ExtensibleMap<CustomTransactionProcedureWithArity>(CustomCommandManager.MinMapSize, 0, byte.MaxValue);
-            sessionCustomProcMap = new ExtensibleMap<CustomProcedure>(CustomCommandManager.MinMapSize, 0, byte.MaxValue);
+            sessionTransactionProcMap = new ExpandableMap<CustomTransactionProcedureWithArity>(CustomCommandManager.MinMapSize, 0, byte.MaxValue);
+            sessionCustomProcMap = new ExpandableMap<CustomProcedure>(CustomCommandManager.MinMapSize, 0, byte.MaxValue);
         }
 
         public CustomProcedure GetCustomProcedure(int id, RespServerSession respServerSession)

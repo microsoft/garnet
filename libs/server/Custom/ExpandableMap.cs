@@ -11,7 +11,7 @@ namespace Garnet.server
     /// The size of the underlying array containing the items doubles in size as needed
     /// </summary>
     /// <typeparam name="T">Type of command to store</typeparam>
-    internal struct ExtensibleMap<T>
+    internal struct ExpandableMap<T>
     {
         /// <summary>
         /// The underlying array containing the commands
@@ -28,6 +28,8 @@ namespace Garnet.server
         /// </summary>
         internal int currIndex = -1;
 
+        // Initial array size
+        readonly int minSize;
         // Value of min item ID
         readonly int minId;
         // Value of max item ID
@@ -36,14 +38,15 @@ namespace Garnet.server
         readonly bool descIds;
 
         /// <summary>
-        /// Creates a new instance of ExtensibleMap
+        /// Creates a new instance of ExpandableMap
         /// </summary>
         /// <param name="minSize">Initial size of underlying array</param>
         /// <param name="minId">The minimal item ID value</param>
         /// <param name="maxId">The maximal item ID value (can be smaller than minId for descending order of IDs)</param>
-        public ExtensibleMap(int minSize, int minId, int maxId)
+        public ExpandableMap(int minSize, int minId, int maxId)
         {
-            this.map = new T[minSize];
+            this.map = [];
+            this.minSize = minSize;
             this.minId = minId;
             this.maxSize = Math.Abs(maxId - minId) + 1;
             this.descIds = minId > maxId;
@@ -188,7 +191,7 @@ namespace Garnet.server
                     }
 
                     // Double new array size until item can fit
-                    var newSize = map.Length;
+                    var newSize = Math.Max(map.Length, minSize);
                     while (index >= newSize)
                     {
                         newSize = Math.Min(maxSize, newSize * 2);
@@ -214,7 +217,7 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Extension methods for ExtensibleMap
+    /// Extension methods for ExpandableMap
     /// </summary>
     internal static class ExtensibleMapExtensions
     {
@@ -222,11 +225,11 @@ namespace Garnet.server
         /// Match command name with existing commands in map and return first matching instance
         /// </summary>
         /// <typeparam name="T">Type of command</typeparam>
-        /// <param name="eMap">Current instance of ExtensibleMap</param>
+        /// <param name="eMap">Current instance of ExpandableMap</param>
         /// <param name="cmd">Command name to match</param>
         /// <param name="value">Value of command found</param>
         /// <returns>True if command found</returns>
-        internal static bool MatchCommandSafe<T>(this ExtensibleMap<T> eMap, ReadOnlySpan<byte> cmd, out T value)
+        internal static bool MatchCommandSafe<T>(this ExpandableMap<T> eMap, ReadOnlySpan<byte> cmd, out T value)
             where T : ICustomCommand
         {
             value = default;
@@ -255,11 +258,11 @@ namespace Garnet.server
         /// Match sub-command name with existing sub-commands in map and return first matching instance
         /// </summary>
         /// <typeparam name="T">Type of command</typeparam>
-        /// <param name="eMap">Current instance of ExtensibleMap</param>
+        /// <param name="eMap">Current instance of ExpandableMap</param>
         /// <param name="cmd">Sub-command name to match</param>
         /// <param name="value">Value of sub-command found</param>
         /// <returns></returns>
-        internal static bool MatchSubCommandSafe<T>(this ExtensibleMap<T> eMap, ReadOnlySpan<byte> cmd, out CustomObjectCommand value)
+        internal static bool MatchSubCommandSafe<T>(this ExpandableMap<T> eMap, ReadOnlySpan<byte> cmd, out CustomObjectCommand value)
             where T : CustomObjectCommandWrapper
         {
             value = default;
