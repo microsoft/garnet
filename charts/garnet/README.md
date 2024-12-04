@@ -1,6 +1,6 @@
 # garnet
 
-![Version: 0.1.1](https://img.shields.io/badge/Version-0.1.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.18](https://img.shields.io/badge/AppVersion-1.0.18-informational?style=flat-square)
+![Version: 0.1.2](https://img.shields.io/badge/Version-0.1.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.46](https://img.shields.io/badge/AppVersion-1.0.46-informational?style=flat-square)
 
 A Helm chart for Microsoft garnet
 
@@ -10,12 +10,29 @@ A Helm chart for Microsoft garnet
 
 * <https://github.com/microsoft/garnet.git>
 
+## Usage
+
+[Helm](https://helm.sh) must be installed to use the charts. Please refer to
+Helm's [documentation](https://helm.sh/docs) to get started.
+
+To install the garnet chart (using an OCI-based registry):
+
+```sh
+helm upgrade --install garnet oci://ghcr.io/microsoft/helm-charts/garnet
+ ```
+
+To uninstall the chart:
+
+```sh
+helm delete garnet
+```
+
 ## Values
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity |
-| containers.args | list | `["--port","6379","-m","128m","-i","128m"]` | Containers args |
+| containers.args | list | `[]` | Containers args |
 | containers.livenessProbe | object | `{}` | Containers livenessProbe |
 | containers.port | int | `6379` | Containers port |
 | containers.readinessProbe | object | `{}` | Containers livenessProbe |
