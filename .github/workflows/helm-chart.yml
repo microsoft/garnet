@@ -1,4 +1,7 @@
+name: Garnet Helm Chart
+
 on:
+  workflow_dispatch: # allow manual run
   push:
     branches:
       - main
