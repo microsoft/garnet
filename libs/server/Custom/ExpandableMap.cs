@@ -24,10 +24,12 @@ namespace Garnet.server
         internal readonly ReaderWriterLockSlim mapLock = new();
 
         /// <summary>
-        /// The last requested index for assignment
+        /// Last set index in underlying array
         /// </summary>
-        internal int currIndex = -1;
+        internal int lastSetIndex = -1;
 
+        // The last requested index for assignment
+        int currIndex = -1;
         // Initial array size
         readonly int minSize;
         // Value of min item ID
@@ -72,7 +74,7 @@ namespace Garnet.server
         public bool Exists(int id)
         {
             var idx = GetIndexFromId(id);
-            return id > 0 && id < map.Length && map[idx] != null;
+            return idx >= 0 && idx <= lastSetIndex;
         }
 
         /// <summary>
@@ -170,10 +172,11 @@ namespace Garnet.server
             mapLock.EnterReadLock();
             try
             {
-                if (index < 0 || index >= map.Length) return false;
+                if (index < 0 || index > lastSetIndex) 
+                    return false;
 
                 value = map[index];
-                return value != null;
+                return true;
             }
             finally
             {
@@ -191,7 +194,7 @@ namespace Garnet.server
             mapLock.EnterReadLock();
             try
             {
-                if (index < 0 || index >= map.Length)
+                if (index < 0 || index > lastSetIndex)
                     throw new ArgumentOutOfRangeException(nameof(index));
 
                 return ref map[index];
@@ -219,6 +222,7 @@ namespace Garnet.server
                 if (index < map.Length)
                 {
                     map[index] = value;
+                    lastSetIndex = index;
                     return true;
                 }
 
@@ -229,6 +233,7 @@ namespace Garnet.server
                     if (index < map.Length)
                     {
                         map[index] = value;
+                        lastSetIndex = index;
                         return true;
                     }
 
@@ -244,6 +249,7 @@ namespace Garnet.server
                     Array.Copy(map, newMap, map.Length);
                     map = newMap;
                     map[index] = value;
+                    lastSetIndex = index;
                     return true;
                 }
                 finally
@@ -278,7 +284,7 @@ namespace Garnet.server
             eMap.mapLock.EnterReadLock();
             try
             {
-                for (var i = 0; i <= eMap.currIndex; i++)
+                for (var i = 0; i <= eMap.lastSetIndex; i++)
                 {
                     var currCmd = eMap.map[i];
                     if (cmd.SequenceEqual(new ReadOnlySpan<byte>(currCmd.Name)))
@@ -311,7 +317,7 @@ namespace Garnet.server
             eMap.mapLock.EnterReadLock();
             try
             {
-                for (var i = 0; i <= eMap.currIndex; i++)
+                for (var i = 0; i <= eMap.lastSetIndex; i++)
                 {
                     if (eMap.map[i].commandMap.MatchCommandSafe(cmd, out value))
                         return true;
