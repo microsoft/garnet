@@ -56,9 +56,14 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push charts to GHCR
+      - name: Helm Registry Login
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
         run: |
           echo "$GITHUB_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          
+      - name: Push charts to GHCR
+        run: |
           shopt -s nullglob
           for pkg in .cr-release-packages/*.tgz; do
             echo "${pkg}"
