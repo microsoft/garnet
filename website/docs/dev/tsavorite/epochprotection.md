@@ -1,7 +1,7 @@
 ---
 id: epoch
 sidebar_label: EpochProtection 
-title: EpochProtection 
+title: Epoch Protection Framework
 
 ---
 # Light Epoch Protection in Garnet (Latch-free lazy synchronization)
