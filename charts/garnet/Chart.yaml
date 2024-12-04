@@ -8,11 +8,18 @@ home: https://github.com/microsoft/garnet
 icon: https://avatars.githubusercontent.com/u/6154722?s=200&v=4
 
 keywords:
-- garnet
-- database
-- key
-- value
-- in-memory
+- scalable
+- key-value
+- cache
+- cluster
+- store
+- remote
+- persistent
+- concurrent
+- low-latency
+- cache-storage
+- hash-table
+- larger-the-memory
 
 sources:
 - https://github.com/microsoft/garnet.git
