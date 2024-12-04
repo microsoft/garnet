@@ -58,9 +58,10 @@ jobs:
 
       - name: Push charts to GHCR
         run: |
-          helm registry login -u "${{ github.repository_owner }}" -p "${{ secrets.GITHUB_TOKEN }}" ghcr.io
+          echo "$GITHUB_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           shopt -s nullglob
           for pkg in .cr-release-packages/*.tgz; do
+            echo "${pkg}"
             if [ -z "${pkg:-}" ]; then
               break
             fi
