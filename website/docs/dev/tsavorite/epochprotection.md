@@ -7,8 +7,8 @@ title: Epoch Protection Framework
 # Light Epoch Protection in Garnet (Latch-free lazy synchronization)
 
 ## Context
-We need to ensure shared variables are not being read and mutated simultaneously without determinisitic orderings.
-Commonly used concurreny primitives such as Mutexes and sempahores provided by the language require threads to synchronize frequently with each other. This Synchronization across threads is expensive; Epoch protection **reduces the frequency of synchronization across threads**.
+
+We need to ensure shared variables are not being read and mutated simultaneously without determinisitic orderings. Commonly used concurreny primitives such as Mutexes and sempahores provided by the language require threads to synchronize frequently with each other. This Synchronization across threads is expensive; Epoch protection **reduces the frequency of synchronization across threads**.
 
 ## Epoch Protection (10,000-foot view)
 
