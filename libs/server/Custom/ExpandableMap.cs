@@ -57,12 +57,33 @@ namespace Garnet.server
         /// </summary>
         /// <param name="id">Item ID</param>
         /// <param name="value">Item value</param>
-        /// <returns>True of item found</returns>
+        /// <returns>True if item found</returns>
         public bool TryGetValue(int id, out T value)
         {
-            value = default;
             var idx = GetIndexFromId(id);
             return TryGetSafe(idx, out value);
+        }
+
+        /// <summary>
+        /// Checks if ID is mapped to a value in underlying array
+        /// </summary>
+        /// <param name="id">Item ID</param>
+        /// <returns>True if ID exists</returns>
+        public bool Exists(int id)
+        {
+            var idx = GetIndexFromId(id);
+            return id > 0 && id < map.Length && map[idx] != null;
+        }
+
+        /// <summary>
+        /// Try to get item by ref by ID
+        /// </summary>
+        /// <param name="id">Item ID</param>
+        /// <returns>Item value</returns>
+        public ref T GetValueByRef(int id)
+        {
+            var idx = GetIndexFromId(id);
+            return ref GetSafeByRef(idx);
         }
 
         /// <summary>
@@ -153,6 +174,27 @@ namespace Garnet.server
 
                 value = map[index];
                 return value != null;
+            }
+            finally
+            {
+                mapLock.ExitReadLock();
+            }
+        }
+
+        /// <summary>
+        /// Thread-safe method for retrieving an item by reference from the underlying item array
+        /// </summary>
+        /// <param name="index">Index of item</param>
+        /// <returns>Value of item</returns>
+        private ref T GetSafeByRef(int index)
+        {
+            mapLock.EnterReadLock();
+            try
+            {
+                if (index < 0 || index >= map.Length)
+                    throw new ArgumentOutOfRangeException(nameof(index));
+
+                return ref map[index];
             }
             finally
             {
