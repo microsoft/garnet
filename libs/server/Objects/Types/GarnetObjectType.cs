@@ -32,7 +32,7 @@ namespace Garnet.server
         // Any new object type inserted here should update GarnetObjectTypeExtensions.LastObjectType
 
         // Any new special type inserted here should update GarnetObjectTypeExtensions.FirstSpecialObjectType
-        
+
         /// <summary>
         /// Special type indicating PEXPIRE command
         /// </summary>

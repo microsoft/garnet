@@ -10,16 +10,16 @@ namespace Garnet.server
     /// This class defines a map of items of type T whose keys are a specified range of IDs (can be descending / ascending)
     /// The size of the underlying array containing the items doubles in size as needed
     /// </summary>
-    /// <typeparam name="T">Type of command to store</typeparam>
+    /// <typeparam name="T">Type of item to store</typeparam>
     internal struct ExpandableMap<T>
     {
         /// <summary>
-        /// The underlying array containing the commands
+        /// The underlying array containing the items
         /// </summary>
         internal T[] map;
 
         /// <summary>
-        /// Reader-writer lock for the underlying command array
+        /// Reader-writer lock for the underlying item array
         /// </summary>
         internal readonly ReaderWriterLockSlim mapLock = new();
 
@@ -172,7 +172,7 @@ namespace Garnet.server
             mapLock.EnterReadLock();
             try
             {
-                if (index < 0 || index > lastSetIndex) 
+                if (index < 0 || index > lastSetIndex)
                     return false;
 
                 value = map[index];

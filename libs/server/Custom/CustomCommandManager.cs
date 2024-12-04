@@ -29,7 +29,7 @@ namespace Garnet.server
         /// </summary>
         public CustomCommandManager()
         {
-            rawStringCommandMap = new ExpandableMap<CustomRawStringCommand>(MinMapSize, 
+            rawStringCommandMap = new ExpandableMap<CustomRawStringCommand>(MinMapSize,
                 (ushort)RespCommand.INVALID - 1,
                 (ushort)RespCommandExtensions.LastValidCommand + 1);
             objectCommandMap = new ExpandableMap<CustomObjectCommandWrapper>(MinMapSize,
