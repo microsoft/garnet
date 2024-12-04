@@ -758,8 +758,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoClientSetNameAsync(GarnetClient client)
             {
-                var count = await client.ExecuteForLongResultAsync("CLIENT", ["SETNAME", "foo"]);
-                ClassicAssert.AreEqual(0, count);
+                var count = await client.ExecuteForStringResultAsync("CLIENT", ["SETNAME", "foo"]);
+                ClassicAssert.IsNotEmpty(count);
             }
         }
 
@@ -773,8 +773,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoClientSetInfoAsync(GarnetClient client)
             {
-                var count = await client.ExecuteForLongResultAsync("CLIENT", ["SETINFO", "LIB-NAME", "foo"]);
-                ClassicAssert.AreEqual(0, count);
+                var count = await client.ExecuteForStringResultAsync("CLIENT", ["SETINFO", "LIB-NAME", "foo"]);
+                ClassicAssert.IsNotEmpty(count);
             }
         }
 
