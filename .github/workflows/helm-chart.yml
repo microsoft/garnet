@@ -49,27 +49,19 @@ jobs:
             helm package "${chart}" --dependency-update --destination .cr-release-packages
           done
 
-      - name: GitHub Container Registry login
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Helm Registry Login
+      - name: Login to GHCR
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
         run: |
           echo "$GITHUB_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          
+
       - name: Push charts to GHCR
         run: |
           shopt -s nullglob
           for pkg in .cr-release-packages/*.tgz; do
-            echo "${pkg}"
             if [ -z "${pkg:-}" ]; then
               break
             fi
-            helm push "${pkg}" "oci://ghcr.io/${{ github.repository }}/helm-charts"
+            helm push "${pkg}" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER}/helm-charts"
           done
 
