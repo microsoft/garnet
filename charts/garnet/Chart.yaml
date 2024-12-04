@@ -3,7 +3,7 @@ name: garnet
 description: A Helm chart for Microsoft Garnet
 type: application
 version: 0.1.3
-appVersion: "Version.props"
+appVersion: Version.props
 home: https://github.com/microsoft/garnet
 icon: https://avatars.githubusercontent.com/u/6154722?s=200&v=4
 
