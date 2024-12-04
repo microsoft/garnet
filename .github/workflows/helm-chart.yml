@@ -41,8 +41,8 @@ jobs:
       - name: Helm lint and package
         run: |
           mkdir .cr-release-packages
-          for chart in $(find charts -maxdepth 1 -type d); do
-            echo "${chart}"
+          for chart in $(find charts -depth 1 -type d); do
+            echo "$chart"
             if [ -z "${chart:-}" ]; then
               break
             fi
