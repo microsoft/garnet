@@ -933,6 +933,9 @@ namespace Garnet.server
         /// </summary>
         public unsafe GarnetStatus SortedSetMPop(ReadOnlySpan<ArgSlice> keys, int count, bool lowScoresFirst, out ArgSlice poppedKey, out (ArgSlice member, ArgSlice score)[] pairs)
         {
+            if (txnManager.ObjectStoreLockableContext.Session is null)
+                ThrowObjectStoreUninitializedException();
+
             pairs = default;
             poppedKey = default;
 
