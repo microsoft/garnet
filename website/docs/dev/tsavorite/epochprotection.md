@@ -29,7 +29,7 @@ Commonly used concurreny primitives such as Mutexes and sempahores provided by t
 -	We can add trigger actions that are executed when all threads are past a safe epoch ``` (For every thread T: SafeEpoch <= thread local Epoch <= Global Epoch) ```. Since the system holds all thread local epochs in a system accesible epoch table we can scan and find a safe epoch.
 This gives us the ability to have an exactly-once invoked function that depends on all threads logically coordinating and not having any code being executed at the time of Epoch ending for the trigger.
 
--	If you look closely, what Epoch.Resume() essentially does is have a thread find a free entry in the epoch table, put its id there, and "claim" the current epoch (the next thread will increment the epoch by 1 and claim the next epoch). Inside Resume(), there is a loop; if the current target epoch entry is already occupied by another thread, the current thread will yield. When it wakes up, it will try to occupy the next entry. If the epoch table is full, the rest of the threads will keep yielding.
+-	If you look closely, what `epoch.Resume()` essentially does is have a thread find a free entry in the epoch table, put its id there, and "claim" the current epoch (the next thread will increment the epoch by 1 and claim the next epoch). Inside `epoch.Resume()`, there is a loop; if the current target epoch entry is already occupied by another thread, the current thread will yield. When it wakes up, it will try to occupy the next entry. If the epoch table is full, the rest of the threads will keep yielding.
 
 ## Relevant Public Methods and How to use them
 
