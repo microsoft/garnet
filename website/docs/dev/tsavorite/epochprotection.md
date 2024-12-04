@@ -33,12 +33,12 @@ This gives us the ability to have an exactly-once invoked function that depends 
 
 ## Relevant Public Methods and How to use them
 
-1.	ThisInstanceProtected: Tells us whether the calling thread owns an entry in the epoch table, i.e., is participating in Epoch Protection at the moment. If not, you can have it participate in epoch protection by calling Resume.
+1.	`ThisInstanceProtected`: Tells us whether the calling thread owns an entry in the epoch table, i.e., is participating in Epoch Protection at the moment. If not, you can have it participate in epoch protection by calling `Resume`.
 
-2.	ProtectAndDrain: Marks the current thread as the owner of an updated epoch and performs draining of actions up to that point. This is used by Resume internally. It acts as a way to refresh the shared variables by draining pending actions. Often used inside loops to ensure we are progressively draining actions.
+2.	`ProtectAndDrain`: Marks the current thread as the owner of an updated epoch and performs draining of actions up to that point. This is used by Resume internally. It acts as a way to refresh the shared variables by draining pending actions. Often used inside loops to ensure we are progressively draining actions.
 
-3.	Suspend: Use this to let go of the ownership of an epoch. If the thread calling Suspend is the last active thread in the LightEpoch system, the pending actions/writes are invoked.
+3.	`Suspend`: Use this to let go of the ownership of an epoch. If the thread calling Suspend is the last active thread in the LightEpoch system, the pending actions/writes are invoked.
 
-4.	Resume: Use this when a thread needs to view a refreshed state of the shared variables to the latest state that is considered safe by all other threads. It acts as a temporal boundary to apply pending actions/writes before using the shared variables.
+4.	`Resume`: Use this when a thread needs to view a refreshed state of the shared variables to the latest state that is considered safe by all other threads. It acts as a temporal boundary to apply pending actions/writes before using the shared variables.
 
-5.	BumpCurrentEpoch(Action): Use this to schedule a write or an action for later at a temporal boundary where it is safe to change the state of a shared variable. A call to this may drain actions if, during iterations, it finds values it can drain.
+5.	`BumpCurrentEpoch(Action)`: Use this to schedule a write or an action for later at a temporal boundary where it is safe to change the state of a shared variable. A call to this may drain actions if, during iterations, it finds values it can drain.
