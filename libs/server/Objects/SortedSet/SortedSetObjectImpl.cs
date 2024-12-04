@@ -445,6 +445,10 @@ namespace Garnet.server
                         options.ByScore = true;
                         options.Reverse = true;
                         break;
+                    case SortedSetOperation.ZREVRANGEBYLEX:
+                        options.ByLex = true;
+                        options.Reverse = true;
+                        break;
                 }
 
                 if (count > 2)
