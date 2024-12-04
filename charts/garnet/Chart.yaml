@@ -1,20 +1,20 @@
 apiVersion: v2
 name: garnet
-description: A Helm chart for Microsoft garnet
+description: A Helm chart for Microsoft Garnet
 type: application
 version: 0.1.2
-appVersion: Version.props
+appVersion: "Version.props"
 home: https://github.com/microsoft/garnet
 icon: https://avatars.githubusercontent.com/u/6154722?s=200&v=4
 
 keywords:
-  - garnet
-  - database
-  - key
-  - value
-  - in-memory
+- garnet
+- database
+- key
+- value
+- in-memory
 
 sources:
-  - https://github.com/microsoft/garnet.git
+- https://github.com/microsoft/garnet.git
 
 maintainers: []
