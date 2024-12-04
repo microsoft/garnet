@@ -42,6 +42,9 @@ namespace CommandInfoUpdater
                 new("CLIENT|INFO", RespCommand.CLIENT_INFO),
                 new("CLIENT|LIST", RespCommand.CLIENT_LIST),
                 new("CLIENT|KILL", RespCommand.CLIENT_KILL),
+                new("CLIENT|GETNAME", RespCommand.CLIENT_GETNAME),
+                new("CLIENT|SETNAME", RespCommand.CLIENT_SETNAME),
+                new("CLIENT|SETINFO", RespCommand.CLIENT_SETINFO),
             ]),
             new("CLUSTER", RespCommand.CLUSTER,
             [

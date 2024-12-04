@@ -61,7 +61,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [GETBIT](analytics.md#getbit) | ➕ |  |
 |  | [SETBIT](analytics.md#setbit) | ➕ |  |
 | <span id="client">**CLIENT**</span> | CACHING | ➖ |  |
-|  | GETNAME | ➖ |  |
+|  | [GETNAME](client.md#client-getname) | ➖ |  |
 |  | GETREDIR | ➖ |  |
 |  | HELP | ➖ |  |
 |  | [ID](client.md#client-id) | ➕ |  |
@@ -72,8 +72,8 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | NO-TOUCH | ➖ |  |
 |  | PAUSE | ➖ |  |
 |  | REPLY | ➖ |  |
-|  | SETINFO | ➖ |  |
-|  | SETNAME | ➖ |  |
+|  | [SETINFO](client.md#client-setinfo) | ➖ |  |
+|  | [SETNAME](client.md#client-setname) | ➖ |  |
 |  | TRACKING | ➖ |  |
 |  | TRACKINGINFO | ➖ |  |
 |  | UNBLOCK | ➖ |  |
