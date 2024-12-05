@@ -27,5 +27,6 @@
     <PackageVersion Include="System.Text.Json" Version="8.0.5" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.0" />
+    <PackageVersion Include="Azure.Identity" Version="1.13.1" />
   </ItemGroup>
 </Project>

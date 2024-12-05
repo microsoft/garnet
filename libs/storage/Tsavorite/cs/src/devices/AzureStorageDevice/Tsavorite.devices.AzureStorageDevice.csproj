@@ -12,6 +12,7 @@
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
     <PackageReference Include="System.Interactive.Async" />
+    <PackageReference Include="Azure.Identity" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\core\Tsavorite.core.csproj" />

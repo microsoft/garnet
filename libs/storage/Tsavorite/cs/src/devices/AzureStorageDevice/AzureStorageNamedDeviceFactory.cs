@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -26,6 +27,17 @@ namespace Tsavorite.devices
         /// <param name="logger"></param>
         public AzureStorageNamedDeviceFactory(string connectionString, ILogger logger = null)
             : this(BlobUtilsV12.GetServiceClients(connectionString), logger)
+        {
+        }
+
+        /// <summary>
+        /// Create instance of factory of Azure devices
+        /// </summary>
+        /// <param name="serviceUri"></param>
+        /// <param name="managedIdentityClientId"></param>
+        /// <param name="logger"></param>
+        public AzureStorageNamedDeviceFactory( Uri serviceUri, string managedIdentityClientId,ILogger logger = null)
+            : this(BlobUtilsV12.GetServiceClients(serviceUri,managedIdentityClientId), logger)
         {
         }
 

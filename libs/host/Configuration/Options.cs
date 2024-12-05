@@ -315,6 +315,12 @@ namespace Garnet
         [Option("use-azure-storage", Required = false, HelpText = "Use Azure Page Blobs for storage instead of local storage.")]
         public bool? UseAzureStorage { get; set; }
 
+        [Option("client-id", Required = false, HelpText = "The client id to use when establishing connection to Azure Blobs Storage.")]
+        public string AzureStorageClientId { get; set; }
+
+        [Option("storage-account-uri", Required = false, HelpText = "The storage account uri to use when establishing connection to Azure Blobs Storage.")]
+        public string AzureStorageAccountUri { get; set; }
+
         [Option("storage-string", Required = false, HelpText = "The connection string to use when establishing connection to Azure Blobs Storage.")]
         public string AzureStorageConnectionString { get; set; }
 
@@ -510,9 +516,21 @@ namespace Garnet
             var useAzureStorage = UseAzureStorage.GetValueOrDefault();
             var enableStorageTier = EnableStorageTier.GetValueOrDefault();
             var enableRevivification = EnableRevivification.GetValueOrDefault();
+            Uri azureStorageUri = null; 
 
-            if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString))
-                throw new Exception("Cannot enable use-azure-storage without supplying storage-string.");
+            if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString)  && string.IsNullOrEmpty(AzureStorageAccountUri))
+                throw new Exception("Cannot enable use-azure-storage without supplying storage-string or storage-account-uri.");
+
+            if (useAzureStorage)
+            {
+                if (string.IsNullOrEmpty(AzureStorageConnectionString)){
+                    azureStorageUri= new Uri(AzureStorageAccountUri);
+                    logger?.LogInformation("Azure Storage URI: {azureStorageUri}", azureStorageUri);
+                }
+            }
+            Func<INamedDeviceFactory> azureFactoryCreator = string.IsNullOrEmpty(AzureStorageConnectionString)
+                ? () => new AzureStorageNamedDeviceFactory(azureStorageUri,AzureStorageClientId, logger)
+                : () => new AzureStorageNamedDeviceFactory(AzureStorageConnectionString, logger);
 
             var logDir = LogDir;
             if (!useAzureStorage && enableStorageTier) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
@@ -633,8 +651,7 @@ namespace Garnet
                 QuietMode = QuietMode.GetValueOrDefault(),
                 ThreadPoolMinThreads = ThreadPoolMinThreads,
                 ThreadPoolMaxThreads = ThreadPoolMaxThreads,
-                DeviceFactoryCreator = useAzureStorage
-                    ? () => new AzureStorageNamedDeviceFactory(AzureStorageConnectionString, logger)
+                DeviceFactoryCreator = useAzureStorage ? azureFactoryCreator
                     : () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
