@@ -203,13 +203,13 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZRANGESTORE));
             }
 
-            var destKey = parseState.GetArgSliceByRef(0);
-            var sbKey = parseState.GetArgSliceByRef(1);
+            var dstKey = parseState.GetArgSliceByRef(0);
+            var srcKey = parseState.GetArgSliceByRef(1);
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGESTORE };
             var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: respProtocolVersion);
 
-            var status = storageApi.SortedSetRangeStore(destKey, sbKey, ref input, out int result);
+            var status = storageApi.SortedSetRangeStore(dstKey, srcKey, ref input, out int result);
 
             switch (status)
             {

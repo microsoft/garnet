@@ -696,18 +696,21 @@ namespace Garnet.server
         /// ZRANGESTORE - Stores a range of sorted set elements into a destination key.
         /// </summary>
         /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
-        /// <param name="distKey">The destination key where the range will be stored.</param>
-        /// <param name="sbKey">The source key from which the range will be taken.</param>
+        /// <param name="dstKey">The destination key where the range will be stored.</param>
+        /// <param name="srcKey">The source key from which the range will be taken.</param>
         /// <param name="input">The input object containing range parameters.</param>
         /// <param name="result">The result of the operation, indicating the number of elements stored.</param>
         /// <param name="objectStoreContext">The context of the object store.</param>
         /// <returns>Returns a GarnetStatus indicating the success or failure of the operation.</returns>
-        public unsafe GarnetStatus SortedSetRangeStore<TObjectContext>(ArgSlice distKey, ArgSlice sbKey, ref ObjectInput input, out int result, ref TObjectContext objectStoreContext)
+        public unsafe GarnetStatus SortedSetRangeStore<TObjectContext>(ArgSlice dstKey, ArgSlice srcKey, ref ObjectInput input, out int result, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
+            if (txnManager.ObjectStoreLockableContext.Session is null)
+                ThrowObjectStoreUninitializedException();
+
             result = 0;
 
-            if (distKey.Length == 0 || sbKey.Length == 0)
+            if (dstKey.Length == 0 || srcKey.Length == 0)
                 return GarnetStatus.OK;
 
             var createTransaction = false;
@@ -716,8 +719,8 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(distKey, true, LockType.Exclusive);
-                txnManager.SaveKeyEntryToLock(sbKey, true, LockType.Shared);
+                txnManager.SaveKeyEntryToLock(dstKey, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(srcKey, true, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 
@@ -728,7 +731,7 @@ namespace Garnet.server
             {
                 SpanByteAndMemory rangeOutputMem = default;
                 var rangeOutput = new GarnetObjectStoreOutput() { spanByteAndMemory = rangeOutputMem };
-                var status = SortedSetRange(sbKey.ToArray(), ref input, ref rangeOutput, ref objectStoreLockableContext);
+                var status = SortedSetRange(srcKey.ToArray(), ref input, ref rangeOutput, ref objectStoreLockableContext);
                 rangeOutputMem = rangeOutput.spanByteAndMemory;
 
                 if (status == GarnetStatus.WRONGTYPE)
@@ -739,7 +742,7 @@ namespace Garnet.server
                 if (status == GarnetStatus.NOTFOUND)
                 {
                     // Expire/Delete the destination key if the source key is not found
-                    _ = EXPIRE(distKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None, ref lockableContext, ref objectStoreLockableContext);
+                    _ = EXPIRE(dstKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None, ref lockableContext, ref objectStoreLockableContext);
                     return GarnetStatus.OK;
                 }
 
@@ -752,7 +755,7 @@ namespace Garnet.server
                     ref var currOutPtr = ref rangeOutPtr;
                     var endOutPtr = rangeOutPtr + rangeOutputMem.Length;
 
-                    var destinationKey = distKey.ToArray();
+                    var destinationKey = dstKey.ToArray();
                     objectStoreLockableContext.Delete(ref destinationKey);
 
                     RespReadUtils.ReadUnsignedArrayLength(out var arrayLen, ref currOutPtr, endOutPtr);

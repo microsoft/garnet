@@ -1138,26 +1138,115 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var redisKey = new RedisKey(key);
-            var redisDestinationKey = new RedisKey(destinationKey);
             var keyValues = elements.Zip(scores, (e, s) => new SortedSetEntry(e, s)).ToArray();
 
             // Set up sorted set if elements are provided
             if (keyValues.Length > 0)
             {
-                db.SortedSetAdd(redisKey, keyValues);
+                db.SortedSetAdd(key, keyValues);
             }
 
-            var actualCount = db.SortedSetRangeAndStore(redisKey, redisDestinationKey, start, stop);
+            var actualCount = db.SortedSetRangeAndStore(key, destinationKey, start, stop);
             ClassicAssert.AreEqual(expectedCount, actualCount);
 
-            var actualMembers = db.SortedSetRangeByScoreWithScores(redisDestinationKey);
+            var actualMembers = db.SortedSetRangeByScoreWithScores(destinationKey);
             ClassicAssert.AreEqual(expectedCount, actualMembers.Length);
 
             for (int i = 0; i < expectedCount; i++)
             {
                 ClassicAssert.AreEqual(expectedElements[i], actualMembers[i].Element.ToString());
                 ClassicAssert.AreEqual(expectedScores[i], actualMembers[i].Score);
+            }
+        }
+
+        [Test]
+        [TestCase("set1", "dest1", new[] { "a", "b", "c", "d" }, new[] { 1.0, 2.0, 3.0, 4.0 }, "BYSCORE", "(2", "4", "", 2, new[] { "c", "d" }, new[] { 3.0, 4.0 }, Description = "ZRANGESTORE BYSCORE with exclusive min")]
+        [TestCase("set1", "dest1", new[] { "a", "b", "c", "d" }, new[] { 1.0, 2.0, 3.0, 4.0 }, "BYSCORE", "2", "(4", "", 2, new[] { "b", "c" }, new[] { 2.0, 3.0 }, Description = "ZRANGESTORE BYSCORE with exclusive max")]
+        [TestCase("set1", "dest1", new[] { "a", "b", "c", "d" }, new[] { 1.0, 2.0, 3.0, 4.0 }, "BYSCORE REV", "4", "1", "", 4, new[] { "a", "b", "c", "d" }, new[] { 1.0, 2.0, 3.0, 4.0 }, Description = "ZRANGESTORE BYSCORE with REV")]
+        [TestCase("set1", "dest1", new[] { "a", "b", "c", "d" }, new[] { 1.0, 2.0, 3.0, 4.0 }, "BYSCORE", "2", "4", "LIMIT 1 1", 1, new[] { "c" }, new[] { 3.0 }, Description = "ZRANGESTORE BYSCORE with LIMIT")]
+        public void CheckSortedSetRangeStoreByScoreSE(string sourceKey, string destKey, string[] sourceElements, double[] sourceScores, string options, string min, string max, string limit,
+            int expectedCount, string[] expectedElements, double[] expectedScores)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var entries = sourceElements.Zip(sourceScores, (e, s) => new SortedSetEntry(e, s)).ToArray();
+            db.SortedSetAdd(sourceKey, entries);
+
+            var command = $"{destKey} {sourceKey} {min} {max} {options} {limit}".Trim().Split(" ");
+            var result = db.Execute("ZRANGESTORE", command);
+            ClassicAssert.AreEqual(expectedCount, int.Parse(result.ToString()));
+
+            var actualMembers = db.SortedSetRangeByScoreWithScores(destKey);
+            ClassicAssert.AreEqual(expectedElements.Length, actualMembers.Length);
+
+            for (int i = 0; i < expectedElements.Length; i++)
+            {
+                ClassicAssert.AreEqual(expectedElements[i], actualMembers[i].Element.ToString());
+                ClassicAssert.AreEqual(expectedScores[i], actualMembers[i].Score);
+            }
+        }
+
+        [Test]
+        [TestCase("set1", "dest1", new[] { "a", "b", "c", "d" }, new[] { 1.0, 1.0, 1.0, 1.0 }, "BYLEX", "[b", "[d", "", 3, new[] { "b", "c", "d" }, Description = "ZRANGESTORE BYLEX with inclusive range")]
+        [TestCase("set1", "dest1", new[] { "a", "b", "c", "d" }, new[] { 1.0, 1.0, 1.0, 1.0 }, "BYLEX", "(b", "(d", "", 1, new[] { "c" }, Description = "ZRANGESTORE BYLEX with exclusive range")]
+        [TestCase("set1", "dest1", new[] { "a", "b", "c", "d" }, new[] { 1.0, 1.0, 1.0, 1.0 }, "BYLEX REV", "[d", "[b", "", 3, new[] { "b", "c", "d" }, Description = "ZRANGESTORE BYLEX with REV")]
+        [TestCase("set1", "dest1", new[] { "a", "b", "c", "d" }, new[] { 1.0, 1.0, 1.0, 1.0 }, "BYLEX", "[b", "[d", "LIMIT 1 1", 1, new[] { "c" }, Description = "ZRANGESTORE BYLEX with LIMIT")]
+        public void CheckSortedSetRangeStoreByLexSE(string sourceKey, string destKey, string[] sourceElements, double[] sourceScores, string options, string min, string max, string limit,
+            int expectedCount, string[] expectedElements)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var entries = sourceElements.Zip(sourceScores, (e, s) => new SortedSetEntry(e, s)).ToArray();
+            db.SortedSetAdd(sourceKey, entries);
+
+            var command = $"{destKey} {sourceKey} {min} {max} {options} {limit}".Trim().Split();
+            var result = db.Execute("ZRANGESTORE", command);
+            ClassicAssert.AreEqual(expectedCount, int.Parse(result.ToString()));
+
+            var actualMembers = db.SortedSetRangeByScore(destKey);
+            ClassicAssert.AreEqual(expectedElements.Length, actualMembers.Length);
+
+            for (int i = 0; i < expectedElements.Length; i++)
+            {
+                ClassicAssert.AreEqual(expectedElements[i], actualMembers[i].ToString());
+            }
+        }
+
+        [Test]
+        public void TestCheckSortedSetRangeStoreWithExistingDestinationKeySE()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var sourceKey = "sourceKey";
+            var destinationKey = "destKey";
+
+            // Set up source sorted set
+            var sourceElements = new[] { "a", "b", "c", "d" };
+            var sourceScores = new[] { 1.0, 2.0, 3.0, 4.0 };
+            var sourceEntries = sourceElements.Zip(sourceScores, (e, s) => new SortedSetEntry(e, s)).ToArray();
+            db.SortedSetAdd(sourceKey, sourceEntries);
+
+            // Set up existing destination sorted set
+            db.StringSet(destinationKey, "dummy");
+
+            // Expected elements after range store
+            var expectedElements = new[] { "b", "c" };
+            var expectedScores = new[] { 2.0, 3.0 };
+
+            var actualCount = db.SortedSetRangeAndStore(sourceKey, destinationKey, 1, 2);
+
+            Assert.That(actualCount, Is.EqualTo(expectedElements.Length));
+
+            var actualMembers = db.SortedSetRangeByScoreWithScores(destinationKey);
+            Assert.That(actualMembers.Length, Is.EqualTo(expectedElements.Length));
+
+            for (int i = 0; i < expectedElements.Length; i++)
+            {
+                Assert.That(actualMembers[i].Element.ToString(), Is.EqualTo(expectedElements[i]));
+                Assert.That(actualMembers[i].Score, Is.EqualTo(expectedScores[i]));
             }
         }
 
