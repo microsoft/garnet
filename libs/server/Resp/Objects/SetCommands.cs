@@ -192,7 +192,7 @@ namespace Garnet.server
             if (parseState.Count > nKeys + 1)
             {
                 var limitArg = parseState.GetArgSliceByRef(nKeys + 1);
-                if (!limitArg.ReadOnlySpan.SequenceEqual(CmdStrings.LIMIT))
+                if (!limitArg.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LIMIT))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
                         SendAndReset();

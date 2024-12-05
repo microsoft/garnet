@@ -933,6 +933,9 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SetIntersectCard(ArgSlice[] keys, int? limit, out int count)
         {
+            if (txnManager.ObjectStoreLockableContext.Session is null)
+                ThrowObjectStoreUninitializedException();
+
             count = 0;
 
             if (keys.Length == 0)
