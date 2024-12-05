@@ -339,7 +339,7 @@ namespace Garnet.server
             }
         }
     }
-    
+
     /// <summary>
     /// Extension methods for ConcurrentExpandableMap
     /// </summary>
