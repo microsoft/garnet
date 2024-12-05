@@ -271,7 +271,7 @@ namespace Garnet.networking
         /// On network receive
         /// </summary>
         /// <param name="bytesTransferred">Number of bytes transferred</param>
-        public async Task OnNetworkReceiveAsync(int bytesTransferred)
+        public async ValueTask OnNetworkReceiveAsync(int bytesTransferred)
         {
             // Wait for SslStream async processing to complete, if any (e.g., authentication phase)
             while (readerStatus == TlsReaderStatus.Active)

@@ -5,6 +5,7 @@ using System;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.networking;
@@ -142,39 +143,29 @@ namespace Garnet.common
                 Dispose(e);
                 return;
             }
-            var networkBufferProcessingTask = OnNetworkReceiveAsync(e.BytesTransferred);
-            if (networkBufferProcessingTask.IsCompletedSuccessfully)
-            {
-                NetworkBufferProcessed(networkBufferProcessingTask, sender, e);
-                return;
-            }
-            networkBufferProcessingTask.ContinueWith((res) =>
-            {
-                NetworkBufferProcessed(res, sender, e);
-            });
+            // Complete receive event and release thread while we process data async
+            _ = HandleReceiveAsync(sender, e);
         }
 
-        void NetworkBufferProcessed(Task result, object sender, SocketAsyncEventArgs e)
+        private async ValueTask HandleReceiveAsync(object sender, SocketAsyncEventArgs e)
         {
             try
             {
-                if (result.IsCompletedSuccessfully)
-                {
-                    e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
-                    if (!e.AcceptSocket.ReceiveAsync(e))
-                    {
-                        RecvEventArg_Completed(sender, e);
-                    }
-                }
-                else if (result.IsFaulted)
-                {
-                    var ex = result.Exception.InnerException;
-                    HandleReceiveFailure(ex, e);
-                }
+                await OnNetworkReceiveAsync(e.BytesTransferred);
+                NetworkBufferProcessed(sender, e);
             }
             catch (Exception ex)
             {
                 HandleReceiveFailure(ex, e);
+            }
+        }
+
+        void NetworkBufferProcessed(object sender, SocketAsyncEventArgs e)
+        {
+            e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
+            if (!e.AcceptSocket.ReceiveAsync(e))
+            {
+                RecvEventArg_Completed(sender, e);
             }
         }
 
