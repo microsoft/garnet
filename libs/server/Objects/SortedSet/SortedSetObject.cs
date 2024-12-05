@@ -36,6 +36,7 @@ namespace Garnet.server
         GEOSEARCH,
         GEOSEARCHSTORE,
         ZREVRANGE,
+        ZREVRANGEBYLEX,
         ZREVRANGEBYSCORE,
         ZREVRANK,
         ZREMRANGEBYLEX,
@@ -282,6 +283,7 @@ namespace Garnet.server
                     case SortedSetOperation.ZREVRANGE:
                         SortedSetRange(ref input, ref output);
                         break;
+                    case SortedSetOperation.ZREVRANGEBYLEX:
                     case SortedSetOperation.ZREVRANGEBYSCORE:
                         SortedSetRange(ref input, ref output);
                         break;
