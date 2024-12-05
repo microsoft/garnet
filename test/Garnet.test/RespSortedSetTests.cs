@@ -1087,6 +1087,46 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase("(a", "(a", new string[] { })]
+        public void CanDoZRevRangeByLex(string max, string min, string[] expected, int offset = 0, int count = -1)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myzset";
+            db.SortedSetAdd(key, "a", 0);
+            db.SortedSetAdd(key, "b", 0);
+            db.SortedSetAdd(key, "c", 0);
+            db.SortedSetAdd(key, "d", 0);
+            db.SortedSetAdd(key, "e", 0);
+            db.SortedSetAdd(key, "f", 0);
+            db.SortedSetAdd(key, "g", 0);
+
+            var result = (string[])db.Execute("ZREVRANGEBYLEX", key, max, min, "LIMIT", offset, count);
+            CollectionAssert.AreEqual(expected, result);
+        }
+
+        [Test]
+        [TestCase("(a", "(a", new string[] { })]
+        public void CanDoZRevRangeByLexWithoutLimit(string min, string max, string[] expected)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myzset";
+            db.SortedSetAdd(key, "a", 0);
+            db.SortedSetAdd(key, "b", 0);
+            db.SortedSetAdd(key, "c", 0);
+            db.SortedSetAdd(key, "d", 0);
+            db.SortedSetAdd(key, "e", 0);
+            db.SortedSetAdd(key, "f", 0);
+            db.SortedSetAdd(key, "g", 0);
+
+            var result = (string[])db.Execute("ZREVRANGEBYLEX", key, max, min);
+            ClassicAssert.AreEqual(expected, result);
+        }
+
+        [Test]
         [TestCase("board1", 1, Description = "Pop from single key")]
         [TestCase("board2", 3, Description = "Pop multiple elements")]
         public void SortedSetMultiPopTest(string key, int count)

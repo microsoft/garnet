@@ -167,16 +167,16 @@ namespace Garnet.cluster
             // Take over as primary and inform old primary
             status = FailoverStatus.TAKING_OVER_AS_PRIMARY;
 
-            // Make replica syncing unavailable by setting recovery flag
-            if (!clusterProvider.replicationManager.StartRecovery())
-            {
-                logger?.LogWarning($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
-                return false;
-            }
-            _ = clusterProvider.BumpAndWaitForEpochTransition();
-
             try
             {
+                // Make replica syncing unavailable by setting recovery flag
+                if (!clusterProvider.replicationManager.StartRecovery())
+                {
+                    logger?.LogWarning($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
+                    return false;
+                }
+                _ = clusterProvider.BumpAndWaitForEpochTransition();
+
                 // Take over slots from old primary
                 if (!clusterProvider.clusterManager.TryTakeOverForPrimary())
                 {
