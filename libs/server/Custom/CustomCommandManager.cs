@@ -15,10 +15,10 @@ namespace Garnet.server
         internal static readonly int MinMapSize = 8;
         internal static readonly byte TypeIdStartOffset = byte.MaxValue - (byte)GarnetObjectTypeExtensions.FirstSpecialObjectType;
 
-        private ExpandableMap<CustomRawStringCommand> rawStringCommandMap;
-        private ExpandableMap<CustomObjectCommandWrapper> objectCommandMap;
-        private ExpandableMap<CustomTransaction> transactionProcMap;
-        private ExpandableMap<CustomProcedureWrapper> customProcedureMap;
+        private ConcurrentExpandableMap<CustomRawStringCommand> rawStringCommandMap;
+        private ConcurrentExpandableMap<CustomObjectCommandWrapper> objectCommandMap;
+        private ConcurrentExpandableMap<CustomTransaction> transactionProcMap;
+        private ConcurrentExpandableMap<CustomProcedureWrapper> customProcedureMap;
 
         internal int CustomCommandsInfoCount => customCommandsInfo.Count;
         internal readonly Dictionary<string, RespCommandsInfo> customCommandsInfo = new(StringComparer.OrdinalIgnoreCase);
@@ -29,14 +29,14 @@ namespace Garnet.server
         /// </summary>
         public CustomCommandManager()
         {
-            rawStringCommandMap = new ExpandableMap<CustomRawStringCommand>(MinMapSize,
+            rawStringCommandMap = new ConcurrentExpandableMap<CustomRawStringCommand>(MinMapSize,
                 (ushort)RespCommand.INVALID - 1,
                 (ushort)RespCommandExtensions.LastValidCommand + 1);
-            objectCommandMap = new ExpandableMap<CustomObjectCommandWrapper>(MinMapSize,
+            objectCommandMap = new ConcurrentExpandableMap<CustomObjectCommandWrapper>(MinMapSize,
                 (byte)GarnetObjectTypeExtensions.FirstSpecialObjectType - 1,
                 (byte)GarnetObjectTypeExtensions.LastObjectType + 1);
-            transactionProcMap = new ExpandableMap<CustomTransaction>(MinMapSize, 0, byte.MaxValue);
-            customProcedureMap = new ExpandableMap<CustomProcedureWrapper>(MinMapSize, 0, byte.MaxValue);
+            transactionProcMap = new ConcurrentExpandableMap<CustomTransaction>(MinMapSize, 0, byte.MaxValue);
+            customProcedureMap = new ConcurrentExpandableMap<CustomProcedureWrapper>(MinMapSize, 0, byte.MaxValue);
         }
 
         internal int Register(string name, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo, RespCommandDocs commandDocs, long expirationTicks)
@@ -68,7 +68,7 @@ namespace Garnet.server
 
         internal int RegisterType(CustomObjectFactory factory)
         {
-            if (objectCommandMap.TryFirstIdSafe(c => c.factory == factory, out var dupRegistrationId))
+            if (objectCommandMap.TryGetFirstId(c => c.factory == factory, out var dupRegistrationId))
                 throw new Exception($"Type already registered with ID {dupRegistrationId}");
 
             if (!objectCommandMap.TryGetNextId(out var cmdId))
@@ -84,7 +84,7 @@ namespace Garnet.server
 
         internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo, RespCommandDocs commandDocs, CustomObjectFunctions customObjectFunctions = null)
         {
-            if (!objectCommandMap.TryFirstIdSafe(c => c.factory == factory, out var typeId))
+            if (!objectCommandMap.TryGetFirstId(c => c.factory == factory, out var typeId))
             {
                 if (!objectCommandMap.TryGetNextId(out typeId))
                     throw new Exception("Out of registration space");
