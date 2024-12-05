@@ -156,6 +156,10 @@ namespace Garnet
         [Option("pubsub-pagesize", Required = false, HelpText = "Page size of log used for pub/sub (rounds down to power of 2)")]
         public string PubSubPageSize { get; set; }
 
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("max-pubsub-tasks", Required = false, HelpText = "Number of outstanding forwarding pubsub tasks at any given time")]
+        public int MaxPubSubTasks { get; set; }
+
         [OptionValidation]
         [Option("no-obj", Required = false, HelpText = "Disable support for data structure objects.")]
         public bool? DisableObjects { get; set; }
@@ -662,6 +666,7 @@ namespace Garnet
                 EnableIncrementalSnapshots = EnableIncrementalSnapshots.GetValueOrDefault(),
                 DisablePubSub = DisablePubSub.GetValueOrDefault(),
                 PubSubPageSize = PubSubPageSize,
+                MaxPubSubTasks = MaxPubSubTasks,
                 DisableObjects = DisableObjects.GetValueOrDefault(),
                 EnableCluster = EnableCluster.GetValueOrDefault(),
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),

@@ -94,6 +94,11 @@ namespace Garnet.server
         public string PubSubPageSize = "4k";
 
         /// <summary>
+        /// Number of outstanding forwarding pubsub tasks at any given time
+        /// </summary>
+        public int MaxPubSubTasks = 1 << 10;
+
+        /// <summary>
         /// Server bootup should fail if errors happen during bootup of AOF and checkpointing.
         /// </summary>
         public bool FailOnRecoveryError = false;
