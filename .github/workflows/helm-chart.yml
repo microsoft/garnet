@@ -1,4 +1,7 @@
+name: Garnet Helm Chart
+
 on:
+  workflow_dispatch: # allow manual run
   push:
     branches:
       - main
@@ -33,12 +36,12 @@ jobs:
 
       - name: Set helm chart appVersion
         run: |
-          sed -ie 's#Version.props#'"${VERSION_PROPS}"'#g' charts/garnet/Chart.yaml
+          sed -i -e 's#Version.props#"'${VERSION_PROPS}'"#g' charts/garnet/Chart.yaml
 
       - name: Helm lint and package
         run: |
           mkdir .cr-release-packages
-          for chart in $(find charts -depth 1 -type d); do
+          for chart in $(find charts -mindepth 1 -maxdepth 1 -type d); do
             if [ -z "${chart:-}" ]; then
               break
             fi

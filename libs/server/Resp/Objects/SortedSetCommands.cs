@@ -164,6 +164,7 @@ namespace Garnet.server
                     RespCommand.ZRANGE => SortedSetOperation.ZRANGE,
                     RespCommand.ZREVRANGE => SortedSetOperation.ZREVRANGE,
                     RespCommand.ZRANGEBYSCORE => SortedSetOperation.ZRANGEBYSCORE,
+                    RespCommand.ZREVRANGEBYLEX => SortedSetOperation.ZREVRANGEBYLEX,
                     RespCommand.ZREVRANGEBYSCORE => SortedSetOperation.ZREVRANGEBYSCORE,
                     _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
                 };
