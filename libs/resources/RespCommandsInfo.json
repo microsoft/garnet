@@ -619,7 +619,18 @@
         "FirstKey": 1,
         "LastKey": 1,
         "Step": 1,
-        "AclCategories": "Admin, PubSub, Slow, Garnet, Read",
+        "AclCategories": "Admin, PubSub, Slow, Garnet"
+      },
+      {
+        "Command": "CLUSTER_SPUBLISH",
+        "Name": "CLUSTER|SPUBLISH",
+        "IsInternal": true,
+        "Arity": 4,
+        "Flags": "Loading, NoScript, PubSub, Stale",
+        "FirstKey": 1,
+        "LastKey": 1,
+        "Step": 1,
+        "AclCategories": "Admin, PubSub, Slow, Garnet",
         "KeySpecifications": [
           {
             "BeginSearch": {

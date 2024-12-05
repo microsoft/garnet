@@ -352,6 +352,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> setslotsrange => "SETSLOTSRANGE"u8;
         public static ReadOnlySpan<byte> slotstate => "SLOTSTATE"u8;
         public static ReadOnlySpan<byte> publish => "PUBLISH"u8;
+        public static ReadOnlySpan<byte> spublish => "SPUBLISH"u8;
         public static ReadOnlySpan<byte> mtasks => "MTASKS"u8;
         public static ReadOnlySpan<byte> aofsync => "AOFSYNC"u8;
         public static ReadOnlySpan<byte> appendlog => "APPENDLOG"u8;

@@ -83,6 +83,7 @@ namespace CommandInfoUpdater
                 new("CLUSTER|MYPARENTID", RespCommand.CLUSTER_MYPARENTID),
                 new("CLUSTER|NODES", RespCommand.CLUSTER_NODES),
                 new("CLUSTER|PUBLISH", RespCommand.CLUSTER_PUBLISH),
+                new("CLUSTER|SPUBLISH", RespCommand.CLUSTER_SPUBLISH),
                 new("CLUSTER|REPLICAS", RespCommand.CLUSTER_REPLICAS),
                 new("CLUSTER|REPLICATE", RespCommand.CLUSTER_REPLICATE),
                 new("CLUSTER|RESET", RespCommand.CLUSTER_RESET),

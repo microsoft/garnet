@@ -483,11 +483,13 @@ namespace Garnet.cluster
             var kSize = key.Length;
             var vSize = val.Length;
 
+            *(int*)keyPtr = kSize;
+            *(int*)valPtr = vSize;
+
             var numClients = clusterProvider.storeWrapper.subscribeBroker.PublishNow(keyPtr, valPtr, vSize + sizeof(int), true);
 
             while (!RespWriteUtils.WriteInteger(numClients, ref dcurr, dend))
                 SendAndReset();
-
             return true;
         }
     }

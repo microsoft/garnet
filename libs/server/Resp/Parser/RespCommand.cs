@@ -334,6 +334,7 @@ namespace Garnet.server
         CLUSTER_MYPARENTID,
         CLUSTER_NODES,
         CLUSTER_PUBLISH,
+        CLUSTER_SPUBLISH,
         CLUSTER_REPLICAS,
         CLUSTER_REPLICATE,
         CLUSTER_RESET,
@@ -1961,6 +1962,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.publish))
                 {
                     return RespCommand.CLUSTER_PUBLISH;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.spublish))
+                {
+                    return RespCommand.CLUSTER_SPUBLISH;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.MIGRATE))
                 {
