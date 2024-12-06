@@ -728,7 +728,10 @@ namespace Garnet.server
                 RespCommand.SCAN => NetworkSCAN(ref storageApi),
                 RespCommand.TYPE => NetworkTYPE(ref storageApi),
                 // Script Commands
-                RespCommand.SCRIPT => TrySCRIPT(),
+                RespCommand.SCRIPT_EXISTS => NetworkScriptExists(),
+                RespCommand.SCRIPT_FLUSH => NetworkScriptFlush(),
+                RespCommand.SCRIPT_LOAD => NetworkScriptLoad(),
+
                 RespCommand.EVAL => TryEVAL(),
                 RespCommand.EVALSHA => TryEVALSHA(),
                 _ => Process(command)
