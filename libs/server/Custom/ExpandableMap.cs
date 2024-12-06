@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading;
+using Garnet.common;
 
 namespace Garnet.server
 {
@@ -237,7 +238,7 @@ namespace Garnet.server
         /// <summary>
         /// Reader-writer lock for the underlying item array
         /// </summary>
-        internal readonly ReaderWriterLockSlim eMapLock = new();
+        internal SingleWriterMultiReaderLock eMapLock = new();
 
         /// <summary>
         /// Last set index in underlying array
@@ -262,14 +263,14 @@ namespace Garnet.server
         public bool TryGetValue(int id, out T value)
         {
             value = default;
-            eMapLock.EnterReadLock();
+            eMapLock.ReadLock();
             try
             {
                 return eMap.TryGetValue(id, out value);
             }
             finally
             {
-                eMapLock.ExitReadLock();
+                eMapLock.ReadUnlock();
             }
         }
 
@@ -279,39 +280,40 @@ namespace Garnet.server
         /// <inheritdoc />
         public ref T GetValueByRef(int id)
         {
+            eMapLock.ReadLock();
             try
             {
                 return ref eMap.GetValueByRef(id);
             }
             finally
             {
-                eMapLock.ExitReadLock();
+                eMapLock.ReadUnlock();
             }
         }
 
         /// <inheritdoc />
         public bool TrySetValue(int id, ref T value)
         {
-            eMapLock.EnterUpgradeableReadLock();
+            eMapLock.ReadLock();
             try
             {
                 // Try to set value without expanding map
                 if (eMap.TrySetValue(id, ref value, true))
                     return true;
-
-                eMapLock.EnterWriteLock();
-                try
-                {
-                    return eMap.TrySetValue(id, ref value);
-                }
-                finally
-                {
-                    eMapLock.ExitWriteLock();
-                }
             }
             finally
             {
-                eMapLock.ExitUpgradeableReadLock();
+                eMapLock.ReadUnlock();
+            }
+
+            eMapLock.WriteLock();
+            try
+            {
+                return eMap.TrySetValue(id, ref value);
+            }
+            finally
+            {
+                eMapLock.WriteUnlock();
             }
         }
 
@@ -328,14 +330,14 @@ namespace Garnet.server
         public bool TryGetFirstId(Func<T, bool> predicate, out int id)
         {
             id = -1;
-            eMapLock.EnterReadLock();
+            eMapLock.ReadLock();
             try
             {
                 return eMap.TryGetFirstId(predicate, out id);
             }
             finally
             {
-                eMapLock.ExitReadLock();
+                eMapLock.ReadUnlock();
             }
         }
     }
@@ -357,7 +359,7 @@ namespace Garnet.server
             where T : ICustomCommand
         {
             value = default;
-            eMap.eMapLock.EnterReadLock();
+            eMap.eMapLock.ReadLock();
             try
             {
                 for (var i = 0; i <= eMap.LastSetIndex; i++)
@@ -372,7 +374,7 @@ namespace Garnet.server
             }
             finally
             {
-                eMap.eMapLock.ExitReadLock();
+                eMap.eMapLock.ReadUnlock();
             }
 
             return false;
@@ -390,7 +392,7 @@ namespace Garnet.server
             where T : CustomObjectCommandWrapper
         {
             value = default;
-            eMap.eMapLock.EnterReadLock();
+            eMap.eMapLock.ReadLock();
             try
             {
                 for (var i = 0; i <= eMap.LastSetIndex; i++)
@@ -401,7 +403,7 @@ namespace Garnet.server
             }
             finally
             {
-                eMap.eMapLock.ExitReadLock();
+                eMap.eMapLock.ReadUnlock();
             }
 
             return false;
