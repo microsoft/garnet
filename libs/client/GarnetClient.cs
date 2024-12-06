@@ -50,7 +50,6 @@ namespace Garnet.client
         readonly int bufferSize;
         readonly int maxOutstandingTasks;
         NetworkWriter networkWriter;
-        INetworkSender networkSender;
 
         readonly TcsWrapper[] tcsArray;
         readonly SslClientAuthenticationOptions sslOptions;
@@ -191,7 +190,6 @@ namespace Garnet.client
             socket = CreateSendSocket(timeoutMilliseconds);
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
             networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false).GetAwaiter().GetResult();
-            networkSender = networkHandler.GetNetworkSender();
 
             if (timeoutMilliseconds > 0)
             {
@@ -224,7 +222,6 @@ namespace Garnet.client
             socket = CreateSendSocket(timeoutMilliseconds);
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
             await networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false);
-            networkSender = networkHandler.GetNetworkSender();
 
             if (timeoutMilliseconds > 0)
             {
@@ -631,106 +628,6 @@ namespace Garnet.client
             }
         }
 
-        async ValueTask InternalExecuteAsync(Memory<byte> op, Memory<byte> clusterOp, string nodeId, long currentAddress, long nextAddress, long payloadPtr, int payloadLength, CancellationToken token = default)
-        {
-            Debug.Assert(nodeId != null);
-
-            int totalLen = 0;
-            int arraySize = 1;
-
-            totalLen += op.Length;
-
-            int len = clusterOp.Length;
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
-            arraySize++;
-
-            len = Encoding.UTF8.GetByteCount(nodeId);
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
-            arraySize++;
-
-            len = NumUtils.NumDigitsInLong(currentAddress);
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
-            arraySize++;
-
-            len = NumUtils.NumDigitsInLong(nextAddress);
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
-            arraySize++;
-
-            len = payloadLength;
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
-            arraySize++;
-
-            totalLen += 1 + NumUtils.NumDigits(arraySize) + 2;
-
-            if (totalLen > networkWriter.PageSize)
-            {
-                ThrowException(new Exception($"Entry of size {totalLen} does not fit on page of size {networkWriter.PageSize}. Try increasing sendPageSize parameter to GarnetClient constructor."));
-            }
-
-            // No need for gate as this is a void return
-            // await InputGateAsync(token);
-
-            try
-            {
-                networkWriter.epoch.Resume();
-
-                #region reserveSpaceAndWriteIntoNetworkBuffer
-                int taskId;
-                long address;
-                while (true)
-                {
-                    token.ThrowIfCancellationRequested();
-                    if (!IsConnected)
-                    {
-                        Dispose();
-                        ThrowException(disposeException);
-                    }
-                    (taskId, address) = networkWriter.TryAllocate(totalLen, out var flushEvent);
-                    if (address >= 0) break;
-                    try
-                    {
-                        networkWriter.epoch.Suspend();
-                        await flushEvent.WaitAsync(token).ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        networkWriter.epoch.Resume();
-                    }
-                }
-
-                unsafe
-                {
-                    byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
-                    byte* end = curr + totalLen;
-                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
-
-                    RespWriteUtils.WriteDirect(op.Span, ref curr, end);
-                    RespWriteUtils.WriteBulkString(clusterOp.Span, ref curr, end);
-                    RespWriteUtils.WriteUtf8BulkString(nodeId, ref curr, end);
-                    RespWriteUtils.WriteArrayItem(currentAddress, ref curr, end);
-                    RespWriteUtils.WriteArrayItem(nextAddress, ref curr, end);
-                    RespWriteUtils.WriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end);
-
-                    Debug.Assert(curr == end);
-                }
-                #endregion
-
-                if (!IsConnected)
-                {
-                    Dispose();
-                    ThrowException(disposeException);
-                }
-                // Console.WriteLine($"Filled {address}-{address + totalLen}");
-                networkWriter.epoch.ProtectAndDrain();
-                networkWriter.DoAggressiveShiftReadOnly();
-            }
-            finally
-            {
-                networkWriter.epoch.Suspend();
-            }
-            return;
-        }
-
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, Memory<byte> op, Memory<byte> param1, Memory<byte> param2, CancellationToken token = default)
         {
             tcs.timestamp = GetTimestamp();
@@ -794,6 +691,214 @@ namespace Garnet.client
                     RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
 
                     RespWriteUtils.WriteDirect(op.Span, ref curr, end);
+                    if (!param1.IsEmpty)
+                        RespWriteUtils.WriteBulkString(param1.Span, ref curr, end);
+                    if (!param2.IsEmpty)
+                        RespWriteUtils.WriteBulkString(param2.Span, ref curr, end);
+
+                    Debug.Assert(curr == end);
+                }
+                #endregion
+
+                #region waitForEmptySlot
+                int shortTaskId = taskId & (maxOutstandingTasks - 1);
+                var oldTcs = tcsArray[shortTaskId];
+                //1. if taskType != None, we are waiting for previous task to finish
+                //2. if taskType == None and my taskId is not the next in line wait for previous task to acquire slot
+                if (oldTcs.taskType != TaskType.None || !oldTcs.IsNext(taskId))
+                {
+                    // Console.WriteLine($"Before filling slot {taskId & (maxOutstandingTasks - 1)} for task {taskId} @ {address} : {tcs.taskType}");
+                    networkWriter.epoch.ProtectAndDrain();
+                    networkWriter.DoAggressiveShiftReadOnly();
+                    try
+                    {
+                        networkWriter.epoch.Suspend();
+                        await AwaitPreviousTaskAsync(taskId); // does not take token, as task is not cancelable at this point
+                    }
+                    finally
+                    {
+                        networkWriter.epoch.Resume();
+                    }
+                }
+                #endregion
+
+                #region scheduleAwaitForResponse
+                // Console.WriteLine($"Filled slot {taskId & (maxOutstandingTasks - 1)} for task {taskId} @ {address} : {tcs.taskType}");
+                tcsArray[shortTaskId].LoadFrom(tcs);
+                if (Disposed)
+                {
+                    DisposeOffset(shortTaskId);
+                    ThrowException(disposeException);
+                }
+                // Console.WriteLine($"Filled {address}-{address + totalLen}");
+                networkWriter.epoch.ProtectAndDrain();
+                networkWriter.DoAggressiveShiftReadOnly();
+                #endregion
+            }
+            finally
+            {
+                networkWriter.epoch.Suspend();
+            }
+            return;
+        }
+
+        async ValueTask InternalExecuteForNoResponse(Memory<byte> op, Memory<byte> subop, Memory<byte> param1, Memory<byte> param2, CancellationToken token = default)
+        {
+            int totalLen = 0;
+            int arraySize = 1;
+
+            totalLen += op.Length;
+
+            int len = subop.Length;
+            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+            arraySize++;
+
+            len = param1.Length;
+            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+            arraySize++;
+
+            len = param2.Length;
+            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+            arraySize++;
+
+            totalLen += 1 + NumUtils.NumDigits(arraySize) + 2;
+
+            if (totalLen > networkWriter.PageSize)
+            {
+                ThrowException(new Exception($"Entry of size {totalLen} does not fit on page of size {networkWriter.PageSize}. Try increasing sendPageSize parameter to GarnetClient constructor."));
+            }
+
+            // No need for gate as this is a void return
+            // await InputGateAsync(token);
+
+            try
+            {
+                networkWriter.epoch.Resume();
+
+                #region reserveSpaceAndWriteIntoNetworkBuffer
+                int taskId;
+                long address;
+                while (true)
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (!IsConnected)
+                    {
+                        Dispose();
+                        ThrowException(disposeException);
+                    }
+                    (taskId, address) = networkWriter.TryAllocate(totalLen, out var flushEvent);
+                    if (address >= 0) break;
+                    try
+                    {
+                        networkWriter.epoch.Suspend();
+                        await flushEvent.WaitAsync(token).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        networkWriter.epoch.Resume();
+                    }
+                }
+
+                unsafe
+                {
+                    byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
+                    byte* end = curr + totalLen;
+                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
+
+                    RespWriteUtils.WriteDirect(op.Span, ref curr, end);
+                    RespWriteUtils.WriteBulkString(subop.Span, ref curr, end);
+                    RespWriteUtils.WriteBulkString(param1.Span, ref curr, end);
+                    RespWriteUtils.WriteBulkString(param2.Span, ref curr, end);
+                    Debug.Assert(curr == end);
+                }
+                #endregion
+
+                if (!IsConnected)
+                {
+                    Dispose();
+                    ThrowException(disposeException);
+                }
+                // Console.WriteLine($"Filled {address}-{address + totalLen}");
+                networkWriter.epoch.ProtectAndDrain();
+                networkWriter.DoAggressiveShiftReadOnly();
+            }
+            finally
+            {
+                networkWriter.epoch.Suspend();
+            }
+            return;
+        }
+
+        async ValueTask InternalExecuteFireAndForgetWithNoResponse(TcsWrapper tcs, Memory<byte> op, Memory<byte> subop, Memory<byte> param1, Memory<byte> param2, CancellationToken token = default)
+        {
+            int totalLen = 0;
+            int arraySize = 1;
+
+            totalLen += op.Length;
+
+            if (!subop.IsEmpty)
+            {
+                int len = subop.Length;
+                totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                arraySize++;
+            }
+            if (!param1.IsEmpty)
+            {
+                int len = param1.Length;
+                totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                arraySize++;
+            }
+            if (!param2.IsEmpty)
+            {
+                int len = param2.Length;
+                totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                arraySize++;
+            }
+
+            totalLen += 1 + NumUtils.NumDigits(arraySize) + 2;
+            CheckLength(totalLen, tcs);
+            await InputGateAsync(token);
+
+            try
+            {
+                networkWriter.epoch.Resume();
+
+                #region reserveSpaceAndWriteIntoNetworkBuffer
+                int taskId;
+                long address;
+                while (true)
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (!IsConnected)
+                    {
+                        Dispose();
+                        ThrowException(disposeException);
+                    }
+                    (taskId, address) = networkWriter.TryAllocate(totalLen, out var flushEvent);
+                    if (address >= 0) break;
+                    try
+                    {
+                        networkWriter.epoch.Suspend();
+                        await flushEvent.WaitAsync(token).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        networkWriter.epoch.Resume();
+                    }
+                }
+
+                // Console.WriteLine($"Allocated {taskId} @ {address}");
+                tcs.nextTaskId = taskId;
+
+                unsafe
+                {
+                    byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
+                    byte* end = curr + totalLen;
+                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
+
+                    RespWriteUtils.WriteDirect(op.Span, ref curr, end);
+                    if (!subop.IsEmpty)
+                        RespWriteUtils.WriteBulkString(subop.Span, ref curr, end);
                     if (!param1.IsEmpty)
                         RespWriteUtils.WriteBulkString(param1.Span, ref curr, end);
                     if (!param2.IsEmpty)
