@@ -36,6 +36,7 @@ namespace CommandInfoUpdater
             new("BLPOP", RespCommand.BLPOP),
             new("BRPOP", RespCommand.BRPOP),
             new("BLMOVE", RespCommand.BLMOVE),
+            new("BRPOPLPUSH", RespCommand.BRPOPLPUSH),
             new("CLIENT", RespCommand.CLIENT,
             [
                 new("CLIENT|ID", RespCommand.CLIENT_ID),
@@ -276,6 +277,7 @@ namespace CommandInfoUpdater
             new("ZREMRANGEBYRANK", RespCommand.ZREMRANGEBYRANK),
             new("ZREMRANGEBYSCORE", RespCommand.ZREMRANGEBYSCORE),
             new("ZREVRANGE", RespCommand.ZREVRANGE),
+            new("ZREVRANGEBYLEX", RespCommand.ZREVRANGEBYLEX),
             new("ZREVRANGEBYSCORE", RespCommand.ZREVRANGEBYSCORE),
             new("ZREVRANK", RespCommand.ZREVRANK),
             new("ZSCAN", RespCommand.ZSCAN),
