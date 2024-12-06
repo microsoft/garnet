@@ -137,6 +137,14 @@ namespace Garnet.server
             *(int*)valPtr = vSize;
 
             var numClients = subscribeBroker.PublishNow(keyPtr, valPtr, vSize + sizeof(int), true);
+
+            if (storeWrapper.serverOptions.EnableCluster)
+            {
+                var _key = parseState.GetArgSliceByRef(0).Span;
+                var _val = parseState.GetArgSliceByRef(1).Span;
+                storeWrapper.clusterProvider.ClusterPublish(cmd, ref _key, ref _val);
+            }
+
             while (!RespWriteUtils.WriteInteger(numClients, ref dcurr, dend))
                 SendAndReset();
 
