@@ -46,8 +46,6 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-        with:
-          ref: 9f43c15bbe42c350f93bd7494d2918974f1963b1
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -105,4 +103,5 @@ jobs:
           benchmark-data-dir-path: 'website/static/charts'
           auto-push: true
           max-items-in-chart: 50
-          ref: 996a40ab74fd01184d2e2afbf37c080d9edaaf66
+          ref: 9f43c15bbe42c350f93bd7494d2918974f1963b1
+  
