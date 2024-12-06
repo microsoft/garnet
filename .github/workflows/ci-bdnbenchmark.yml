@@ -21,6 +21,8 @@ jobs:
     steps:
     - name: Check out code
       uses: actions/checkout@v4
+      with:
+        ref: 996a40ab74fd01184d2e2afbf37c080d9edaaf66
     - name: Apply filter
       uses: dorny/paths-filter@v3
       id: filter
