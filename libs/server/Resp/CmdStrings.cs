@@ -115,6 +115,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> lib_name => "lib-name"u8;
         public static ReadOnlySpan<byte> LIB_VER => "LIB-VER"u8;
         public static ReadOnlySpan<byte> lib_ver => "lib-ver"u8;
+        public static ReadOnlySpan<byte> RIGHT => "RIGHT"u8;
+        public static ReadOnlySpan<byte> LEFT => "LEFT"u8;
+        public static ReadOnlySpan<byte> BYLEX => "BYLEX"u8;
+        public static ReadOnlySpan<byte> REV => "REV"u8;
 
         /// <summary>
         /// Response strings
