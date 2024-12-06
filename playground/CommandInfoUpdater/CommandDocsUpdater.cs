@@ -233,7 +233,7 @@ namespace CommandInfoUpdater
             }
 
             // Update commands docs with commands to add
-            foreach (var command in commandsToAdd.Keys.Where(x => x.Command.Contains("CLIENT")))
+            foreach (var command in commandsToAdd.Keys)
             {
                 RespCommandDocs baseCommandDocs;
                 List<RespCommandDocs> updatedSubCommandsDocs;
