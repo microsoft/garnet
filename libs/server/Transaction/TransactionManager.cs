@@ -200,9 +200,10 @@ namespace Garnet.server
                 // Commit
                 Commit();
             }
-            catch
+            catch (Exception ex)
             {
                 Reset(running);
+                logger?.LogError(ex, "TransactionManager.RunTransactionProc error in running transaction proc");
                 return false;
             }
             finally

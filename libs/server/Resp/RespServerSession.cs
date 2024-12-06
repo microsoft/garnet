@@ -65,6 +65,8 @@ namespace Garnet.server
         internal readonly ScratchBufferManager scratchBufferManager;
 
         internal SessionParseState parseState;
+        internal SessionParseState customCommandParseState;
+
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
 
@@ -607,6 +609,7 @@ namespace Garnet.server
                 RespCommand.ZDIFF => SortedSetDifference(ref storageApi),
                 RespCommand.ZDIFFSTORE => SortedSetDifferenceStore(ref storageApi),
                 RespCommand.ZREVRANGE => SortedSetRange(cmd, ref storageApi),
+                RespCommand.ZREVRANGEBYLEX => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZSCAN => ObjectScan(GarnetObjectType.SortedSet, ref storageApi),
                 //SortedSet for Geo Commands
@@ -647,7 +650,8 @@ namespace Garnet.server
                 RespCommand.LSET => ListSet(ref storageApi),
                 RespCommand.BLPOP => ListBlockingPop(cmd),
                 RespCommand.BRPOP => ListBlockingPop(cmd),
-                RespCommand.BLMOVE => ListBlockingMove(cmd),
+                RespCommand.BLMOVE => ListBlockingMove(),
+                RespCommand.BRPOPLPUSH => ListBlockingPopPush(),
                 // Hash Commands
                 RespCommand.HSET => HashSet(cmd, ref storageApi),
                 RespCommand.HMSET => HashSet(cmd, ref storageApi),
@@ -756,7 +760,7 @@ namespace Garnet.server
                 // Perform the operation
                 TryTransactionProc(currentCustomTransaction.id,
                     customCommandManagerSession
-                        .GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager)
+                        .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager, scratchBufferManager)
                         .Item1);
                 currentCustomTransaction = null;
                 return true;
@@ -770,7 +774,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                TryCustomProcedure(currentCustomProcedure.CustomProcedureImpl);
+                TryCustomProcedure(customCommandManagerSession.GetCustomProcedure(currentCustomProcedure.Id, this));
 
                 currentCustomProcedure = null;
                 return true;

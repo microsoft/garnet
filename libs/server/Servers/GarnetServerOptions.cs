@@ -247,6 +247,11 @@ namespace Garnet.server
         public int ThreadPoolMaxThreads = 0;
 
         /// <summary>
+        /// Maximum client connection limit
+        /// </summary>
+        public int NetworkConnectionLimit = -1;
+
+        /// <summary>
         /// Creator of device factories
         /// </summary>
         public Func<INamedDeviceFactory> DeviceFactoryCreator = null;
@@ -285,6 +290,11 @@ namespace Garnet.server
         public int ReplicaSyncDelayMs = 5;
 
         /// <summary>
+        /// Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > ReplicationOffsetMaxLag. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag
+        /// </summary>
+        public int ReplicationOffsetMaxLag = -1;
+
+        /// <summary>
         /// Whether we truncate AOF as soon as replicas are fed (not just after checkpoints)
         /// </summary>
         public bool MainMemoryReplication = false;
@@ -303,8 +313,6 @@ namespace Garnet.server
         /// Use native device on Linux for local storage
         /// </summary>
         public bool UseNativeDeviceLinux = false;
-
-
 
         /// <summary>
         /// Limit of items to return in one iteration of *SCAN command

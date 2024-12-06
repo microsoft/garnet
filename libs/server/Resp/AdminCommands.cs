@@ -484,8 +484,29 @@ namespace Garnet.server
             for (var i = 0; i < moduleArgs.Length; i++)
                 moduleArgs[i] = parseState.GetArgSliceByRef(i + 1).ToString();
 
+            var errorMsg = ReadOnlySpan<byte>.Empty;
+
+            var binPath = Path.GetDirectoryName(modulePath);
+            var moduleFileName = Path.GetFileName(modulePath);
+
+            // Load dependencies from the module path
+            if (Directory.Exists(binPath) && !ModuleUtils.LoadAssemblies([binPath],
+                    storeWrapper.serverOptions.ExtensionBinPaths,
+                    storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies, out _, out errorMsg, [moduleFileName],
+                    SearchOption.TopDirectoryOnly, true))
+            {
+                if (!errorMsg.IsEmpty)
+                {
+                    while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                        SendAndReset();
+                }
+
+                return true;
+            }
+
+            // Load the module path
             if (ModuleUtils.LoadAssemblies([modulePath], storeWrapper.serverOptions.ExtensionBinPaths,
-                storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies, out var loadedAssemblies, out var errorMsg))
+                storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies, out var loadedAssemblies, out errorMsg))
             {
                 Debug.Assert(loadedAssemblies != null);
                 var assembliesList = loadedAssemblies.ToList();

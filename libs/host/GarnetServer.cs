@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using Garnet.cluster;
@@ -28,8 +29,12 @@ namespace Garnet
     /// </summary>
     public class GarnetServer : IDisposable
     {
-        // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~7 and GarnetServer.csproj line ~8.
-        readonly string version = "1.0.39";
+        static readonly string version = GetVersion();
+        static string GetVersion()
+        {
+            var Version = Assembly.GetExecutingAssembly().GetName().Version;
+            return $"{Version.Major}.{Version.Minor}.{Version.Build}";
+        }
 
         internal GarnetProvider Provider;
 
@@ -91,10 +96,14 @@ namespace Garnet
                 this.initLogger = (MemoryLogger)memLogProvider.CreateLogger("ArgParser");
             }
 
-            if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, this.initLogger))
+            if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, out var exitGracefully, this.initLogger))
             {
+                if (exitGracefully)
+                    Environment.Exit(0);
+
                 // Flush logs from memory logger
                 FlushMemoryLogger(this.initLogger, "ArgParser", loggerFactory);
+
                 throw new GarnetException("Encountered an error when initializing Garnet server. Please see log messages above for more details.");
             }
 
@@ -207,7 +216,7 @@ namespace Garnet
             }
 
             // Create Garnet TCP server if none was provided.
-            this.server ??= new GarnetServerTcp(opts.Address, opts.Port, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, logger);
+            this.server ??= new GarnetServerTcp(opts.Address, opts.Port, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, logger);
 
             storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore, objectStoreSizeTracker,
                     customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
