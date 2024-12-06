@@ -30,13 +30,9 @@ jobs:
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Extract version number from Version.props
+      - name: Set helm chart appVersion from Version.props
         run: |
           export VERSION_PROPS=$(awk -F'[<>]' '/VersionPrefix/{print $3}' Version.props)
-          echo "${VERSION_PROPS}"
-
-      - name: Set helm chart appVersion
-        run: |
           echo "${VERSION_PROPS}"
           sed -i -e 's#Version.props#"'${VERSION_PROPS}'"#g' charts/garnet/Chart.yaml
           cat charts/garnet/Chart.yaml
