@@ -151,7 +151,11 @@ namespace Garnet.common
         {
             try
             {
-                await OnNetworkReceiveAsync(e.BytesTransferred);
+                var receiveTask = OnNetworkReceiveAsync(e.BytesTransferred);
+                if (!receiveTask.IsCompleted)
+                {
+                    await receiveTask;
+                }
                 NetworkBufferProcessed(sender, e);
             }
             catch (Exception ex)
