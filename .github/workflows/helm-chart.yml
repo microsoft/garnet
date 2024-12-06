@@ -33,6 +33,7 @@ jobs:
       - name: Extract version number from Version.props
         run: |
           export VERSION_PROPS=$(awk -F'[<>]' '/VersionPrefix/{print $3}' Version.props)
+          echo "${VERSION_PROPS}"
 
       - name: Set helm chart appVersion
         run: |
