@@ -355,6 +355,9 @@ namespace Garnet.cluster
             }
         }
 
+        public void ClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
+            => clusterManager.TryClusterPublish(cmd, ref channel, ref message);
+
         internal ReplicationLogCheckpointManager GetReplicationLogCheckpointManager(StoreType storeType)
         {
             Debug.Assert(serverOptions.EnableCluster);
