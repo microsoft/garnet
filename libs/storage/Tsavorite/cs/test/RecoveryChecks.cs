@@ -959,6 +959,7 @@ namespace Tsavorite.test.recovery
 
             public bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion)
             {
+                store2.SetVersion(targetVersion);
                 session2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
                 bc2 = session2.BasicContext;
                 return true;
