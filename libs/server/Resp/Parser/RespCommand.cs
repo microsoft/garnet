@@ -81,6 +81,7 @@ namespace Garnet.server
         ZRANGEBYSCORE,
         ZRANK,
         ZREVRANGE,
+        ZREVRANGEBYLEX,
         ZREVRANGEBYSCORE,
         ZREVRANK,
         ZSCAN,
@@ -123,6 +124,7 @@ namespace Garnet.server
         BLPOP,
         BRPOP,
         BLMOVE,
+        BRPOPLPUSH,
         MIGRATE,
         MSET,
         MSETNX,
@@ -201,6 +203,9 @@ namespace Garnet.server
         CLIENT_INFO,
         CLIENT_LIST,
         CLIENT_KILL,
+        CLIENT_GETNAME,
+        CLIENT_SETNAME,
+        CLIENT_SETINFO,
 
         MONITOR,
         MODULE,
@@ -352,6 +357,9 @@ namespace Garnet.server
             RespCommand.CLIENT_INFO,
             RespCommand.CLIENT_LIST,
             RespCommand.CLIENT_KILL,
+            RespCommand.CLIENT_GETNAME,
+            RespCommand.CLIENT_SETNAME,
+            RespCommand.CLIENT_SETINFO,
             // Command
             RespCommand.COMMAND,
             RespCommand.COMMAND_COUNT,
@@ -1372,6 +1380,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.ZDIFFSTORE;
                                 }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nBRPO"u8) && *(uint*)(ptr + 9) == MemoryMarshal.Read<uint>("PLPUSH\r\n"u8))
+                                {
+                                    return RespCommand.BRPOPLPUSH;
+                                }
                                 break;
 
                             case 11:
@@ -1439,6 +1451,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nGEOSEA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("RCHSTORE"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
                                 {
                                     return RespCommand.GEOSEARCHSTORE;
+                                }
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREVRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.ZREVRANGEBYLEX;
                                 }
                                 break;
 
@@ -1588,6 +1604,18 @@ namespace Garnet.server
                     else if (subCommand.SequenceEqual(CmdStrings.KILL))
                     {
                         return RespCommand.CLIENT_KILL;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.GETNAME))
+                    {
+                        return RespCommand.CLIENT_GETNAME;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETNAME))
+                    {
+                        return RespCommand.CLIENT_SETNAME;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETINFO))
+                    {
+                        return RespCommand.CLIENT_SETINFO;
                     }
                 }
             }
