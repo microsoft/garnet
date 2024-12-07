@@ -453,7 +453,7 @@ namespace Garnet.server
         }
 
 
-        private GarnetStatus SetIntersect<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext, out HashSet<byte[]> output)
+        private GarnetStatus SetIntersect<TObjectContext>(ReadOnlySpan<ArgSlice> keys, ref TObjectContext objectContext, out HashSet<byte[]> output)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             output = new HashSet<byte[]>(ByteArrayComparer.Instance);
@@ -931,7 +931,7 @@ namespace Garnet.server
         /// <param name="limit">Optional limit for stopping early when reaching this size</param> 
         /// <param name="count"></param>
         /// <returns></returns>
-        public GarnetStatus SetIntersectCard(ArgSlice[] keys, int? limit, out int count)
+        public GarnetStatus SetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
         {
             if (txnManager.ObjectStoreLockableContext.Session is null)
                 ThrowObjectStoreUninitializedException();

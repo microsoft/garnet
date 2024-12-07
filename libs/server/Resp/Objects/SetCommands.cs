@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -157,7 +158,7 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <returns></returns>
-        private bool SetIntersectCard<TGarnetApi>(ref TGarnetApi storageApi)
+        private bool SetIntersectLength<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count < 2) // Need at least numkeys + 1 key
@@ -168,48 +169,40 @@ namespace Garnet.server
             // Number of keys
             if (!parseState.TryGetInt(0, out var nKeys))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
-
-            var keys = new ArgSlice[nKeys];
-            int? limit = null;
 
             if ((parseState.Count - 1) < nKeys)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "numkeys")));
             }
 
-            for (var i = 1; i <= nKeys; i++)
-            {
-                keys[i - 1] = parseState.GetArgSliceByRef(i);
-            }
+            var keys = parseState.Parameters.Slice(1);
 
             // Optional LIMIT argument
+            int? limit = null;
             if (parseState.Count > nKeys + 1)
             {
                 var limitArg = parseState.GetArgSliceByRef(nKeys + 1);
-                if (!limitArg.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LIMIT))
+                if (!limitArg.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LIMIT) || parseState.Count != nKeys + 3)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                 }
 
-                if (parseState.Count != nKeys + 3 || !parseState.TryGetInt(nKeys + 2, out var limitVal))
+                if (!parseState.TryGetInt(nKeys + 2, out var limitVal))
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                }
+
+                if (limitVal < 0)
+                {
+                    return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrCantBeNegative, "LIMIT")));
                 }
 
                 limit = limitVal;
             }
 
-            var status = storageApi.SetIntersectCard(keys, limit, out var result);
+            var status = storageApi.SetIntersectLength(keys, limit, out var result);
             switch (status)
             {
                 case GarnetStatus.OK:

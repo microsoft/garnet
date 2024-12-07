@@ -1430,7 +1430,7 @@ namespace Garnet.server
         /// <param name="limit">Optional limit to stop counting at</param>
         /// <param name="count">The cardinality of the intersection</param>
         /// <returns>Operation status</returns>
-        GarnetStatus SetIntersectCard(ArgSlice[] keys, int? limit, out int count);
+        GarnetStatus SetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count);
         #endregion
 
         #region Hash Methods

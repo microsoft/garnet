@@ -217,6 +217,8 @@ namespace Garnet.server
             "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
         public const string GenericSyntaxErrorOption = "ERR Syntax error in {0} option '{1}'";
         public const string GenericParamShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
+        public const string GenericErrCantBeNegative = "ERR {0} can't be negative";
+        public const string GenericErrShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
         public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
         public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
         public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";
