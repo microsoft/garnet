@@ -156,6 +156,15 @@ namespace Garnet.server
         string clientName = null;
 
         /// <summary>
+        /// Name of the client library.
+        /// </summary>
+        string clientLibName = null;
+        /// <summary>
+        /// Version of the client library.
+        /// </summary>
+        string clientLibVersion = null;
+
+        /// <summary>
         /// Flag indicating whether any of the commands in one message
         /// requires us to block on AOF before sending response over the network
         /// </summary>
@@ -707,6 +716,9 @@ namespace Garnet.server
                 RespCommand.CLIENT_INFO => NetworkCLIENTINFO(),
                 RespCommand.CLIENT_LIST => NetworkCLIENTLIST(),
                 RespCommand.CLIENT_KILL => NetworkCLIENTKILL(),
+                RespCommand.CLIENT_GETNAME => NetworkCLIENTGETNAME(),
+                RespCommand.CLIENT_SETNAME => NetworkCLIENTSETNAME(),
+                RespCommand.CLIENT_SETINFO => NetworkCLIENTSETINFO(),
                 RespCommand.COMMAND => NetworkCOMMAND(),
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
                 RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(),

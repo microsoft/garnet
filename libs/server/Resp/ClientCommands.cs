@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Garnet.common;
+using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -487,6 +488,85 @@ namespace Garnet.server
 
                 return matches;
             }
+        }
+
+        /// <summary>
+        /// CLIENT GETNAME
+        /// </summary>
+        private bool NetworkCLIENTGETNAME()
+        {
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments("CLIENT|GETNAME");
+            }
+
+            if (string.IsNullOrEmpty(this.clientName))
+            {
+                while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteUtf8BulkString(this.clientName, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// CLIENT SETNAME
+        /// </summary>
+        private bool NetworkCLIENTSETNAME()
+        {
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments("CLIENT|SETNAME");
+            }
+
+            var name = parseState.GetString(0);
+            if (string.IsNullOrEmpty(name) || name.Contains(' '))   // it is not possible to use spaces in the connection name as this would violate the format of the CLIENT LIST reply
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
+            this.clientName = name;
+
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// CLIENT SETINFO
+        /// </summary>
+        private bool NetworkCLIENTSETINFO()
+        {
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments("CLIENT|SETINFO");
+            }
+
+            var option = parseState.GetArgSliceByRef(0);
+            var value = parseState.GetString(1);
+            if (option.Span.SequenceEqual(CmdStrings.LIB_NAME) || option.Span.SequenceEqual(CmdStrings.lib_name)) // Can't use EqualsUpperCaseSpanIgnoringCase as `-` is not upper case
+            {
+                this.clientLibName = value;
+            }
+            else if (option.Span.SequenceEqual(CmdStrings.LIB_VER) || option.Span.SequenceEqual(CmdStrings.lib_ver))
+            {
+                this.clientLibVersion = value;
+            }
+            else
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
         }
     }
 }

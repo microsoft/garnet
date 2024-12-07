@@ -723,9 +723,16 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
-        "Command": "CLIENT_INFO",
-        "Name": "CLIENT|INFO",
-        "Summary": "Returns information about the connection.",
+        "Command": "CLIENT_ID",
+        "Name": "CLIENT|ID",
+        "Summary": "Returns the unique client ID of the connection.",
+        "Group": "Connection",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLIENT_GETNAME",
+        "Name": "CLIENT|GETNAME",
+        "Summary": "Returns the name of the connection.",
         "Group": "Connection",
         "Complexity": "O(1)"
       },
@@ -851,6 +858,14 @@
                         "Token": "NO"
                       }
                     ]
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "MAXAGE",
+                    "DisplayText": "maxage",
+                    "Type": "Integer",
+                    "Token": "MAXAGE",
+                    "ArgumentFlags": "Optional"
                   }
                 ]
               }
@@ -859,9 +874,39 @@
         ]
       },
       {
-        "Command": "CLIENT_ID",
-        "Name": "CLIENT|ID",
-        "Summary": "Returns the unique client ID of the connection.",
+        "Command": "CLIENT_SETINFO",
+        "Name": "CLIENT|SETINFO",
+        "Summary": "Sets information specific to the client or connection.",
+        "Group": "Connection",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "ATTR",
+            "Type": "OneOf",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "LIBNAME",
+                "DisplayText": "libname",
+                "Type": "String",
+                "Token": "LIB-NAME"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "LIBVER",
+                "DisplayText": "libver",
+                "Type": "String",
+                "Token": "LIB-VER"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "Command": "CLIENT_INFO",
+        "Name": "CLIENT|INFO",
+        "Summary": "Returns information about the connection.",
         "Group": "Connection",
         "Complexity": "O(1)"
       },
@@ -916,6 +961,21 @@
             "Type": "Integer",
             "Token": "ID",
             "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "CLIENT_SETNAME",
+        "Name": "CLIENT|SETNAME",
+        "Summary": "Sets the connection name.",
+        "Group": "Connection",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CONNECTION-NAME",
+            "DisplayText": "connection-name",
+            "Type": "String"
           }
         ]
       }
