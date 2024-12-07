@@ -48,7 +48,7 @@ namespace Garnet.server
             var setSuccessful = rawStringCommandMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
             if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
-            if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs , (_, _) => commandDocs);
+            if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
             return cmdId;
         }
 
