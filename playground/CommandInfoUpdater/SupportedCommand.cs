@@ -36,6 +36,7 @@ namespace CommandInfoUpdater
             new("BLPOP", RespCommand.BLPOP),
             new("BRPOP", RespCommand.BRPOP),
             new("BLMOVE", RespCommand.BLMOVE),
+            new("BRPOPLPUSH", RespCommand.BRPOPLPUSH),
             new("BLMPOP", RespCommand.BLMPOP),
             new("CLIENT", RespCommand.CLIENT,
             [
@@ -43,6 +44,9 @@ namespace CommandInfoUpdater
                 new("CLIENT|INFO", RespCommand.CLIENT_INFO),
                 new("CLIENT|LIST", RespCommand.CLIENT_LIST),
                 new("CLIENT|KILL", RespCommand.CLIENT_KILL),
+                new("CLIENT|GETNAME", RespCommand.CLIENT_GETNAME),
+                new("CLIENT|SETNAME", RespCommand.CLIENT_SETNAME),
+                new("CLIENT|SETINFO", RespCommand.CLIENT_SETINFO),
             ]),
             new("CLUSTER", RespCommand.CLUSTER,
             [
@@ -277,6 +281,7 @@ namespace CommandInfoUpdater
             new("ZREMRANGEBYRANK", RespCommand.ZREMRANGEBYRANK),
             new("ZREMRANGEBYSCORE", RespCommand.ZREMRANGEBYSCORE),
             new("ZREVRANGE", RespCommand.ZREVRANGE),
+            new("ZREVRANGEBYLEX", RespCommand.ZREVRANGEBYLEX),
             new("ZREVRANGEBYSCORE", RespCommand.ZREVRANGEBYSCORE),
             new("ZREVRANK", RespCommand.ZREVRANK),
             new("ZSCAN", RespCommand.ZSCAN),
