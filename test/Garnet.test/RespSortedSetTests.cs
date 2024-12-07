@@ -1200,6 +1200,48 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanUseZUnionStoreWithNonEmptyDestinationKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Setup test data
+            db.SortedSetAdd("zset1",
+            [
+                new SortedSetEntry("a", 1),
+                new SortedSetEntry("b", 2),
+                new SortedSetEntry("c", 3)
+            ]);
+            db.SortedSetAdd("zset2",
+            [
+                new SortedSetEntry("a", 4),
+                new SortedSetEntry("b", 5),
+                new SortedSetEntry("d", 6)
+            ]);
+
+            // Add some data to the destination key
+            db.SortedSetAdd("zset3",
+            [
+                new SortedSetEntry("x", 10),
+                new SortedSetEntry("y", 20)
+            ]);
+
+            db.SortedSetCombineAndStore(SetOperation.Union, "zset3", ["zset1", "zset2"], weights: null, aggregate: Aggregate.Sum);
+
+            var result = db.SortedSetRangeByRankWithScores("zset3");
+
+            var expectedScores = new double[] { 3, 5, 6, 7 };
+            var expectedElements = new string[] { "c", "a", "d", "b" };
+
+            ClassicAssert.AreEqual(expectedScores.Length, result.Length);
+            for (int i = 0; i < result.Length; i++)
+            {
+                ClassicAssert.AreEqual(expectedScores[i], result[i].Score);
+                ClassicAssert.AreEqual(expectedElements[i], result[i].Element.ToString());
+            }
+        }
+
+        [Test]
         [TestCase(new double[] { 2, 3 }, new double[] { 6, 14, 18, 19 }, new string[] { "c", "a", "d", "b" }, Description = "Tests ZUNIONSTORE with multiple weights")]
         public void CanUseZUnionStoreWithWeights(double[] weights, double[] expectedScores, string[] expectedElements)
         {

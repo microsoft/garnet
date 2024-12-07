@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -896,16 +897,17 @@ namespace Garnet.server
             // Number of keys
             if (!parseState.TryGetInt(0, out var nKeys))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             if (nKeys < 1)
             {
-                while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, "zunion")));
+            }
+
+            if (parseState.Count < nKeys + 1)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
 
             var currentArg = nKeys + 1;
@@ -917,7 +919,7 @@ namespace Garnet.server
             while (currentArg < parseState.Count)
             {
                 var arg = parseState.GetArgSliceByRef(currentArg).ReadOnlySpan;
-                if (arg.SequenceEqual(CmdStrings.WITHSCORES))
+                if (arg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHSCORES))
                 {
                     includeWithScores = true;
                     currentArg++;
@@ -927,9 +929,7 @@ namespace Garnet.server
                     currentArg++;
                     if (currentArg + nKeys > parseState.Count)
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                     }
 
                     weights = new double[nKeys];
@@ -937,9 +937,7 @@ namespace Garnet.server
                     {
                         if (!parseState.TryGetDouble(currentArg + i, out weights[i]))
                         {
-                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT, ref dcurr, dend))
-                                SendAndReset();
-                            return true;
+                            return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrNotAFloat, "weight")));
                         }
                     }
                     currentArg += nKeys;
@@ -949,31 +947,18 @@ namespace Garnet.server
                     currentArg++;
                     if (currentArg >= parseState.Count)
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                     }
 
-                    var aggregateArg = parseState.GetArgSliceByRef(currentArg).ReadOnlySpan;
-                    if (aggregateArg.SequenceEqual(CmdStrings.SUM))
-                        aggregateType = SortedSetAggregateType.Sum;
-                    else if (aggregateArg.SequenceEqual(CmdStrings.MIN))
-                        aggregateType = SortedSetAggregateType.Min;
-                    else if (aggregateArg.SequenceEqual(CmdStrings.MAX))
-                        aggregateType = SortedSetAggregateType.Max;
-                    else
+                    if (!parseState.TryGetSortedSetAggregateType(currentArg, out aggregateType))
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                     }
                     currentArg++;
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                 }
             }
 
@@ -989,9 +974,15 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
+                    if (result == null || result.Count == 0)
+                    {
+                        while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    }
+
                     // write the size of the array reply
-                    var resultCount = result?.Count ?? 0;
-                    while (!RespWriteUtils.WriteArrayLength(includeWithScores ? resultCount * 2 : resultCount, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteArrayLength(includeWithScores ? result.Count * 2 : result.Count, ref dcurr, dend))
                         SendAndReset();
 
                     if (result != null)
@@ -1036,6 +1027,16 @@ namespace Garnet.server
                 return true;
             }
 
+            if (nKeys < 1)
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, "zunionstore")));
+            }
+
+            if (parseState.Count < nKeys + 2)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
             var currentArg = nKeys + 2;
             double[] weights = null;
             var aggregateType = SortedSetAggregateType.Sum;
@@ -1049,9 +1050,7 @@ namespace Garnet.server
                     currentArg++;
                     if (currentArg + nKeys > parseState.Count)
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                     }
 
                     weights = new double[nKeys];
@@ -1059,9 +1058,7 @@ namespace Garnet.server
                     {
                         if (!parseState.TryGetDouble(currentArg + i, out weights[i]))
                         {
-                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT, ref dcurr, dend))
-                                SendAndReset();
-                            return true;
+                            return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrNotAFloat, "weight")));
                         }
                     }
                     currentArg += nKeys;
@@ -1069,33 +1066,20 @@ namespace Garnet.server
                 else if (arg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.AGGREGATE))
                 {
                     currentArg++;
-                    if (currentArg >= parseState.Count)
+                    if (currentArg + 1 > parseState.Count)
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                     }
 
-                    var aggregateArg = parseState.GetArgSliceByRef(currentArg).ReadOnlySpan;
-                    if (aggregateArg.SequenceEqual(CmdStrings.SUM))
-                        aggregateType = SortedSetAggregateType.Sum;
-                    else if (aggregateArg.SequenceEqual(CmdStrings.MIN))
-                        aggregateType = SortedSetAggregateType.Min;
-                    else if (aggregateArg.SequenceEqual(CmdStrings.MAX))
-                        aggregateType = SortedSetAggregateType.Max;
-                    else
+                    if (!parseState.TryGetSortedSetAggregateType(currentArg, out aggregateType))
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                     }
                     currentArg++;
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                 }
             }
 

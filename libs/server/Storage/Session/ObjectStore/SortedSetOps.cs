@@ -951,12 +951,12 @@ namespace Garnet.server
 
                 if (count > 0)
                 {
-                    SortedSetObject newSetObject = new();
+                    SortedSetObject newSortedSetObject = new();
                     foreach (var (element, score) in pairs)
                     {
-                        newSetObject.Add(element, score);
+                        newSortedSetObject.Add(element, score);
                     }
-                    _ = SET(destinationKey.ToArray(), newSetObject, ref objectContext);
+                    _ = SET(destinationKey.ToArray(), newSortedSetObject, ref objectContext);
                 }
                 else
                 {
@@ -992,10 +992,17 @@ namespace Garnet.server
                 }
 
                 // Initialize pairs with the first set
-                pairs = new Dictionary<byte[], double>(new ByteArrayComparer());
-                foreach (var (key, score) in firstSortedSet.Dictionary)
+                if (weights is null)
                 {
-                    pairs[key] = weights != null ? score * weights[0] : score;
+                    pairs = new Dictionary<byte[], double>(firstSortedSet.Dictionary, ByteArrayComparer.Instance);
+                }
+                else
+                {
+                    pairs = new Dictionary<byte[], double>(new ByteArrayComparer());
+                    foreach (var (key, score) in firstSortedSet.Dictionary)
+                    {
+                        pairs[key] = weights[0] * score;
+                    }
                 }
 
                 // Process remaining sets
@@ -1013,7 +1020,7 @@ namespace Garnet.server
 
                     foreach (var (key, score) in nextSortedSet.Dictionary)
                     {
-                        var weightedScore = weights != null ? score * weights[i] : score;
+                        var weightedScore = weights is null ? score : score * weights[i];
                         if (pairs.TryGetValue(key, out var existingScore))
                         {
                             pairs[key] = aggregateType switch
