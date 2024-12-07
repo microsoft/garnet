@@ -508,7 +508,7 @@ namespace Garnet.server
                                 return isSuccessful;
                             case RespCommand.BLMPOP:
                                 var popDirection = (OperationDirection)cmdArgs[0].ReadOnlySpan[0];
-                                var popCount = *(int*)(cmdArgs[1].ptr); // cmdArgs[0].ReadOnlySpan
+                                var popCount = *(int*)(cmdArgs[1].ptr);
                                 popCount = Math.Min(popCount, listObj.LnkList.Count);
 
                                 var items = new byte[popCount][];
