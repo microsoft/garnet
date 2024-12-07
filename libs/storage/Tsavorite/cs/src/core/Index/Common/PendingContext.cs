@@ -37,6 +37,7 @@ namespace Tsavorite.core
 
             internal RecordInfo recordInfo;
             internal long minAddress;
+            internal long maxAddress;
 
             // For flushing head pages on tail allocation.
             internal CompletionEvent flushEvent;
