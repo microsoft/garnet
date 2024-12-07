@@ -53,6 +53,7 @@ namespace Garnet.server
         /// <param name="keys">Keys of objects to observe</param>
         /// <param name="session">Calling session instance</param>
         /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
+        /// <param name="cmdArgs">Additional arguments for command</param>
         /// <returns>Result of operation</returns>
         internal async Task<CollectionItemResult> GetCollectionItemAsync(RespCommand command, byte[][] keys,
             RespServerSession session, double timeoutInSeconds, ArgSlice[] cmdArgs = null)
@@ -411,9 +412,9 @@ namespace Garnet.server
         /// <param name="command">RESP command</param>
         /// <param name="cmdArgs">Additional command arguments</param>
         /// <param name="currCount">Collection size</param>
-        /// <param name="result">Retrieved item</param>
+        /// <param name="result">Result of command</param>
         /// <returns>True if found available item</returns>
-        private bool TryGetResult(byte[] key, StorageSession storageSession, RespCommand command, ArgSlice[] cmdArgs, out int currCount, out CollectionItemResult result)
+        private unsafe bool TryGetResult(byte[] key, StorageSession storageSession, RespCommand command, ArgSlice[] cmdArgs, out int currCount, out CollectionItemResult result)
         {
             currCount = default;
             result = default;
@@ -471,6 +472,8 @@ namespace Garnet.server
                     case ListObject listObj:
                         currCount = listObj.LnkList.Count;
                         if (objectType != GarnetObjectType.List) return false;
+                        if (currCount == 0) return false;
+
                         switch (command)
                         {
                             case RespCommand.BLPOP:
@@ -505,17 +508,13 @@ namespace Garnet.server
                                 return isSuccessful;
                             case RespCommand.BLMPOP:
                                 var popDirection = (OperationDirection)cmdArgs[0].ReadOnlySpan[0];
-                                var _ = ParseUtils.TryReadInt(ref cmdArgs[1], out var popCount); // Int should has be validated in the Network layer (Server Session) itself
-                                popCount = popCount < 1 ? 1 : popCount; // Default when count is not provided
+                                var popCount = *(int*)(cmdArgs[1].ptr); // cmdArgs[0].ReadOnlySpan
                                 popCount = Math.Min(popCount, listObj.LnkList.Count);
 
                                 var items = new byte[popCount][];
                                 for (var i = 0; i < popCount; i++)
                                 {
-                                    if (!TryGetNextListItem(listObj, popDirection == OperationDirection.Left ? RespCommand.BLPOP : RespCommand.BRPOP, out items[i]))
-                                    {
-                                        return false;
-                                    }
+                                    var _ = TryGetNextListItem(listObj, popDirection == OperationDirection.Left ? RespCommand.BLPOP : RespCommand.BRPOP, out items[i]); // Return can be ignored because it is guaranteed to return true
                                 }
 
                                 result = new CollectionItemResult(key, items);

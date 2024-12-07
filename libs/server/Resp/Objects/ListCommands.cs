@@ -886,9 +886,7 @@ namespace Garnet.server
             // Read timeout
             if (!parseState.TryGetDouble(currTokenId++, out var timeout))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
             }
 
             // Read count of keys
@@ -940,9 +938,9 @@ namespace Garnet.server
                     var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "count");
                     return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
                 }
-
-                cmdArgs[1] = parseState.GetArgSliceByRef(currTokenId);
             }
+
+            cmdArgs[1] = new ArgSlice((byte*)&popCount, sizeof(int));
 
             if (storeWrapper.itemBroker == null)
                 throw new GarnetException("Object store is disabled");
