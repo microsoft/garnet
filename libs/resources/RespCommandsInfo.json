@@ -432,6 +432,35 @@
         "Tips": [
           "nondeterministic_output"
         ]
+      },
+      {
+        "Command": "CLIENT_GETNAME",
+        "Name": "CLIENT|GETNAME",
+        "Arity": 2,
+        "Flags": "Loading, NoScript, Stale",
+        "AclCategories": "Connection, Slow"
+      },
+      {
+        "Command": "CLIENT_SETNAME",
+        "Name": "CLIENT|SETNAME",
+        "Arity": 3,
+        "Flags": "Loading, NoScript, Stale",
+        "AclCategories": "Connection, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ]
+      },
+      {
+        "Command": "CLIENT_SETINFO",
+        "Name": "CLIENT|SETINFO",
+        "Arity": 4,
+        "Flags": "Loading, NoScript, Stale",
+        "AclCategories": "Connection, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ]
       }
     ]
   },
