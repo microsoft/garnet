@@ -210,6 +210,8 @@ namespace Tsavorite.core
             }
             else if (checkpointType == CheckpointType.StreamingSnapshot)
             {
+                if (streamingSnapshotIteratorFunctions is null)
+                    throw new TsavoriteException("StreamingSnapshot checkpoint requires a streaming snapshot iterator");
                 this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
                 result = StartStateMachine(new StreamingSnapshotCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(targetVersion));
             }
@@ -298,7 +300,7 @@ namespace Tsavorite.core
         /// </param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
-            long targetVersion = -1)
+            long targetVersion = -1, IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
         {
             token = default;
             bool result;
@@ -318,6 +320,9 @@ namespace Tsavorite.core
             }
             else if (checkpointType == CheckpointType.StreamingSnapshot)
             {
+                if (streamingSnapshotIteratorFunctions is null)
+                    throw new TsavoriteException("StreamingSnapshot checkpoint requires a streaming snapshot iterator");
+                this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
                 result = StartStateMachine(new StreamingSnapshotCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(targetVersion));
             }
             else
