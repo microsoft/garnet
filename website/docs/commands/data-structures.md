@@ -702,6 +702,21 @@ If **destination** already exists, it is overwritten.
 
 ---
 
+### SINTERCARD
+
+#### Syntax
+
+```bash
+    SINTERCARD numkeys [key ...] [LIMIT limit]
+```
+
+Returns the number of members in the resulting set from the intersection of all the given sets.
+Keys that do not exist are considered to be empty sets.
+
+The optional `LIMIT` argument specifies an upper bound on the number of intersecting members to count.
+
+---
+
 ### SDIFF
 
 #### Syntax

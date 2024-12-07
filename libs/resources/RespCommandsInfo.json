@@ -3538,6 +3538,28 @@
     ]
   },
   {
+    "Command": "SINTERCARD",
+    "Name": "SINTERCARD",
+    "Arity": -3,
+    "Flags": "MovableKeys, ReadOnly",
+    "AclCategories": "Read, Set, Slow",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysKeyNum",
+          "KeyNumIdx": 0,
+          "FirstKey": 1,
+          "KeyStep": 1
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
     "Command": "SINTERSTORE",
     "Name": "SINTERSTORE",
     "Arity": -3,

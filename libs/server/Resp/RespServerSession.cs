@@ -691,6 +691,7 @@ namespace Garnet.server
                 RespCommand.SSCAN => ObjectScan(GarnetObjectType.Set, ref storageApi),
                 RespCommand.SMOVE => SetMove(ref storageApi),
                 RespCommand.SINTER => SetIntersect(ref storageApi),
+                RespCommand.SINTERCARD => SetIntersectLength(ref storageApi),
                 RespCommand.SINTERSTORE => SetIntersectStore(ref storageApi),
                 RespCommand.SUNION => SetUnion(ref storageApi),
                 RespCommand.SUNIONSTORE => SetUnionStore(ref storageApi),
