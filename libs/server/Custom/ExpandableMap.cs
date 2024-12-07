@@ -41,8 +41,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="id">Item ID</param>
         /// <param name="value">Item value</param>
+        /// <param name="updateSize">True if actual size of map should be updated (true by default)</param>
         /// <returns>True if assignment succeeded</returns>
-        bool TrySetValue(int id, ref T value);
+        bool TrySetValue(int id, ref T value, bool updateSize = true);
 
         /// <summary>
         /// Get next item ID for assignment
@@ -71,12 +72,13 @@ namespace Garnet.server
         /// <summary>
         /// The underlying array containing the items
         /// </summary>
-        internal T[] map;
+        internal T[] Map { get; private set; }
 
         /// <summary>
-        /// Last set index in underlying array
+        /// The actual size of the map
+        /// i.e. the max index of an inserted item + 1 (not the size of the underlying array)
         /// </summary>
-        internal int lastSetIndex = -1;
+        internal int ActualSize { get; private set; }
 
         // The last requested index for assignment
         int currIndex = -1;
@@ -97,7 +99,7 @@ namespace Garnet.server
         /// <param name="maxId">The maximal item ID value (can be smaller than minId for descending order of IDs)</param>
         public ExpandableMap(int minSize, int minId, int maxId)
         {
-            this.map = null;
+            this.Map = null;
             this.minSize = minSize;
             this.minId = minId;
             this.maxSize = Math.Abs(maxId - minId) + 1;
@@ -109,10 +111,10 @@ namespace Garnet.server
         {
             value = default;
             var idx = GetIndexFromId(id);
-            if (idx < 0 || idx > lastSetIndex)
+            if (idx < 0 || idx >= ActualSize)
                 return false;
 
-            value = map[idx];
+            value = Map[idx];
             return true;
         }
 
@@ -120,21 +122,22 @@ namespace Garnet.server
         public bool Exists(int id)
         {
             var idx = GetIndexFromId(id);
-            return idx >= 0 && idx <= lastSetIndex;
+            return idx >= 0 && idx < ActualSize;
         }
 
         /// <inheritdoc />
         public ref T GetValueByRef(int id)
         {
             var idx = GetIndexFromId(id);
-            if (idx < 0 || idx > lastSetIndex)
+            if (idx < 0 || idx >= ActualSize)
                 throw new ArgumentOutOfRangeException(nameof(idx));
 
-            return ref map[idx];
+            return ref Map[idx];
         }
 
         /// <inheritdoc />
-        public bool TrySetValue(int id, ref T value) => TrySetValue(id, ref value, false);
+        public bool TrySetValue(int id, ref T value, bool updateSize = true) =>
+            TrySetValue(id, ref value, false, updateSize);
 
         /// <inheritdoc />
         public bool TryGetNextId(out int id)
@@ -153,9 +156,9 @@ namespace Garnet.server
         public bool TryGetFirstId(Func<T, bool> predicate, out int id)
         {
             id = -1;
-            for (var i = 0; i <= currIndex; i++)
+            for (var i = 0; i < ActualSize; i++)
             {
-                if (predicate(map[i]))
+                if (predicate(Map[i]))
                 {
                     id = GetIdFromIndex(i);
                     return true;
@@ -166,29 +169,67 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Get next item ID for assignment with atomic incrementation of underlying index
+        /// </summary>
+        /// <param name="id">Item ID</param>
+        /// <returns>True if item ID available</returns>
+        public bool TryGetNextIdSafe(out int id)
+        {
+            id = -1;
+            var nextIdx = Interlocked.Increment(ref currIndex);
+
+            if (nextIdx >= maxSize)
+                return false;
+            id = GetIdFromIndex(nextIdx);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Try to update the actual size of the map based on the inserted item ID
+        /// </summary>
+        /// <param name="id">The inserted item ID</param>
+        /// <param name="noUpdate">True if should not do actual update</param>
+        /// <returns>True if actual size should be updated (or was updated if noUpdate is false)</returns>
+        internal bool TryUpdateSize(int id, bool noUpdate = false)
+        {
+            var idx = GetIndexFromId(id);
+
+            // Should not update the size if the index is out of bounds
+            // or if index is smaller than the current actual size
+            if (idx < 0 || idx < ActualSize || idx >= maxSize) return false;
+
+            if (!noUpdate)
+                ActualSize = idx + 1;
+
+            return true;
+        }
+
+        /// <summary>
         /// Try to set item by ID
         /// </summary>
         /// <param name="id">Item ID</param>
         /// <param name="value">Item value</param>
         /// <param name="noExpansion">True if should not attempt to expand the underlying array</param>
+        /// <param name="updateSize">True if should update actual size of the map</param>
         /// <returns>True if assignment succeeded</returns>
-        internal bool TrySetValue(int id, ref T value, bool noExpansion)
+        internal bool TrySetValue(int id, ref T value, bool noExpansion, bool updateSize)
         {
             var idx = GetIndexFromId(id);
             if (idx < 0 || idx >= maxSize) return false;
 
             // If index within array bounds, set item
-            if (map != null && idx < map.Length)
+            if (Map != null && idx < Map.Length)
             {
-                map[idx] = value;
-                lastSetIndex = idx;
+                Map[idx] = value;
+                if (updateSize) TryUpdateSize(id);
                 return true;
             }
 
             if (noExpansion) return false;
 
             // Double new array size until item can fit
-            var newSize = map != null ? Math.Max(map.Length, minSize) : minSize;
+            var newSize = Map != null ? Math.Max(Map.Length, minSize) : minSize;
             while (idx >= newSize)
             {
                 newSize = Math.Min(maxSize, newSize * 2);
@@ -196,14 +237,14 @@ namespace Garnet.server
 
             // Create new array, copy existing items and set new item
             var newMap = new T[newSize];
-            if (map != null)
+            if (Map != null)
             {
-                Array.Copy(map, newMap, map.Length);
+                Array.Copy(Map, newMap, Map.Length);
             }
 
-            map = newMap;
-            map[idx] = value;
-            lastSetIndex = idx;
+            Map = newMap;
+            Map[idx] = value;
+            if (updateSize) TryUpdateSize(id);
             return true;
         }
 
@@ -231,22 +272,14 @@ namespace Garnet.server
     internal struct ConcurrentExpandableMap<T> : IExpandableMap<T>
     {
         /// <summary>
-        /// The underlying array containing the items
-        /// </summary>
-        internal T[] Map => eMap.map;
-
-        /// <summary>
         /// Reader-writer lock for the underlying item array
         /// </summary>
         internal SingleWriterMultiReaderLock eMapLock = new();
 
         /// <summary>
-        /// Last set index in underlying array
+        /// The underlying non-concurrent ExpandableMap (should be accessed using the eMapLock)
         /// </summary>
-        internal int LastSetIndex => eMap.lastSetIndex;
-
-        ExpandableMap<T> eMap;
-        readonly object nextIdLock = new();
+        internal ExpandableMap<T> eMapUnsafe;
 
         /// <summary>
         /// Creates a new instance of ConcurrentExpandableMap
@@ -256,7 +289,7 @@ namespace Garnet.server
         /// <param name="maxId">The maximal item ID value (can be smaller than minId for descending order of IDs)</param>
         public ConcurrentExpandableMap(int minSize, int minId, int maxId)
         {
-            this.eMap = new ExpandableMap<T>(minSize, minId, maxId);
+            this.eMapUnsafe = new ExpandableMap<T>(minSize, minId, maxId);
         }
 
         /// <inheritdoc />
@@ -266,7 +299,7 @@ namespace Garnet.server
             eMapLock.ReadLock();
             try
             {
-                return eMap.TryGetValue(id, out value);
+                return eMapUnsafe.TryGetValue(id, out value);
             }
             finally
             {
@@ -275,7 +308,18 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool Exists(int id) => eMap.Exists(id);
+        public bool Exists(int id)
+        {
+            eMapLock.ReadLock();
+            try
+            {
+                return eMapUnsafe.Exists(id);
+            }
+            finally
+            {
+                eMapLock.ReadUnlock();
+            }
+        }
 
         /// <inheritdoc />
         public ref T GetValueByRef(int id)
@@ -283,7 +327,7 @@ namespace Garnet.server
             eMapLock.ReadLock();
             try
             {
-                return ref eMap.GetValueByRef(id);
+                return ref eMapUnsafe.GetValueByRef(id);
             }
             finally
             {
@@ -292,14 +336,22 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool TrySetValue(int id, ref T value)
+        public bool TrySetValue(int id, ref T value, bool updateSize = true)
         {
+            var shouldUpdateSize = false;
+
+            // Try to perform set without taking a write lock first
             eMapLock.ReadLock();
             try
             {
                 // Try to set value without expanding map
-                if (eMap.TrySetValue(id, ref value, true))
-                    return true;
+                if (eMapUnsafe.TrySetValue(id, ref value))
+                {
+                    // Check if map size should be updated
+                    if (!updateSize || !eMapUnsafe.TryUpdateSize(id, true))
+                        return true;
+                    shouldUpdateSize = true;
+                }
             }
             finally
             {
@@ -309,7 +361,15 @@ namespace Garnet.server
             eMapLock.WriteLock();
             try
             {
-                return eMap.TrySetValue(id, ref value);
+                // Value already set, just update map size
+                if (shouldUpdateSize)
+                {
+                    eMapUnsafe.TryUpdateSize(id);
+                    return true;
+                }
+
+                // Try to set value with expanding the map, if needed
+                return eMapUnsafe.TrySetValue(id, ref value);
             }
             finally
             {
@@ -320,10 +380,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool TryGetNextId(out int id)
         {
-            lock (nextIdLock)
-            {
-                return eMap.TryGetNextId(out id);
-            }
+            return eMapUnsafe.TryGetNextIdSafe(out id);
         }
 
         /// <inheritdoc />
@@ -333,7 +390,7 @@ namespace Garnet.server
             eMapLock.ReadLock();
             try
             {
-                return eMap.TryGetFirstId(predicate, out id);
+                return eMapUnsafe.TryGetFirstId(predicate, out id);
             }
             finally
             {
@@ -362,9 +419,9 @@ namespace Garnet.server
             eMap.eMapLock.ReadLock();
             try
             {
-                for (var i = 0; i <= eMap.LastSetIndex; i++)
+                for (var i = 0; i < eMap.eMapUnsafe.ActualSize; i++)
                 {
-                    var currCmd = eMap.Map[i];
+                    var currCmd = eMap.eMapUnsafe.Map[i];
                     if (cmd.SequenceEqual(new ReadOnlySpan<byte>(currCmd.Name)))
                     {
                         value = currCmd;
@@ -395,9 +452,9 @@ namespace Garnet.server
             eMap.eMapLock.ReadLock();
             try
             {
-                for (var i = 0; i <= eMap.LastSetIndex; i++)
+                for (var i = 0; i < eMap.eMapUnsafe.ActualSize; i++)
                 {
-                    if (eMap.Map[i].commandMap.MatchCommandSafe(cmd, out value))
+                    if (eMap.eMapUnsafe.Map[i].commandMap.MatchCommandSafe(cmd, out value))
                         return true;
                 }
             }
