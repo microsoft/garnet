@@ -143,8 +143,8 @@ namespace Garnet.server
             => storageSession.SortedSetIntersect(keys, weights, aggregateType, out pairs);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetIntersectCard(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
-            => storageSession.SortedSetIntersectCard(keys, limit, out count);
+        public GarnetStatus SortedSetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+            => storageSession.SortedSetIntersectLength(keys, limit, out count);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetIntersectStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)

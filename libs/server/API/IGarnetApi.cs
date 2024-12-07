@@ -1302,7 +1302,7 @@ namespace Garnet.server
         /// <param name="limit">Optional max count limit</param> 
         /// <param name="count">The count of elements in the intersection</param>
         /// <returns>Operation status</returns>
-        GarnetStatus SortedSetIntersectCard(ReadOnlySpan<ArgSlice> keys, int? limit, out int count);
+        GarnetStatus SortedSetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count);
 
         #endregion
 

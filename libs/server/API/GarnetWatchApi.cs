@@ -209,13 +209,13 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetIntersectCard(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+        public GarnetStatus SortedSetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
         {
             foreach (var key in keys)
             {
                 garnetApi.WATCH(key, StoreType.Object);
             }
-            return garnetApi.SortedSetIntersectCard(keys, limit, out count);
+            return garnetApi.SortedSetIntersectLength(keys, limit, out count);
         }
 
         #endregion
