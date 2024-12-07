@@ -734,6 +734,51 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ClientGetNameACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CLIENT GETNAME",
+                [DoClientGetNameAsync]
+            );
+
+            static async Task DoClientGetNameAsync(GarnetClient client)
+            {
+                var name = await client.ExecuteForStringResultAsync("CLIENT", ["GETNAME"]);
+                ClassicAssert.IsNotEmpty(name);
+            }
+        }
+
+        [Test]
+        public async Task ClientSetNameACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CLIENT SETNAME",
+                [DoClientSetNameAsync]
+            );
+
+            static async Task DoClientSetNameAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForStringResultAsync("CLIENT", ["SETNAME", "foo"]);
+                ClassicAssert.IsNotEmpty(count);
+            }
+        }
+
+        [Test]
+        public async Task ClientSetInfoACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CLIENT SETINFO",
+                [DoClientSetInfoAsync]
+            );
+
+            static async Task DoClientSetInfoAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForStringResultAsync("CLIENT", ["SETINFO", "LIB-NAME", "foo"]);
+                ClassicAssert.IsNotEmpty(count);
+            }
+        }
+
+        [Test]
         public async Task ClusterAddSlotsACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
