@@ -345,7 +345,7 @@ namespace Garnet.server
             try
             {
                 // Try to set value without expanding map
-                if (eMapUnsafe.TrySetValue(id, ref value))
+                if (eMapUnsafe.TrySetValue(id, ref value, true, false))
                 {
                     // Check if map size should be updated
                     if (!updateSize || !eMapUnsafe.TryUpdateSize(id, true))
@@ -369,7 +369,7 @@ namespace Garnet.server
                 }
 
                 // Try to set value with expanding the map, if needed
-                return eMapUnsafe.TrySetValue(id, ref value);
+                return eMapUnsafe.TrySetValue(id, ref value, false, true);
             }
             finally
             {
@@ -422,7 +422,7 @@ namespace Garnet.server
                 for (var i = 0; i < eMap.eMapUnsafe.ActualSize; i++)
                 {
                     var currCmd = eMap.eMapUnsafe.Map[i];
-                    if (cmd.SequenceEqual(new ReadOnlySpan<byte>(currCmd.Name)))
+                    if (currCmd != null && cmd.SequenceEqual(new ReadOnlySpan<byte>(currCmd.Name)))
                     {
                         value = currCmd;
                         return true;
@@ -454,7 +454,7 @@ namespace Garnet.server
             {
                 for (var i = 0; i < eMap.eMapUnsafe.ActualSize; i++)
                 {
-                    if (eMap.eMapUnsafe.Map[i].commandMap.MatchCommandSafe(cmd, out value))
+                    if (eMap.eMapUnsafe.Map[i] != null && eMap.eMapUnsafe.Map[i].commandMap.MatchCommandSafe(cmd, out value))
                         return true;
                 }
             }

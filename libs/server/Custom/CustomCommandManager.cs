@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 
 namespace Garnet.server
@@ -21,8 +21,8 @@ namespace Garnet.server
         private ConcurrentExpandableMap<CustomProcedureWrapper> customProcedureMap;
 
         internal int CustomCommandsInfoCount => customCommandsInfo.Count;
-        internal readonly Dictionary<string, RespCommandsInfo> customCommandsInfo = new(StringComparer.OrdinalIgnoreCase);
-        internal readonly Dictionary<string, RespCommandDocs> customCommandsDocs = new(StringComparer.OrdinalIgnoreCase);
+        internal readonly ConcurrentDictionary<string, RespCommandsInfo> customCommandsInfo = new(StringComparer.OrdinalIgnoreCase);
+        internal readonly ConcurrentDictionary<string, RespCommandDocs> customCommandsDocs = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Create new custom command manager
@@ -47,8 +47,8 @@ namespace Garnet.server
             var newCmd = new CustomRawStringCommand(name, (ushort)cmdId, type, customFunctions, expirationTicks);
             var setSuccessful = rawStringCommandMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
-            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
-            if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
+            if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
+            if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs , (_, _) => commandDocs);
             return cmdId;
         }
 
@@ -61,8 +61,8 @@ namespace Garnet.server
             var newCmd = new CustomTransaction(name, (byte)cmdId, proc);
             var setSuccessful = transactionProcMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
-            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
-            if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
+            if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
+            if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
             return cmdId;
         }
 
@@ -106,8 +106,8 @@ namespace Garnet.server
             var scSetSuccessful = wrapper.commandMap.TrySetValue(scId, ref newSubCmd);
             Debug.Assert(scSetSuccessful);
 
-            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
-            if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
+            if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
+            if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
 
             return (typeId, scId);
         }
@@ -132,8 +132,8 @@ namespace Garnet.server
             var setSuccessful = customProcedureMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
 
-            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
-            if (commandDocs != null) customCommandsDocs.Add(name, commandDocs);
+            if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
+            if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
             return cmdId;
         }
 
