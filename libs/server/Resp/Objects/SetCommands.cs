@@ -177,7 +177,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "numkeys")));
             }
 
-            var keys = parseState.Parameters.Slice(1);
+            var keys = parseState.Parameters.Slice(1, nKeys);
 
             // Optional LIMIT argument
             int? limit = null;
