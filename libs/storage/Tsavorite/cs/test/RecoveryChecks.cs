@@ -943,12 +943,13 @@ namespace Tsavorite.test.recovery
         [TearDown]
         public void TearDown() => BaseTearDown();
 
-        public class SnapshotIterator : IScanIteratorFunctions<long, long>
+        public class SnapshotIterator : IStreamingSnapshotIteratorFunctions<long, long>
         {
             readonly TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store2;
+            readonly long expectedCount;
+
             ClientSession<long, long, long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator> session2;
             BasicContext<long, long, long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator> bc2;
-            readonly long expectedCount;
 
             public SnapshotIterator(TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store2, long expectedCount)
             {
@@ -956,20 +957,16 @@ namespace Tsavorite.test.recovery
                 this.expectedCount = expectedCount;
             }
 
-            public bool OnStart(long beginAddress, long endAddress)
+            public bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion)
             {
                 session2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
                 bc2 = session2.BasicContext;
                 return true;
             }
 
-            public bool SingleReader(ref long key, ref long value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-
-            public bool ConcurrentReader(ref long key, ref long value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader(ref long key, ref long value, RecordMetadata recordMetadata, long numberOfRecords)
             {
                 _ = bc2.Upsert(ref key, ref value);
-                cursorRecordResult = CursorRecordResult.Accept;
                 return true;
             }
 
@@ -1056,7 +1053,7 @@ namespace Tsavorite.test.recovery
             );
 
             var iterator = new SnapshotIterator(store2, 1000);
-            var task = store1.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotScanIteratorFunctions: iterator);
+            var task = store1.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: iterator);
 
 
             if (isAsync)

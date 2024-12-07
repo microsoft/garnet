@@ -21,6 +21,13 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
+        readonly long targetVersion;
+
+        public StreamingSnapshotCheckpointTask(long targetVersion)
+        {
+            this.targetVersion = targetVersion;
+        }
+
         /// <inheritdoc />
         public override void GlobalBeforeEnteringState(SystemState next, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
@@ -29,6 +36,8 @@ namespace Tsavorite.core
                 case Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT:
                     base.GlobalBeforeEnteringState(next, store);
                     store._hybridLogCheckpointToken = Guid.NewGuid();
+                    store._hybridLogCheckpoint.info.version = next.Version;
+                    store._hybridLogCheckpoint.info.nextVersion = targetVersion == -1 ? next.Version + 1 : targetVersion;
                     store._lastSnapshotCheckpoint.Dispose();
                     _ = Task.Run(store.StreamingSnapshotScanPhase1);
                     break;
