@@ -201,6 +201,9 @@ namespace Garnet.server
         CLIENT_INFO,
         CLIENT_LIST,
         CLIENT_KILL,
+        CLIENT_GETNAME,
+        CLIENT_SETNAME,
+        CLIENT_SETINFO,
 
         MONITOR,
         MODULE,
@@ -352,6 +355,9 @@ namespace Garnet.server
             RespCommand.CLIENT_INFO,
             RespCommand.CLIENT_LIST,
             RespCommand.CLIENT_KILL,
+            RespCommand.CLIENT_GETNAME,
+            RespCommand.CLIENT_SETNAME,
+            RespCommand.CLIENT_SETINFO,
             // Command
             RespCommand.COMMAND,
             RespCommand.COMMAND_COUNT,
@@ -1588,6 +1594,18 @@ namespace Garnet.server
                     else if (subCommand.SequenceEqual(CmdStrings.KILL))
                     {
                         return RespCommand.CLIENT_KILL;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.GETNAME))
+                    {
+                        return RespCommand.CLIENT_GETNAME;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETNAME))
+                    {
+                        return RespCommand.CLIENT_SETNAME;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETINFO))
+                    {
+                        return RespCommand.CLIENT_SETINFO;
                     }
                 }
             }
