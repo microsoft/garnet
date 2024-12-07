@@ -213,5 +213,21 @@ namespace Garnet.server
 
             return true;
         }
+
+        internal static bool TryGetSortedSetAggregateType(this SessionParseState parseState, int idx, out SortedSetAggregateType value)
+        {
+            value = default;
+            var sbArg = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
+
+            if (sbArg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SUM))
+                value = SortedSetAggregateType.Sum;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MIN))
+                value = SortedSetAggregateType.Min;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MAX))
+                value = SortedSetAggregateType.Max;
+            else return false;
+
+            return true;
+        }
     }
 }
