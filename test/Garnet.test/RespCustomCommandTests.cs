@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -1090,16 +1091,35 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiRegisterCommandTest()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void MultiRegisterCommandTest(bool sync)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             var regCount = 24;
+            var regCmdTasks = new Task[regCount];
             for (var i = 0; i < regCount; i++)
             {
-                server.Register.NewCommand($"SETIFPM{i + 1}", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), new RespCommandsInfo { Arity = 4 });
+                var idx = i;
+                regCmdTasks[i] = new Task(() => server.Register.NewCommand($"SETIFPM{idx + 1}", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(),
+                    new RespCommandsInfo { Arity = 4 }));
             }
+
+            for (var i = 0; i < regCount; i++)
+            {
+                if (sync)
+                {
+                    regCmdTasks[i].RunSynchronously();
+                }
+                else
+                {
+                    regCmdTasks[i].Start();
+                }
+            }
+
+            if (!sync) Task.WhenAll(regCmdTasks);
 
             for (var i = 0; i < regCount; i++)
             {
@@ -1117,7 +1137,9 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiRegisterSubCommandTest()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void MultiRegisterSubCommandTest(bool sync)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1125,27 +1147,55 @@ namespace Garnet.test
             var factory = new MyDictFactory();
             server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
 
-            var regCount = 31;
+            // Only able to register 31 sub-commands, try to register 32
+            var regCount = 32;
+            var failedTaskIdAndMessage = new ConcurrentBag<(int, string)>();
+            var regCmdTasks = new Task[regCount];
             for (var i = 0; i < regCount; i++)
             {
-                server.Register.NewCommand($"MYDICTSET{i + 1}", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+                var idx = i;
+                regCmdTasks[i] = new Task(() =>
+                {
+                    try
+                    {
+                        server.Register.NewCommand($"MYDICTSET{idx + 1}",
+                            CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+                    }
+                    catch (Exception e)
+                    {
+                        failedTaskIdAndMessage.Add((idx, e.Message));
+                    }
+                });
             }
 
-            try
+            for (var i = 0; i < regCount; i++)
             {
-                // This register should fail as an object can have at most 32 subcommands
-                server.Register.NewCommand($"MYDICTSET32", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
-                Assert.Fail();
+                if (sync)
+                {
+                    regCmdTasks[i].RunSynchronously();
+                }
+                else
+                {
+                    regCmdTasks[i].Start();
+                }
             }
-            catch (Exception e)
-            {
-                ClassicAssert.AreEqual("Out of registration space", e.Message);
-            }
+
+            if (!sync) Task.WaitAll(regCmdTasks);
+
+            // Exactly one registration should fail
+            ClassicAssert.AreEqual(1, failedTaskIdAndMessage.Count);
+            failedTaskIdAndMessage.TryTake(out var failedTaskResult);
+
+            var failedTaskId = failedTaskResult.Item1;
+            var failedTaskMessage = failedTaskResult.Item2;
+            ClassicAssert.AreEqual("Out of registration space", failedTaskMessage);
 
             var mainkey = "key";
 
+            // Check that all registrations worked except the failed one
             for (var i = 0; i < regCount; i++)
             {
+                if (i == failedTaskId) continue;
                 var key1 = $"mykey{i + 1}";
                 var value1 = $"foovalue{i + 1}";
                 db.Execute($"MYDICTSET{i + 1}", mainkey, key1, value1);
