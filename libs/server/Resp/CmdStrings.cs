@@ -111,6 +111,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> STOREDIST => "STOREDIST"u8;
         public static ReadOnlySpan<byte> WITHDIST => "WITHDIST"u8;
         public static ReadOnlySpan<byte> WITHHASH => "WITHHASH"u8;
+        public static ReadOnlySpan<byte> LIB_NAME => "LIB-NAME"u8;
+        public static ReadOnlySpan<byte> lib_name => "lib-name"u8;
+        public static ReadOnlySpan<byte> LIB_VER => "LIB-VER"u8;
+        public static ReadOnlySpan<byte> lib_ver => "lib-ver"u8;
         public static ReadOnlySpan<byte> RIGHT => "RIGHT"u8;
         public static ReadOnlySpan<byte> LEFT => "LEFT"u8;
         public static ReadOnlySpan<byte> BYLEX => "BYLEX"u8;
@@ -292,6 +296,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> REPLICATE => "REPLICATE"u8;
         public static ReadOnlySpan<byte> ID => "ID"u8;
         public static ReadOnlySpan<byte> KILL => "KILL"u8;
+        public static ReadOnlySpan<byte> GETNAME => "GETNAME"u8;
+        public static ReadOnlySpan<byte> SETINFO => "SETINFO"u8;
         public static ReadOnlySpan<byte> USER => "USER"u8;
         public static ReadOnlySpan<byte> ADDR => "ADDR"u8;
         public static ReadOnlySpan<byte> LADDR => "LADDR"u8;
