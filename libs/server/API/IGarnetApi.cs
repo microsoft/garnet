@@ -401,6 +401,17 @@ namespace Garnet.server
         GarnetStatus SortedSetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
+        /// Removes and returns multiple elements from a sorted set.
+        /// </summary>
+        /// <param name="keys">The keys of the sorted set.</param>
+        /// <param name="count">The number of elements to pop.</param>
+        /// <param name="lowScoresFirst">If true, elements with the lowest scores are popped first; otherwise, elements with the highest scores are popped first.</param>
+        /// <param name="poppedKey">The key of the popped element.</param>
+        /// <param name="pairs">An array of tuples containing the member and score of each popped element.</param>
+        /// <returns>A <see cref="GarnetStatus"/> indicating the result of the operation.</returns>
+        GarnetStatus SortedSetMPop(ReadOnlySpan<ArgSlice> keys, int count, bool lowScoresFirst, out ArgSlice poppedKey, out (ArgSlice member, ArgSlice score)[] pairs);
+
+        /// <summary>
         /// Removes and returns up to count members with the highest or lowest scores in the sorted set stored at key.
         /// </summary>
         /// <param name="key"></param>
