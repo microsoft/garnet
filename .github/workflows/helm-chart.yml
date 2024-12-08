@@ -7,8 +7,11 @@ on:
       - main
     paths:
       - 'charts/**'
+    paths-ignore:
+      - 'charts/*/README.md'
 
 permissions:
+  contents: write
   packages: write
       
 jobs:
@@ -30,12 +33,21 @@ jobs:
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
+      - name: Install helm-docs
+        env:
+          HELM_DOCS_VERSION: "1.14.2"
+        run: |
+          cd /tmp
+          wget https://github.com/norwoodj/helm-docs/releases/download/v"${HELM_DOCS_VERSION}"/helm-docs_"${HELM_DOCS_VERSION}"_Linux_x86_64.tar.gz
+          tar -xvf helm-docs_"${HELM_DOCS_VERSION}"_Linux_x86_64.tar.gz
+          sudo mv helm-docs /usr/local/bin
+
       - name: Set helm chart appVersion from Version.props
         run: |
           export VERSION_PROPS=$(awk -F'[<>]' '/VersionPrefix/{print $3}' Version.props)
           sed -i -e 's#Version.props#"'${VERSION_PROPS}'"#g' charts/garnet/Chart.yaml
 
-      - name: Helm lint and package
+      - name: Helm lint, helm-docs and helm package
         run: |
           mkdir .cr-release-packages
           for chart in $(find charts -mindepth 1 -maxdepth 1 -type d); do
@@ -43,8 +55,16 @@ jobs:
               break
             fi
             helm lint "${chart}"
+            helm-docs --document-dependency-values --chart-search-root "${chart}"
             helm package "${chart}" --dependency-update --destination .cr-release-packages
           done
+
+      - name: Git commit charts/garnet/README.md and push to main
+        run: |
+          git checkout -- charts/garnet/Chart.yaml
+          git add charts/garnet/README.md
+          git commit -s -m "Apply README.md changes in helm chart"
+          git push origin HEAD:main
 
       - name: Login to GHCR
         env:
