@@ -1486,6 +1486,20 @@
     "SubCommands": null
   },
   {
+    "Command": "GETIFNOTMATCH",
+    "Name": "GETIFNOTMATCH",
+    "IsInternal": false,
+    "Arity": 3,
+    "Flags": "NONE",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Read",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "GETRANGE",
     "Name": "GETRANGE",
     "Arity": 4,
@@ -1537,6 +1551,20 @@
         "Flags": "RW, Access, Update"
       }
     ],
+    "SubCommands": null
+  },
+  {
+    "Command": "GETWITHETAG",
+    "Name": "GETWITHETAG",
+    "IsInternal": false,
+    "Arity": 2,
+    "Flags": "NONE",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Read",
+    "Tips": null,
+    "KeySpecifications": null,
     "SubCommands": null
   },
   {
@@ -3463,6 +3491,20 @@
     "SubCommands": null
   },
   {
+    "Command": "SETIFMATCH",
+    "Name": "SETIFMATCH",
+    "IsInternal": false,
+    "Arity": 4,
+    "Flags": "NONE",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "SETRANGE",
     "Name": "SETRANGE",
     "Arity": 4,
@@ -3486,6 +3528,20 @@
         "Flags": "RW, Update"
       }
     ]
+  },
+  {
+    "Command": "SETWITHETAG",
+    "Name": "SETWITHETAG",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "NONE",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
   },
   {
     "Command": "SINTER",

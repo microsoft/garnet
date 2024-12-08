@@ -19,7 +19,21 @@ namespace Garnet.server
                 return false;
 
             var cmd = input.header.cmd;
-            if ((ushort)cmd >= CustomCommandManager.StartOffset)
+
+            var isEtagCmd = cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH;
+
+            if (isEtagCmd && cmd == RespCommand.GETIFNOTMATCH)
+            {
+                long existingEtag = *(long*)value.ToPointer();
+                long etagToMatchAgainst = *(long*)(input.ToPointer() + RespInputHeader.Size);
+                if (existingEtag == etagToMatchAgainst)
+                {
+                    // write the value not changed message to dst, and early return
+                    CopyDefaultResp(CmdStrings.RESP_VALNOTCHANGED, ref dst);
+                    return true;
+                }
+            }
+            else if ((ushort)cmd >= CustomCommandManager.StartOffset)
             {
                 var valueLength = value.LengthWithoutMetadata;
                 (IMemoryOwner<byte> Memory, int Length) output = (dst.Memory, 0);
@@ -31,10 +45,19 @@ namespace Garnet.server
                 return ret;
             }
 
+            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
+            var start = 0;
+            var end = -1;
+            if (!isEtagCmd && readInfo.RecordInfo.ETag)
+            {
+                start = Constants.EtagSize;
+                end = value.LengthWithoutMetadata;
+            }
+
             if (cmd == RespCommand.NONE)
-                CopyRespTo(ref value, ref dst);
+                CopyRespTo(ref value, ref dst, start, end);
             else
-                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
+                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending, start, end, readInfo.RecordInfo.ETag);
 
             return true;
         }
@@ -50,7 +73,21 @@ namespace Garnet.server
             }
 
             var cmd = input.header.cmd;
-            if ((ushort)cmd >= CustomCommandManager.StartOffset)
+
+            var isEtagCmd = cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH;
+
+            if (isEtagCmd && cmd == RespCommand.GETIFNOTMATCH)
+            {
+                long existingEtag = *(long*)value.ToPointer();
+                long etagToMatchAgainst = *(long*)(input.ToPointer() + RespInputHeader.Size);
+                if (existingEtag == etagToMatchAgainst)
+                {
+                    // write the value not changed message to dst, and early return
+                    CopyDefaultResp(CmdStrings.RESP_VALNOTCHANGED, ref dst);
+                    return true;
+                }
+            }
+            else if ((ushort)cmd >= CustomCommandManager.StartOffset)
             {
                 var valueLength = value.LengthWithoutMetadata;
                 (IMemoryOwner<byte> Memory, int Length) output = (dst.Memory, 0);
@@ -62,11 +99,20 @@ namespace Garnet.server
                 return ret;
             }
 
+            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
+            var start = 0;
+            var end = -1;
+            if (!isEtagCmd && recordInfo.ETag)
+            {
+                start = Constants.EtagSize;
+                end = value.LengthWithoutMetadata;
+            }
+
             if (cmd == RespCommand.NONE)
-                CopyRespTo(ref value, ref dst);
+                CopyRespTo(ref value, ref dst, start, end);
             else
             {
-                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
+                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending, start, end, recordInfo.ETag);
             }
 
             return true;

@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers.Text;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -455,6 +456,47 @@ namespace Garnet.common
                 return false;
             }
 
+            return true;
+        }
+
+        /// <summary>
+        /// Given a buffer check if the value is nil ($-1\r\n)
+        /// If the value is nil it advances the buffer forward
+        /// </summary>
+        /// <param name="ptr">The starting position in the RESP string. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP string.</param>
+        /// <param name="unexpectedToken"></param>
+        /// <returns>True if value is nil on the buffer, false if the value on buffer is not nil</returns>
+        public static bool ReadNil(ref byte* ptr, byte* end, out byte? unexpectedToken)
+        {
+            unexpectedToken = null;
+            if (end - ptr < 5)
+            {
+                return false;
+            }
+
+            ReadOnlySpan<byte> expectedNilRepr = "$-1\r\n"u8;
+
+            if (*(uint*)ptr != MemoryMarshal.Read<uint>(expectedNilRepr.Slice(0, 4)) || *(ptr + 4) != expectedNilRepr[4])
+            {
+                ReadOnlySpan<byte> ptrNext5Bytes = new ReadOnlySpan<byte>(ptr, 5);
+                for (int i = 0; i < 5; i++)
+                {
+                    // first place where the sequence differs we have found the unexpected token
+                    if (expectedNilRepr[i] != ptrNext5Bytes[i])
+                    {
+                        // move the pointer to the unexpected token
+                        ptr += i;
+                        unexpectedToken = ptrNext5Bytes[i];
+                        return false;
+                    }
+                }
+                // If the sequence is not equal we shouldn't even reach this because atleast one byte should have mismatched
+                Debug.Assert(false);
+                return false;
+            }
+
+            ptr += 5;
             return true;
         }
 

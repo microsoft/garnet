@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -375,8 +376,8 @@ namespace Garnet.server
             }
         }
 
-        public unsafe GarnetStatus SET_Conditional<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus SET_Conditional<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             var status = context.RMW(ref key, ref input, ref output);
 
@@ -391,6 +392,40 @@ namespace Garnet.server
             {
                 incr_session_notfound();
                 return GarnetStatus.NOTFOUND;
+            }
+            else if (cmd == RespCommand.SETIFMATCH && status.IsCanceled)
+            {
+                // The RMW operation for SETIFMATCH upon not finding the etags match between the existing record and sent etag returns Cancelled Operation
+                return GarnetStatus.ETAGMISMATCH;
+            }
+            else
+            {
+                incr_session_found();
+                return GarnetStatus.OK;
+            }
+        }
+
+        public unsafe GarnetStatus SET_Conditional<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context, RespCommand cmd)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            var status = context.RMW(ref key, ref input, ref output);
+
+            if (status.IsPending)
+            {
+                StartPendingMetrics();
+                CompletePendingForSession(ref status, ref output, ref context);
+                StopPendingMetrics();
+            }
+
+            if (status.NotFound)
+            {
+                incr_session_notfound();
+                return GarnetStatus.NOTFOUND;
+            }
+            else if (cmd == RespCommand.SETIFMATCH && status.IsCanceled)
+            {
+                // The RMW operation for SETIFMATCH upon not finding the etags match between the existing record and sent etag returns Cancelled Operation
+                return GarnetStatus.ETAGMISMATCH;
             }
             else
             {
@@ -595,18 +630,50 @@ namespace Garnet.server
             {
                 try
                 {
-                    var newKey = newKeySlice.SpanByte;
+                    // GET with etag to find if the key alrady exists, and if it exists then we can check if it also has an etag
+                    var inputSize = sizeof(int) + RespInputHeader.Size;
+                    SpanByte getWithEtagInput = SpanByte.Reinterpret(stackalloc byte[inputSize]);
+                    byte* inputPtr = getWithEtagInput.ToPointer();
+                    ((RespInputHeader*)inputPtr)->cmd = RespCommand.GETWITHETAG;
+                    ((RespInputHeader*)inputPtr)->flags = 0;
 
-                    var o = new SpanByteAndMemory();
-                    var status = GET(ref oldKey, ref input, ref o, ref context);
+                    SpanByteAndMemory etagAndDataOutput = new SpanByteAndMemory();
+                    GarnetStatus status = GET(ref oldKey, ref getWithEtagInput, ref etagAndDataOutput, ref context);
 
                     if (status == GarnetStatus.OK)
                     {
-                        Debug.Assert(!o.IsSpanByte);
-                        var memoryHandle = o.Memory.Memory.Pin();
-                        var ptrVal = (byte*)memoryHandle.Pointer;
 
-                        RespReadUtils.ReadUnsignedLengthHeader(out var headerLength, ref ptrVal, ptrVal + o.Length);
+                        bool hasEtag = false;
+
+                        // since we didn't give the etagAndDataOutput span any memory when creating it, the backend would necessarily have had to allocate heap memory if item is not NOTFOUND
+                        Debug.Assert(!etagAndDataOutput.IsSpanByte);
+                        using MemoryHandle outputMemHandle = etagAndDataOutput.Memory.Memory.Pin();
+                        byte* outputBufCurr = (byte*)outputMemHandle.Pointer;
+                        byte* end = outputBufCurr + etagAndDataOutput.Length;
+
+                        // GETWITHETAG returns an array of two items, etag, and value.
+                        // we need to read past RESP metadata and control sequences to get to etag, and value
+                        RespReadUtils.ReadUnsignedArrayLength(out int numItemInArr, ref outputBufCurr, end);
+
+                        Debug.Assert(numItemInArr == 2, "GETWITHETAG output RESP array should be of 2 elements only.");
+
+                        // we know a key-val pair does not have an etag if the first element is not null
+                        // if read nil is successful it will point to the ptrVal otherwise we need to re-read past the etag as RESP int64
+                        byte* startOfEtagPtr = outputBufCurr;
+                        hasEtag = !RespReadUtils.ReadNil(ref outputBufCurr, end, out _);
+                        if (hasEtag)
+                        {
+                            // read past the etag so we can then get to the ptrVal, we don't need specific val of etag, just need to move past it if it exists
+                            bool etagReadingSuccessful = RespReadUtils.Read64Int(out _, ref startOfEtagPtr, end);
+                            Debug.Assert(etagReadingSuccessful, "Etag should have been read succesffuly");
+                            // now startOfEtagPtr is past the etag and points to value 
+                            outputBufCurr = startOfEtagPtr;
+                        }
+
+                        // get length of value from the header
+                        RespReadUtils.ReadUnsignedLengthHeader(out int headerLength, ref outputBufCurr, end);
+                        // outputBuf now points to start of value
+                        byte* ptrVal = outputBufCurr;
 
                         // Find expiration time of the old key
                         var expireSpan = new SpanByteAndMemory();
@@ -623,50 +690,130 @@ namespace Garnet.server
                             input = new RawStringInput(RespCommand.SETEXNX);
 
                             // If the key has an expiration, set the new key with the expiration
-                            if (expireTimeMs > 0)
+                            if (!hasEtag)
                             {
-                                if (isNX)
+                                if (expireTimeMs > 0)
                                 {
-                                    // Move payload forward to make space for RespInputHeader and Metadata
-                                    parseState.InitializeWithArgument(newValSlice);
-                                    input.parseState = parseState;
-                                    input.arg1 = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
+                                    if (isNX)
+                                    {
+                                        // Move payload forward to make space for RespInputHeader and Metadata
+                                        var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size + sizeof(long), new ArgSlice(ptrVal, headerLength));
+                                        var setValueSpan = setValue.SpanByte;
+                                        var setValuePtr = setValueSpan.ToPointerWithMetadata();
+                                        setValueSpan.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
+                                        ((RespInputHeader*)(setValuePtr + sizeof(long)))->cmd = RespCommand.SETEXNX;
+                                        ((RespInputHeader*)(setValuePtr + sizeof(long)))->flags = 0;
+                                        var newKey = newKeySlice.SpanByte;
+                                        var setStatus = SET_Conditional(ref newKey, ref setValueSpan, ref context);
 
-                                    var setStatus = SET_Conditional(ref newKey, ref input, ref context);
-
-                                    // For SET NX `NOTFOUND` means the operation succeeded
-                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
-                                    returnStatus = GarnetStatus.OK;
+                                        // For SET NX `NOTFOUND` means the operation succeeded
+                                        result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                        returnStatus = GarnetStatus.OK;
+                                    }
+                                    else
+                                    {
+                                        SETEX(newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs), ref context);
+                                    }
                                 }
-                                else
+                                else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
                                 {
-                                    SETEX(newKeySlice, newValSlice, TimeSpan.FromMilliseconds(expireTimeMs), ref context);
+                                    if (isNX)
+                                    {
+                                        // Move payload forward to make space for RespInputHeader
+                                        var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size, new ArgSlice(ptrVal, headerLength));
+                                        var setValueSpan = setValue.SpanByte;
+                                        var setValuePtr = setValueSpan.ToPointerWithMetadata();
+                                        ((RespInputHeader*)setValuePtr)->cmd = RespCommand.SETEXNX;
+                                        ((RespInputHeader*)setValuePtr)->flags = 0;
+                                        var newKey = newKeySlice.SpanByte;
+                                        var setStatus = SET_Conditional(ref newKey, ref setValueSpan, ref context);
+
+                                        // For SET NX `NOTFOUND` means the operation succeeded
+                                        result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                        returnStatus = GarnetStatus.OK;
+                                    }
+                                    else
+                                    {
+                                            var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
+                                        SET(ref newKey, ref value, ref context);
+                                    }
                                 }
                             }
-                            else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
+                            else if (
+                                (expireTimeMs == -1 || expireTimeMs > 0) &&
+                                    hasEtag)
                             {
-                                if (isNX)
+                                // IsNX means if the newKey Exists do not set it
+                                // We can't use SET with not exist here so instead we will do an Exists and skip the seeting if exists 
+                                bool newKeyAlreadyExists = EXISTS(newKeySlice, storeType, ref context, ref objectContext) == GarnetStatus.OK;
+
+                                if (isNX && newKeyAlreadyExists)
                                 {
-                                    // Build parse state
-                                    parseState.InitializeWithArgument(newValSlice);
-                                    input.parseState = parseState;
-
-                                    var setStatus = SET_Conditional(ref newKey, ref input, ref context);
-
-                                    // For SET NX `NOTFOUND` means the operation succeeded
-                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                    // Skip setting the new key and go to calling the part after that
+                                    result = 0;
                                     returnStatus = GarnetStatus.OK;
                                 }
                                 else
                                 {
                                     var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
-                                    SET(ref newKey, ref value, ref context);
+                                    var initialValueSize = value.Length;
+
+                                    var valPtr = value.ToPointer();
+
+                                    SpanByte key = newKeySlice.SpanByte;
+
+                                    GarnetStatus setStatus;
+                                    if (expireTimeMs == -1) // no expiration provided
+                                    {
+                                        /*
+                                        * Make Space for Resp Input Header Behind The valPtr:
+                                        * This will not underflow because SpanByte is being created from pinnned pointer on output buffer that had etag and control sequences behind ptrVal.
+                                        * we need 6 bytes behind valPtr that we know exists because even in worst case where we only an etag of 0 (1 byte in resp output buffer), the output
+                                        * buffer will be of structure:
+                                        *   *2\r\n
+                                        *   :0\r\n
+                                        *   <_VALUE_>\r\n
+                                        * this gives us 6 bytes behind it in pinned memory that we can borrow, and 2 bytes infront of value
+                                        */
+                                        valPtr -= RespInputHeader.Size + sizeof(int);
+                                        // set the length
+                                        *(int*)valPtr = RespInputHeader.Size + value.Length;
+                                        ((RespInputHeader*)(valPtr + sizeof(int)))->cmd = RespCommand.SETWITHETAG;
+                                        ((RespInputHeader*)(valPtr + sizeof(int)))->flags = 0;
+                                        // This handles the edge case where we are renaming to a key that already exists and has an etag we want to retain its existing etag
+                                        // if there wasn't already an existing key same as the "rename to" key or without an etag, this will initialize the etag to 0 on the renamed key
+                                        ((RespInputHeader*)(valPtr + sizeof(int)))->SetRetainEtagFlag();
+
+                                        setStatus = SET_Conditional(ref key, ref Unsafe.AsRef<SpanByte>(valPtr), ref context);
+                                    }
+                                    else
+                                    {
+                                        // make space for metadata to be added to valPtr
+                                        var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size + sizeof(long), new ArgSlice(ptrVal, headerLength));
+                                        var setValueSpan = setValue.SpanByte;
+                                        var setValuePtr = setValueSpan.ToPointerWithMetadata();
+                                        ((RespInputHeader*)setValuePtr + sizeof(long))->cmd = RespCommand.SETWITHETAG;
+                                        ((RespInputHeader*)setValuePtr + sizeof(long))->flags = 0;
+                                        // This handles the edge case where we are renaming to a key that already exists and has an etag we want to retain its existing etag
+                                        // if there wasn't already an existing key same as the "rename to" key or without an etag, this will initialize the etag to 0 on the renamed key
+                                        ((RespInputHeader*)setValuePtr)->SetRetainEtagFlag();
+
+                                        setValueSpan.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
+
+                                        setStatus = SET_Conditional(ref key, ref setValueSpan, ref context);
+                                    }
+
+
+                                    // isNx or/and new key does not exist, either way we can set result to 1 result var will only get used if !isNx, and otherwise is ignored.
+                                    // Setting result regardless will avoid the need to add branching here
+                                    // For SET NX `NOTFOUND` means the operation succeeded
+                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+
+                                    returnStatus = GarnetStatus.OK;
                                 }
                             }
-
+                            etagAndDataOutput.Memory.Dispose();
                             expireSpan.Memory.Dispose();
-                            memoryHandle.Dispose();
-                            o.Memory.Dispose();
 
                             // Delete the old key only when SET NX succeeded
                             if (isNX && result == 1)
