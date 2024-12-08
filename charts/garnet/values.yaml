@@ -49,7 +49,7 @@ config:
   #  {
   #    "AuthenticationMode": "Password",
   #    "Password": "aStrongPassword",
-  #    "EnableStorageTier": true
+  #    "EnableStorageTier": true,
   #    "LogDir": "/data"
   #  }
 
