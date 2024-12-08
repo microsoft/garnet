@@ -5,7 +5,6 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
@@ -1194,6 +1193,17 @@ namespace Garnet.server
             return status;
         }
 
+        /// <summary>
+        /// Computes the Longest Common Subsequence (LCS) of two keys.
+        /// </summary>
+        /// <param name="key1">The first key to compare.</param>
+        /// <param name="key2">The second key to compare.</param>
+        /// <param name="output">The output span to store the result.</param>
+        /// <param name="lenOnly">If true, only the length of the LCS is returned.</param>
+        /// <param name="withIndices">If true, the indices of the LCS in both keys are returned.</param>
+        /// <param name="withMatchLen">If true, the length of each match is returned.</param>
+        /// <param name="minMatchLen">The minimum length of a match to be considered.</param>
+        /// <returns>The status of the operation.</returns>
         public unsafe GarnetStatus LCS(ArgSlice key1, ArgSlice key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
         {
             var createTransaction = false;
@@ -1229,13 +1239,6 @@ namespace Garnet.server
 
             try
             {
-                if (lenOnly && withIndices)
-                {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_LENGTH_AND_INDEXES, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    return GarnetStatus.OK;
-                }
-
                 ArgSlice val1, val2;
                 var status1 = GET(key1, out val1, ref context);
                 var status2 = GET(key2, out val2, ref context);
@@ -1297,18 +1300,7 @@ namespace Garnet.server
         {
             var m = str1.Length;
             var n = str2.Length;
-            var dp = new int[m + 1, n + 1];
-
-            for (int i = 1; i <= m; i++)
-            {
-                for (int j = 1; j <= n; j++)
-                {
-                    if (str1[i - 1] == str2[j - 1])
-                        dp[i, j] = dp[i - 1, j - 1] + 1;
-                    else
-                        dp[i, j] = Math.Max(dp[i - 1, j], dp[i, j - 1]);
-                }
-            }
+            var dp = GetLcsDpTable(str1, str2);
 
             return dp[m, n] >= minMatchLen ? dp[m, n] : 0;
         }
@@ -1317,23 +1309,11 @@ namespace Garnet.server
         {
             var m = str1.Length;
             var n = str2.Length;
-            var dp = new int[m + 1, n + 1];
-            var matches = new List<LCSMatch>();
-
-            // Fill the dp table
-            for (int i = 1; i <= m; i++)
-            {
-                for (int j = 1; j <= n; j++)
-                {
-                    if (str1[i - 1] == str2[j - 1])
-                        dp[i, j] = dp[i - 1, j - 1] + 1;
-                    else
-                        dp[i, j] = Math.Max(dp[i - 1, j], dp[i, j - 1]);
-                }
-            }
+            var dp = GetLcsDpTable(str1, str2);
 
             lcsLength = dp[m, n];
 
+            var matches = new List<LCSMatch>();
             // Backtrack to find matches
             if (dp[m, n] >= minMatchLen)
             {
@@ -1442,19 +1422,7 @@ namespace Garnet.server
         {
             var m = str1.Length;
             var n = str2.Length;
-            var dp = new int[m + 1, n + 1];
-
-            // Fill the dp table
-            for (int i = 1; i <= m; i++)
-            {
-                for (int j = 1; j <= n; j++)
-                {
-                    if (str1[i - 1] == str2[j - 1])
-                        dp[i, j] = dp[i - 1, j - 1] + 1;
-                    else
-                        dp[i, j] = Math.Max(dp[i - 1, j], dp[i, j - 1]);
-                }
-            }
+            var dp = GetLcsDpTable(str1, str2);
 
             // If result is shorter than minMatchLen, return empty array
             if (dp[m, n] < minMatchLen)
@@ -1479,6 +1447,24 @@ namespace Garnet.server
             }
 
             return result;
+        }
+
+        private static int[,] GetLcsDpTable(ReadOnlySpan<byte> str1, ReadOnlySpan<byte> str2)
+        {
+            var m = str1.Length;
+            var n = str2.Length;
+            var dp = new int[m + 1, n + 1];
+            for (int i = 1; i <= m; i++)
+            {
+                for (int j = 1; j <= n; j++)
+                {
+                    if (str1[i - 1] == str2[j - 1])
+                        dp[i, j] = dp[i - 1, j - 1] + 1;
+                    else
+                        dp[i, j] = Math.Max(dp[i - 1, j], dp[i, j - 1]);
+                }
+            }
+            return dp;
         }
 
         private struct LCSMatch

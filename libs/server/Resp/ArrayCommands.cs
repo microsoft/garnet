@@ -483,11 +483,14 @@ namespace Garnet.server
                 }
                 else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MINMATCHLEN))
                 {
+                    if (tokenIdx + 1 > parseState.Count)
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                    }
+
                     if (!parseState.TryGetInt(tokenIdx++, out var minLen) || minLen < 0)
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                     }
                     minMatchLen = minLen;
                 }
@@ -497,10 +500,13 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                 }
+            }
+
+            if (lenOnly && withIndices)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_LENGTH_AND_INDEXES);
             }
 
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
