@@ -1145,6 +1145,35 @@ namespace Garnet.test.cluster
         }
     }
 
+    internal class SINTERCARD : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(SINTERCARD);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return ["3", ssk[0], ssk[1], ssk[2]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return ["3", csk[0], csk[1], csk[2]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[3];
+            setup[0] = new ArraySegment<string>(["SADD", ssk[1], "a", "b", "c"]);
+            setup[1] = new ArraySegment<string>(["SADD", ssk[2], "d", "e", "f"]);
+            setup[2] = new ArraySegment<string>(["SADD", ssk[3], "g", "h", "i"]);
+            return setup;
+        }
+    }
+
     internal class SADD : BaseCommand
     {
         public override bool IsArrayCommand => false;
@@ -1450,6 +1479,35 @@ namespace Garnet.test.cluster
         }
     }
 
+    internal class BRPOPLPUSH : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(BRPOPLPUSH);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1], "1"];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1], "1"];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[3];
+            setup[0] = new ArraySegment<string>(["LPUSH", ssk[1], "value1", "value2", "value3"]);
+            setup[1] = new ArraySegment<string>(["LPUSH", ssk[2], "value4", "value5", "value6"]);
+            setup[2] = new ArraySegment<string>(["LPUSH", ssk[3], "value7", "value8", "value9"]);
+            return setup;
+        }
+    }
+
     internal class LLEN : BaseCommand
     {
         public override bool IsArrayCommand => false;
@@ -1731,6 +1789,24 @@ namespace Garnet.test.cluster
         {
             var ssk = GetSingleSlotKeys;
             // ZRANGE x 0 -1
+            return [ssk[0], "0", "-1"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class ZREVRANGEBYLEX : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(ZREVRANGEBYLEX);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            // ZREVRANGEBYLEX x 0 -1
             return [ssk[0], "0", "-1"];
         }
 

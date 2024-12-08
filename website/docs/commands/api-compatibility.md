@@ -61,7 +61,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [GETBIT](analytics.md#getbit) | ➕ |  |
 |  | [SETBIT](analytics.md#setbit) | ➕ |  |
 | <span id="client">**CLIENT**</span> | CACHING | ➖ |  |
-|  | GETNAME | ➖ |  |
+|  | [GETNAME](client.md#client-getname) | ➕ |  |
 |  | GETREDIR | ➖ |  |
 |  | HELP | ➖ |  |
 |  | [ID](client.md#client-id) | ➕ |  |
@@ -72,8 +72,8 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | NO-TOUCH | ➖ |  |
 |  | PAUSE | ➖ |  |
 |  | REPLY | ➖ |  |
-|  | SETINFO | ➖ |  |
-|  | SETNAME | ➖ |  |
+|  | [SETINFO](client.md#client-setinfo) | ➕ |  |
+|  | [SETNAME](client.md#client-setname) | ➕ |  |
 |  | TRACKING | ➖ |  |
 |  | TRACKINGINFO | ➖ |  |
 |  | UNBLOCK | ➖ |  |
@@ -212,7 +212,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | BLMPOP | ➖ |  |
 |  | [BLPOP](data-structures.md#blpop) | ➕ |  |
 |  | [BRPOP](data-structures.md#brpop) | ➕ |  |
-|  | BRPOPLPUSH | ➖ | (Deprecated) |
+|  | [BRPOPLPUSH](data-structures.md#brpoplpush) | ➕ | (Deprecated) |
 |  | [LINDEX](data-structures.md#lindex) | ➕ |  |
 |  | [LINSERT](data-structures.md#linsert) | ➕ |  |
 |  | [LLEN](data-structures.md#llen) | ➕ |  |
@@ -290,7 +290,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | ROLE | ➖ |  |
 |  | [SAVE](checkpoint.md#save) | ➕ |  |
 |  | SHUTDOWN | ➖ |  |
-|  | SLAVEOF | ➖ | (Deprecated) |
+|  | [SLAVEOF](server.md#slaveof) | ➕ | (Deprecated) |
 |  | SWAPDB | ➖ |  |
 |  | SYNC | ➖ |  |
 |  | [TIME](server.md#time) | ➕ |  |
@@ -300,7 +300,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SDIFFSTORE](data-structures.md#sdiffstore) | ➕ |  |
 |  | [SINTER](data-structures.md#sinter) | ➕ |  |
 |  | [SINTERSTORE](data-structures.md#sinterstore) | ➕ |  |
-|  | SINTERCARD | ➖ |  |
+|  | [SINTERCARD](data-structures.md#sintercard) | ➕ |  |
 |  | [SISMEMBER](data-structures.md#sismember) | ➕ |  |
 |  | [SMEMBERS](data-structures.md#smembers) | ➕ |  |
 |  | [SMISMEMBER](data-structures.md#smismember) | ➕ |  |
@@ -346,7 +346,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZREMRANGEBYRANK](data-structures.md#zremrangebyrank) | ➕ |  |
 |  | [ZREMRANGEBYSCORE](data-structures.md#zremrangebyscore) | ➕ |  |
 |  | [ZREVRANGE](data-structures.md#zrevrange) | ➕ | (Deprecated) |
-|  | ZREVRANGEBYLEX | ➖ | (Deprecated) |
+|  | [ZREVRANGEBYLEX](data-structures.md#zrevrangebylex) | ➕ | (Deprecated) |
 |  | [ZREVRANGEBYSCORE](data-structures.md#zrevrangebyscore) | ➕ | (Deprecated) |
 |  | [ZREVRANK](data-structures.md#zrevrank) | ➕ |  |
 |  | [ZSCAN](data-structures.md#zscan) | ➕ |  |
@@ -397,7 +397,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SETNX](raw-string.md#setnx) | ➕ |  |
 |  | [SETRANGE](raw-string.md#setrange) | ➕ |  |
 |  | [STRLEN](raw-string.md#strlen) | ➕ |  |
-|  | SUBSTR | ➖ | (Deprecated) |
+|  | [SUBSTR](raw-string.md#substr) | ➖ | (Deprecated) |
 | <span id="transactions">**TRANSACTIONS**</span> | [DISCARD](transactions.md#discard) | ➕ |  |
 |  | [EXEC](transactions.md#exec) | ➕ |  |
 |  | [MULTI](transactions.md#multi) | ➕ |  |

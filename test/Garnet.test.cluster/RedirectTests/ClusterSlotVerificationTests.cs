@@ -72,6 +72,7 @@ namespace Garnet.test.cluster
                 new LMPOP(),
                 new BLPOP(),
                 new BLMOVE(),
+                new BRPOPLPUSH(),
                 new LLEN(),
                 new LTRIM(),
                 new LRANGE(),
@@ -95,6 +96,7 @@ namespace Garnet.test.cluster
                 new ZREM(),
                 new ZCARD(),
                 new ZRANGE(),
+                new ZREVRANGEBYLEX(),
                 new ZSCORE(),
                 new ZMSCORE(),
                 new ZPOPMAX(),
@@ -122,6 +124,7 @@ namespace Garnet.test.cluster
                 new WATCH(),
                 new WATCHMS(),
                 new WATCHOS(),
+                new SINTERCARD(),
                 new LCS(),
             };
 
@@ -252,6 +255,7 @@ namespace Garnet.test.cluster
         [TestCase("LMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
+        [TestCase("BRPOPLPUSH")]
         [TestCase("LLEN")]
         [TestCase("LTRIM")]
         [TestCase("LRANGE")]
@@ -275,6 +279,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
+        [TestCase("ZREVRANGEBYLEX")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -302,6 +307,7 @@ namespace Garnet.test.cluster
         [TestCase("WATCH")]
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
+        [TestCase("SINTERCARD")]
         [TestCase("LCS")]
         public void ClusterCLUSTERDOWNTest(string commandName)
         {
@@ -392,6 +398,7 @@ namespace Garnet.test.cluster
         [TestCase("LMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
+        [TestCase("BRPOPLPUSH")]
         [TestCase("LLEN")]
         [TestCase("LTRIM")]
         [TestCase("LRANGE")]
@@ -415,6 +422,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
+        [TestCase("ZREVRANGEBYLEX")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -441,6 +449,7 @@ namespace Garnet.test.cluster
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
+        [TestCase("SINTERCARD")]
         [TestCase("LCS")]
         public void ClusterOKTest(string commandName)
         {
@@ -542,6 +551,7 @@ namespace Garnet.test.cluster
         [TestCase("LMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
+        [TestCase("BRPOPLPUSH")]
         [TestCase("LLEN")]
         [TestCase("LTRIM")]
         [TestCase("LRANGE")]
@@ -565,6 +575,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
+        [TestCase("ZREVRANGEBYLEX")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -591,6 +602,7 @@ namespace Garnet.test.cluster
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
+        [TestCase("SINTERCARD")]
         [TestCase("LCS")]
         public void ClusterCROSSSLOTTest(string commandName)
         {
@@ -684,6 +696,7 @@ namespace Garnet.test.cluster
         [TestCase("LMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
+        [TestCase("BRPOPLPUSH")]
         [TestCase("LLEN")]
         [TestCase("LTRIM")]
         [TestCase("LRANGE")]
@@ -707,6 +720,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
+        [TestCase("ZREVRANGEBYLEX")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -733,6 +747,7 @@ namespace Garnet.test.cluster
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
+        [TestCase("SINTERCARD")]
         [TestCase("LCS")]
         public void ClusterMOVEDTest(string commandName)
         {
@@ -833,6 +848,7 @@ namespace Garnet.test.cluster
         [TestCase("LMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
+        [TestCase("BRPOPLPUSH")]
         [TestCase("LLEN")]
         [TestCase("LTRIM")]
         [TestCase("LRANGE")]
@@ -856,6 +872,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
+        [TestCase("ZREVRANGEBYLEX")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -882,6 +899,7 @@ namespace Garnet.test.cluster
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
+        [TestCase("SINTERCARD")]
         [TestCase("LCS")]
         public void ClusterASKTest(string commandName)
         {
@@ -999,6 +1017,7 @@ namespace Garnet.test.cluster
         [TestCase("LMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
+        [TestCase("BRPOPLPUSH")]
         [TestCase("LLEN")]
         [TestCase("LTRIM")]
         [TestCase("LRANGE")]
@@ -1022,6 +1041,7 @@ namespace Garnet.test.cluster
         [TestCase("ZREM")]
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
+        [TestCase("ZREVRANGEBYLEX")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -1048,6 +1068,7 @@ namespace Garnet.test.cluster
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
+        [TestCase("SINTERCARD")]
         [TestCase("LCS")]
         public void ClusterTRYAGAINTest(string commandName)
         {
