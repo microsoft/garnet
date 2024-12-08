@@ -251,6 +251,7 @@ namespace CommandInfoUpdater
             new("SUNION", RespCommand.SUNION),
             new("SUNIONSTORE", RespCommand.SUNIONSTORE),
             new("SINTER", RespCommand.SINTER),
+            new("SINTERCARD", RespCommand.SINTERCARD),
             new("SINTERSTORE", RespCommand.SINTERSTORE),
             new("TIME", RespCommand.TIME),
             new("TTL", RespCommand.TTL),

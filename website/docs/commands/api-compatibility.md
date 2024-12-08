@@ -300,7 +300,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SDIFFSTORE](data-structures.md#sdiffstore) | ➕ |  |
 |  | [SINTER](data-structures.md#sinter) | ➕ |  |
 |  | [SINTERSTORE](data-structures.md#sinterstore) | ➕ |  |
-|  | SINTERCARD | ➖ |  |
+|  | [SINTERCARD](data-structures.md#sintercard) | ➕ |  |
 |  | [SISMEMBER](data-structures.md#sismember) | ➕ |  |
 |  | [SMEMBERS](data-structures.md#smembers) | ➕ |  |
 |  | [SMISMEMBER](data-structures.md#smismember) | ➕ |  |

@@ -5411,6 +5411,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task SInterCardACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SINTERCARD",
+                [DoUnionAsync]
+            );
+
+            static async Task DoUnionAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("SINTERCARD", ["2", "foo", "bar"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
         public async Task SInterStoreACLsAsync()
         {
             await CheckCommandsAsync(

@@ -229,6 +229,7 @@ namespace Garnet.server
         public const string GenericErrNotAFloat = "ERR {0} value is not a valid float";
         public const string GenericErrCantBeNegative = "ERR {0} can't be negative";
         public const string GenericErrAtLeastOneKey = "ERR at least 1 input key is needed for '{0}' command";
+        public const string GenericErrShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
         public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
         public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
         public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";
