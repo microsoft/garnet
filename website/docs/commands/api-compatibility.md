@@ -387,7 +387,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [INCR](raw-string.md#incr) | ➕ |  |
 |  | [INCRBY](raw-string.md#incrby) | ➕ |  |
 |  | [INCRBYFLOAT](raw-string.md#incrbyfloat) | ➕ |  |
-|  | LCS | ➖ |  |
+|  | [LCS](raw-string.md#lcs) | ➕ |  |
 |  | [MGET](raw-string.md#mget) | ➕ |  |
 |  | [MSET](raw-string.md#mset) | ➕ |  |
 |  | [MSETNX](raw-string.md#msetnx) | ➕ |  |
