@@ -722,6 +722,56 @@ namespace Garnet.test
             ClassicAssert.IsTrue(members.All(values.Contains));
         }
 
+        [Test]
+        [TestCase("1,2,3", "2,3,4", "2", null, Description = "Basic intersection")]
+        [TestCase("1,2,3", "", "0", null, Description = "Intersection with empty set")]
+        [TestCase("1,2,3", "4,5,6", "0", null, Description = "No intersection")]
+        [TestCase("1,1,1", "1,1,1", "1", null, Description = "Sets with duplicate values")]
+        [TestCase("", "", "0", null, Description = "Both sets empty")]
+        [TestCase("1,2,3,4,5", "2,3,4,5,6", "1", "1", Description = "Basic intersection with limit")]
+        [TestCase("1,2,3", "2,3,4", "2", "5", Description = "Limit greater than intersection")]
+        [TestCase("1,2,3,4,5", "2,3,4,5,6", "0", "0", Description = "Zero limit")]
+        public void CanDoSinterCard(string values1, string values2, string expectedCount, string limit)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add values to first set
+            foreach (var value in values1.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                db.SetAdd("key1", value);
+            }
+
+            // Add values to second set
+            foreach (var value in values2.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                db.SetAdd("key2", value);
+            }
+
+            var result = limit == null ?
+                (long)db.Execute("SINTERCARD", 2, "key1", "key2") :
+                (long)db.Execute("SINTERCARD", 2, "key1", "key2", "LIMIT", limit);
+
+            ClassicAssert.AreEqual(long.Parse(expectedCount), result);
+
+            // Test with non-existing keys
+            result = (long)db.Execute("SINTERCARD", 2, "nonexistent1", "nonexistent2");
+            ClassicAssert.AreEqual(0, result);
+        }
+
+        [Test]
+        public void CanDoSinterCardThowsErrors()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("SINTERCARD", 2, "key1"));
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("SINTERCARD", 2, "key1", "key2", "LIMIT"));
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("SINTERCARD", 2, "key1", "key2", "LIMIT", "not_a_number"));
+        }
+
         #endregion
 
 
@@ -1306,6 +1356,38 @@ namespace Garnet.test
             var membersResponse = lightClientRequest.SendCommand($"SMEMBERS {key}");
             expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nd\r\n";
             ClassicAssert.AreEqual(expectedResponse, membersResponse.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+        }
+
+        [Test]
+        [TestCase("1,2,3", "2,3,4", "2", Description = "Basic intersection")]
+        [TestCase("1,2,3", "", "0", Description = "Intersection with empty set")]
+        [TestCase("1,2,3", "4,5,6", "0", Description = "No intersection")]
+        [TestCase("1,1,1", "1,1,1", "1", Description = "Sets with duplicate values")]
+        [TestCase("", "", "0", Description = "Both sets empty")]
+        public void CanDoSinterCardLC(string values1, string values2, string expectedCount)
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+
+            // Add values to first set
+            foreach (var value in values1.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                lightClientRequest.SendCommand($"SADD key1 {value}");
+            }
+
+            // Add values to second set
+            foreach (var value in values2.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                lightClientRequest.SendCommand($"SADD key2 {value}");
+            }
+
+            var response = lightClientRequest.SendCommand("SINTERCARD 2 key1 key2");
+            var expectedResponse = $":{expectedCount}\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // Test with non-existing keys
+            response = lightClientRequest.SendCommand("SINTERCARD 2 nonexistent1 nonexistent2");
+            expectedResponse = ":0\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
 
         #endregion

@@ -362,6 +362,10 @@ namespace Garnet.server
             => storageSession.SetIntersect(keys, out output);
 
         /// <inheritdoc />
+        public GarnetStatus SetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+            => storageSession.SetIntersectLength(keys, limit, out count);
+
+        /// <inheritdoc />
         public GarnetStatus SetIntersectStore(byte[] key, ArgSlice[] keys, out int count)
             => storageSession.SetIntersectStore(key, keys, out count);
 

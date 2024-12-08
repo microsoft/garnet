@@ -1431,6 +1431,16 @@ namespace Garnet.server
         /// <param name="members"></param>
         /// <returns></returns>
         GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members);
+
+        /// <summary>
+        /// Returns the cardinality of the intersection between multiple sets.
+        /// When limit is greater than 0, stops counting when reaching limit.
+        /// </summary>
+        /// <param name="keys">Keys of the sets to intersect</param>
+        /// <param name="limit">Optional limit to stop counting at</param>
+        /// <param name="count">The cardinality of the intersection</param>
+        /// <returns>Operation status</returns>
+        GarnetStatus SetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count);
         #endregion
 
         #region Hash Methods
