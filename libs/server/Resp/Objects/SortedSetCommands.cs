@@ -450,11 +450,13 @@ namespace Garnet.server
                             SendAndReset();
 
                         // Write array of member-score pairs
-                        while (!RespWriteUtils.WriteArrayLength(pairs.Length * 2, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteArrayLength(pairs.Length, ref dcurr, dend))
                             SendAndReset();
 
                         foreach (var (member, score) in pairs)
                         {
+                            while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                                SendAndReset();
                             while (!RespWriteUtils.WriteBulkString(member.ReadOnlySpan, ref dcurr, dend))
                                 SendAndReset();
                             while (!RespWriteUtils.WriteBulkString(score.ReadOnlySpan, ref dcurr, dend))

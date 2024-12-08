@@ -1141,12 +1141,13 @@ namespace Garnet.test
             ClassicAssert.AreEqual(key, (string)popResult[0]);
 
             var poppedItems = (RedisResult[])popResult[1];
-            ClassicAssert.AreEqual(Math.Min(count, entries.Length), poppedItems.Length / 2);
+            ClassicAssert.AreEqual(Math.Min(count, entries.Length), poppedItems.Length);
 
             if (count == 1)
             {
-                ClassicAssert.AreEqual("a", (string)poppedItems[0]);
-                ClassicAssert.AreEqual("1", (string)poppedItems[1]);
+                var element = poppedItems[0];
+                ClassicAssert.AreEqual("a", (string)element[0]);
+                ClassicAssert.AreEqual("1", (string)element[1]);
             }
         }
 
@@ -1188,8 +1189,9 @@ namespace Garnet.test
                 var valuesAndScores = (RedisResult[])popResult[1];
                 for (int i = 0; i < expectedValues.Length; i++)
                 {
-                    ClassicAssert.AreEqual(expectedValues[i], (string)valuesAndScores[i * 2]);
-                    ClassicAssert.AreEqual(expectedScores[i], (double)valuesAndScores[i * 2 + 1]);
+                    var element = valuesAndScores[i];
+                    ClassicAssert.AreEqual(expectedValues[i], (string)element[0]);
+                    ClassicAssert.AreEqual(expectedScores[i], (double)element[1]);
                 }
             }
             else
@@ -1565,8 +1567,8 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase(10, "MIN", 1, "*2\r\n$5\r\nboard\r\n*2\r\n$3\r\none\r\n$1\r\n1\r\n", Description = "Pop minimum with small chunk size")]
-        [TestCase(100, "MAX", 3, "*2\r\n$5\r\nboard\r\n*6\r\n$4\r\nfive\r\n$1\r\n5\r\n$4\r\nfour\r\n$1\r\n4\r\n$5\r\nthree\r\n$1\r\n3\r\n", Description = "Pop maximum with large chunk size")]
+        [TestCase(10, "MIN", 1, "*2\r\n$5\r\nboard\r\n*1\r\n*2\r\n$3\r\none\r\n$1\r\n1\r\n", Description = "Pop minimum with small chunk size")]
+        [TestCase(100, "MAX", 3, "*2\r\n$5\r\nboard\r\n*3\r\n*2\r\n$4\r\nfive\r\n$1\r\n5\r\n*2\r\n$4\r\nfour\r\n$1\r\n4\r\n*2\r\n$5\r\nthree\r\n$1\r\n3\r\n", Description = "Pop maximum with large chunk size")]
         public void CanDoZMPopLC(int bytesSent, string direction, int count, string expectedResponse)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
@@ -1599,7 +1601,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD board2 3 three 4 four");
 
             var response = lightClientRequest.SendCommand("ZMPOP 2 board1 board2 MIN");
-            var expectedResponse = "*2\r\n$6\r\nboard1\r\n*2\r\n$3\r\none\r\n$1\r\n1\r\n";
+            var expectedResponse = "*2\r\n$6\r\nboard1\r\n*1\r\n*2\r\n$3\r\none\r\n$1\r\n1\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
