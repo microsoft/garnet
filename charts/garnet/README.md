@@ -32,6 +32,8 @@ helm delete garnet
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity |
+| config.existingSecret | string | `""` | Garnet secret (if you want to use an existing secret) |
+| config.garnetConf | string | `""` | The garnet.conf data content. |
 | containers.args | list | `[]` | Containers args |
 | containers.livenessProbe | object | `{}` | Containers livenessProbe |
 | containers.port | int | `6379` | Containers port |
@@ -50,6 +52,7 @@ helm delete garnet
 | nameOverride | string | `""` | Chart name override |
 | nodeSelector | object | `{}` | Node Selector labels |
 | persistence.enabled | bool | `false` | persistence enabled |
+| persistence.storageDir | string | `""` | The Storage directory for tiered records (hybrid log), if storage tiering (--storage-tier) is enabled. Default: "/data" |
 | podAnnotations | object | `{}` | Pod annotations |
 | podSecurityContext | object | `{}` | Pod Security Context |
 | resources | object | `{}` | Resources |
