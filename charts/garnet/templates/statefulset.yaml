@@ -42,10 +42,14 @@ spec:
           image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["./GarnetServer"]
-          {{- if .Values.containers.args }}
+          {{- if or .Values.containers.args .Values.config.garnetConf .Values.config.existingSecret }}
           args:
           {{- range .Values.containers.args }}
           - {{ . | quote }}
+          {{- end }}
+          {{- if or .Values.config.garnetConf .Values.config.existingSecret }}
+          - "--config-import-path"
+          - "/config"
           {{- end }}
           {{- end }}
           ports:
@@ -62,9 +66,18 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- if or .Values.persistence.enabled .Values.config.garnetConf .Values.config.existingSecret .Values.extraVolumeMounts }}
           volumeMounts:
+          {{- if .Values.persistence.enabled }}
           - name: data
-            mountPath: /data
+            mountPath: {{ .Values.persistence.storageDir | default "/data" }}
+          {{- end }}
+          {{- if or .Values.config.garnetConf .Values.config.existingSecret }}
+          - name: config-volume
+            mountPath: /config
+            subPath: garnet.conf
+          {{- end }}
+          {{- end }}
           {{- with .Values.extraVolumeMounts }}
           {{- toYaml . | nindent 10}}
           {{- end }}
@@ -89,11 +102,12 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if or (eq .Values.persistence.enabled false) .Values.extraVolumes }}
+      {{- if or .Values.config.garnetConf .Values.config.existingSecret .Values.extraVolumes }}
       volumes:
-      {{- if (eq .Values.persistence.enabled false) }}
-        - emptyDir: {}
-          name: data
+      {{- if or .Values.config.garnetConf .Values.config.existingSecret }}
+        - name: config-volume
+          secret:
+            secretName: {{ if .Values.config.existingSecret }}{{ .Values.config.existingSecret }}{{ else }}{{ include "garnet.fullname" . }}-config{{ end }}
       {{- end }}
       {{- with .Values.extraVolumes }}
       {{- toYaml . | nindent 6}}
