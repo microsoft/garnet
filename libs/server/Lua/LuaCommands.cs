@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
+using System.Buffers;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NLua;
@@ -18,10 +18,8 @@ namespace Garnet.server
         /// <returns></returns>
         private unsafe bool TryEVALSHA()
         {
-            if (!storeWrapper.serverOptions.EnableLua)
+            if (!CheckLuaEnabled())
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_LUA_DISABLED, ref dcurr, dend))
-                    SendAndReset();
                 return true;
             }
 
@@ -66,10 +64,8 @@ namespace Garnet.server
         /// <returns></returns>
         private unsafe bool TryEVAL()
         {
-            if (!storeWrapper.serverOptions.EnableLua)
+            if (!CheckLuaEnabled())
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_LUA_DISABLED, ref dcurr, dend))
-                    SendAndReset();
                 return true;
             }
 
@@ -101,37 +97,124 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// SCRIPT Commands (load, exists, flush)
+        /// SCRIPT|EXISTS
         /// </summary>
-        /// <returns></returns>
-        private unsafe bool TrySCRIPT()
+        private bool NetworkScriptExists()
         {
-            if (!storeWrapper.serverOptions.EnableLua)
+            if (!CheckLuaEnabled())
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_LUA_DISABLED, ref dcurr, dend))
-                    SendAndReset();
                 return true;
             }
 
-            var count = parseState.Count;
-            if (count < 1)
+            if (parseState.Count == 0)
+            {
+                return AbortWithWrongNumberOfArguments("SCRIPT|EXISTS");
+            }
+
+            // returns an array where each element is a 0 if the script does not exist, and a 1 if it does
+
+            // todo: can we remove this alloc?
+            byte[] sha1Buff = new byte[20];
+
+            // todo: does Redis accept hashes of the wrong length?
+            //       if so we could get rid of this intoArry stuff
+            //       and just write the results out as we calculate them
+
+            var intoArr = parseState.Count <= 16 ? null : ArrayPool<bool>.Shared.Rent(parseState.Count);
+            Span<bool> into = intoArr == null ? stackalloc bool[parseState.Count] : intoArr.AsSpan()[..parseState.Count];
+
+            for (var shaIx = 0; shaIx < parseState.Count; shaIx++)
+            {
+                var sha1 = parseState.GetArgSliceByRef(shaIx);
+                if (sha1.length != sha1Buff.Length)
+                {
+                    into[shaIx] = false;
+                }
+                else
+                {
+                    sha1.Span.CopyTo(sha1Buff);
+                    into[shaIx] = storeWrapper.storeScriptCache.ContainsKey(sha1Buff);
+                }
+            }
+
+            while (!RespWriteUtils.WriteArrayLength(into.Length, ref dcurr, dend))
+                SendAndReset();
+
+            for (var i = 0; i < into.Length; i++)
+            {
+                var toWrite = into[i] ? 1 : 0;
+                while (!RespWriteUtils.WriteArrayItem(toWrite, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// SCRIPT|FLUSH
+        /// </summary>
+        private bool NetworkScriptFlush()
+        {
+            if (!CheckLuaEnabled())
+            {
+                return true;
+            }
+
+            if (parseState.Count > 1)
             {
                 return AbortWithWrongNumberOfArguments("SCRIPT");
             }
-            var option = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            if (option.EqualsUpperCaseSpanIgnoringCase("LOAD"u8))
+            else if (parseState.Count == 1)
             {
-                if (count != 2)
+                // we ignore this, but should validate it
+                ref var arg = ref parseState.GetArgSliceByRef(0);
+
+                AsciiUtils.ToUpperInPlace(arg.Span);
+
+                var valid = arg.Span.SequenceEqual(CmdStrings.ASYNC) || arg.Span.SequenceEqual(CmdStrings.SYNC);
+
+                if (!valid)
                 {
-                    return AbortWithWrongNumberOfArguments("SCRIPT");
+                    // todo: match what redis does
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
                 }
-                var source = parseState.GetArgSliceByRef(1).ReadOnlySpan;
-                if (!sessionScriptCache.TryLoad(source, out var digest, out _, out var error))
-                {
-                    while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
-                }
+            }
+
+            // Flush store script cache
+            storeWrapper.storeScriptCache.Clear();
+
+            // Flush session script cache
+            sessionScriptCache.Clear();
+
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// SCRIPT|LOAD
+        /// </summary>
+        private bool NetworkScriptLoad()
+        {
+            if (!CheckLuaEnabled())
+            {
+                return true;
+            }
+
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments("SCRIPT|LOAD");
+            }
+
+            var source = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            if (!sessionScriptCache.TryLoad(source, out var digest, out _, out var error))
+            {
+                while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
 
                 // Add script to the store dictionary
                 storeWrapper.storeScriptCache.TryAdd(digest, source.ToArray());
@@ -139,48 +222,24 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteBulkString(digest, ref dcurr, dend))
                     SendAndReset();
             }
-            else if (option.EqualsUpperCaseSpanIgnoringCase("EXISTS"u8))
+
+            return true;
+        }
+
+        /// <summary>
+        /// Returns true if Lua is enabled.
+        /// 
+        /// Otherwise writes out an error and returns false.
+        /// </summary>
+        private bool CheckLuaEnabled()
+        {
+            if (!storeWrapper.serverOptions.EnableLua)
             {
-                if (count != 2)
-                {
-                    return AbortWithWrongNumberOfArguments("SCRIPT");
-                }
-                var sha1Exists = parseState.GetArgSliceByRef(1).ToArray();
-
-                // Check whether script exists at the store level
-                if (storeWrapper.storeScriptCache.ContainsKey(sha1Exists))
-                {
-                    while (!RespWriteUtils.WriteBulkString(CmdStrings.RESP_OK.ToArray(), ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteBulkString(CmdStrings.RESP_RETURN_VAL_N1.ToArray(), ref dcurr, dend))
-                        SendAndReset();
-                }
-            }
-            else if (option.EqualsUpperCaseSpanIgnoringCase("FLUSH"u8))
-            {
-                if (count != 1)
-                {
-                    return AbortWithWrongNumberOfArguments("SCRIPT");
-                }
-                // Flush store script cache
-                storeWrapper.storeScriptCache.Clear();
-
-                // Flush session script cache
-                sessionScriptCache.Clear();
-
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK.ToArray(), ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_LUA_DISABLED, ref dcurr, dend))
                     SendAndReset();
+                return false;
             }
-            else
-            {
-                // Unknown subcommand
-                var errorMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, Encoding.ASCII.GetString(option), nameof(RespCommand.SCRIPT));
-                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
-                    SendAndReset();
-            }
+
             return true;
         }
 
