@@ -32,7 +32,7 @@ helm delete garnet
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity |
-| config.existingSecret | string | `""` | Garnet secret (if you want to use an existing secret) |
+| config.existingSecret | string | `""` | Garnet secret (if you want to use an existing secret). This secret must contains a key called 'garnet.conf'. |
 | config.garnetConf | string | `""` | The garnet.conf data content. |
 | containers.args | list | `[]` | Containers args |
 | containers.livenessProbe | object | `{}` | Containers livenessProbe |

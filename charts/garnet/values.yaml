@@ -40,7 +40,8 @@ serviceAccount:
   token: false
 
 config:
-  # -- Garnet secret (if you want to use an existing secret)
+  # -- Garnet secret (if you want to use an existing secret).
+  # This secret must contains a key called 'garnet.conf'.
   existingSecret: ""
   # -- The garnet.conf data content.
   garnetConf: ""
