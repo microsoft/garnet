@@ -162,6 +162,7 @@ namespace Garnet.server
         ZINCRBY,
         ZPOPMAX,
         ZPOPMIN,
+        ZRANGESTORE,
         ZREM,
         ZREMRANGEBYLEX,
         ZREMRANGEBYRANK,
@@ -1417,6 +1418,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nINCRB"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("YFLOAT\r\n"u8))
                                 {
                                     return RespCommand.INCRBYFLOAT;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZRANG"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("ESTORE\r\n"u8))
+                                {
+                                    return RespCommand.ZRANGESTORE;
                                 }
                                 break;
 
