@@ -113,7 +113,7 @@ namespace Garnet.server
                     return load(source, nil, nil, sandbox_env)
                 end
             ");
-            if (!sandboxRes)
+            if (sandboxRes)
             {
                 throw new GarnetException("Could not initialize Lua sandbox state");
             }
@@ -276,7 +276,7 @@ namespace Garnet.server
                 }
 
                 // todo: no alloc
-                var cmd = state.CheckString(0).ToUpperInvariant();
+                var cmd = state.CheckString(1).ToUpperInvariant();
 
                 switch (cmd)
                 {
@@ -290,8 +290,8 @@ namespace Garnet.server
                             }
 
                             // todo: no alloc
-                            var keyBuf = state.CheckBuffer(1);
-                            var valBuf = state.CheckBuffer(2);
+                            var keyBuf = state.CheckBuffer(2);
+                            var valBuf = state.CheckBuffer(3);
 
                             var key = scratchBufferManager.CreateArgSlice(keyBuf);
                             var value = scratchBufferManager.CreateArgSlice(valBuf);
@@ -309,7 +309,7 @@ namespace Garnet.server
                             }
 
                             // todo: no alloc
-                            var keyBuf = state.CheckBuffer(1);
+                            var keyBuf = state.CheckBuffer(2);
 
                             var key = scratchBufferManager.CreateArgSlice(keyBuf);
                             var status = api.GET(key, out var value);
@@ -407,7 +407,7 @@ namespace Garnet.server
         {
             Debug.Assert(state.GetTop() == 0, "Stack should be empty at invocation start");
 
-            if (!state.CheckStack(2))
+            if (!state.CheckStack(3))
             {
                 throw new GarnetException("Insufficient stack space to run script");
             }
@@ -421,7 +421,12 @@ namespace Garnet.server
 
             if (nKeys > 0)
             {
-                for (int i = 0; i < nKeys; i++)
+                // get KEYS on the stack
+                state.PushNumber(keysTableRegistryIndex);
+                var loadedType = state.RawGet(LuaRegistry.Index);
+                Debug.Assert(loadedType == LuaType.Table, "Unexpected type loaded when expecting KEYS");
+
+                for (var i = 0; i < nKeys; i++)
                 {
                     ref var key = ref parseState.GetArgSliceByRef(offset);
 
@@ -437,18 +442,25 @@ namespace Garnet.server
 
                     // equivalent to KEYS[i+1] = key.ToString()
                     state.PushNumber(i + 1);
-                    state.PushString(key.ToString());
-                    state.SetTable(keysTableRegistryIndex);
+                    state.PushString(parseState.GetString(offset));
+                    state.RawSet(1);
 
                     offset++;
                 }
+
+                state.Pop(1);
 
                 count -= nKeys;
             }
 
             if (count > 0)
             {
-                for (int i = 0; i < count; i++)
+                // GET ARGV on the stack
+                state.PushNumber(argvTableRegistryIndex);
+                var loadedType = state.RawGet(LuaRegistry.Index);
+                Debug.Assert(loadedType == LuaType.Table, "Unexpected type loaded when expecting ARGV");
+
+                for (var i = 0; i < count; i++)
                 {
                     // todo: no alloc
                     // todo encoding is wrong here
@@ -456,10 +468,12 @@ namespace Garnet.server
                     // equivalent to ARGV[i+1] = parseState.GetString(offset);
                     state.PushNumber(i + 1);
                     state.PushString(parseState.GetString(offset));
-                    state.SetTable(argvTableRegistryIndex);
+                    state.RawSet(1);
 
                     offset++;
                 }
+
+                state.Pop(1);
             }
 
             Debug.Assert(state.GetTop() == 0, "Stack should be empty before running function");
