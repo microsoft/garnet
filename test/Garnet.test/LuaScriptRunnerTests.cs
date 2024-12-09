@@ -3,7 +3,6 @@
 
 using Garnet.common;
 using Garnet.server;
-using NLua.Exceptions;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 

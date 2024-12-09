@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
-		<PackageReference Include="NLua" />
+		<PackageReference Include="KeraLua" />
 	</ItemGroup>
 
   <ItemGroup>

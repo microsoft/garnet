@@ -2,11 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using NLua;
-using NLua.Exceptions;
 using Tsavorite.core;
 
 namespace Garnet.server

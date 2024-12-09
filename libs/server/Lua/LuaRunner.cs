@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using NLua;
 
 namespace Garnet.server
 {

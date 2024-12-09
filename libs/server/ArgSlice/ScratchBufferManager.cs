@@ -7,7 +7,6 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
-using NLua;
 
 namespace Garnet.server
 {
