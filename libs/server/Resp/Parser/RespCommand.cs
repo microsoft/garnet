@@ -45,6 +45,10 @@ namespace Garnet.server
         HSTRLEN,
         HVALS,
         KEYS,
+        HTTL,
+        HPTTL,
+        HEXPIRETIME,
+        HPEXPIRETIME,
         LINDEX,
         LLEN,
         LPOS,
@@ -104,6 +108,11 @@ namespace Garnet.server
         GETEX,
         GETSET,
         HDEL,
+        HEXPIRE,
+        HPEXPIRE,
+        HEXPIREAT,
+        HPEXPIREAT,
+        HPERSIST,
         HINCRBY,
         HINCRBYFLOAT,
         HMSET,
@@ -792,6 +801,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.HLEN;
                                         }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nHTTL\r\n"u8))
+                                        {
+                                            return RespCommand.HTTL;
+                                        }
                                         break;
 
                                     case 'K':
@@ -965,6 +978,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHSCAN\r\n"u8))
                                         {
                                             return RespCommand.HSCAN;
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHPTTL\r\n"u8))
+                                        {
+                                            return RespCommand.HPTTL;
                                         }
                                         break;
 
@@ -1209,6 +1226,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.HEXISTS;
                                         }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HEXPIRE\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return RespCommand.HEXPIRE;
+                                        }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HINCRBY\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
                                             return RespCommand.HINCRBY;
@@ -1293,6 +1314,14 @@ namespace Garnet.server
                                 {
                                     return RespCommand.EXPIREAT;
                                 }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPEXPIRE"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.HPEXPIRE;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPERSIST"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.HPERSIST;
+                                }
                                 break;
                             case 9:
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SUBSCRIB"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("BE\r\n"u8))
@@ -1322,6 +1351,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("PEXPIREA"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("AT\r\n"u8))
                                 {
                                     return RespCommand.PEXPIREAT;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HEXPIREA"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("AT\r\n"u8))
+                                {
+                                    return RespCommand.HEXPIREAT;
                                 }
                                 break;
                         }
@@ -1384,6 +1417,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.BRPOPLPUSH;
                                 }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nHPEX"u8) && *(uint*)(ptr + 9) == MemoryMarshal.Read<uint>("PIREAT\r\n"u8))
+                                {
+                                    return RespCommand.HPEXPIREAT;
+                                }
                                 break;
 
                             case 11:
@@ -1423,6 +1460,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.ZRANGESTORE;
                                 }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nHEXPI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
+                                {
+                                    return RespCommand.HEXPIRETIME;
+                                }
                                 break;
 
                             case 12:
@@ -1433,6 +1474,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nHINCRB"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("YFLOAT\r\n"u8))
                                 {
                                     return RespCommand.HINCRBYFLOAT;
+                                }
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nHPEXPI"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
+                                {
+                                    return RespCommand.HPEXPIRETIME;
                                 }
                                 break;
 

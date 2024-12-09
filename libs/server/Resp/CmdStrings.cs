@@ -120,6 +120,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> BYLEX => "BYLEX"u8;
         public static ReadOnlySpan<byte> REV => "REV"u8;
         public static ReadOnlySpan<byte> LIMIT => "LIMIT"u8;
+        public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
 
         /// <summary>
         /// Response strings
@@ -209,6 +210,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GT_LT_NX_NOT_COMPATIBLE => "ERR GT, LT, and/or NX options at the same time are not compatible"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR => "ERR INCR option supports a single increment-element pair"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_BITFIELD_TYPE => "ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_EXPIRE_TIME => "ERR invalid expire time, must be >= 0"u8;
 
         /// <summary>
         /// Response string templates
@@ -220,9 +222,11 @@ namespace Garnet.server
         public const string GenericErrWrongNumArgsTxn =
             "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
         public const string GenericSyntaxErrorOption = "ERR Syntax error in {0} option '{1}'";
-        public const string GenericParamShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
+        public const string GenericParamShouldBeGreaterThanZero = "ERR Parameter `{0}` should be greater than 0";
         public const string GenericErrCantBeNegative = "ERR {0} can't be negative";
         public const string GenericErrShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
+        public const string GenericErrMandatoryMissing = "Mandatory argument {0} is missing or not at the right position";
+        public const string GenericErrMustMatchNoOfArgs = "The `{0}` parameter must match the number of arguments";
         public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
         public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
         public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";
