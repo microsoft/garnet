@@ -90,6 +90,18 @@ jobs:
           benchmark-data-dir-path: 'website/static/charts'
           auto-push: true
 
+      # Save off the results to "previous" for a specific commit
+      - name: Store specific commit to be used as previous in summary
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: ${{matrix.test}} (${{matrix.os}}  ${{matrix.framework}} ${{matrix.configuration}})
+          tool: 'benchmarkdotnet'
+          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          summary-always: true
+          auto-push: true
+          ref: 9f43c15bbe42c350f93bd7494d2918974f1963b1
+
       # Run `github-action-benchmark` action for the Continuous Benchmarking Charts (https://microsoft.github.io/garnet/charts/)
       - name: Store benchmark result for charts
         uses: benchmark-action/github-action-benchmark@v1
