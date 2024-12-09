@@ -103,7 +103,7 @@ jobs:
           benchmark-data-dir-path: 'website/static/charts'
           auto-push: true
           max-items-in-chart: 50
-          ref: 9f43c15bbe42c350f93bd7494d2918974f1963b1
+          ref: 43ccb9179e3c0605133527bc74352c2e783d96a9
 
       # Run `github-action-benchmark` action for the Continuous Benchmarking Charts (https://microsoft.github.io/garnet/charts/)
       - name: Store benchmark result for charts
