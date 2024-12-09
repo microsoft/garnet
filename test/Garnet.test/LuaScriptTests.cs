@@ -456,5 +456,53 @@ return redis.call("mget", unpack(KEYS))
                 }
             }
         }
+
+        [Test]
+        public void ScriptExistsErrors()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "EXISTS"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'script|exists' command", exc.Message);
+        }
+
+        [Test]
+        public void ScriptFlushErrors()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // > 1 args
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "FLUSH", "ASYNC", "BAR"));
+                ClassicAssert.AreEqual("ERR SCRIPT FLUSH only support SYNC|ASYNC option", exc.Message);
+            }
+
+            // 1 arg, but not ASYNC or SYNC
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "FLUSH", "NOW"));
+                ClassicAssert.AreEqual("ERR SCRIPT FLUSH only support SYNC|ASYNC option", exc.Message);
+            }
+        }
+
+        [Test]
+        public void ScriptLoadErrors()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // 0 args
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "LOAD"));
+                ClassicAssert.AreEqual("ERR wrong number of arguments for 'script|load' command", exc.Message);
+            }
+
+            // > 1 args
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "LOAD", "return 'foo'", "return 'bar'"));
+                ClassicAssert.AreEqual("ERR wrong number of arguments for 'script|load' command", exc.Message);
+            }
+        }
     }
 }

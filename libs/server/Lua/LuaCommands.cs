@@ -108,43 +108,36 @@ namespace Garnet.server
 
             if (parseState.Count == 0)
             {
-                return AbortWithWrongNumberOfArguments("SCRIPT|EXISTS");
+                return AbortWithWrongNumberOfArguments("script|exists");
             }
 
             // returns an array where each element is a 0 if the script does not exist, and a 1 if it does
 
             // todo: can we remove this alloc?
-            byte[] sha1Buff = new byte[20];
-
-            // todo: does Redis accept hashes of the wrong length?
-            //       if so we could get rid of this intoArry stuff
-            //       and just write the results out as we calculate them
+            var sha1Buff = new byte[20];
 
             var intoArr = parseState.Count <= 16 ? null : ArrayPool<bool>.Shared.Rent(parseState.Count);
             Span<bool> into = intoArr == null ? stackalloc bool[parseState.Count] : intoArr.AsSpan()[..parseState.Count];
+
+            while (!RespWriteUtils.WriteArrayLength(into.Length, ref dcurr, dend))
+                SendAndReset();
 
             for (var shaIx = 0; shaIx < parseState.Count; shaIx++)
             {
                 var sha1 = parseState.GetArgSliceByRef(shaIx);
                 if (sha1.length != sha1Buff.Length)
                 {
-                    into[shaIx] = false;
+                    while (!RespWriteUtils.WriteArrayItem(0, ref dcurr, dend))
+                        SendAndReset();
                 }
                 else
                 {
                     sha1.Span.CopyTo(sha1Buff);
-                    into[shaIx] = storeWrapper.storeScriptCache.ContainsKey(sha1Buff);
+                    var exists = storeWrapper.storeScriptCache.ContainsKey(sha1Buff) ? 1 : 0;
+
+                    while (!RespWriteUtils.WriteArrayItem(exists, ref dcurr, dend))
+                        SendAndReset();
                 }
-            }
-
-            while (!RespWriteUtils.WriteArrayLength(into.Length, ref dcurr, dend))
-                SendAndReset();
-
-            for (var i = 0; i < into.Length; i++)
-            {
-                var toWrite = into[i] ? 1 : 0;
-                while (!RespWriteUtils.WriteArrayItem(toWrite, ref dcurr, dend))
-                    SendAndReset();
             }
 
             return true;
@@ -162,7 +155,7 @@ namespace Garnet.server
 
             if (parseState.Count > 1)
             {
-                return AbortWithWrongNumberOfArguments("SCRIPT");
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_SCRIPT_FLUSH_OPTIONS);
             }
             else if (parseState.Count == 1)
             {
@@ -175,8 +168,7 @@ namespace Garnet.server
 
                 if (!valid)
                 {
-                    // todo: match what redis does
-                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_SCRIPT_FLUSH_OPTIONS);
                 }
             }
 
@@ -204,7 +196,7 @@ namespace Garnet.server
 
             if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments("SCRIPT|LOAD");
+                return AbortWithWrongNumberOfArguments("script|load");
             }
 
             var source = parseState.GetArgSliceByRef(0).ReadOnlySpan;
