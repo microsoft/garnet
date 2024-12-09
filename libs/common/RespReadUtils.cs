@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Buffers.Text;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -958,12 +959,14 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Read string array with length header
+        /// Read string array with length header.
+        /// 
+        /// result will be backed by an empty array or one rented from the given pool upon return.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadStringArrayResponseWithLengthHeader(out string[] result, ref byte* ptr, byte* end)
+        public static bool ReadRentedStringArrayResponseWithLengthHeader(ArrayPool<string> pool, out Memory<string> result, ref byte* ptr, byte* end)
         {
-            result = null;
+            result = Array.Empty<string>();
 
             // Parse RESP array header
             if (!ReadSignedArrayLength(out var length, ref ptr, end))
@@ -978,22 +981,26 @@ namespace Garnet.common
             }
 
             // Parse individual strings in the array
-            result = new string[length];
+            result = ArrayPool<string>.Shared.Rent(length);
+            result = result[..length];
+
+            var resultSpan = result.Span;
+
             for (var i = 0; i < length; i++)
             {
                 if (*ptr == '$')
                 {
-                    if (!ReadStringResponseWithLengthHeader(out result[i], ref ptr, end))
+                    if (!ReadStringResponseWithLengthHeader(out resultSpan[i], ref ptr, end))
                         return false;
                 }
                 else if (*ptr == '+')
                 {
-                    if (!ReadSimpleString(out result[i], ref ptr, end))
+                    if (!ReadSimpleString(out resultSpan[i], ref ptr, end))
                         return false;
                 }
                 else
                 {
-                    if (!ReadIntegerAsString(out result[i], ref ptr, end))
+                    if (!ReadIntegerAsString(out resultSpan[i], ref ptr, end))
                         return false;
                 }
             }

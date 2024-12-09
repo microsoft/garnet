@@ -2,8 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 using KeraLua;
@@ -293,6 +295,11 @@ namespace Garnet.server
                             var keyBuf = state.CheckBuffer(2);
                             var valBuf = state.CheckBuffer(3);
 
+                            if (keyBuf == null || valBuf == null)
+                            {
+                                return ErrorInvalidArgumentType(state);
+                            }
+
                             var key = scratchBufferManager.CreateArgSlice(keyBuf);
                             var value = scratchBufferManager.CreateArgSlice(valBuf);
                             _ = api.SET(key, value);
@@ -311,6 +318,11 @@ namespace Garnet.server
                             // todo: no alloc
                             var keyBuf = state.CheckBuffer(2);
 
+                            if (keyBuf == null)
+                            {
+                                return ErrorInvalidArgumentType(state);
+                            }
+
                             var key = scratchBufferManager.CreateArgSlice(keyBuf);
                             var status = api.GET(key, out var value);
                             if (status == GarnetStatus.OK)
@@ -326,20 +338,60 @@ namespace Garnet.server
                             return 1;
                         }
 
-                    // todo: implement
-                    default: throw new NotImplementedException();
+                    // As fallback, we use RespServerSession with a RESP-formatted input. This could be optimized
+                    // in future to provide parse state directly.
+                    default:
+                        {
+                            // todo: remove all these allocations
+                            var args = ArrayPool<string>.Shared.Rent(argCount);
 
-                        //// As fallback, we use RespServerSession with a RESP-formatted input. This could be optimized
-                        //// in future to provide parse state directly.
-                        //default:
-                        //    {
-                        //        var request = scratchBufferManager.FormatCommandAsResp(cmd, args, state);
-                        //        _ = respServerSession.TryConsumeMessages(request.ptr, request.length);
-                        //        var response = scratchBufferNetworkSender.GetResponse();
-                        //        var result = ProcessResponse(response.ptr, response.length);
-                        //        scratchBufferNetworkSender.Reset();
-                        //        return result;
-                        //    }
+                            try
+                            {
+                                var top = state.GetTop();
+
+                                // move backwards validating arguments
+                                // and removing them from the stack
+                                for (var i = argCount - 1; i >= 0; i--)
+                                {
+                                    var argType = state.Type(top);
+                                    if (argType == LuaType.Nil)
+                                    {
+                                        args[i] = null;
+                                    }
+                                    else if (argType == LuaType.String)
+                                    {
+                                        args[i] = state.CheckString(top);
+                                    }
+                                    else if (argType == LuaType.Number)
+                                    {
+                                        var asNum = state.CheckNumber(top);
+                                        args[i] = ((long)asNum).ToString();
+                                    }
+                                    else
+                                    {
+                                        state.Pop(1);
+
+                                        return ErrorInvalidArgumentType(state);
+                                    }
+
+                                    state.Pop(1);
+                                    top--;
+                                }
+
+                                Debug.Assert(state.GetTop() == 0, "Should have emptied the stack");
+
+                                var request = scratchBufferManager.FormatCommandAsResp(cmd, args.AsSpan()[..argCount]);
+                                _ = respServerSession.TryConsumeMessages(request.ptr, request.length);
+                                var response = scratchBufferNetworkSender.GetResponse();
+                                var result = ProcessResponse(response.ptr, response.length);
+                                scratchBufferNetworkSender.Reset();
+                                return result;
+                            }
+                            finally
+                            {
+                                ArrayPool<string>.Shared.Return(args);
+                            }
+                        }
                 }
             }
             catch (Exception e)
@@ -349,56 +401,112 @@ namespace Garnet.server
                 state.PushString(e.Message);
                 return state.Error();
             }
+
+            static int ErrorInvalidArgumentType(Lua state)
+            {
+                state.PushString("Lua redis lib command arguments must be strings or integers");
+                return state.Error();
+            }
         }
 
-        ///// <summary>
-        ///// Process a RESP-formatted response from the RespServerSession
-        ///// </summary>
-        //unsafe object ProcessResponse(byte* ptr, int length)
-        //{
-        //    switch (*ptr)
-        //    {
-        //        case (byte)'+':
-        //            if (RespReadUtils.ReadSimpleString(out var resultStr, ref ptr, ptr + length))
-        //                return resultStr;
-        //            break;
-        //        case (byte)':':
-        //            if (RespReadUtils.Read64Int(out var number, ref ptr, ptr + length))
-        //                return number;
-        //            break;
-        //        case (byte)'-':
-        //            if (RespReadUtils.ReadErrorAsString(out resultStr, ref ptr, ptr + length))
-        //                return resultStr;
-        //            break;
+        /// <summary>
+        /// Process a RESP-formatted response from the RespServerSession.
+        /// 
+        /// Pushes result onto state stack, and returns 1
+        /// </summary>
+        unsafe int ProcessResponse(byte* ptr, int length)
+        {
+            Debug.Assert(state.GetTop() == 0, "Stack should be empty before processing response");
 
-        //        case (byte)'$':
-        //            if (RespReadUtils.ReadStringResponseWithLengthHeader(out resultStr, ref ptr, ptr + length))
-        //                return resultStr;
-        //            break;
+            if (!state.CheckStack(3))
+            {
+                throw new GarnetException("Insufficent space on stack to prepare response");
+            }
 
-        //        case (byte)'*':
-        //            if (RespReadUtils.ReadStringArrayResponseWithLengthHeader(out var resultArray, ref ptr, ptr + length))
-        //            {
-        //                // Create return table
-        //                var returnValue = (LuaTable)state.DoString("return { }")[0];
+            switch (*ptr)
+            {
+                case (byte)'+':
+                    // todo: remove alloc
+                    if (RespReadUtils.ReadSimpleString(out var resultStr, ref ptr, ptr + length))
+                    {
+                        state.PushString(resultStr);
+                        return 1;
+                    }
+                    goto default;
 
-        //                // Queue up for disposal at the end of the script call
-        //                disposeQueue ??= new();
-        //                disposeQueue.Enqueue(returnValue);
+                case (byte)':':
+                    if (RespReadUtils.Read64Int(out var number, ref ptr, ptr + length))
+                    {
+                        state.PushNumber(number);
+                        return 1;
+                    }
+                    goto default;
 
-        //                // Populate the table
-        //                var i = 1;
-        //                foreach (var item in resultArray)
-        //                    returnValue[i++] = item == null ? false : item;
-        //                return returnValue;
-        //            }
-        //            break;
+                case (byte)'-':
+                    // todo: remove alloc
+                    if (RespReadUtils.ReadErrorAsString(out resultStr, ref ptr, ptr + length))
+                    {
+                        state.PushString(resultStr);
+                        return state.Error();
+                    }
+                    goto default;
 
-        //        default:
-        //            throw new Exception("Unexpected response: " + Encoding.UTF8.GetString(new Span<byte>(ptr, length)).Replace("\n", "|").Replace("\r", "") + "]");
-        //    }
-        //    return null;
-        //}
+                case (byte)'$':
+                    // todo: remove alloc
+                    if (RespReadUtils.ReadStringResponseWithLengthHeader(out resultStr, ref ptr, ptr + length))
+                    {
+                        state.PushString(resultStr);
+                        return 1;
+                    }
+                    goto default;
+
+                case (byte)'*':
+                    // todo: remove allocs
+                    if (RespReadUtils.ReadRentedStringArrayResponseWithLengthHeader(ArrayPool<string>.Shared, out var resultArray, ref ptr, ptr + length))
+                    {
+                        try
+                        {
+                            // create the new table
+                            state.NewTable();
+                            Debug.Assert(state.GetTop() == 1, "New table should be at top of stack");
+
+                            // Populate the table
+                            var i = 1;
+                            foreach (var item in resultArray.Span)
+                            {
+                                state.PushNumber(i);
+
+                                if (item == null)
+                                {
+                                    state.PushNil();
+                                }
+                                else
+                                {
+                                    state.PushString(item);
+                                }
+
+                                state.RawSet(1);
+                            }
+
+                            return 1;
+                        }
+                        finally
+                        {
+                            if (!resultArray.IsEmpty)
+                            {
+                                if (MemoryMarshal.TryGetArray(resultArray, out ArraySegment<string> rented))
+                                {
+                                    ArrayPool<string>.Shared.Return(rented.Array);
+                                }
+                            }
+                        }
+                    }
+                    goto default;
+
+                default:
+                    throw new Exception("Unexpected response: " + Encoding.UTF8.GetString(new Span<byte>(ptr, length)).Replace("\n", "|").Replace("\r", "") + "]");
+            }
+        }
 
         /// <summary>
         /// Runs the precompiled Lua function with specified parse state
