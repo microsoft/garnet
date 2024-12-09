@@ -83,7 +83,7 @@ namespace Garnet.server
             }
 
             var script = parseState.GetArgSliceByRef(0).ToArray();
-            
+
             // that this is stack allocated is load bearing - if it moves, things will break
             Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
             sessionScriptCache.GetScriptDigest(script, digest);

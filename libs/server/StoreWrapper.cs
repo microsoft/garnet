@@ -153,7 +153,7 @@ namespace Garnet.server
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)
-                this.storeScriptCache = new (SpanByteAndMemoryComparer.Instance);
+                this.storeScriptCache = new(SpanByteAndMemoryComparer.Instance);
 
             if (accessControlList == null)
             {
