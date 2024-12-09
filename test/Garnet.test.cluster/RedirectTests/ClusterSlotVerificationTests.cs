@@ -71,6 +71,7 @@ namespace Garnet.test.cluster
                 new LPUSH(),
                 new LPOP(),
                 new LMPOP(),
+                new ZMPOP(),
                 new BLPOP(),
                 new BLMOVE(),
                 new BRPOPLPUSH(),
@@ -254,6 +255,7 @@ namespace Garnet.test.cluster
         [TestCase("LPUSH")]
         [TestCase("LPOP")]
         [TestCase("LMPOP")]
+        [TestCase("ZMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
         [TestCase("BRPOPLPUSH")]
@@ -401,6 +403,7 @@ namespace Garnet.test.cluster
         [TestCase("LPUSH")]
         [TestCase("LPOP")]
         [TestCase("LMPOP")]
+        [TestCase("ZMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
         [TestCase("BRPOPLPUSH")]
@@ -557,6 +560,7 @@ namespace Garnet.test.cluster
         [TestCase("LPUSH")]
         [TestCase("LPOP")]
         [TestCase("LMPOP")]
+        [TestCase("ZMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
         [TestCase("BRPOPLPUSH")]
@@ -704,6 +708,7 @@ namespace Garnet.test.cluster
         [TestCase("LPUSH")]
         [TestCase("LPOP")]
         [TestCase("LMPOP")]
+        [TestCase("ZMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
         [TestCase("BRPOPLPUSH")]
@@ -859,6 +864,7 @@ namespace Garnet.test.cluster
         [TestCase("LPUSH")]
         [TestCase("LPOP")]
         [TestCase("LMPOP")]
+        [TestCase("ZMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
         [TestCase("BRPOPLPUSH")]
@@ -1032,6 +1038,7 @@ namespace Garnet.test.cluster
         [TestCase("LPUSH")]
         [TestCase("LPOP")]
         [TestCase("LMPOP")]
+        [TestCase("ZMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
         [TestCase("BRPOPLPUSH")]
