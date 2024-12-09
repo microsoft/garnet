@@ -76,6 +76,7 @@ spec:
           - name: config-volume
             mountPath: /config
             subPath: garnet.conf
+            readOnly: true
           {{- end }}
           {{- end }}
           {{- with .Values.extraVolumeMounts }}
