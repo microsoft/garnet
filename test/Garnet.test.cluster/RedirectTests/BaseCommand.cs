@@ -1997,6 +1997,35 @@ namespace Garnet.test.cluster
         }
     }
 
+    internal class ZRANGESTORE : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(ZRANGESTORE);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            // ZRANGESTORE dst src 0 -1
+            return [ssk[0], ssk[1], "0", "-1"];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1], "0", "-1"];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[2];
+            setup[0] = new(["ZADD", ssk[1], "1", "a", "2", "b", "3", "c"]);
+            setup[1] = new(["ZADD", ssk[2], "4", "d", "5", "e", "6", "f"]);
+            return setup;
+        }
+    }
+
     #endregion
 
     #region HashCommands
