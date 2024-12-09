@@ -58,6 +58,7 @@ namespace Garnet.server
         SCARD,
         SDIFF,
         SINTER,
+        SINTERCARD,
         SISMEMBER,
         SMEMBERS,
         SMISMEMBER,
@@ -159,8 +160,10 @@ namespace Garnet.server
         ZADD,
         ZDIFFSTORE,
         ZINCRBY,
+        ZMPOP,
         ZPOPMAX,
         ZPOPMIN,
+        ZRANGESTORE,
         ZREM,
         ZREMRANGEBYLEX,
         ZREMRANGEBYRANK,
@@ -1042,6 +1045,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.ZSCAN;
                                         }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZMPOP\r\n"u8))
+                                        {
+                                            return RespCommand.ZMPOP;
+                                        }
                                         break;
                                 }
                                 break;
@@ -1370,6 +1377,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.SMISMEMBER;
                                 }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nSINT"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("ERCARD\r\n"u8))
+                                {
+                                    return RespCommand.SINTERCARD;
+                                }
                                 else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nZDIF"u8) && *(uint*)(ptr + 9) == MemoryMarshal.Read<uint>("FSTORE\r\n"u8))
                                 {
                                     return RespCommand.ZDIFFSTORE;
@@ -1412,6 +1423,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nINCRB"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("YFLOAT\r\n"u8))
                                 {
                                     return RespCommand.INCRBYFLOAT;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZRANG"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("ESTORE\r\n"u8))
+                                {
+                                    return RespCommand.ZRANGESTORE;
                                 }
                                 break;
 
