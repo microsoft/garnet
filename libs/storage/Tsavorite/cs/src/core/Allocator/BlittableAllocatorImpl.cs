@@ -215,15 +215,6 @@ namespace Tsavorite.core
                 ReturnPage((int)(page % BufferSize));
         }
 
-        /// <summary>
-        /// Delete in-memory portion of the log
-        /// </summary>
-        internal override void DeleteFromMemory()
-        {
-            for (int i = 0; i < values.Length; i++)
-                values[i] = null;
-        }
-
         protected override void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
                 DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
             => device.ReadAsync(alignedSourceAddress, (IntPtr)pointers[destinationPageIndex], aligned_read_length, callback, asyncResult);

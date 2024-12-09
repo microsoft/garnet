@@ -19,12 +19,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Indicates whether deleted record space should be reused.
         /// <list type="bullet">
-        /// <li>If this is true, then tombstoned records in the hashtable chain are revivified if possible, and a FreeList is maintained if 
+        /// <item>If this is true, then tombstoned records in the hashtable chain are revivified if possible, and a FreeList is maintained if 
         ///     <see cref="FreeRecordBins"/> is non-null and non-empty.
-        /// </li>
-        /// <li>If this is false, then tombstoned records in the hashtable chain will not be revivified, and no FreeList is used (regardless 
+        /// </item>
+        /// <item>If this is false, then tombstoned records in the hashtable chain will not be revivified, and no FreeList is used (regardless 
         ///     of the setting of <see cref="FreeRecordBins"/>).
-        /// </li>
+        /// </item>
         /// </list>
         /// </summary>
         public bool EnableRevivification = true;

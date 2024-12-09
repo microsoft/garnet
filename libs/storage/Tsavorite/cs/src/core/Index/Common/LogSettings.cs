@@ -51,6 +51,11 @@ namespace Tsavorite.core
         public int MemorySizeBits = 34;
 
         /// <summary>
+        /// Size of pages for ObjectAllocator key and optional fields space
+        /// </summary>
+        public int ObjectLogVariableSpacePageSizeBits = 25;
+
+        /// <summary>
         /// Controls how many pages should be empty to account for non-power-of-two-sized log
         /// </summary>
         public int MinEmptyPageCount = 0;

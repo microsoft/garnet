@@ -11,7 +11,7 @@ namespace Garnet.server
     /// <summary>
     /// Interface representing Garnet object
     /// </summary>
-    public interface IGarnetObject : IDisposable
+    public interface IGarnetObject : IHeapObject
     {
         /// <summary>
         /// Type of object

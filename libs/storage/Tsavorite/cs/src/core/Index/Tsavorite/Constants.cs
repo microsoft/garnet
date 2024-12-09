@@ -76,5 +76,14 @@ namespace Tsavorite.core
         public const long kTempInvalidAddress = 1;
         public const long kUnknownAddress = 2;
         public const int kFirstValidAddress = 64;
+
+        /// <summary>Number of bytes required to store a DBId</summary>
+        public const int DBIdSize = sizeof(byte);
+        /// <summary>Number of bytes required to store an ETag</summary>
+        public const int ETagSize = sizeof(long);
+        /// <summary>Number of bytes required to store an Expiration</summary>
+        public const int ExpirationSize = sizeof(long);
+        /// <summary>Number of bytes required to store the FillerLen</summary>
+        internal const int FillerLenSize = sizeof(int);
     }
 }

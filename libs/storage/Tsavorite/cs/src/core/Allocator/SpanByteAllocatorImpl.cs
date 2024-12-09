@@ -46,6 +46,29 @@ namespace Tsavorite.core
             Initialize();
         }
 
+        /// <summary>
+        /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
+        /// </summary>
+        /// <param name="index"></param>
+        internal void AllocatePage(int index)
+        {
+            IncrementAllocatedPageCount();
+
+            if (overflowPagePool.TryGet(out var item))
+            {
+                pointers[index] = item.pointer;
+                values[index] = item.value;
+                return;
+            }
+
+            var adjustedSize = PageSize + 2 * sectorSize;
+
+            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
+            long p = (long)Unsafe.AsPointer(ref tmp[0]);
+            pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
+            values[index] = tmp;
+        }
+
         void ReturnPage(int index)
         {
             Debug.Assert(index < BufferSize);
@@ -131,7 +154,7 @@ namespace Tsavorite.core
             return (size, RoundUp(size, Constants.kRecordAlignment), keySize);
         }
 
-        public int GetRequiredRecordSize(long physicalAddress, int availableBytes)
+         public int GetRequiredRecordSize(long physicalAddress, int availableBytes)
         {
             // We need at least [average record size]...
             var reqBytes = GetAverageRecordSize();
@@ -203,29 +226,6 @@ namespace Tsavorite.core
             overflowPagePool.Dispose();
         }
 
-        /// <summary>
-        /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
-        /// </summary>
-        /// <param name="index"></param>
-        internal void AllocatePage(int index)
-        {
-            IncrementAllocatedPageCount();
-
-            if (overflowPagePool.TryGet(out var item))
-            {
-                pointers[index] = item.pointer;
-                values[index] = item.value;
-                return;
-            }
-
-            var adjustedSize = PageSize + 2 * sectorSize;
-
-            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
-            long p = (long)Unsafe.AsPointer(ref tmp[0]);
-            pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
-            values[index] = tmp;
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPhysicalAddress(long logicalAddress)
         {
@@ -289,21 +289,10 @@ namespace Tsavorite.core
                 ReturnPage((int)(page % BufferSize));
         }
 
-        /// <summary>
-        /// Delete in-memory portion of the log
-        /// </summary>
-        internal override void DeleteFromMemory()
-        {
-            for (int i = 0; i < values.Length; i++)
-                values[i] = null;
-        }
-
-        protected override void ReadAsync<TContext>(
-            ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
+        protected override void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
-            device.ReadAsync(alignedSourceAddress, (IntPtr)pointers[destinationPageIndex],
-                aligned_read_length, callback, asyncResult);
+            device.ReadAsync(alignedSourceAddress, (IntPtr)pointers[destinationPageIndex], aligned_read_length, callback, asyncResult);
         }
 
         /// <summary>

@@ -319,9 +319,6 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Delete in-memory portion of the log</summary>
-        internal abstract void DeleteFromMemory();
-
         /// <summary>Reset the hybrid log. WARNING: assumes that threads have drained out at this point.</summary>
         public virtual void Reset()
         {

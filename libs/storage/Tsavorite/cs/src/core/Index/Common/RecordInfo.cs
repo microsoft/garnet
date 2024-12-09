@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+﻿ // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
@@ -10,24 +10,30 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
-    // RecordInfo layout (64 bits total):
-    // [Unused1][Modified][InNewVersion][Filler][Dirty][Unused2][Sealed][Valid][Tombstone][LLLLLLL] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
-    //     where L = leftover, R = readcache, A = address
+    // RecordInfo layout (64 bits total, high to low):
+    //      [Unused1][Modified][InNewVersion][Filler][Dirty][Unused2][Sealed][Valid][Tombstone]
+    //      [PreviousAddressIsOnDisk][HasExpiration][HasETag][HasDbid][Unused5][Unused4][Unused3]
+    //      [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] where R = readcache, A = address
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
     {
         const int kTotalSizeInBytes = 8;
         const int kTotalBits = kTotalSizeInBytes * 8;
 
-        // Previous address
+        // Previous address is the low 48 bits, with the 48th being the readcache bit
         internal const int kPreviousAddressBits = 48;
         internal const long kPreviousAddressMaskInWord = (1L << kPreviousAddressBits) - 1;
 
-        // Leftover bits (that were reclaimed from locking)
-        const int kLeftoverBitCount = 7;
-
         // Other marker bits. Unused* means bits not yet assigned; use the highest number when assigning
-        const int kTombstoneBitOffset = kPreviousAddressBits + kLeftoverBitCount;
+        const int kUnused5BitOffset = kPreviousAddressBits;
+        const int kUnused4BitOffset = kUnused5BitOffset + 1;
+        const int kUnused3BitOffset = kUnused4BitOffset + 1;
+        const int kHasDBIdBitOffset = kUnused3BitOffset + 1;
+        const int kHasETagBitOffset = kHasDBIdBitOffset + 1;
+        const int kHasExpirationBitOffset = kHasETagBitOffset + 1;
+        const int kPreviousAddressIsOnDiskBitOffset = kHasExpirationBitOffset + 1;
+
+        const int kTombstoneBitOffset = kPreviousAddressIsOnDiskBitOffset + 1;
         const int kValidBitOffset = kTombstoneBitOffset + 1;
         const int kSealedBitOffset = kValidBitOffset + 1;
         const int kUnused2BitOffset = kSealedBitOffset + 1;
@@ -36,6 +42,14 @@ namespace Tsavorite.core
         const int kInNewVersionBitOffset = kFillerBitOffset + 1;
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
         const int kUnused1BitOffset = kModifiedBitOffset + 1;
+
+        const long kUnused5BitMask = 1L << kUnused5BitOffset;
+        const long kUnused4BitMask = 1L << kUnused4BitOffset;
+        const long kUnused3BitMask = 1L << kUnused3BitOffset;
+        const long kHasDBIdBitMask = 1L << kHasDBIdBitOffset;
+        const long kHasETagBitMask = 1L << kHasETagBitOffset;
+        const long kHasExpirationBitMask = 1L << kHasExpirationBitOffset;
+        const long kPreviousAddressIsOnDiskBitMask = 1L << kPreviousAddressIsOnDiskBitOffset;
 
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
@@ -266,6 +280,25 @@ namespace Tsavorite.core
             set { word = (word & ~kPreviousAddressMaskInWord) | (value & kPreviousAddressMaskInWord); }
         }
 
+        internal bool HasDBId => (word & kHasDBIdBitMask) != 0;
+        public void SetHasDBId() => word |= kHasDBIdBitMask;
+
+        internal bool HasETag => (word & kHasETagBitMask) != 0;
+        public void SetHasETag() => word |= kHasETagBitMask;
+        public void ClearHasETag() => word &= ~kHasETagBitMask;
+
+        internal bool HasExpiration => (word & kHasExpirationBitMask) != 0;
+        public void SetHasExpiration() => word |= kHasExpirationBitMask;
+        public void ClearHasExpiration() => word &= ~kHasExpirationBitMask;
+
+        internal bool PreviousAddressIsOnDisk
+        {
+            readonly get => (word & kPreviousAddressIsOnDiskBitMask) != 0;
+            set => word = value ? word | kPreviousAddressIsOnDiskBitMask : word & ~kPreviousAddressIsOnDiskBitMask;
+        }
+        public void SetPreviousAddressIsOnDisk() => word |= kPreviousAddressIsOnDiskBitMask;
+        public void ClearPreviousAddressIsOnDisk() => word &= ~kPreviousAddressIsOnDiskBitMask;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetLength() => kTotalSizeInBytes;
 
@@ -279,6 +312,24 @@ namespace Tsavorite.core
         {
             readonly get => (word & kUnused2BitMask) != 0;
             set => word = value ? word | kUnused2BitMask : word & ~kUnused2BitMask;
+        }
+
+        internal bool Unused3
+        {
+            readonly get => (word & kUnused3BitMask) != 0;
+            set => word = value ? word | kUnused3BitMask : word & ~kUnused3BitMask;
+        }
+
+        internal bool Unused4
+        {
+            readonly get => (word & kUnused4BitMask) != 0;
+            set => word = value ? word | kUnused4BitMask : word & ~kUnused4BitMask;
+        }
+
+        internal bool Unused5
+        {
+            readonly get => (word & kUnused5BitMask) != 0;
+            set => word = value ? word | kUnused5BitMask : word & ~kUnused5BitMask;
         }
 
         public override readonly string ToString()

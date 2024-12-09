@@ -6,56 +6,43 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
+using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
-    internal sealed unsafe class GenericAllocatorImpl<TKey, TValue, TStoreFunctions> : AllocatorBase<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+    internal sealed unsafe class ObjectAllocatorImpl<TStoreFunctions> : AllocatorBase<SpanByte, IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>>
+        where TStoreFunctions : IStoreFunctions<SpanByte, IHeapObject>
     {
-        // Circular buffer definition
-        internal AllocatorRecord<TKey, TValue>[][] values;
+        // Circular buffer definition (the long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation easier).
+        long* pagePointers;
 
-        // Object log related variables
-        private readonly IDevice objectLogDevice;
         // Size of object chunks being written to storage
         private readonly int ObjectBlockSize = 100 * (1 << 20);
-        // Tail offsets per segment, in object log
-        public readonly long[] segmentOffsets;
 
-        // Record sizes. We do not support variable-length keys in GenericAllocator
-        internal static int KeySize => Unsafe.SizeOf<TKey>();
-        internal static int ValueSize => Unsafe.SizeOf<TValue>();
-        internal static int RecordSize => Unsafe.SizeOf<AllocatorRecord<TKey, TValue>>();
+        // RecordSize and Value size are constant; only the key size is variable.
+        private static int FixedValueSize => ObjectLogRecord.ObjectIdSize;
 
-        private readonly OverflowPool<AllocatorRecord<TKey, TValue>[]> overflowPagePool;
+        // The values array, per-page.
+        private IHeapObject[][] values;
 
-        public GenericAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, GenericAllocator<TKey, TValue, TStoreFunctions>> wrapperCreator)
+        private readonly OverflowPool<PageUnit> overflowPagePool;
+
+        int adjustedPageSize;
+
+        public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
-            overflowPagePool = new OverflowPool<AllocatorRecord<TKey, TValue>[]>(4);
+            values = new IHeapObject[BufferSize][];
+            overflowPagePool = new OverflowPool<PageUnit>(4, p => { });
 
-            if (settings.LogSettings.ObjectLogDevice == null)
-                throw new TsavoriteException("LogSettings.ObjectLogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
+            adjustedPageSize = PageSize + 2 * sectorSize;
 
-            if (typeof(TKey) == typeof(SpanByte))
-                throw new TsavoriteException("SpanByte Keys cannot be mixed with object Values");
-            if (typeof(TValue) == typeof(SpanByte))
-                throw new TsavoriteException("SpanByte Values cannot be mixed with object Keys");
-
-            values = new AllocatorRecord<TKey, TValue>[BufferSize][];
-            segmentOffsets = new long[SegmentBufferSize];
-
-            objectLogDevice = settings.LogSettings.ObjectLogDevice;
-
-            if ((settings.LogSettings.LogDevice as NullDevice) == null && (KeyHasObjects() || ValueHasObjects()))
-            {
-                if (objectLogDevice == null)
-                    throw new TsavoriteException("Objects in key/value, but object log not provided during creation of Tsavorite instance");
-                if (objectLogDevice.SegmentSize != -1)
-                    throw new TsavoriteException("Object log device should not have fixed segment size. Set preallocateFile to false when calling CreateLogDevice for object log");
-            }
+            var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
+            pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, (nuint)Constants.kCacheLineBytes);
+            NativeMemory.Clear(pagePointers, bufferSizeInBytes);
         }
 
         internal int OverflowPageCount => overflowPagePool.Count;
@@ -63,157 +50,171 @@ namespace Tsavorite.core
         public override void Reset()
         {
             base.Reset();
-            objectLogDevice.Reset();
-            for (int index = 0; index < BufferSize; index++)
+            for (var index = 0; index < BufferSize; index++)
             {
                 if (IsAllocated(index))
                     FreePage(index);
             }
-            Array.Clear(segmentOffsets, 0, segmentOffsets.Length);
             Initialize();
         }
 
         /// <summary>Allocate memory page, pinned in memory, and in sector aligned form, if possible</summary>
-        internal void AllocatePage(int index) => values[index] = AllocatePage();
-
-        internal AllocatorRecord<TKey, TValue>[] AllocatePage()
+        internal void AllocatePage(int index)
         {
             IncrementAllocatedPageCount();
 
             if (overflowPagePool.TryGet(out var item))
-                return item;
-            return new AllocatorRecord<TKey, TValue>[(PageSize + RecordSize - 1) / RecordSize];
+                pagePointers[index] = item.pointer;
+            else
+                pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)adjustedPageSize, (nuint)sectorSize);
         }
 
         void ReturnPage(int index)
         {
             Debug.Assert(index < BufferSize);
-            if (values[index] != default)
+            if (pagePointers[index] != default)
             {
-                _ = overflowPagePool.TryAdd(values[index]);
-                values[index] = default;
+                _ = overflowPagePool.TryAdd(new PageUnit
+                {
+                    pointer = pagePointers[index],
+                    value = default
+                });
+                pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
 
-        public override void Initialize() => Initialize(RecordSize);
+        public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
         /// <summary>Get start logical address</summary>
-        internal long GetStartLogicalAddress(long page) => page << LogPageSizeBits;
+        public long GetStartLogicalAddress(long page) => page << LogPageSizeBits;
 
-        /// <summary>Get first valid logical address</summary>
-        internal long GetFirstValidLogicalAddress(long page)
-        {
-            if (page == 0)
-                return (page << LogPageSizeBits) + RecordSize;
-            return page << LogPageSizeBits;
-        }
+        /// <summary>Get first valid address</summary>
+        public long GetFirstValidLogicalAddress(long page) => page == 0 ? Constants.kFirstValidAddress : page << LogPageSizeBits;
 
-        internal ref RecordInfo GetInfo(long physicalAddress)
-        {
-            // Offset within page
-            int offset = (int)(physicalAddress & PageSizeMask);
+        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref new ObjectLogRecord(physicalAddress).InfoRef;
 
-            // Index of page within the circular buffer
-            int pageIndex = (int)((physicalAddress >> LogPageSizeBits) & BufferSizeMask);
+        public static ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
 
-            return ref values[pageIndex][offset / RecordSize].info;
-        }
-
-        internal ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(ptr).info;
-
-        internal ref TKey GetKey(long physicalAddress)
-        {
-            // Offset within page
-            var offset = (int)(physicalAddress & PageSizeMask);
-
-            // Index of page within the circular buffer
-            var pageIndex = (int)((physicalAddress >> LogPageSizeBits) & BufferSizeMask);
-
-            return ref values[pageIndex][offset / RecordSize].key;
-        }
-
-        internal ref TValue GetValue(long physicalAddress)
-        {
-            // Offset within page
-            var offset = (int)(physicalAddress & PageSizeMask);
-
-            // Index of page within the circular buffer
-            var pageIndex = (int)((physicalAddress >> LogPageSizeBits) & BufferSizeMask);
-
-            return ref values[pageIndex][offset / RecordSize].value;
-        }
-
-        internal (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress) => (RecordSize, RecordSize);
-
-        public int GetValueLength(ref TValue value) => ValueSize;
+        internal static SpanByte GetKey(long physicalAddress) => new ObjectLogRecord(physicalAddress).Key;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SerializeKey(ref TKey src, long physicalAddress) => GetKey(physicalAddress) = src;
-
-        internal (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref TKey key, ref TInput input, ref TValue value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
-            => (RecordSize, RecordSize, KeySize);
-
-        internal int GetAverageRecordSize() => RecordSize;
-
-        internal int GetFixedRecordSize() => RecordSize;
-
-        internal (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
-            => (RecordSize, RecordSize, KeySize);
-
-        internal (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref TKey key, ref TValue value) => (RecordSize, RecordSize, KeySize);
-
-        internal (int actualSize, int allocatedSize, int keySize) GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref TKey key, ref TValue value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
-            => (RecordSize, RecordSize, KeySize);
-
-        internal override bool TryComplete()
+        public ref IHeapObject GetValue(long physicalAddress)
         {
-            var b1 = objectLogDevice.TryComplete();
-            var b2 = base.TryComplete();
-            return b1 || b2;
+            var valuePtr = (long*)ValueOffset(physicalAddress);
+            if (*valuePtr == ObjectIdMap.InvalidObjectId)
+                *valuePtr = objectIdMap.Allocate();
+            return ref objectIdMap.GetRef(*valuePtr);
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref IHeapObject GetAndInitializeValue(long physicalAddress, long _ /* endAddress */) => ref GetValue(physicalAddress);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static long KeyOffset(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private long ValueOffset(long physicalAddress) => KeyOffset(physicalAddress) + AlignedKeySize(physicalAddress);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int AlignedKeySize(long physicalAddress) => RoundUp(KeySize(physicalAddress), Constants.kRecordAlignment);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int KeySize(long physicalAddress) => (*(SpanByte*)KeyOffset(physicalAddress)).TotalSize;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int ValueSize(long physicalAddress) => FixedValueSize;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int GetValueLength(ref IHeapObject value) => FixedValueSize;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress)
+        {
+            ref var recordInfo = ref GetInfo(physicalAddress);
+            if (recordInfo.IsNull())
+                return (RecordInfo.GetLength(), RecordInfo.GetLength());
+
+            var size = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + ValueSize(physicalAddress);
+            return (size, RoundUp(size, Constants.kRecordAlignment));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void SerializeKey(ref SpanByte src, long physicalAddress) => src.CopyTo((byte*)KeyOffset(physicalAddress));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref SpanByte key, ref TInput input, ref IHeapObject value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
+            => GetRecordSize(ref key);
+
+        const int KeyInitialLength = sizeof(int) * 2;     // The .Length field of a SpanByte is the initial length, but the key won't be empty, so add another int
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetAverageRecordSize() => RecordInfo.GetLength() + RoundUp(KeyInitialLength, Constants.kRecordAlignment) + FixedValueSize;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetFixedRecordSize() => GetAverageRecordSize();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : IVariableLengthInput<SpanByte, TInput>
+            => GetRecordSize(ref key);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref SpanByte key, ref IHeapObject _ /* value */)
+            => GetRecordSize(ref key);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref SpanByte key)
+        {
+            var keySize = key.TotalSize;
+            var size = RecordInfo.GetLength() + RoundUp(keySize, Constants.kRecordAlignment) + FixedValueSize;
+            return (size, RoundUp(size, Constants.kRecordAlignment), keySize);
+        }
+
+        internal (int actualSize, int allocatedSize, int keySize) GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref IHeapObject value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
+            => GetRecordSize(ref key);
 
         /// <summary>
         /// Dispose memory allocator
         /// </summary>
         public override void Dispose()
         {
-            if (values != null)
+            var localMap = Interlocked.Exchange(ref objectIdMap, null);
+            if (localMap != null)
             {
-                for (int i = 0; i < values.Length; i++)
-                    values[i] = null;
-                values = null;
+                localMap.Clear();
+                overflowPagePool.Dispose();
+                base.Dispose();
             }
-            overflowPagePool.Dispose();
-            base.Dispose();
         }
 
-        internal AddressInfo* GetKeyAddressInfo(long physicalAddress)
-            => (AddressInfo*)Unsafe.AsPointer(ref Unsafe.AsRef<AllocatorRecord<TKey, TValue>>((byte*)physicalAddress).key);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetPhysicalAddress(long logicalAddress)
+        {
+            // Offset within page
+            var offset = (int)(logicalAddress & ((1L << LogPageSizeBits) - 1));
 
-        internal AddressInfo* GetValueAddressInfo(long physicalAddress)
-            => (AddressInfo*)Unsafe.AsPointer(ref Unsafe.AsRef<AllocatorRecord<TKey, TValue>>((byte*)physicalAddress).value);
+            // Index of page within the circular buffer
+            var pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
+            return *(pagePointers + pageIndex) + offset;
+        }
 
-        public long GetPhysicalAddress(long logicalAddress) => logicalAddress;
+        internal bool IsAllocated(int pageIndex) => pagePointers[pageIndex] != 0;
 
-        internal bool IsAllocated(int pageIndex) => values[pageIndex] != null;
-
-        protected override void TruncateUntilAddress(long toAddress)
+        protected override void TruncateUntilAddress(long toAddress)    // TODO: ObjectAllocator specifics if any
         {
             base.TruncateUntilAddress(toAddress);
-            objectLogDevice.TruncateUntilSegment((int)(toAddress >> LogSegmentSizeBits));
         }
 
-        protected override void TruncateUntilAddressBlocking(long toAddress)
+        protected override void TruncateUntilAddressBlocking(long toAddress)    // TODO: ObjectAllocator specifics if any
         {
             base.TruncateUntilAddressBlocking(toAddress);
-            objectLogDevice.TruncateUntilSegment((int)(toAddress >> LogSegmentSizeBits));
         }
 
-        protected override void RemoveSegment(int segment)
+        protected override void RemoveSegment(int segment)    // TODO: ObjectAllocator specifics if any
         {
             base.RemoveSegment(segment);
-            objectLogDevice.RemoveSegment(segment);
         }
 
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
@@ -262,7 +263,10 @@ namespace Tsavorite.core
         }
 
         internal void ClearPage(long page, int offset)
-            => Array.Clear(values[page % BufferSize], offset / RecordSize, values[page % BufferSize].Length - offset / RecordSize);
+        {
+            // This is called during recovery, not as part of normal operations, so there is no need to walk pages starting at offset to Free() ObjectIds
+            NativeMemory.Clear((byte*)pagePointers[page] + offset, (nuint)(adjustedPageSize - offset));
+        }
 
         internal void FreePage(long page)
         {
@@ -891,7 +895,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Retrieve objects from object log</summary>
-        internal bool RetrievedFullRecord(byte* record, ref AsyncIOContext<TKey, TValue> ctx)
+        internal bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte, IHeapObject> ctx)
         {
             if (!KeyHasObjects())
                 ctx.key = Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(record).key;
@@ -954,11 +958,9 @@ namespace Tsavorite.core
             return true;
         }
 
-        /// <summary>Whether KVS has keys to serialize/deserialize</summary>
-        internal bool KeyHasObjects() => _storeFunctions.HasKeySerializer;
+        internal static ref SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, IHeapObject> ctx) => ref GetKey((long)ctx.record.GetValidPointer());
 
-        /// <summary>Whether KVS has values to serialize/deserialize</summary>
-        internal bool ValueHasObjects() => _storeFunctions.HasValueSerializer;
+        internal IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => new SpanByteHeapContainer(ref key, bufferPool);
         #endregion
 
         public long[] GetSegmentOffsets() => segmentOffsets;
@@ -982,37 +984,37 @@ namespace Tsavorite.core
         /// Iterator interface for scanning Tsavorite log
         /// </summary>
         /// <returns></returns>
-        public override ITsavoriteScanIterator<TKey, TValue> Scan(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store,
+        public override ITsavoriteScanIterator<SpanByte, IHeapObject> Scan(TsavoriteKV<SpanByte, IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
-            => new GenericScanIterator<TKey, TValue, TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch);
+            => new ObjectScanIterator<TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
         /// </summary>
-        internal override bool Scan<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store,
+        internal override bool Scan<TScanFunctions>(TsavoriteKV<SpanByte, IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
         {
-            using GenericScanIterator<TKey, TValue, TStoreFunctions> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
+            using ObjectScanIterator<TStoreFunctions> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
-        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store,
-                ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
+        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<SpanByte, IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
+                ScanCursorState<SpanByte, IHeapObject> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
         {
-            using GenericScanIterator<TKey, TValue, TStoreFunctions> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
-            return ScanLookup<long, long, TScanFunctions, GenericScanIterator<TKey, TValue, TStoreFunctions>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
+            using ObjectScanIterator<TStoreFunctions> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
+            return ScanLookup<long, long, TScanFunctions, ObjectScanIterator<TStoreFunctions>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
         }
 
         /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
-        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store,
-                ref TKey key, long beginAddress, ref TScanFunctions scanFunctions)
+        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<SpanByte, IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
+                ref SpanByte key, long beginAddress, ref TScanFunctions scanFunctions)
         {
-            using GenericScanIterator<TKey, TValue, TStoreFunctions> iter = new(store, this, beginAddress, epoch, logger: logger);
+            using ObjectScanIterator<TStoreFunctions> iter = new(store, this, beginAddress, epoch, logger: logger);
             return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 

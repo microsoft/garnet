@@ -93,6 +93,11 @@ namespace Tsavorite.core
         public readonly int TotalSize => sizeof(int) + Length;
 
         /// <summary>
+        /// Total serialized size in bytes if serialized (including header and metadata if any), else the combined sizes of the Length field and payload pointer.
+        /// </summary>
+        public readonly int TotalInlineSize => Serialized ? TotalSize : sizeof(int) + sizeof(IntPtr);
+
+        /// <summary>
         /// Size of metadata header, if any (returns 0 or 8)
         /// </summary>
         public readonly int MetadataSize => (length & ExtraMetadataBitMask) >> (30 - 3);
@@ -506,5 +511,10 @@ namespace Tsavorite.core
                 sb.Append("...");
             return sb.ToString();
         }
+
+        public string ToShortString(int maxLen) 
+            => Length > maxLen
+                ? FromPinnedSpan(AsReadOnlySpan().Slice(0, maxLen)).ToString() + "..."
+                : ToString();
     }
 }

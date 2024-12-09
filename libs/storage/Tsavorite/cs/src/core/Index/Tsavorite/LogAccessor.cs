@@ -308,32 +308,13 @@ namespace Tsavorite.core
         /// Flush log until current tail (records are still retained in memory)
         /// </summary>
         /// <param name="wait">Synchronous wait for operation to complete</param>
-        public void Flush(bool wait)
-        {
-            ShiftReadOnlyAddress(allocatorBase.GetTailAddress(), wait);
-        }
+        public void Flush(bool wait) => ShiftReadOnlyAddress(allocatorBase.GetTailAddress(), wait);
 
         /// <summary>
         /// Flush log and evict all records from memory
         /// </summary>
         /// <param name="wait">Wait for operation to complete</param>
-        public void FlushAndEvict(bool wait)
-        {
-            ShiftHeadAddress(allocatorBase.GetTailAddress(), wait);
-        }
-
-        /// <summary>
-        /// Delete log entirely from memory. Cannot allocate on the log
-        /// after this point. This is a synchronous operation.
-        /// </summary>
-        public void DisposeFromMemory()
-        {
-            // Ensure we have flushed and evicted
-            FlushAndEvict(true);
-
-            // Delete from memory
-            allocatorBase.DeleteFromMemory();
-        }
+        public void FlushAndEvict(bool wait) => ShiftHeadAddress(allocatorBase.GetTailAddress(), wait);
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log

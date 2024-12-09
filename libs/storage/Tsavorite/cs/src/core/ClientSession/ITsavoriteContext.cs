@@ -184,10 +184,10 @@ namespace Tsavorite.core
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="recordMetadata">On output, receives:
         ///         <list type="bullet">
-        ///             <li>The address of the found record. This may be different from the <paramref name="recordMetadata.RecordInfo.PreviousAddress"/> passed on the call, due to
-        ///                 tracing back over hash collisions until we arrive at the key match</li>
-        ///             <li>A copy of the record's header in <paramref name="recordMetadata.RecordInfo"/>; <paramref name="recordMetadata.RecordInfo.PreviousAddress"/> can be passed
-        ///                 in a subsequent call, thereby enumerating all records in a key's hash chain.</li>
+        ///             <item>The address of the found record. This may be different from the <paramref name="recordMetadata.RecordInfo.PreviousAddress"/> passed on the call, due to
+        ///                 tracing back over hash collisions until we arrive at the key match</item>
+        ///             <item>A copy of the record's header in <paramref name="recordMetadata.RecordInfo"/>; <paramref name="recordMetadata.RecordInfo.PreviousAddress"/> can be passed
+        ///                 in a subsequent call, thereby enumerating all records in a key's hash chain.</item>
         ///         </list>
         /// </param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
