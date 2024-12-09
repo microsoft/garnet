@@ -6099,6 +6099,92 @@
     ]
   },
   {
+    "Command": "ZRANGESTORE",
+    "Name": "ZRANGESTORE",
+    "Summary": "Stores a range of members from sorted set in a key.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements stored into the destination key.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DST",
+        "DisplayText": "dst",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "SRC",
+        "DisplayText": "src",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN",
+        "DisplayText": "min",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAX",
+        "DisplayText": "max",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "SORTBY",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BYSCORE",
+            "DisplayText": "byscore",
+            "Type": "PureToken",
+            "Token": "BYSCORE"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BYLEX",
+            "DisplayText": "bylex",
+            "Type": "PureToken",
+            "Token": "BYLEX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "REV",
+        "DisplayText": "rev",
+        "Type": "PureToken",
+        "Token": "REV",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "LIMIT",
+        "Type": "Block",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "ZRANK",
     "Name": "ZRANK",
     "Summary": "Returns the index of a member in a sorted set ordered by ascending scores.",
