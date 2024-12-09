@@ -327,9 +327,9 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZDIFF](data-structures.md#zdiff) | ➕ |  |
 |  | [ZDIFFSTORE](data-structures.md#zdiffstore) | ➕ |  |
 |  | [ZINCRBY](data-structures.md#zincrby) | ➕ |  |
-|  | ZINTER | ➖ |  |
-|  | ZINTERCARD | ➖ |  |
-|  | ZINTERSTORE | ➖ |  |
+|  | [ZINTER](data-structures.md#zinter) | ➕ |  |
+|  | [ZINTERCARD](data-structures.md#zintercard) | ➕ |  |
+|  | [ZINTERSTORE](data-structures.md#zinterstore) | ➕ |  |
 |  | [ZLEXCOUNT](data-structures.md#zlexcount) | ➕ |  |
 |  | ZMPOP | ➖ |  |
 |  | [ZMSCORE](data-structures.md#zmscore) | ➕ |  |
