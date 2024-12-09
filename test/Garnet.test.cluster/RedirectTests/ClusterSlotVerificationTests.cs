@@ -97,6 +97,7 @@ namespace Garnet.test.cluster
                 new ZCARD(),
                 new ZRANGE(),
                 new ZREVRANGEBYLEX(),
+                new ZRANGESTORE(),
                 new ZSCORE(),
                 new ZMSCORE(),
                 new ZPOPMAX(),
@@ -282,6 +283,7 @@ namespace Garnet.test.cluster
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
         [TestCase("ZREVRANGEBYLEX")]
+        [TestCase("ZRANGESTORE")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -427,6 +429,7 @@ namespace Garnet.test.cluster
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
         [TestCase("ZREVRANGEBYLEX")]
+        [TestCase("ZRANGESTORE")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -582,6 +585,7 @@ namespace Garnet.test.cluster
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
         [TestCase("ZREVRANGEBYLEX")]
+        [TestCase("ZRANGESTORE")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -729,6 +733,7 @@ namespace Garnet.test.cluster
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
         [TestCase("ZREVRANGEBYLEX")]
+        [TestCase("ZRANGESTORE")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -883,6 +888,7 @@ namespace Garnet.test.cluster
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
         [TestCase("ZREVRANGEBYLEX")]
+        [TestCase("ZRANGESTORE")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]
@@ -1054,6 +1060,7 @@ namespace Garnet.test.cluster
         [TestCase("ZCARD")]
         [TestCase("ZRANGE")]
         [TestCase("ZREVRANGEBYLEX")]
+        [TestCase("ZRANGESTORE")]
         [TestCase("ZSCORE")]
         [TestCase("ZMSCORE")]
         [TestCase("ZPOPMAX")]

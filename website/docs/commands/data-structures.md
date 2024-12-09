@@ -1152,6 +1152,18 @@ If member does not exist in the sorted set, or **key** does not exist, nil is re
 
 ---
 
+### ZRANGESTORE
+
+#### Syntax
+
+```bash
+    ZRANGESTORE dst src min max [BYSCORE|BYLEX] [REV] [LIMIT offset count]
+```
+
+Stores the specified range of elements in the sorted set stored at **src** into the sorted set stored at **dst**.
+
+---
+
 ## Geospatial indices
 
 ### GEOADD
