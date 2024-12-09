@@ -250,13 +250,6 @@ namespace Garnet.server
                 var scriptResult = scriptRunner.Run(count, parseState);
                 WriteObject(scriptResult);
             }
-            catch (LuaScriptException ex)
-            {
-                logger?.LogError(ex.InnerException ?? ex, "Error executing Lua script callback");
-                while (!RespWriteUtils.WriteError("ERR " + (ex.InnerException ?? ex).Message, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Error executing Lua script");
@@ -299,56 +292,61 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteInteger(l, ref dcurr, dend))
                         SendAndReset();
                 }
-                else if (scriptResult is ArgSlice a)
-                {
-                    while (!RespWriteUtils.WriteBulkString(a.ReadOnlySpan, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else if (scriptResult is object[] o)
-                {
-                    // Two objects one boolean value and the result from the Lua Call
-                    while (!RespWriteUtils.WriteAsciiBulkString(o[1].ToString().AsSpan(), ref dcurr, dend))
-                        SendAndReset();
-                }
-                else if (scriptResult is LuaTable luaTable)
-                {
-                    try
-                    {
-                        var retVal = luaTable["err"];
-                        if (retVal != null)
-                        {
-                            while (!RespWriteUtils.WriteError((string)retVal, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            retVal = luaTable["ok"];
-                            if (retVal != null)
-                            {
-                                while (!RespWriteUtils.WriteAsciiBulkString((string)retVal, ref dcurr, dend))
-                                    SendAndReset();
-                            }
-                            else
-                            {
-                                int count = luaTable.Values.Count;
-                                while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
-                                    SendAndReset();
-                                foreach (var value in luaTable.Values)
-                                {
-                                    WriteObject(value);
-                                }
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        luaTable.Dispose();
-                    }
-                }
                 else
                 {
-                    throw new LuaScriptException("Unknown return type", "");
+                    // todo: this should all go away
+                    throw new NotImplementedException();
                 }
+                //else if (scriptResult is ArgSlice a)
+                //{
+                //    while (!RespWriteUtils.WriteBulkString(a.ReadOnlySpan, ref dcurr, dend))
+                //        SendAndReset();
+                //}
+                //else if (scriptResult is object[] o)
+                //{
+                //    // Two objects one boolean value and the result from the Lua Call
+                //    while (!RespWriteUtils.WriteAsciiBulkString(o[1].ToString().AsSpan(), ref dcurr, dend))
+                //        SendAndReset();
+                //}
+                //else if (scriptResult is LuaTable luaTable)
+                //{
+                //    try
+                //    {
+                //        var retVal = luaTable["err"];
+                //        if (retVal != null)
+                //        {
+                //            while (!RespWriteUtils.WriteError((string)retVal, ref dcurr, dend))
+                //                SendAndReset();
+                //        }
+                //        else
+                //        {
+                //            retVal = luaTable["ok"];
+                //            if (retVal != null)
+                //            {
+                //                while (!RespWriteUtils.WriteAsciiBulkString((string)retVal, ref dcurr, dend))
+                //                    SendAndReset();
+                //            }
+                //            else
+                //            {
+                //                int count = luaTable.Values.Count;
+                //                while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
+                //                    SendAndReset();
+                //                foreach (var value in luaTable.Values)
+                //                {
+                //                    WriteObject(value);
+                //                }
+                //            }
+                //        }
+                //    }
+                //    finally
+                //    {
+                //        luaTable.Dispose();
+                //    }
+                //}
+                //else
+                //{
+                //    throw new LuaScriptException("Unknown return type", "");
+                //}
             }
             else
             {
