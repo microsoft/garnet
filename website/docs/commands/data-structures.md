@@ -232,6 +232,22 @@ BLMOVE is the blocking variant of [LMOVE](#lmove-lmove). When source contains el
 
 ---
 
+### BRPOPLPUSH
+
+#### Syntax
+
+```bash
+BRPOPLPUSH source destination timeout
+```
+
+The BRPOPLPUSH command removes the last element from the list stored at source, and pushes the element to the list stored at destination. It then returns the element to the caller.
+
+#### Resp Reply
+
+Bulk string reply: the element being popped and pushed.
+
+---
+
 ### BLPOP
 
 #### Syntax
@@ -674,6 +690,21 @@ If **destination** already exists, it is overwritten.
 
 ---
 
+### SINTERCARD
+
+#### Syntax
+
+```bash
+    SINTERCARD numkeys [key ...] [LIMIT limit]
+```
+
+Returns the number of members in the resulting set from the intersection of all the given sets.
+Keys that do not exist are considered to be empty sets.
+
+The optional `LIMIT` argument specifies an upper bound on the number of intersecting members to count.
+
+---
+
 ### SDIFF
 
 #### Syntax
@@ -962,6 +993,22 @@ The meaning of min and max are the same of the [ZRANGEBYLEX](#zrangebylex) comma
 
 ---
 
+### ZREVRANGEBYLEX
+
+#### Syntax
+
+```bash
+ZREVRANGEBYLEX key max min [LIMIT offset count]
+```
+
+The ZREVRANGEBYLEX command returns a range of members in a sorted set, by lexicographical order, ordered from higher to lower strings.
+
+#### Resp Reply
+
+Array reply: list of elements in the specified range.
+
+---
+
 ### ZREMRANGEBYSCORE
 
 #### Syntax
@@ -1065,6 +1112,18 @@ The **match** parameter allows to apply a filter to elements after they have bee
 Returns the score of member in the sorted set at **key**.
 
 If member does not exist in the sorted set, or **key** does not exist, nil is returned.
+
+---
+
+### ZRANGESTORE
+
+#### Syntax
+
+```bash
+    ZRANGESTORE dst src min max [BYSCORE|BYLEX] [REV] [LIMIT offset count]
+```
+
+Stores the specified range of elements in the sorted set stored at **src** into the sorted set stored at **dst**.
 
 ---
 

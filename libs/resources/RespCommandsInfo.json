@@ -356,6 +356,44 @@
     ]
   },
   {
+    "Command": "BRPOPLPUSH",
+    "Name": "BRPOPLPUSH",
+    "Arity": 4,
+    "Flags": "Blocking, DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 2,
+    "Step": 1,
+    "AclCategories": "Blocking, List, Slow, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Access, Delete"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Insert"
+      }
+    ]
+  },
+  {
     "Command": "CLIENT",
     "Name": "CLIENT",
     "Arity": -2,
@@ -393,6 +431,35 @@
         "AclCategories": "Admin, Connection, Dangerous, Slow",
         "Tips": [
           "nondeterministic_output"
+        ]
+      },
+      {
+        "Command": "CLIENT_GETNAME",
+        "Name": "CLIENT|GETNAME",
+        "Arity": 2,
+        "Flags": "Loading, NoScript, Stale",
+        "AclCategories": "Connection, Slow"
+      },
+      {
+        "Command": "CLIENT_SETNAME",
+        "Name": "CLIENT|SETNAME",
+        "Arity": 3,
+        "Flags": "Loading, NoScript, Stale",
+        "AclCategories": "Connection, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ]
+      },
+      {
+        "Command": "CLIENT_SETINFO",
+        "Name": "CLIENT|SETINFO",
+        "Arity": 4,
+        "Flags": "Loading, NoScript, Stale",
+        "AclCategories": "Connection, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
         ]
       }
     ]
@@ -3449,6 +3516,28 @@
     ]
   },
   {
+    "Command": "SINTERCARD",
+    "Name": "SINTERCARD",
+    "Arity": -3,
+    "Flags": "MovableKeys, ReadOnly",
+    "AclCategories": "Read, Set, Slow",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysKeyNum",
+          "KeyNumIdx": 0,
+          "FirstKey": 1,
+          "KeyStep": 1
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
     "Command": "SINTERSTORE",
     "Name": "SINTERSTORE",
     "Arity": -3,
@@ -4365,6 +4454,44 @@
     ]
   },
   {
+    "Command": "ZRANGESTORE",
+    "Name": "ZRANGESTORE",
+    "Arity": -5,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 2,
+    "Step": 1,
+    "AclCategories": "SortedSet, Slow, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "OW, Update"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
     "Command": "ZRANK",
     "Name": "ZRANK",
     "Arity": -3,
@@ -4492,6 +4619,31 @@
   {
     "Command": "ZREVRANGE",
     "Name": "ZREVRANGE",
+    "Arity": -4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, SortedSet, Slow",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "ZREVRANGEBYLEX",
+    "Name": "ZREVRANGEBYLEX",
     "Arity": -4,
     "Flags": "ReadOnly",
     "FirstKey": 1,

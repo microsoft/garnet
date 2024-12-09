@@ -35,6 +35,10 @@ namespace Garnet.server
             => storageSession.SortedSetAdd(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
+        public GarnetStatus SortedSetRangeStore(ArgSlice dstKey, ArgSlice srcKey, ref ObjectInput input, out int result)
+            => storageSession.SortedSetRangeStore(dstKey, srcKey, ref input, out result, ref objectContext);
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetRemove(ArgSlice key, ArgSlice member, out int zremCount)
             => storageSession.SortedSetRemove(key.ToArray(), member, out zremCount, ref objectContext);
 
@@ -356,6 +360,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SetIntersect(ArgSlice[] keys, out HashSet<byte[]> output)
             => storageSession.SetIntersect(keys, out output);
+
+        /// <inheritdoc />
+        public GarnetStatus SetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+            => storageSession.SetIntersectLength(keys, limit, out count);
 
         /// <inheritdoc />
         public GarnetStatus SetIntersectStore(byte[] key, ArgSlice[] keys, out int count)

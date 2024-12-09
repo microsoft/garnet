@@ -453,7 +453,7 @@ namespace Garnet.server
         }
 
 
-        private GarnetStatus SetIntersect<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext, out HashSet<byte[]> output)
+        private GarnetStatus SetIntersect<TObjectContext>(ReadOnlySpan<ArgSlice> keys, ref TObjectContext objectContext, out HashSet<byte[]> output)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             output = new HashSet<byte[]>(ByteArrayComparer.Instance);
@@ -922,6 +922,52 @@ namespace Garnet.server
             }
 
             return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// Returns the cardinality of the intersection of all the given sets.
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="limit">Optional limit for stopping early when reaching this size</param> 
+        /// <param name="count"></param>
+        /// <returns></returns>
+        public GarnetStatus SetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+        {
+            if (txnManager.ObjectStoreLockableContext.Session is null)
+                ThrowObjectStoreUninitializedException();
+
+            count = 0;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                var status = SetIntersect(keys, ref setObjectStoreLockableContext, out var result);
+                if (status == GarnetStatus.OK && result != null)
+                {
+                    count = limit.HasValue ? Math.Min(result.Count, limit.Value) : result.Count;
+                }
+                return status;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
         }
     }
 }
