@@ -7,6 +7,7 @@ using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NLua;
 using NLua.Exceptions;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -28,23 +29,26 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments("EVALSHA");
             }
-            var digest = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+
+            ref var digest = ref parseState.GetArgSliceByRef(0);
+            var digestAsSpanByteMem = new SpanByteAndMemory(digest.SpanByte);
 
             var result = false;
-            if (!sessionScriptCache.TryGetFromDigest(digest, out var runner))
+            if (!sessionScriptCache.TryGetFromDigest(digestAsSpanByteMem, out var runner))
             {
-                var d = digest.ToArray();
-                if (storeWrapper.storeScriptCache.TryGetValue(d, out var source))
+                if (storeWrapper.storeScriptCache.TryGetValue(digestAsSpanByteMem, out var source))
                 {
-                    if (!sessionScriptCache.TryLoad(source, d, out runner, out var error))
+                    if (!sessionScriptCache.TryLoad(source, digestAsSpanByteMem, out runner, out var error))
                     {
                         while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
                             SendAndReset();
-                        _ = storeWrapper.storeScriptCache.TryRemove(d, out _);
+
+                        _ = storeWrapper.storeScriptCache.TryRemove(digestAsSpanByteMem, out _);
                         return result;
                     }
                 }
             }
+
             if (runner == null)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NO_SCRIPT, ref dcurr, dend))
@@ -54,6 +58,7 @@ namespace Garnet.server
             {
                 result = ExecuteScript(count - 1, runner);
             }
+
             return result;
         }
 
@@ -74,16 +79,22 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments("EVAL");
             }
-            var script = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            var digest = sessionScriptCache.GetScriptDigest(script);
+
+            var script = parseState.GetArgSliceByRef(0).ToArray();
+            
+            // that this is stack allocated is load bearing - if it moves, things will break
+            Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
+            sessionScriptCache.GetScriptDigest(script, digest);
 
             var result = false;
-            if (!sessionScriptCache.TryLoad(script, digest, out var runner, out var error))
+            if (!sessionScriptCache.TryLoad(script, new SpanByteAndMemory(SpanByte.FromPinnedSpan(digest)), out var runner, out var error))
             {
                 while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
                     SendAndReset();
+
                 return result;
             }
+
             if (runner == null)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NO_SCRIPT, ref dcurr, dend))
@@ -93,6 +104,7 @@ namespace Garnet.server
             {
                 result = ExecuteScript(count - 1, runner);
             }
+
             return result;
         }
 
@@ -113,31 +125,17 @@ namespace Garnet.server
 
             // returns an array where each element is a 0 if the script does not exist, and a 1 if it does
 
-            // todo: can we remove this alloc?
-            var sha1Buff = new byte[20];
-
-            var intoArr = parseState.Count <= 16 ? null : ArrayPool<bool>.Shared.Rent(parseState.Count);
-            Span<bool> into = intoArr == null ? stackalloc bool[parseState.Count] : intoArr.AsSpan()[..parseState.Count];
-
-            while (!RespWriteUtils.WriteArrayLength(into.Length, ref dcurr, dend))
+            while (!RespWriteUtils.WriteArrayLength(parseState.Count, ref dcurr, dend))
                 SendAndReset();
 
             for (var shaIx = 0; shaIx < parseState.Count; shaIx++)
             {
-                var sha1 = parseState.GetArgSliceByRef(shaIx);
-                if (sha1.length != sha1Buff.Length)
-                {
-                    while (!RespWriteUtils.WriteArrayItem(0, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    sha1.Span.CopyTo(sha1Buff);
-                    var exists = storeWrapper.storeScriptCache.ContainsKey(sha1Buff) ? 1 : 0;
+                ref var sha1 = ref parseState.GetArgSliceByRef(shaIx);
+                var sha1Arg = new SpanByteAndMemory(sha1.SpanByte);
+                var exists = storeWrapper.storeScriptCache.ContainsKey(sha1Arg) ? 1 : 0;
 
-                    while (!RespWriteUtils.WriteArrayItem(exists, ref dcurr, dend))
-                        SendAndReset();
-                }
+                while (!RespWriteUtils.WriteArrayItem(exists, ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;
@@ -199,7 +197,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("script|load");
             }
 
-            var source = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            var source = parseState.GetArgSliceByRef(0).ToArray();
             if (!sessionScriptCache.TryLoad(source, out var digest, out _, out var error))
             {
                 while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
@@ -209,7 +207,8 @@ namespace Garnet.server
             {
 
                 // Add script to the store dictionary
-                storeWrapper.storeScriptCache.TryAdd(digest, source.ToArray());
+                var scriptKey = new SpanByteAndMemory(new ScriptHashOwner(digest.AsMemory()), digest.Length);
+                _ = storeWrapper.storeScriptCache.TryAdd(scriptKey, source);
 
                 while (!RespWriteUtils.WriteBulkString(digest, ref dcurr, dend))
                     SendAndReset();
@@ -229,6 +228,7 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_LUA_DISABLED, ref dcurr, dend))
                     SendAndReset();
+
                 return false;
             }
 
