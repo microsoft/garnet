@@ -164,6 +164,7 @@ namespace Garnet.server
                     RespCommand.ZRANGE => SortedSetOperation.ZRANGE,
                     RespCommand.ZREVRANGE => SortedSetOperation.ZREVRANGE,
                     RespCommand.ZRANGEBYSCORE => SortedSetOperation.ZRANGEBYSCORE,
+                    RespCommand.ZREVRANGEBYLEX => SortedSetOperation.ZREVRANGEBYLEX,
                     RespCommand.ZREVRANGEBYSCORE => SortedSetOperation.ZREVRANGEBYSCORE,
                     _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
                 };
@@ -182,6 +183,38 @@ namespace Garnet.server
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }
+
+        private unsafe bool SortedSetRangeStore<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            // ZRANGESTORE dst src min max [BYSCORE | BYLEX] [REV] [LIMIT offset count]
+            if (parseState.Count is < 4 or > 9)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZRANGESTORE));
+            }
+
+            var dstKey = parseState.GetArgSliceByRef(0);
+            var srcKey = parseState.GetArgSliceByRef(1);
+
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGESTORE };
+            var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: respProtocolVersion);
+
+            var status = storageApi.SortedSetRangeStore(dstKey, srcKey, ref input, out int result);
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:

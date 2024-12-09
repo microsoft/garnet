@@ -356,6 +356,16 @@ namespace Garnet.server
         GarnetStatus SortedSetAdd(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
+        /// Stores a range of sorted set elements in the specified key space.
+        /// </summary>
+        /// <param name="dstKey">The distribution key for the sorted set.</param>
+        /// <param name="srcKey">The sub-key for the sorted set.</param>
+        /// <param name="input">The input object containing the elements to store.</param>
+        /// <param name="result">The result of the store operation.</param>
+        /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
+        GarnetStatus SortedSetRangeStore(ArgSlice dstKey, ArgSlice srcKey, ref ObjectInput input, out int result);
+
+        /// <summary>
         /// Removes the specified member from the sorted set stored at key.
         /// </summary>
         GarnetStatus SortedSetRemove(ArgSlice key, ArgSlice member, out int zremCount);
@@ -1421,6 +1431,16 @@ namespace Garnet.server
         /// <param name="members"></param>
         /// <returns></returns>
         GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members);
+
+        /// <summary>
+        /// Returns the cardinality of the intersection between multiple sets.
+        /// When limit is greater than 0, stops counting when reaching limit.
+        /// </summary>
+        /// <param name="keys">Keys of the sets to intersect</param>
+        /// <param name="limit">Optional limit to stop counting at</param>
+        /// <param name="count">The cardinality of the intersection</param>
+        /// <returns>Operation status</returns>
+        GarnetStatus SetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count);
         #endregion
 
         #region Hash Methods
