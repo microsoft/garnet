@@ -167,7 +167,9 @@ namespace Garnet.server
                 Debug.Assert(state.GetTop() == 0, "Stack should be empty before compilation");
 
                 state.PushNumber(loadSandboxedRegistryIndex);
-                state.GetTable(LuaRegistry.Index);
+                var loadRes = state.GetTable(LuaRegistry.Index);
+                Debug.Assert(loadRes == LuaType.Function, "Unexpected load_sandboxed type");
+
                 state.PushString(source);
                 state.Call(1, -1);  // multiple returns allowed
 
@@ -710,7 +712,7 @@ namespace Garnet.server
 
             Debug.Assert(state.GetTop() == 0, "Stack should be empty at start of invocation");
 
-            if (!state.CheckStack(1))
+            if (!state.CheckStack(2))
             {
                 throw new GarnetException("Insufficient stack space to run function");
             }
@@ -718,31 +720,53 @@ namespace Garnet.server
             try
             {
                 state.PushNumber(functionRegistryIndex);
-                state.GetTable(LuaRegistry.Index);
-                state.Call(0, 1);
+                var loadRes = state.GetTable(LuaRegistry.Index);
+                Debug.Assert(loadRes == LuaType.Function, "Unexpected type for function to invoke");
 
-                if (state.GetTop() == 0)
+                var callRes = state.PCall(0, 1, 0);
+                if (callRes == LuaStatus.OK)
                 {
-                    return null;
-                }
+                    // the actual call worked, handle the response
 
-                var retType = state.Type(1);
-                if (retType == LuaType.Nil)
-                {
-                    return null;
-                }
-                else if (retType == LuaType.Number)
-                {
-                    return state.CheckNumber(1);
-                }
-                else if (retType == LuaType.String)
-                {
-                    return state.CheckString(1);
+                    if (state.GetTop() == 0)
+                    {
+                        return null;
+                    }
+
+                    var retType = state.Type(1);
+                    if (retType == LuaType.Nil)
+                    {
+                        return null;
+                    }
+                    else if (retType == LuaType.Number)
+                    {
+                        return state.CheckNumber(1);
+                    }
+                    else if (retType == LuaType.String)
+                    {
+                        return state.CheckString(1);
+                    }
+                    else
+                    {
+                        // todo: implement
+                        throw new NotImplementedException();
+                    }
                 }
                 else
                 {
-                    // todo: implement
-                    throw new NotImplementedException();
+                    // an error was raised
+
+                    var stackTop = state.GetTop();
+                    if (stackTop == 0)
+                    {
+                        // and we got nothing back
+                        throw new GarnetException("An error occurred while invoking a Lua script");
+                    }
+
+                    // todo: we should just write this out, not throw
+                    //       it's not exceptional
+                    var msg = state.CheckString(stackTop);
+                    throw new GarnetException(msg);
                 }
             }
             finally
