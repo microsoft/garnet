@@ -204,6 +204,8 @@ namespace Resp.benchmark
                 case OpType.DEL:
                 case OpType.INCR:
                 case OpType.DBSIZE:
+                case OpType.PUBLISH:
+                case OpType.SPUBLISH:
                     for (int i = 0; i < bytesRead; i++)
                         if (buf[i] == ':') count++;
                     break;
