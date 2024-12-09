@@ -330,23 +330,13 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             var statusReplyScript = "return redis.error_reply('Failure')";
-            try
-            {
-                _ = db.ScriptEvaluate(statusReplyScript);
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual(ex.Message, "Failure");
-            }
+
+            var excReply = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(statusReplyScript));
+            ClassicAssert.AreEqual("ERR Failure", excReply.Message);
+
             var directReplyScript = "return { err = 'Failure' }";
-            try
-            {
-                _ = db.ScriptEvaluate(directReplyScript);
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual(ex.Message, "Failure");
-            }
+            var excDirect = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(directReplyScript));
+            ClassicAssert.AreEqual("Failure", excDirect.Message);
         }
 
         [Test]

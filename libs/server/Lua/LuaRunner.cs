@@ -38,7 +38,6 @@ namespace Garnet.server
         readonly bool txnMode;
 
         int keyLength, argvLength;
-        Queue<IDisposable> disposeQueue;
 
         /// <summary>
         /// Creates a new runner with the source of the script
@@ -112,7 +111,24 @@ namespace Garnet.server
                 }
                 function load_sandboxed(source)
                     if (not source) then return nil end
-                    return load(source, nil, nil, sandbox_env)
+                    local rawFunc = load(source, nil, nil, sandbox_env)
+
+                    return function()
+                        local rawRet = rawFunc()
+
+                        -- handle err and ok response wrappers without crossing the pinvoke boundary                        
+                        if rawRet and type(rawRet) == ""table"" then
+                            if rawRet.err then
+                                error(rawRet.err)
+                            end
+
+                            if rawRet.ok then
+                                return rawRet.ok
+                            end
+                        end
+
+                        return rawRet
+                    end
                 end
             ");
             if (sandboxRes)
@@ -789,18 +805,6 @@ namespace Garnet.server
             {
                 // FORCE the stack to be empty now
                 state.SetTop(0);
-            }
-        }
-
-        void Cleanup()
-        {
-            if (disposeQueue != null)
-            {
-                while (disposeQueue.Count > 0)
-                {
-                    var table = disposeQueue.Dequeue();
-                    table.Dispose();
-                }
             }
         }
     }
