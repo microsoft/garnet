@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -297,7 +298,7 @@ namespace Garnet.test
             var stringCmd = "*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n$40\r\nreturn redis.call('set',KEYS[1],ARGV[1])\r\n";
             var sha1SetScript = Encoding.ASCII.GetString(lightClientRequest.SendCommand(Encoding.ASCII.GetBytes(stringCmd), 1)).Substring(5, 40);
 
-            ClassicAssert.AreEqual("c686f316aaf1eb01d5a4de1b0b63cd233010e63d", sha1SetScript);
+            ClassicAssert.AreEqual("C686F316AAF1EB01D5A4DE1B0B63CD233010E63D", sha1SetScript);
             for (var i = 0; i < 5000; i++)
             {
                 var randPostFix = rnd.Next(1, 1000);
@@ -454,6 +455,87 @@ return redis.call("mget", unpack(KEYS))
                 {
                     ClassicAssert.AreEqual(null, item);
                 }
+            }
+        }
+
+        [Test]
+        public void ScriptExistsErrors()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "EXISTS"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'script|exists' command", exc.Message);
+        }
+
+        [Test]
+        public void ScriptFlushErrors()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // > 1 args
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "FLUSH", "ASYNC", "BAR"));
+                ClassicAssert.AreEqual("ERR SCRIPT FLUSH only support SYNC|ASYNC option", exc.Message);
+            }
+
+            // 1 arg, but not ASYNC or SYNC
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "FLUSH", "NOW"));
+                ClassicAssert.AreEqual("ERR SCRIPT FLUSH only support SYNC|ASYNC option", exc.Message);
+            }
+        }
+
+        [Test]
+        public void ScriptLoadErrors()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // 0 args
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "LOAD"));
+                ClassicAssert.AreEqual("ERR wrong number of arguments for 'script|load' command", exc.Message);
+            }
+
+            // > 1 args
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "LOAD", "return 'foo'", "return 'bar'"));
+                ClassicAssert.AreEqual("ERR wrong number of arguments for 'script|load' command", exc.Message);
+            }
+        }
+
+        [Test]
+        public void ScriptExistsMultiple()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var server = redis.GetServers().First();
+
+            var hashBytes = server.ScriptLoad("return 'foo'");
+
+            // upper hash
+            {
+                var hash = string.Join("", hashBytes.Select(static x => x.ToString("X2")));
+
+                var exists = (RedisValue[])server.Execute("SCRIPT", "EXISTS", hash, "foo", "bar");
+
+                ClassicAssert.AreEqual(3, exists.Length);
+                ClassicAssert.AreEqual(1, (long)exists[0]);
+                ClassicAssert.AreEqual(0, (long)exists[1]);
+                ClassicAssert.AreEqual(0, (long)exists[2]);
+            }
+
+            // lower hash
+            {
+                var hash = string.Join("", hashBytes.Select(static x => x.ToString("x2")));
+
+                var exists = (RedisValue[])server.Execute("SCRIPT", "EXISTS", hash, "foo", "bar");
+
+                ClassicAssert.AreEqual(3, exists.Length);
+                ClassicAssert.AreEqual(1, (long)exists[0]);
+                ClassicAssert.AreEqual(0, (long)exists[1]);
+                ClassicAssert.AreEqual(0, (long)exists[2]);
             }
         }
     }
