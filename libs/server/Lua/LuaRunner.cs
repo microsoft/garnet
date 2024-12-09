@@ -646,13 +646,25 @@ namespace Garnet.server
 
         void ResetParameters(int nKeys, int nArgs)
         {
+            Debug.Assert(state.GetTop() == 0, "Stack should be empty before resetting parameters");
+
+            if (!state.CheckStack(2))
+            {
+                throw new GarnetException("Insufficient space on stack to reset parameters");
+            }
+
             if (keyLength > nKeys)
             {
-                var keyResetRes = state.DoString($"count = #KEYS for i={nKeys + 1}, {keyLength} do KEYS[i]=nil end");
+                // get KEYS on the stack
+                state.PushNumber(keysTableRegistryIndex);
+                var loadRes = state.GetTable(LuaRegistry.Index);
+                Debug.Assert(loadRes == LuaType.Table, "Unexpected type for KEYS");
 
-                if (keyResetRes)
+                // clear all the values in KEYS that we aren't going to set anyway
+                for (var i = nKeys + 1; i <= keyLength; i++)
                 {
-                    throw new GarnetException("Couldn't reset KEYS to run script");
+                    state.PushNil();
+                    state.RawSetInteger(1, i);
                 }
             }
 
@@ -660,15 +672,21 @@ namespace Garnet.server
 
             if (argvLength > nArgs)
             {
-                var argvResetRes = state.DoString($"count = #ARGV for i={nArgs + 1}, {argvLength} do ARGV[i]=nil end");
+                // get ARGV on the stack
+                state.PushNumber(argvTableRegistryIndex);
+                var loadRes = state.GetTable(LuaRegistry.Index);
+                Debug.Assert(loadRes == LuaType.Table, "Unexpected type for ARGV");
 
-                if (argvResetRes)
+                for (var i = nArgs + 1; i <= argvLength; i++)
                 {
-                    throw new GarnetException("Couldn't reset ARGV to run script");
+                    state.PushNil();
+                    state.RawSetInteger(1, i);
                 }
             }
 
             argvLength = nArgs;
+
+            Debug.Assert(state.GetTop() == 0, "Stack should be empty after resetting parameters");
         }
 
         void LoadParameters(string[] keys, string[] argv)
@@ -683,22 +701,20 @@ namespace Garnet.server
             ResetParameters(keys?.Length ?? 0, argv?.Length ?? 0);
             if (keys != null)
             {
-                for (int i = 0; i < keys.Length; i++)
+                for (var i = 0; i < keys.Length; i++)
                 {
                     // equivalent to KEYS[i+1] = keys[i]
-                    state.PushNumber(i + 1);
                     state.PushString(keys[i]);
-                    state.SetTable(keysTableRegistryIndex);
+                    state.RawSetInteger(keysTableRegistryIndex, i + 1);
                 }
             }
             if (argv != null)
             {
-                for (int i = 0; i < argv.Length; i++)
+                for (var i = 0; i < argv.Length; i++)
                 {
                     // equivalent to ARGV[i+1] = keys[i]
-                    state.PushNumber(i + 1);
                     state.PushString(argv[i]);
-                    state.SetTable(argvTableRegistryIndex);
+                    state.RawSetInteger(argvTableRegistryIndex, i + 1);
                 }
             }
         }
