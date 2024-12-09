@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
+using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -569,5 +571,145 @@ namespace Garnet.server
             }
             return true;
         }
+
+        /// <summary>
+        /// Sets an expiration time for a field in the hash stored at key.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool HashExpire<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            if (parseState.Count <= 4)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.HEXPIRE));
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            long expireAt = 0;
+            var isMilliseconds = false;
+            if (command == RespCommand.HEXPIRE || command == RespCommand.HPEXPIRE)
+            {
+                if (!parseState.TryGetInt(1, out var expireTime))
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                }
+
+                if (expireTime < 0)
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
+                }
+                expireAt = command == RespCommand.HEXPIRE ? DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expireTime : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expireTime;
+                isMilliseconds = command == RespCommand.HPEXPIRE;
+            }
+            else if (command == RespCommand.HEXPIREAT || command == RespCommand.HPEXPIREAT)
+            {
+                if (!parseState.TryGetLong(1, out expireAt))
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                }
+                if (expireAt < 0)
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
+                }
+                isMilliseconds = command == RespCommand.HPEXPIREAT;
+            }
+            else
+            {
+                throw new UnreachableException("Can't reach this piece of code");
+            }
+
+
+            var currIdx = 2;
+            if (parseState.TryGetExpireOption(currIdx, out var expireOption))
+            {
+                currIdx++; // If expire option is present, move to next argument else continue with the current argument
+            }
+
+            var fieldOption = parseState.GetArgSliceByRef(currIdx++);
+            if (!fieldOption.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FIELDS))
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMandatoryMissing, "FIELDS")));
+            }
+
+            if (!parseState.TryGetInt(currIdx++, out var numFields))
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numFields")));
+            }
+
+            if (parseState.Count != currIdx + numFields)
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMustMatchNoOfArgs, "numFields")));
+            }
+
+            var fieldsParseState = parseState.Slice(currIdx, numFields);
+
+            // Prepare input
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXPIRE };
+            var input = new ObjectInput(header, ref fieldsParseState);
+
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.HashExpire(key, expireAt, isMilliseconds, expireOption, ref input, ref outputFooter);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Prunes expired entries from the hash stored at key.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        /*private unsafe bool HashCollect<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments("HCOLLECT");
+            }
+
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            // Prepare input
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+
+            var status = storageApi.HashCollect(keyBytes, ref input, out int output);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    // Returns number of fields got pruned
+                    while (!RespWriteUtils.WriteInteger(output, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }*/
     }
 }

@@ -104,6 +104,10 @@ namespace Garnet.server
         GETEX,
         GETSET,
         HDEL,
+        HEXPIRE,
+        HPEXPIRE,
+        HEXPIREAT,
+        HPEXPIREAT,
         HINCRBY,
         HINCRBYFLOAT,
         HMSET,
@@ -1207,6 +1211,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HEXISTS\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
                                             return RespCommand.HEXISTS;
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HEXPIRE\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return RespCommand.HEXPIRE;
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HINCRBY\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {

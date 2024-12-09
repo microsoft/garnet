@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -537,5 +538,36 @@ namespace Garnet.server
         public GarnetStatus HashIncrement<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
             => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+
+        /// <summary>
+        /// Sets the expiration time for the specified key.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="key">The key for which to set the expiration time.</param>
+        /// <param name="expireAt">The expiration time in ticks.</param>
+        /// <param name="isMilliseconds">Indicates whether the expiration time is in milliseconds.</param>
+        /// <param name="expireOption">The expiration option to use.</param>
+        /// <param name="input">The input object containing the operation details.</param>
+        /// <param name="outputFooter">The output footer object to store the result.</param>
+        /// <param name="objectContext">The object context for the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        public GarnetStatus HashExpire<TObjectContext>(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            var expireAtUtc = isMilliseconds ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expireAt) : ConvertUtils.UnixTimestampInSecondsToTicks(expireAt);
+            var expiryLength = NumUtils.NumDigitsInLong(expireAt);
+            var expirySlice = scratchBufferManager.CreateArgSlice(expiryLength);
+            var expirySpan = expirySlice.Span;
+            NumUtils.LongToSpanByte(expireAt, expirySpan);
+
+            parseState.Initialize(1 + input.parseState.Count);
+            parseState.SetArgument(0, expirySlice);
+            parseState.SetArguments(1, input.parseState.Parameters);
+
+            var innerInput = new ObjectInput(input.header, ref parseState, startIdx: 0, arg1: (int)expireOption);
+
+            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref outputFooter);
+            return GarnetStatus.OK;
+        }
     }
 }

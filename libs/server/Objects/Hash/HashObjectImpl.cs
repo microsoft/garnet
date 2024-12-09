@@ -33,7 +33,7 @@ namespace Garnet.server
             {
                 var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
-                if (hash.TryGetValue(key, out var hashValue))
+                if (TryGetValue(key, out var hashValue))
                 {
                     while (!RespWriteUtils.WriteBulkString(hashValue, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -75,7 +75,7 @@ namespace Garnet.server
                 {
                     var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
-                    if (hash.TryGetValue(key, out var hashValue))
+                    if (TryGetValue(key, out var hashValue))
                     {
                         while (!RespWriteUtils.WriteBulkString(hashValue, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -115,16 +115,16 @@ namespace Garnet.server
             {
                 if (respProtocolVersion < 3)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(hash.Count * 2, ref curr, end))
+                    while (!RespWriteUtils.WriteArrayLength(Count() * 2, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteMapLength(hash.Count, ref curr, end))
+                    while (!RespWriteUtils.WriteMapLength(Count(), ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
 
-                foreach (var item in hash)
+                foreach (var item in AsEnumerable())
                 {
                     while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -151,7 +151,7 @@ namespace Garnet.server
             {
                 var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
-                if (hash.Remove(key, out var hashValue))
+                if (Remove(key, out var hashValue))
                 {
                     _output->result1++;
                     this.UpdateSize(key, hashValue, false);
@@ -161,7 +161,7 @@ namespace Garnet.server
 
         private void HashLength(byte* output)
         {
-            ((ObjectOutputHeader*)output)->result1 = hash.Count;
+            ((ObjectOutputHeader*)output)->result1 = Count();
         }
 
         private void HashStrLength(ref ObjectInput input, byte* output)
@@ -170,7 +170,7 @@ namespace Garnet.server
             *_output = default;
 
             var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
-            _output->result1 = hash.TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
+            _output->result1 = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
         }
 
         private void HashExists(ref ObjectInput input, byte* output)
@@ -179,7 +179,7 @@ namespace Garnet.server
             *_output = default;
 
             var field = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
-            _output->result1 = hash.ContainsKey(field) ? 1 : 0;
+            _output->result1 = ContainsKey(field) ? 1 : 0;
         }
 
         private void HashRandomField(ref ObjectInput input, ref SpanByteAndMemory output)
@@ -204,11 +204,12 @@ namespace Garnet.server
             {
                 if (includedCount)
                 {
-                    if (countParameter > 0 && countParameter > hash.Count)
-                        countParameter = hash.Count;
+                    var count = Count();
+                    if (countParameter > 0 && countParameter > count)
+                        countParameter = count;
 
                     var absCount = Math.Abs(countParameter);
-                    var indexes = RandomUtils.PickKRandomIndexes(hash.Count, absCount, seed, countParameter > 0);
+                    var indexes = RandomUtils.PickKRandomIndexes(count, absCount, seed, countParameter > 0);
 
                     // Write the size of the array reply
                     while (!RespWriteUtils.WriteArrayLength(withValues ? absCount * 2 : absCount, ref curr, end))
@@ -216,7 +217,7 @@ namespace Garnet.server
 
                     foreach (var index in indexes)
                     {
-                        var pair = hash.ElementAt(index);
+                        var pair = ElementAt(index);
                         while (!RespWriteUtils.WriteBulkString(pair.Key, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
@@ -232,8 +233,8 @@ namespace Garnet.server
                 else // No count parameter is present, we just return a random field
                 {
                     // Write a bulk string value of a random field from the hash value stored at key.
-                    var index = RandomUtils.PickRandomIndex(hash.Count, seed);
-                    var pair = hash.ElementAt(index);
+                    var index = RandomUtils.PickRandomIndex(Count(), seed);
+                    var pair = ElementAt(index);
                     while (!RespWriteUtils.WriteBulkString(pair.Key, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     countDone = 1;
@@ -262,16 +263,16 @@ namespace Garnet.server
                 var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
                 var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.ToByteArray();
 
-                if (!hash.TryGetValue(key, out var hashValue))
+                if (!TryGetValue(key, out var hashValue))
                 {
-                    hash.Add(key, value);
+                    Add(key, value);
                     this.UpdateSize(key, value);
                     _output->result1++;
                 }
                 else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default &&
                          !hashValue.AsSpan().SequenceEqual(value))
                 {
-                    hash[key] = value;
+                    Set(key, value);
                     // Skip overhead as existing item is getting replaced.
                     this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
                                  Utility.RoundUp(hashValue.Length, IntPtr.Size);
@@ -281,7 +282,7 @@ namespace Garnet.server
 
         private void HashGetKeysOrValues(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var count = hash.Count;
+            var count = Count();
             var op = input.header.HashOp;
 
             var isMemory = false;
@@ -297,7 +298,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                foreach (var item in hash)
+                foreach (var item in AsEnumerable())
                 {
                     if (HashOperation.HKEYS == op)
                     {
@@ -343,7 +344,7 @@ namespace Garnet.server
                 var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
                 var incrSlice = input.parseState.GetArgSliceByRef(1);
 
-                var valueExists = hash.TryGetValue(key, out var value);
+                var valueExists = TryGetValue(key, out var value);
                 if (op == HashOperation.HINCRBY)
                 {
                     if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out int incr))
@@ -376,14 +377,14 @@ namespace Garnet.server
                         resultSpan = resultSpan.Slice(0, bytesWritten);
 
                         resultBytes = resultSpan.ToArray();
-                        hash[key] = resultBytes;
+                        Set(key, resultBytes);
                         Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) -
                                 Utility.RoundUp(value.Length, IntPtr.Size);
                     }
                     else
                     {
                         resultBytes = incrSlice.SpanByte.ToByteArray();
-                        hash.Add(key, resultBytes);
+                        Add(key, resultBytes);
                         UpdateSize(key, resultBytes);
                     }
 
@@ -417,14 +418,14 @@ namespace Garnet.server
                         result += incr;
 
                         resultBytes = Encoding.ASCII.GetBytes(result.ToString(CultureInfo.InvariantCulture));
-                        hash[key] = resultBytes;
+                        Set(key, resultBytes);
                         Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) -
                                 Utility.RoundUp(value.Length, IntPtr.Size);
                     }
                     else
                     {
                         resultBytes = incrSlice.SpanByte.ToByteArray();
-                        hash.Add(key, resultBytes);
+                        Add(key, resultBytes);
                         UpdateSize(key, resultBytes);
                     }
 
@@ -434,6 +435,44 @@ namespace Garnet.server
                 }
 
                 _output.result1 = 1;
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
+        private void HashExpire(ref ObjectInput input, ref SpanByteAndMemory output)
+        {
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+            try
+            {
+                var expireOption = (ExpireOption)input.arg1;
+                var expiration = input.parseState.GetLong(0);
+                var numFields = input.parseState.Count - 1;
+                while (!RespWriteUtils.WriteArrayLength(numFields, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                foreach (var item in input.parseState.Parameters)
+                {
+                    var result = SetExpire(item.ToArray(), expiration, expireOption);
+                    while (!RespWriteUtils.WriteInteger(result, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    _output.result1++;
+                }
+
+                DeleteExpiredItems();
             }
             finally
             {

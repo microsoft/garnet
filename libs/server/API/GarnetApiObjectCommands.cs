@@ -470,6 +470,10 @@ namespace Garnet.server
             => storageSession.HashIncrement(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
+        public GarnetStatus HashExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.HashExpire(key, expireAt, isMilliseconds, expireOption, ref input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
         public GarnetStatus HashScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
             => storageSession.ObjectScan(GarnetObjectType.Hash, key, cursor, match, count, out items, ref objectContext);
 

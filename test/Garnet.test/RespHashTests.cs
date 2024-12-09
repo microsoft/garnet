@@ -693,6 +693,152 @@ namespace Garnet.test
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashStringLength(keys[0], hashFields[0][0]));
         }
 
+        [Test]
+        public void CanDoHashExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world")]);
+
+            var result = db.Execute("HEXPIRE", "myhash", "10", "FIELDS", "2", "field1", "field2");
+            var results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]); // field1 success
+            ClassicAssert.AreEqual(1, (long)results[1]); // field2 success
+
+            var ttl = (RedisResult[])db.Execute("HTTL", "myhash", "FIELDS", "2", "field1", "field2");
+            ClassicAssert.AreEqual(2, ttl.Length);
+            ClassicAssert.IsTrue((long)ttl[0] <= 10); // field1 TTL
+            ClassicAssert.IsTrue((long)ttl[1] <= 10); // field2 TTL
+        }
+
+        [Test]
+        [TestCase("NX", Description = "Set expiry only when no expiration exists")]
+        [TestCase("XX", Description = "Set expiry only when expiration exists")] 
+        [TestCase("GT", Description = "Set expiry only when new TTL is greater")]
+        [TestCase("LT", Description = "Set expiry only when new TTL is less")]
+        public void CanDoHashExpireWithOptions(string option)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            
+            db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world")]);
+
+            // First set TTL for field1 only
+            db.Execute("HEXPIRE", "myhash", "20", "FIELDS", "1", "field1");
+
+            // Try setting TTL with option
+            var result = (RedisResult[])db.Execute("HEXPIRE", "myhash", "10", option, "FIELDS", "2", "field1", "field2");
+            
+            switch (option)
+            {
+                case "NX":
+                    ClassicAssert.AreEqual(0L, (long)result[0]); // field1 has TTL
+                    ClassicAssert.AreEqual(1L, (long)result[1]); // field2 no TTL
+                    break;
+                case "XX":
+                    ClassicAssert.AreEqual(1L, (long)result[0]); // field1 has TTL
+                    ClassicAssert.AreEqual(0L, (long)result[1]); // field2 no TTL
+                    break;
+                case "GT":
+                    ClassicAssert.AreEqual(0L, (long)result[0]); // 10 < 20
+                    ClassicAssert.AreEqual(1L, (long)result[1]); // no TTL = infinite
+                    break;
+                case "LT":
+                    ClassicAssert.AreEqual(1L, (long)result[0]); // 10 < 20
+                    ClassicAssert.AreEqual(0L, (long)result[1]); // no TTL = infinite
+                    break;
+            }
+        }
+
+        [Test] 
+        public void CanDoHashExpireAt()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            
+            db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world")]);
+
+            var futureTime = DateTimeOffset.UtcNow.AddSeconds(30).ToUnixTimeSeconds();
+            var result = (RedisResult[])db.Execute("HEXPIREAT", "myhash", futureTime.ToString(), "FIELDS", "2", "field1", "field2");
+            ClassicAssert.AreEqual(2, result.Length);
+            ClassicAssert.AreEqual(1L, (long)result[0]);
+            ClassicAssert.AreEqual(1L, (long)result[1]);
+
+            var ttl = (RedisResult[])db.Execute("HTTL", "myhash", "FIELDS", "2", "field1", "field2");
+            ClassicAssert.IsTrue((long)ttl[0] <= 30);
+            ClassicAssert.IsTrue((long)ttl[1] <= 30);
+        }
+
+        [Test]
+        public void CanDoHashPreciseExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            
+            db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world")]);
+
+            var result = (RedisResult[])db.Execute("HPEXPIRE", "myhash", "1000", "FIELDS", "2", "field1", "field2");
+            ClassicAssert.AreEqual(2, result.Length);
+            ClassicAssert.AreEqual(1L, (long)result[0]);
+            ClassicAssert.AreEqual(1L, (long)result[1]);
+
+            var pttl = (RedisResult[])db.Execute("HPTTL", "myhash", "FIELDS", "2", "field1", "field2");
+            ClassicAssert.IsTrue((long)pttl[0] <= 1000);
+            ClassicAssert.IsTrue((long)pttl[1] <= 1000);
+        }
+
+        [Test]
+        public void CanDoHashPreciseExpireAt()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            
+            db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world")]);
+
+            var futureTimeMs = DateTimeOffset.UtcNow.AddSeconds(30).ToUnixTimeMilliseconds();
+            var result = (RedisResult[])db.Execute("HPEXPIREAT", "myhash", futureTimeMs.ToString(), "FIELDS", "2", "field1", "field2"); 
+            ClassicAssert.AreEqual(2, result.Length);
+            ClassicAssert.AreEqual(1L, (long)result[0]);
+            ClassicAssert.AreEqual(1L, (long)result[1]);
+
+            var pttl = (RedisResult[])db.Execute("HPTTL", "myhash", "FIELDS", "2", "field1", "field2");
+            ClassicAssert.IsTrue((long)pttl[0] <= 30000);
+            ClassicAssert.IsTrue((long)pttl[1] <= 30000);
+        }
+
+        [Test]
+        public void TestHashExpireEdgeCases()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            
+            // Test with non-existent key
+            var result = (RedisResult[])db.Execute("HEXPIRE", "nonexistent", "10", "FIELDS", "1", "field1");
+            ClassicAssert.AreEqual(1, result.Length);
+            ClassicAssert.AreEqual(-2L, (long)result[0]); // Key doesn't exist
+
+            // Test with non-existent fields
+            db.HashSet("myhash", "field1", "hello");
+            result = (RedisResult[])db.Execute("HEXPIRE", "myhash", "10", "FIELDS", "2", "field1", "nonexistent");
+            ClassicAssert.AreEqual(2, result.Length);
+            ClassicAssert.AreEqual(1L, (long)result[0]); // Existing field
+            ClassicAssert.AreEqual(-2L, (long)result[1]); // Non-existent field
+
+            // Test with zero TTL (should delete fields)
+            result = (RedisResult[])db.Execute("HEXPIRE", "myhash", "0", "FIELDS", "1", "field1");
+            ClassicAssert.AreEqual(1, result.Length);
+            ClassicAssert.AreEqual(1L, (long)result[0]);
+            ClassicAssert.IsFalse(db.HashExists("myhash", "field1"));
+
+            // Test with negative TTL (should delete fields)
+            db.HashSet("myhash", "field1", "hello");
+            result = (RedisResult[])db.Execute("HEXPIRE", "myhash", "-1", "FIELDS", "1", "field1");
+            ClassicAssert.AreEqual(1, result.Length);
+            ClassicAssert.AreEqual(1L, (long)result[0]);
+            ClassicAssert.IsFalse(db.HashExists("myhash", "field1"));
+        }
+
         #endregion
 
         #region LightClientTests

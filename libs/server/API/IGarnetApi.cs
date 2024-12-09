@@ -952,6 +952,17 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus HashIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
+        /// <summary>
+        /// Sets an expiration time on a hash field.
+        /// </summary>
+        /// <param name="key">The key of the hash.</param>
+        /// <param name="expireAt">The expiration time in Unix timestamp format.</param>
+        /// <param name="expireOption">The expiration option to apply.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus HashExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
         #endregion
 
         #region BitMaps Methods
