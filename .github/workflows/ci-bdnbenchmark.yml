@@ -99,6 +99,8 @@ jobs:
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           summary-always: true
+          gh-pages-branch: 'continuousbenchmark'
+          benchmark-data-dir-path: 'website/static/charts'
           auto-push: true
           ref: 9f43c15bbe42c350f93bd7494d2918974f1963b1
 
