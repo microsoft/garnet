@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Security.Cryptography;
+using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Microsoft.Extensions.Logging;
@@ -111,7 +112,7 @@ namespace Garnet.server
             scriptCache.Clear();
         }
 
-        static ReadOnlySpan<byte> HEX_CHARS => "0123456789abcdef"u8;
+        static ReadOnlySpan<byte> HEX_CHARS => "0123456789ABCDEF"u8; // upper case is important here for future lookup, and matches Redis behavior
 
         public void GetScriptDigest(ReadOnlySpan<byte> source, Span<byte> into)
         {

@@ -31,6 +31,8 @@ namespace Garnet.server
             }
 
             ref var digest = ref parseState.GetArgSliceByRef(0);
+            AsciiUtils.ToUpperInPlace(digest.Span);
+
             var digestAsSpanByteMem = new SpanByteAndMemory(digest.SpanByte);
 
             var result = false;
@@ -131,7 +133,10 @@ namespace Garnet.server
             for (var shaIx = 0; shaIx < parseState.Count; shaIx++)
             {
                 ref var sha1 = ref parseState.GetArgSliceByRef(shaIx);
+                AsciiUtils.ToUpperInPlace(sha1.Span);
+
                 var sha1Arg = new SpanByteAndMemory(sha1.SpanByte);
+
                 var exists = storeWrapper.storeScriptCache.ContainsKey(sha1Arg) ? 1 : 0;
 
                 while (!RespWriteUtils.WriteArrayItem(exists, ref dcurr, dend))

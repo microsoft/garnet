@@ -32,10 +32,6 @@ namespace Garnet.server
 
             var ret = hash.ToHashCode();
 
-            // DEBUG
-            var txt = System.Text.Encoding.ASCII.GetString(key.AsReadOnlySpan());
-            // END DEBUG
-
             return ret;
         }
     }

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -502,6 +503,39 @@ return redis.call("mget", unpack(KEYS))
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "LOAD", "return 'foo'", "return 'bar'"));
                 ClassicAssert.AreEqual("ERR wrong number of arguments for 'script|load' command", exc.Message);
+            }
+        }
+
+        [Test]
+        public void ScriptExistsMultiple()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var server = redis.GetServers().First();
+
+            var hashBytes = server.ScriptLoad("return 'foo'");
+
+            // upper hash
+            {
+                var hash = string.Join("", hashBytes.Select(static x => x.ToString("X2")));
+
+                var exists = (RedisValue[])server.Execute("SCRIPT", "EXISTS", hash, "foo", "bar");
+
+                ClassicAssert.AreEqual(3, exists.Length);
+                ClassicAssert.AreEqual(1, (long)exists[0]);
+                ClassicAssert.AreEqual(0, (long)exists[1]);
+                ClassicAssert.AreEqual(0, (long)exists[2]);
+            }
+
+            // lower hash
+            {
+                var hash = string.Join("", hashBytes.Select(static x => x.ToString("x2")));
+
+                var exists = (RedisValue[])server.Execute("SCRIPT", "EXISTS", hash, "foo", "bar");
+
+                ClassicAssert.AreEqual(3, exists.Length);
+                ClassicAssert.AreEqual(1, (long)exists[0]);
+                ClassicAssert.AreEqual(0, (long)exists[1]);
+                ClassicAssert.AreEqual(0, (long)exists[2]);
             }
         }
     }
