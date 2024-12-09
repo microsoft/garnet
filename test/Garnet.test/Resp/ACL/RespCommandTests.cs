@@ -5411,6 +5411,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task SInterCardACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SINTERCARD",
+                [DoUnionAsync]
+            );
+
+            static async Task DoUnionAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("SINTERCARD", ["2", "foo", "bar"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
         public async Task SInterStoreACLsAsync()
         {
             await CheckCommandsAsync(
@@ -5643,6 +5658,31 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
+
+
+        [Test]
+        public async Task ZMPopACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZMPOP",
+                [DoZMPopAsync, DoZMPopCountAsync]
+            );
+
+            static async Task DoZMPopAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZMPOP", ["2", "foo", "bar", "MIN"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.IsNull(val[0]);
+            }
+
+            static async Task DoZMPopCountAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZMPOP", ["2", "foo", "bar", "MAX", "COUNT", "10"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.IsNull(val[0]);
+            }
+        }
+
         [Test]
         public async Task ZPopMaxACLsAsync()
         {
@@ -5777,6 +5817,21 @@ namespace Garnet.test.Resp.ACL
             {
                 string[] val = await client.ExecuteForStringArrayResultAsync("ZREVRANGEBYLEX", ["key", "10", "20"]);
                 ClassicAssert.AreEqual(0, val.Length);
+            }
+        }
+
+        [Test]
+        public async Task ZRangeStoreACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZRANGESTORE",
+                [DoZRangeStoreAsync]
+            );
+
+            static async Task DoZRangeStoreAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("ZRANGESTORE", ["dkey", "key", "0", "-1"]);
+                ClassicAssert.AreEqual(0, val);
             }
         }
 

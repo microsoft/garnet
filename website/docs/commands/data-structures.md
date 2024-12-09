@@ -690,6 +690,21 @@ If **destination** already exists, it is overwritten.
 
 ---
 
+### SINTERCARD
+
+#### Syntax
+
+```bash
+    SINTERCARD numkeys [key ...] [LIMIT limit]
+```
+
+Returns the number of members in the resulting set from the intersection of all the given sets.
+Keys that do not exist are considered to be empty sets.
+
+The optional `LIMIT` argument specifies an upper bound on the number of intersecting members to count.
+
+---
+
 ### SDIFF
 
 #### Syntax
@@ -841,6 +856,22 @@ Returns one of the following:
 
 _Nil reply:_ if the member does not exist in the sorted set.\
 _Array reply:_ a list of string **member** scores as double-precision floating point numbers.
+
+---
+
+### ZMPOP
+
+#### Syntax
+
+```bash
+    ZMPOP numkeys key [key ...] <MIN | MAX> [COUNT count]
+```
+
+Removes and returns one or more members with the lowest scores (default) or highest scores from the sorted set or sorted sets.
+
+- MIN: Remove elements starting with the lowest scores
+- MAX: Remove elements starting with the highest scores
+- COUNT: Specifies how many elements to pop (default is 1)
 
 ---
 
@@ -1097,6 +1128,18 @@ The **match** parameter allows to apply a filter to elements after they have bee
 Returns the score of member in the sorted set at **key**.
 
 If member does not exist in the sorted set, or **key** does not exist, nil is returned.
+
+---
+
+### ZRANGESTORE
+
+#### Syntax
+
+```bash
+    ZRANGESTORE dst src min max [BYSCORE|BYLEX] [REV] [LIMIT offset count]
+```
+
+Stores the specified range of elements in the sorted set stored at **src** into the sorted set stored at **dst**.
 
 ---
 
