@@ -48,7 +48,7 @@ namespace Tsavorite.core
         /// </summary>
         public long finalLogicalAddress;
         /// <summary>
-        /// Snapshot end logical address: snaphot is [startLogicalAddress, snapshotFinalLogicalAddress)
+        /// Snapshot end logical address: snapshot is [startLogicalAddress, snapshotFinalLogicalAddress)
         /// Note that finalLogicalAddress may be higher due to delta records
         /// </summary>
         public long snapshotFinalLogicalAddress;

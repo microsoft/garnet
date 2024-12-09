@@ -186,24 +186,27 @@ namespace Tsavorite.core
         /// <remarks>Currently we load an entire page, which while inefficient in performance, allows us to make the cursor safe (by ensuring we align to a valid record) if it is not
         /// the last one returned. We could optimize this to load only the subset of a page that is pointed to by the cursor and do GetRequiredRecordSize/RetrievedFullRecord as in
         /// AsyncGetFromDiskCallback. However, this would not validate the cursor and would therefore require maintaining a cursor history.</remarks>
-        internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
+        internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>;
 
         private protected bool ScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
-                ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor)
+                ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor, long maxAddress)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
             where TScanIterator : ITsavoriteScanIterator<TKey, TValue>, IPushScanIterator<TKey>
         {
             using var session = store.NewSession<TInput, TOutput, Empty, LogScanCursorFunctions<TInput, TOutput>>(new LogScanCursorFunctions<TInput, TOutput>());
             var bContext = session.BasicContext;
 
-            if (cursor >= GetTailAddress())
-                goto IterationComplete;
-
             if (cursor < BeginAddress) // This includes 0, which means to start the Scan
                 cursor = BeginAddress;
             else if (validateCursor)
                 iter.SnapCursorToLogicalAddress(ref cursor);
+
+            if (!scanFunctions.OnStart(cursor, iter.EndAddress))
+                return false;
+
+            if (cursor >= GetTailAddress())
+                goto IterationComplete;
 
             scanCursorState.Initialize(scanFunctions);
 
@@ -214,7 +217,7 @@ namespace Tsavorite.core
                 {
                     ref var key = ref iter.GetKey();
                     ref var value = ref iter.GetValue();
-                    var status = bContext.ConditionalScanPush(scanCursorState, recordInfo, ref key, ref value, iter.CurrentAddress, iter.NextAddress);
+                    var status = bContext.ConditionalScanPush(scanCursorState, recordInfo, ref key, ref value, iter.CurrentAddress, iter.NextAddress, maxAddress);
                     if (status.IsPending)
                     {
                         ++numPending;
@@ -227,13 +230,19 @@ namespace Tsavorite.core
                 }
 
                 // Update the cursor to point to the next record.
-                cursor = iter.NextAddress;
+                if (scanCursorState.retryLastRecord)
+                    cursor = iter.CurrentAddress;
+                else
+                    cursor = iter.NextAddress;
 
                 // Now see if we completed the enumeration.
                 if (scanCursorState.stop)
                     goto IterationComplete;
                 if (scanCursorState.acceptedCount >= count || scanCursorState.endBatch)
+                {
+                    scanFunctions.OnStop(true, scanCursorState.acceptedCount);
                     return true;
+                }
             }
 
             // Drain any pending pushes. We have ended the iteration; there are no more records, so drop through to end it.
@@ -242,12 +251,13 @@ namespace Tsavorite.core
 
             IterationComplete:
             cursor = 0;
+            scanFunctions.OnStop(false, scanCursorState.acceptedCount);
             return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ScanCursorState<TKey, TValue> scanCursorState, RecordInfo recordInfo,
-                ref TKey key, ref TValue value, long currentAddress, long minAddress)
+                ref TKey key, ref TValue value, long currentAddress, long minAddress, long maxAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup so the epoch should be protected");
@@ -259,7 +269,7 @@ namespace Tsavorite.core
             do
             {
                 // If a more recent version of the record exists, do not push this one. Start by searching in-memory.
-                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, currentAddress, minAddress, out internalStatus, out needIO))
+                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, currentAddress, minAddress, maxAddress, out internalStatus, out needIO))
                     return Status.CreateFound();
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
@@ -270,7 +280,7 @@ namespace Tsavorite.core
             {
                 // A more recent version of the key was not (yet) found and we need another IO to continue searching.
                 internalStatus = PrepareIOForConditionalScan(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default,
-                                ref stackCtx, minAddress, scanCursorState);
+                                ref stackCtx, minAddress, maxAddress, scanCursorState);
             }
             else
             {
@@ -288,6 +298,8 @@ namespace Tsavorite.core
                         Interlocked.Increment(ref scanCursorState.acceptedCount);
                     if ((cursorRecordResult & CursorRecordResult.EndBatch) != 0)
                         scanCursorState.endBatch = true;
+                    if ((cursorRecordResult & CursorRecordResult.RetryLastRecord) != 0)
+                        scanCursorState.retryLastRecord = true;
                 }
                 internalStatus = OperationStatus.SUCCESS;
             }
@@ -298,12 +310,12 @@ namespace Tsavorite.core
         internal static OperationStatus PrepareIOForConditionalScan<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                                         ref TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext,
                                         ref TKey key, ref TInput input, ref TValue value, ref TOutput output, TContext userContext,
-                                        ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, ScanCursorState<TKey, TValue> scanCursorState)
+                                        ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, ScanCursorState<TKey, TValue> scanCursorState)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // WriteReason is not surfaced for this operation, so pick anything.
             var status = sessionFunctions.Store.PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output,
-                    userContext, ref stackCtx, minAddress, WriteReason.Compaction, OperationType.CONDITIONAL_SCAN_PUSH);
+                    userContext, ref stackCtx, minAddress, maxAddress, WriteReason.Compaction, OperationType.CONDITIONAL_SCAN_PUSH);
             pendingContext.scanCursorState = scanCursorState;
             return status;
         }
