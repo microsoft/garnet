@@ -2947,6 +2947,43 @@
         ]
       }
     ]
+      },
+      {
+    "Command": "HEXPIRETIME",
+    "Name": "HEXPIRETIME",
+    "Summary": "Returns the expiration time of a hash field as a Unix timestamp, in seconds.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
   },
   {
     "Command": "HGET",
@@ -3136,6 +3173,43 @@
     ]
   },
   {
+    "Command": "HPERSIST",
+    "Name": "HPERSIST",
+    "Summary": "Removes the expiration time for each specified field",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "HPEXPIRE",
     "Name": "HPEXPIRE",
     "Summary": "Set expiry for hash field using relative time to expire (milliseconds)",
@@ -3269,6 +3343,80 @@
             "Token": "LT"
           }
         ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HPEXPIRETIME",
+    "Name": "HPEXPIRETIME",
+    "Summary": "Returns the expiration time of a hash field as a Unix timestamp, in msec.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+      },
+      {
+    "Command": "HPTTL",
+    "Name": "HPTTL",
+    "Summary": "Returns the TTL in milliseconds of a hash field.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
@@ -3452,6 +3600,43 @@
         "Name": "FIELD",
         "DisplayText": "field",
         "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "HTTL",
+    "Name": "HTTL",
+    "Summary": "Returns the TTL in seconds of a hash field.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
       }
     ]
   },

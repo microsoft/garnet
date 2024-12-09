@@ -21,6 +21,8 @@ namespace Garnet.server
     {
         HCOLLECT,
         HEXPIRE,
+        HTTL,
+        HPERSIST,
         HGET,
         HMGET,
         HSET,
@@ -198,6 +200,12 @@ namespace Garnet.server
                     case HashOperation.HEXPIRE:
                         HashExpire(ref input, ref output);
                         break;
+                    case HashOperation.HTTL:
+                        HashTimeToLive(ref input, ref output);
+                        break;
+                    case HashOperation.HPERSIST:
+                        HashPersist(ref input, ref output);
+                        break;
                     case HashOperation.HKEYS:
                         HashGetKeysOrValues(ref input, ref output);
                         break;
@@ -345,6 +353,8 @@ namespace Garnet.server
                     break;
                 }
             }
+
+            // TODO: Delete the hash set if all the fields are expired
         }
 
         private bool TryGetValue(byte[] key, out byte[] value)
@@ -422,7 +432,7 @@ namespace Garnet.server
             hash[key] = value;
         }
 
-        private int SetExpire(byte[] key, long expiration, ExpireOption expireOption)
+        private int SetExpiration(byte[] key, long expiration, ExpireOption expireOption)
         {
             if (!ContainsKey(key))
             {
@@ -431,7 +441,7 @@ namespace Garnet.server
 
             if (expiration <= DateTimeOffset.UtcNow.Ticks)
             {
-                Remove(key, out _);
+                Persist(key);
                 return 2;
             }
 
@@ -464,11 +474,55 @@ namespace Garnet.server
                 {
                     return 0;
                 }
+
+                if (expireOption.HasFlag(ExpireOption.GT))
+                {
+                    return 0;
+                }
             }
 
             expirationTimes[key] = expiration;
             expirationQueue.Enqueue(key, expiration);
             return 1;
+        }
+
+        private int Persist(byte[] key)
+        {
+            if (!ContainsKey(key))
+            {
+                return -2;
+            }
+
+            if (expirationTimes is not null && expirationTimes.TryGetValue(key, out var currentExpiration))
+            {
+                expirationTimes.Remove(key);
+                expirationQueue.TryDequeue(out key, out _);
+
+                if (expirationTimes.Count == 0)
+                {
+                    expirationTimes = null;
+                    expirationQueue = null;
+                }
+
+                return 1;
+            }
+
+            return -1;
+        }
+
+        private long GetExpiration(byte[] key)
+        {
+            if (!ContainsKey(key))
+            {
+                return -2;
+            }
+
+            if (expirationTimes.TryGetValue(key, out var expiration))
+            {
+                return expiration;
+            }
+
+            return -1;
         }
 
         private KeyValuePair<byte[], byte[]> ElementAt(int index)

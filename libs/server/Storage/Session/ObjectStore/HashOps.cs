@@ -555,10 +555,10 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             var expireAtUtc = isMilliseconds ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expireAt) : ConvertUtils.UnixTimestampInSecondsToTicks(expireAt);
-            var expiryLength = NumUtils.NumDigitsInLong(expireAt);
+            var expiryLength = NumUtils.NumDigitsInLong(expireAtUtc);
             var expirySlice = scratchBufferManager.CreateArgSlice(expiryLength);
             var expirySpan = expirySlice.Span;
-            NumUtils.LongToSpanByte(expireAt, expirySpan);
+            NumUtils.LongToSpanByte(expireAtUtc, expirySpan);
 
             parseState.Initialize(1 + input.parseState.Count);
             parseState.SetArgument(0, expirySlice);
@@ -566,8 +566,39 @@ namespace Garnet.server
 
             var innerInput = new ObjectInput(input.header, ref parseState, startIdx: 0, arg1: (int)expireOption);
 
-            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref outputFooter);
-            return GarnetStatus.OK;
+            return RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref outputFooter);
         }
+
+        /// <summary>
+        /// Returns the time-to-live (TTL) of a hash key.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="key">The key of the hash.</param>
+        /// <param name="isMilliseconds">Indicates whether the TTL is in milliseconds.</param>
+        /// <param name="isTimestamp">Indicates whether the TTL is a timestamp.</param>
+        /// <param name="input">The input object containing the operation details.</param>
+        /// <param name="outputFooter">The output footer object to store the result.</param>
+        /// <param name="objectContext">The object context for the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        public GarnetStatus HashTimeToLive<TObjectContext>(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            var innerInput = new ObjectInput(input.header, ref input.parseState, arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0);
+
+            return RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref outputFooter);
+        }
+
+        /// <summary>
+        /// Removes the expiration time from a hash key, making it persistent.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="key">The key of the hash.</param>
+        /// <param name="input">The input object containing the operation details.</param>
+        /// <param name="outputFooter">The output footer object to store the result.</param>
+        /// <param name="objectContext">The object context for the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        public GarnetStatus HashPersist<TObjectContext>(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
     }
 }

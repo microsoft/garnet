@@ -458,21 +458,116 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
+                DeleteExpiredItems();
+
                 var expireOption = (ExpireOption)input.arg1;
                 var expiration = input.parseState.GetLong(0);
                 var numFields = input.parseState.Count - 1;
                 while (!RespWriteUtils.WriteArrayLength(numFields, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                foreach (var item in input.parseState.Parameters)
+                foreach (var item in input.parseState.Parameters.Slice(1))
                 {
-                    var result = SetExpire(item.ToArray(), expiration, expireOption);
+                    var result = SetExpiration(item.ToArray(), expiration, expireOption);
                     while (!RespWriteUtils.WriteInteger(result, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     _output.result1++;
                 }
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
+        private void HashTimeToLive(ref ObjectInput input, ref SpanByteAndMemory output)
+        {
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+            try
+            {
                 DeleteExpiredItems();
+
+                var isMilliseconds = input.arg1 == 1;
+                var isTimestamp = input.arg2 == 1;
+                var numFields = input.parseState.Count;
+                while (!RespWriteUtils.WriteArrayLength(numFields, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                foreach (var item in input.parseState.Parameters)
+                {
+                    var result = GetExpiration(item.ToArray());
+
+                    if (result >= 0)
+                    {
+                        if (isTimestamp && isMilliseconds)
+                        {
+                            result = ConvertUtils.UnixTimeInMillisecondsFromTicks(result);
+                        }
+                        else if (isTimestamp && !isMilliseconds)
+                        {
+                            result = ConvertUtils.UnixTimeInSecondsFromTicks(result);
+                        }
+                        else if (!isTimestamp && isMilliseconds)
+                        {
+                            result = ConvertUtils.MillisecondsFromDiffUtcNowTicks(result);
+                        }
+                        else if (!isTimestamp && !isMilliseconds)
+                        {
+                            result = ConvertUtils.SecondsFromDiffUtcNowTicks(result);
+                        }
+                    }
+
+                    while (!RespWriteUtils.WriteInteger(result, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    _output.result1++;
+                }
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
+        private void HashPersist(ref ObjectInput input, ref SpanByteAndMemory output)
+        {
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+            try
+            {
+                DeleteExpiredItems();
+
+                var numFields = input.parseState.Count;
+                while (!RespWriteUtils.WriteArrayLength(numFields, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                foreach (var item in input.parseState.Parameters)
+                {
+                    var result = Persist(item.ToArray());
+                    while (!RespWriteUtils.WriteInteger(result, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    _output.result1++;
+                }
             }
             finally
             {

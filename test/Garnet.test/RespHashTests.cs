@@ -694,13 +694,13 @@ namespace Garnet.test
         }
 
         [Test]
-        public void CanDoHashExpire()
+        public async Task CanDoHashExpire()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world")]);
+            db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "new")]);
 
-            var result = db.Execute("HEXPIRE", "myhash", "10", "FIELDS", "2", "field1", "field2");
+            var result = db.Execute("HEXPIRE", "myhash", "2", "FIELDS", "2", "field1", "field2");
             var results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]); // field1 success
@@ -708,13 +708,22 @@ namespace Garnet.test
 
             var ttl = (RedisResult[])db.Execute("HTTL", "myhash", "FIELDS", "2", "field1", "field2");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.IsTrue((long)ttl[0] <= 10); // field1 TTL
-            ClassicAssert.IsTrue((long)ttl[1] <= 10); // field2 TTL
+            ClassicAssert.LessOrEqual((long)ttl[0], 10);
+            ClassicAssert.Greater((long)ttl[0], 0);
+            ClassicAssert.LessOrEqual((long)ttl[1], 10);
+            ClassicAssert.Greater((long)ttl[1], 0);
+
+            await Task.Delay(2000);
+
+            var items = db.HashGetAll("myhash");
+            ClassicAssert.AreEqual(1, items.Length);
+            ClassicAssert.AreEqual("field3", items[0].Name.ToString());
+            ClassicAssert.AreEqual("new", items[0].Value.ToString());
         }
 
         [Test]
         [TestCase("NX", Description = "Set expiry only when no expiration exists")]
-        [TestCase("XX", Description = "Set expiry only when expiration exists")] 
+        [TestCase("XX", Description = "Set expiry only when expiration exists")]
         [TestCase("GT", Description = "Set expiry only when new TTL is greater")]
         [TestCase("LT", Description = "Set expiry only when new TTL is less")]
         public void CanDoHashExpireWithOptions(string option)
@@ -733,20 +742,21 @@ namespace Garnet.test
             switch (option)
             {
                 case "NX":
-                    ClassicAssert.AreEqual(0L, (long)result[0]); // field1 has TTL
-                    ClassicAssert.AreEqual(1L, (long)result[1]); // field2 no TTL
+                    ClassicAssert.AreEqual(0, (long)result[0]); // field1 has TTL
+                    ClassicAssert.AreEqual(1, (long)result[1]); // field2 no TTL
                     break;
                 case "XX":
-                    ClassicAssert.AreEqual(1L, (long)result[0]); // field1 has TTL
-                    ClassicAssert.AreEqual(0L, (long)result[1]); // field2 no TTL
+                    ClassicAssert.AreEqual(1, (long)result[0]); // field1 has TTL
+                    ClassicAssert.AreEqual(0, (long)result[1]); // field2 no TTL
                     break;
                 case "GT":
-                    ClassicAssert.AreEqual(0L, (long)result[0]); // 10 < 20
-                    ClassicAssert.AreEqual(1L, (long)result[1]); // no TTL = infinite
+                    // TODO: add 3rd field to check valid greater than
+                    ClassicAssert.AreEqual(0, (long)result[0]); // 10 < 20
+                    ClassicAssert.AreEqual(0, (long)result[1]); // no TTL = infinite
                     break;
                 case "LT":
-                    ClassicAssert.AreEqual(1L, (long)result[0]); // 10 < 20
-                    ClassicAssert.AreEqual(0L, (long)result[1]); // no TTL = infinite
+                    ClassicAssert.AreEqual(1, (long)result[0]); // 10 < 20
+                    ClassicAssert.AreEqual(1, (long)result[1]); // no TTL = infinite
                     break;
             }
         }
@@ -839,7 +849,7 @@ namespace Garnet.test
             ClassicAssert.IsFalse(db.HashExists("myhash", "field1"));
         }
 
-        #endregion
+        #endregion 
 
         #region LightClientTests
 

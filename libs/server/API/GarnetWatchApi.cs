@@ -442,6 +442,13 @@ namespace Garnet.server
             return garnetApi.HashScan(key, cursor, match, count, out items);
         }
 
+        /// <inheritdoc />
+        public GarnetStatus HashTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter);
+        }
+
         #endregion
 
         #region Bitmap Methods

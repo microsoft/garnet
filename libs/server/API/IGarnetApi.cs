@@ -963,6 +963,15 @@ namespace Garnet.server
         /// <returns>The status of the operation.</returns>
         GarnetStatus HashExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
+        /// <summary>
+        /// Persists the specified hash key, removing any expiration time set on it.
+        /// </summary>
+        /// <param name="key">The key of the hash to persist.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus HashPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
         #endregion
 
         #region BitMaps Methods
@@ -1599,6 +1608,17 @@ namespace Garnet.server
         /// <param name="items"></param>
         /// <returns></returns>
         GarnetStatus HashScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items);
+
+        /// <summary>
+        /// Returns the time to live for a hash key.
+        /// </summary>
+        /// <param name="key">The key of the hash.</param>
+        /// <param name="isMilliseconds">Indicates if the time to live is in milliseconds.</param>
+        /// <param name="isTimestamp">Indicates if the time to live is a timestamp.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus HashTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         #endregion
 

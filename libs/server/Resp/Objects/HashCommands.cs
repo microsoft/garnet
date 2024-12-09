@@ -587,44 +587,39 @@ namespace Garnet.server
 
             if (parseState.Count <= 4)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.HEXPIRE));
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
             var key = parseState.GetArgSliceByRef(0);
 
             long expireAt = 0;
             var isMilliseconds = false;
-            if (command == RespCommand.HEXPIRE || command == RespCommand.HPEXPIRE)
+            if (!parseState.TryGetLong(1, out var expireTime))
             {
-                if (!parseState.TryGetInt(1, out var expireTime))
-                {
-                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                }
-
-                if (expireTime < 0)
-                {
-                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
-                }
-                expireAt = command == RespCommand.HEXPIRE ? DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expireTime : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expireTime;
-                isMilliseconds = command == RespCommand.HPEXPIRE;
-            }
-            else if (command == RespCommand.HEXPIREAT || command == RespCommand.HPEXPIREAT)
-            {
-                if (!parseState.TryGetLong(1, out expireAt))
-                {
-                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                }
-                if (expireAt < 0)
-                {
-                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
-                }
-                isMilliseconds = command == RespCommand.HPEXPIREAT;
-            }
-            else
-            {
-                throw new UnreachableException("Can't reach this piece of code");
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
+            if (expireTime < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
+            }
+
+            switch (command)
+            {
+                case RespCommand.HEXPIRE:
+                    expireAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expireTime;
+                    isMilliseconds = false;
+                    break;
+                case RespCommand.HPEXPIRE:
+                    expireAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expireTime;
+                    isMilliseconds = true;
+                    break;
+                case RespCommand.HPEXPIREAT:
+                    isMilliseconds = true;
+                    break;
+                default: // RespCommand.HEXPIREAT
+                    break;
+            }
 
             var currIdx = 2;
             if (parseState.TryGetExpireOption(currIdx, out var expireOption))
@@ -673,28 +668,71 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Prunes expired entries from the hash stored at key.
+        /// Returns the time to live (TTL) for the specified fields in the hash stored at the given key.
         /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="command"></param>
-        /// <param name="storageApi"></param>
-        /// <returns></returns>
-        /*private unsafe bool HashCollect<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+        /// <typeparam name="TGarnetApi">The type of the storage API.</typeparam>
+        /// <param name="command">The RESP command indicating the type of TTL operation.</param>
+        /// <param name="storageApi">The storage API instance to interact with the underlying storage.</param>
+        /// <returns>True if the operation was successful; otherwise, false.</returns>
+        /// <exception cref="GarnetException">Thrown when the object store is disabled.</exception>
+        private unsafe bool HashTimeToLive<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.Count != 1)
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            if (parseState.Count <= 3)
             {
-                return AbortWithWrongNumberOfArguments("HCOLLECT");
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
+
+            var fieldOption = parseState.GetArgSliceByRef(1);
+            if (!fieldOption.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FIELDS))
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMandatoryMissing, "FIELDS")));
+            }
+
+            if (!parseState.TryGetInt(2, out var numFields))
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numFields")));
+            }
+
+            if (parseState.Count != 3 + numFields)
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMustMatchNoOfArgs, "numFields")));
+            }
+
+            var isMilliseconds = false;
+            var isTimestamp = false;
+            switch (command)
+            {
+                case RespCommand.HPTTL:
+                    isMilliseconds = true;
+                    isTimestamp = false;
+                    break;
+                case RespCommand.HEXPIRETIME:
+                    isMilliseconds = false;
+                    isTimestamp = true;
+                    break;
+                case RespCommand.HPEXPIRETIME:
+                    isMilliseconds = true;
+                    isTimestamp = true;
+                    break;
+                default: // RespCommand.HTTL
+                    break;
+            }
+
+            var fieldsParseState = parseState.Slice(3, numFields);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HTTL };
+            var input = new ObjectInput(header, ref fieldsParseState);
 
-            var status = storageApi.HashCollect(keyBytes, ref input, out int output);
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -703,13 +741,64 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    // Returns number of fields got pruned
-                    while (!RespWriteUtils.WriteInteger(output, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
             }
 
             return true;
-        }*/
+        }
+
+        private unsafe bool HashPersist<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            if (parseState.Count <= 3)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.HPERSIST));
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            var fieldOption = parseState.GetArgSliceByRef(1);
+            if (!fieldOption.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FIELDS))
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMandatoryMissing, "FIELDS")));
+            }
+
+            if (!parseState.TryGetInt(2, out var numFields))
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numFields")));
+            }
+
+            if (parseState.Count != 3 + numFields)
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMustMatchNoOfArgs, "numFields")));
+            }
+
+            var fieldsParseState = parseState.Slice(3, numFields);
+
+            // Prepare input
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HPERSIST };
+            var input = new ObjectInput(header, ref fieldsParseState);
+
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.HashPersist(key, ref input, ref outputFooter);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+            }
+
+            return true;
+        }
     }
 }
