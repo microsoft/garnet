@@ -339,7 +339,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZRANGE](data-structures.md#zrange) | ➕ |  |
 |  | [ZRANGEBYLEX](data-structures.md#zrangebylex) | ➕ | (Deprecated) |
 |  | [ZRANGEBYSCORE](data-structures.md#zrangebyscore) | ➕ | (Deprecated) |
-|  | ZRANGESTORE | ➖ |  |
+|  | [ZRANGESTORE](data-structures.md#zrangestore) | ➕ |  |
 |  | [ZRANK](data-structures.md#zrank) | ➕ |  |
 |  | [ZREM](data-structures.md#zrem) | ➕ |  |
 |  | [ZREMRANGEBYLEX](data-structures.md#zremrangebylex) | ➕ |  |
