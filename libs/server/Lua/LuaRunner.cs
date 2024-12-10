@@ -450,7 +450,7 @@ namespace Garnet.server
         /// <summary>
         /// Process a RESP-formatted response from the RespServerSession.
         /// 
-        /// Pushes result onto state stack, and returns 1
+        /// Pushes result onto state stack and returns 1, or raises an error and never returns.
         /// </summary>
         unsafe int ProcessResponse(byte* ptr, int length)
         {
@@ -464,10 +464,11 @@ namespace Garnet.server
             switch (*ptr)
             {
                 case (byte)'+':
-                    // todo: remove alloc
-                    if (RespReadUtils.ReadSimpleString(out var resultStr, ref ptr, ptr + length))
+                    ptr++;
+                    length--;
+                    if (RespReadUtils.ReadAsSpan(out var resultSpan, ref ptr, ptr + length))
                     {
-                        state.PushString(resultStr);
+                        NativeMethods.PushBuffer(state.Handle, resultSpan);
                         return 1;
                     }
                     goto default;
@@ -481,35 +482,35 @@ namespace Garnet.server
                     goto default;
 
                 case (byte)'-':
-                    var errSpan = new ReadOnlySpan<byte>(ptr + 1, length - 3); // cut \r\n off too
-                    if (errSpan.SequenceEqual(CmdStrings.RESP_ERR_GENERIC_UNK_CMD))
+                    ptr++;
+                    length--;
+                    if (RespReadUtils.ReadAsSpan(out var errSpan, ref ptr, ptr + length))
                     {
-                        // gets a special response
-                        return LuaError("Unknown Redis command called from script"u8);
-                    }
+                        if (errSpan.SequenceEqual(CmdStrings.RESP_ERR_GENERIC_UNK_CMD))
+                        {
+                            // Gets a special response
+                            return LuaError("Unknown Redis command called from script"u8);
+                        }
 
-                    // TIDI: remove alloc
-                    if (RespReadUtils.ReadErrorAsString(out resultStr, ref ptr, ptr + length))
-                    {
-                        state.PushString(resultStr);
+                        NativeMethods.PushBuffer(state.Handle, errSpan);
                         return state.Error();
+
                     }
                     goto default;
 
                 case (byte)'$':
-                    // TODO: remove alloc
-                    if (RespReadUtils.ReadStringResponseWithLengthHeader(out resultStr, ref ptr, ptr + length))
+                    if (length >= 5 && new ReadOnlySpan<byte>(ptr + 1, 4).SequenceEqual("-1\r\n"u8))
                     {
-                        // bulk null strings are mapped to FALSE
-                        // see: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                        if (resultStr == null)
-                        {
-                            state.PushBoolean(false);
-                        }
-                        else
-                        {
-                            state.PushString(resultStr);
-                        }
+                        // Bulk null strings are mapped to FALSE
+                        // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                        state.PushBoolean(false);
+
+                        return 1;
+                    }
+                    else if (RespReadUtils.ReadSpanWithLengthHeader(out var bulkSpan, ref ptr, ptr + length))
+                    {
+                        NativeMethods.PushBuffer(state.Handle, bulkSpan);
+
                         return 1;
                     }
                     goto default;
@@ -528,8 +529,8 @@ namespace Garnet.server
                             var i = 1;
                             foreach (var item in resultArray.Span)
                             {
-                                // null strings are mapped to false
-                                // see: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                                // Null strings are mapped to false
+                                // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
                                 if (item == null)
                                 {
                                     state.PushBoolean(false);
