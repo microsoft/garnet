@@ -292,7 +292,22 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteInteger(l, ref dcurr, dend))
                         SendAndReset();
                 }
+                else if (scriptResult is object[] o)
+                {
+                    var count = o.Length;
+                    while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
+                        SendAndReset();
 
+                    foreach (var value in o)
+                    {
+                        WriteObject(value);
+                    }
+                }
+                else if (scriptResult is ErrorResult e)
+                {
+                    while (!RespWriteUtils.WriteError(e.Message, ref dcurr, dend))
+                        SendAndReset();
+                }
                 else
                 {
                     // todo: this should all go away

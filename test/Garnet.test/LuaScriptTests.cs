@@ -420,10 +420,13 @@ return redis.status_reply("OK")
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
+
             var response1 = db.ScriptEvaluate(script1, ["key1", "key2"], ["foo", 3, 60_000]);
             ClassicAssert.AreEqual("OK", (string)response1);
+
             var response2 = db.ScriptEvaluate(script2, ["key3"], ["foo"]);
             ClassicAssert.AreEqual(false, (bool)response2);
+
             var response3 = db.ScriptEvaluate(script2, ["key1", "key2"], ["foo"]);
             ClassicAssert.AreEqual("OK", (string)response3);
         }
@@ -432,8 +435,10 @@ return redis.status_reply("OK")
         public void ComplexLuaTest3()
         {
             var script1 = """
-return redis.call("mget", unpack(KEYS))
-""";
+            return redis.call("mget", unpack(KEYS))
+            """;
+
+            //var script1 = "return KEYS";
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

@@ -3,8 +3,8 @@
 
 using System;
 using System.Buffers;
-using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
@@ -13,6 +13,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
+    // hack hack hack
+    internal sealed record ErrorResult(string Message);
+
     /// <summary>
     /// Creates the instance to run Lua scripts
     /// </summary>
@@ -82,7 +85,7 @@ namespace Garnet.server
                     return text
                 end
                 function redis.error_reply(text)
-                    return { err = text }
+                    return { err = 'ERR ' .. text }
                 end
                 KEYS = {}
                 ARGV = {}
@@ -471,7 +474,16 @@ namespace Garnet.server
                     // todo: remove alloc
                     if (RespReadUtils.ReadStringResponseWithLengthHeader(out resultStr, ref ptr, ptr + length))
                     {
-                        state.PushString(resultStr);
+                        // bulk null strings are mapped to FALSE
+                        // see: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                        if (resultStr == null)
+                        {
+                            state.PushBoolean(false);
+                        }
+                        else
+                        { 
+                            state.PushString(resultStr);
+                        }
                         return 1;
                     }
                     goto default;
@@ -490,18 +502,20 @@ namespace Garnet.server
                             var i = 1;
                             foreach (var item in resultArray.Span)
                             {
-                                state.PushNumber(i);
-
+                                // null strings are mapped to false
+                                // see: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
                                 if (item == null)
                                 {
-                                    state.PushNil();
+                                    state.PushBoolean(false);
                                 }
                                 else
                                 {
                                     state.PushString(item);
                                 }
 
-                                state.RawSet(1);
+                                state.RawSetInteger(1, i);
+
+                                i++;
                             }
 
                             return 1;
@@ -566,7 +580,7 @@ namespace Garnet.server
 
                     // equivalent to KEYS[i+1] = key.ToString()
                     state.PushNumber(i + 1);
-                    state.PushString(parseState.GetString(offset));
+                    state.PushString(key.ToString());
                     state.RawSet(1);
 
                     offset++;
@@ -722,8 +736,7 @@ namespace Garnet.server
                 for (var i = 0; i < keys.Length; i++)
                 {
                     // equivalent to KEYS[i+1] = keys[i]
-                    state.PushString(keys[i]);
-                    state.RawSetInteger(keysTableRegistryIndex, i + 1);
+                    throw new NotImplementedException();
                 }
             }
             if (argv != null)
@@ -731,8 +744,7 @@ namespace Garnet.server
                 for (var i = 0; i < argv.Length; i++)
                 {
                     // equivalent to ARGV[i+1] = keys[i]
-                    state.PushString(argv[i]);
-                    state.RawSetInteger(argvTableRegistryIndex, i + 1);
+                    throw new NotImplementedException();
                 }
             }
         }
@@ -742,8 +754,10 @@ namespace Garnet.server
         /// </summary>
         object Run()
         {
-            // todo: this shouldn't read the result, it should write the response out
+            // todo: mapping is dependent on Resp2 vs Resp3 settings
+            //       and that's not implemented at all
 
+            // todo: this shouldn't read the result, it should write the response out
             Debug.Assert(state.GetTop() == 0, "Stack should be empty at start of invocation");
 
             if (!state.CheckStack(2))
@@ -774,13 +788,80 @@ namespace Garnet.server
                     }
                     else if (retType == LuaType.Number)
                     {
-                        // Redis appears to unconditionally convert all "number" replies to integer replies
+                        // Redis unconditionally converts all "number" replies to integer replies
                         // so we match that
+                        // see: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
                         return (long)state.CheckNumber(1);
                     }
                     else if (retType == LuaType.String)
                     {
                         return state.CheckString(1);
+                    }
+                    else if (retType == LuaType.Boolean)
+                    {
+                        // Redis maps Lua false to null, and Lua true to 1
+                        // this is strange, but documented
+                        // see: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                        if (state.ToBoolean(1))
+                        {
+                            return 1L;
+                        }
+                        else
+                        {
+                            return null;
+                        }
+                    }
+                    else if (retType == LuaType.Table)
+                    {
+                        // todo: this is hacky, and doesn't support nested arrays or whatever
+                        //       but is good enough for now
+                        //       when refactored to avoid intermediate objects this should be fixed
+
+                        // note: because we are dealing with a user provided type, we MUST respect
+                        //       metatables - so we can't use any of the RawXXX methods
+
+                        // if the key err is in there, we need to short circuit 
+                        state.PushString("err");
+
+                        var errType = state.GetTable(1);
+                        if (errType == LuaType.String)
+                        {
+                            var errStr = state.CheckString(2);
+                            // hack hack hack
+                            // todo: all this goes away when we write results directly
+                            return new ErrorResult(errStr);
+                        }
+
+                        state.Pop(1);
+
+                        // otherwise, we need to convert the table to an array
+                        var tableLength = state.Length(1);
+
+                        var ret = new object[tableLength];
+                        for (var i = 1; i <= tableLength; i++)
+                        {
+                            var type = state.GetInteger(1, i);
+                            switch (type)
+                            {
+                                case LuaType.String:
+                                    ret[i - 1] = state.CheckString(2);
+                                    break;
+                                case LuaType.Number:
+                                    ret[i - 1] = (long)state.CheckNumber(2);
+                                    break;
+                                case LuaType.Boolean:
+                                    ret[i - 1] = state.ToBoolean(2) ? 1L : null;
+                                    break;
+                                // Redis stops processesing the array when a nil is encountered
+                                // see: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                                case LuaType.Nil:
+                                    return ret.Take(i - 1).ToArray();
+                            }
+
+                            state.Pop(1);
+                        }
+
+                        return ret;
                     }
                     else
                     {
