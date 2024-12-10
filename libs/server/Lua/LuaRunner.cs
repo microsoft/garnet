@@ -303,7 +303,7 @@ namespace Garnet.server
 
                 if (!NativeMethods.CheckBuffer(state.Handle, 1, out var cmdSpan))
                 {
-                    return LuaError("Unknown Redis command called from script"u8);
+                    return ErrorInvalidArgumentType(state);
                 }
 
                 // We special-case a few performance-sensitive operations to directly invoke via the storage API
