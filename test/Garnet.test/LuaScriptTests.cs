@@ -582,5 +582,31 @@ return redis.status_reply("OK")
                 ClassicAssert.IsTrue(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
             }
         }
+
+        [Test]
+        public void BinaryValuesInScripts()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var trickyKey = new byte[] { 0, 1, 2, 3, 4 };
+            var trickyValue = new byte[] { 5, 6, 7, 8, 9, 0 };
+            var trickyValue2 = new byte[] { 0, 1, 0, 1, 0, 1, 255 };
+
+            ClassicAssert.IsTrue(db.StringSet(trickyKey, trickyValue));
+
+            var luaEscapeKeyString = $"{string.Join("", trickyKey.Select(x => $"\\{x:X2}"))}";
+
+            var readDirectKeyRaw = db.ScriptEvaluate($"return redis.call('GET', '{luaEscapeKeyString}')", [(RedisKey)trickyKey]);
+            var readDirectKeyBytes = (byte[])readDirectKeyRaw;
+            ClassicAssert.IsTrue(trickyValue.AsSpan().SequenceEqual(readDirectKeyBytes));
+
+            var setKey = db.ScriptEvaluate("return redis.call('SET', KEYS[1], ARGV[1])", [(RedisKey)trickyKey], [(RedisValue)trickyValue2]);
+            ClassicAssert.AreEqual("OK", (string)setKey);
+
+            var readTrickyValue2Raw = db.StringGet(trickyKey);
+            var readTrickyValue2 = (byte[])readTrickyValue2Raw;
+            ClassicAssert.IsTrue(trickyValue2.AsSpan().SequenceEqual(readTrickyValue2));
+        }
     }
 }
