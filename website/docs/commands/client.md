@@ -40,6 +40,59 @@ Bulk string reply: a unique string for the current client, as described at the C
 
 ---
 
+### CLIENT GETNAME
+
+#### Syntax
+
+```bash
+    CLIENT GETNAME
+```
+
+The command returns the name of the current connection as set by CLIENT SETNAME.
+
+#### Resp Reply
+
+Bulk string reply: the name of the client, or an empty string if no name is set.
+
+---
+
+### CLIENT SETNAME
+
+#### Syntax
+
+```bash
+    CLIENT SETNAME <name>
+```
+
+The command sets the name of the current connection.
+
+#### Resp Reply
+
+Simple string reply: OK if the connection name was successfully set.
+
+---
+
+### CLIENT SETINFO
+
+#### Syntax
+
+```bash
+    CLIENT SETINFO <LIB-NAME libname | LIB-VER libver>
+```
+
+The command sets the value of a specific section of the current client connection.
+
+Currently the supported attributes are:
+
+- LIB-NAME - meant to hold the name of the client library that's in use.
+- LIB-VER - meant to hold the client library's version.
+
+#### Resp Reply
+
+Simple string reply: OK if the section value was successfully set.
+
+---
+
 ### CLIENT KILL
 
 #### Syntax
