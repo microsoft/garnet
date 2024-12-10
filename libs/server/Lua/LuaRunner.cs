@@ -573,8 +573,8 @@ namespace Garnet.server
 
             scratchBufferManager.Reset();
 
-            int offset = 1;
-            int nKeys = parseState.GetInt(offset++);
+            var offset = 1;
+            var nKeys = parseState.GetInt(offset++);
             count--;
             ResetParameters(nKeys, count - nKeys);
 
@@ -596,17 +596,15 @@ namespace Garnet.server
                             txnKeyEntries.AddKey(key, true, Tsavorite.core.LockType.Exclusive);
                     }
 
-                    // todo: no alloc
-                    // todo: encoding is wrong here
-
-                    // equivalent to KEYS[i+1] = key.ToString()
+                    // equivalent to KEYS[i+1] = key
                     state.PushNumber(i + 1);
-                    state.PushString(key.ToString());
+                    NativeMethods.PushBuffer(state.Handle, key.ReadOnlySpan);
                     state.RawSet(1);
 
                     offset++;
                 }
 
+                // remove KEYS from the stack
                 state.Pop(1);
 
                 count -= nKeys;
@@ -621,17 +619,17 @@ namespace Garnet.server
 
                 for (var i = 0; i < count; i++)
                 {
-                    // todo: no alloc
-                    // todo encoding is wrong here
+                    ref var argv = ref parseState.GetArgSliceByRef(offset);
 
-                    // equivalent to ARGV[i+1] = parseState.GetString(offset);
+                    // equivalent to ARGV[i+1] = argv
                     state.PushNumber(i + 1);
-                    state.PushString(parseState.GetString(offset));
+                    NativeMethods.PushBuffer(state.Handle, argv.ReadOnlySpan);
                     state.RawSet(1);
 
                     offset++;
                 }
 
+                // remove ARGV from the stack
                 state.Pop(1);
             }
 
