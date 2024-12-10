@@ -114,8 +114,14 @@ namespace Garnet.server
                 }
                 function load_sandboxed(source)
                     if (not source) then return nil end
-                    local rawFunc = load(source, nil, nil, sandbox_env)
+                    local rawFunc, err = load(source, nil, nil, sandbox_env)
 
+                    -- compilation error is returned directly
+                    if err then
+                        return rawFunc, err
+                    end
+
+                    -- otherwise we wrap the compiled function in a helper
                     return function()
                         local rawRet = rawFunc()
 
@@ -171,14 +177,14 @@ namespace Garnet.server
         {
             Debug.Assert(functionRegistryIndex == -1, "Shouldn't compile multiple times");
 
+            Debug.Assert(state.GetTop() == 0, "Stack should be empty at start of compilation");
+
             try
             {
                 if (!state.CheckStack(2))
                 {
                     throw new GarnetException("Insufficient stack space to compile function");
                 }
-
-                Debug.Assert(state.GetTop() == 0, "Stack should be empty before compilation");
 
                 state.PushNumber(loadSandboxedRegistryIndex);
                 var loadRes = state.GetTable(LuaRegistry.Index);
@@ -207,6 +213,7 @@ namespace Garnet.server
                     var error = state.CheckString(2);
 
                     throw new GarnetException($"Compilation error: {error}");
+
                 }
                 else
                 {
@@ -220,7 +227,8 @@ namespace Garnet.server
             }
             finally
             {
-                Debug.Assert(state.GetTop() == 0, "Stack should be empty after compilation");
+                // force stack empty after compilation, no matter what happens
+                state.SetTop(0);
             }
         }
 
@@ -481,7 +489,7 @@ namespace Garnet.server
                             state.PushBoolean(false);
                         }
                         else
-                        { 
+                        {
                             state.PushString(resultStr);
                         }
                         return 1;
@@ -733,20 +741,39 @@ namespace Garnet.server
             ResetParameters(keys?.Length ?? 0, argv?.Length ?? 0);
             if (keys != null)
             {
+                // get KEYS on the stack
+                state.PushNumber(keysTableRegistryIndex);
+                var loadRes = state.GetTable(LuaRegistry.Index);
+                Debug.Assert(loadRes == LuaType.Table, "Unexpected type for KEYS");
+
                 for (var i = 0; i < keys.Length; i++)
                 {
                     // equivalent to KEYS[i+1] = keys[i]
-                    throw new NotImplementedException();
+                    state.PushString(keys[i]);
+                    state.RawSetInteger(1, i + 1);
                 }
+
+                state.Pop(1);
             }
+
             if (argv != null)
             {
+                // get ARGV on the stack
+                state.PushNumber(argvTableRegistryIndex);
+                var loadRes = state.GetTable(LuaRegistry.Index);
+                Debug.Assert(loadRes == LuaType.Table, "Unexpected type for ARGV");
+
                 for (var i = 0; i < argv.Length; i++)
                 {
                     // equivalent to ARGV[i+1] = keys[i]
-                    throw new NotImplementedException();
+                    state.PushString(argv[i]);
+                    state.RawSetInteger(1, i + 1);
                 }
+
+                state.Pop(1);
             }
+
+            Debug.Assert(state.GetTop() == 0, "Stack should be empty when invocation ends");
         }
 
         /// <summary>
