@@ -516,47 +516,48 @@ namespace Garnet.server
                     goto default;
 
                 case (byte)'*':
-                    // TODO: remove allocs
-                    if (RespReadUtils.ReadRentedStringArrayResponseWithLengthHeader(ArrayPool<string>.Shared, out var resultArray, ref ptr, ptr + length))
+                    if (RespReadUtils.ReadUnsignedArrayLength(out var itemCount, ref ptr, ptr + length))
                     {
-                        try
-                        {
-                            // create the new table
-                            state.NewTable();
-                            Debug.Assert(state.GetTop() == 1, "New table should be at top of stack");
+                        // Create the new table
+                        state.CreateTable(itemCount, 0);
+                        Debug.Assert(state.GetTop() == 1, "New table should be at top of stack");
 
-                            // Populate the table
-                            var i = 1;
-                            foreach (var item in resultArray.Span)
+                        for (var itemIx = 0; itemIx < itemCount; itemIx++)
+                        {
+                            if (*ptr == '$')
                             {
-                                // Null strings are mapped to false
-                                // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                                if (item == null)
+                                // Bulk String
+                                if (length >= 4 && new ReadOnlySpan<byte>(ptr + 1, 4).SequenceEqual("-1\r\n"u8))
                                 {
+                                    // Null strings are mapped to false
+                                    // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
                                     state.PushBoolean(false);
+                                }
+                                else if (RespReadUtils.ReadSpanWithLengthHeader(out var strSpan, ref ptr, ptr + length))
+                                {
+                                    NativeMethods.PushBuffer(state.Handle, strSpan);
                                 }
                                 else
                                 {
-                                    state.PushString(item);
+
+                                    // Error, drop the table we allocated
+                                    state.Pop(1);
+                                    goto default;
                                 }
-
-                                state.RawSetInteger(1, i);
-
-                                i++;
                             }
-
-                            return 1;
-                        }
-                        finally
-                        {
-                            if (!resultArray.IsEmpty)
+                            else
                             {
-                                if (MemoryMarshal.TryGetArray(resultArray, out ArraySegment<string> rented))
-                                {
-                                    ArrayPool<string>.Shared.Return(rented.Array);
-                                }
+                                // In practice, we ONLY ever return bulk strings
+                                // So just... not implementing the rest for now
+                                throw new NotImplementedException($"Unexpected sigil: {(char)*ptr}");
                             }
+
+                            // Stack now has table and value at itemIx on it
+                            state.RawSetInteger(1, itemIx + 1);
                         }
+
+                        Debug.Assert(state.GetTop() == 1, "Only the table should be on the stack");
+                        return 1;
                     }
                     goto default;
 

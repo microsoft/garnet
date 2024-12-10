@@ -959,56 +959,6 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Read string array with length header.
-        /// 
-        /// result will be backed by an empty array or one rented from the given pool upon return.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadRentedStringArrayResponseWithLengthHeader(ArrayPool<string> pool, out Memory<string> result, ref byte* ptr, byte* end)
-        {
-            result = Array.Empty<string>();
-
-            // Parse RESP array header
-            if (!ReadSignedArrayLength(out var length, ref ptr, end))
-            {
-                return false;
-            }
-
-            if (length < 0)
-            {
-                // NULL value ('*-1\r\n')
-                return true;
-            }
-
-            // Parse individual strings in the array
-            result = ArrayPool<string>.Shared.Rent(length);
-            result = result[..length];
-
-            var resultSpan = result.Span;
-
-            for (var i = 0; i < length; i++)
-            {
-                if (*ptr == '$')
-                {
-                    if (!ReadStringResponseWithLengthHeader(out resultSpan[i], ref ptr, end))
-                        return false;
-                }
-                else if (*ptr == '+')
-                {
-                    if (!ReadSimpleString(out resultSpan[i], ref ptr, end))
-                        return false;
-                }
-                else
-                {
-                    if (!ReadIntegerAsString(out resultSpan[i], ref ptr, end))
-                        return false;
-                }
-            }
-
-            return true;
-        }
-
-        /// <summary>
         /// Read double with length header
         /// </summary>
         public static bool ReadDoubleWithLengthHeader(out double result, out bool parsed, ref byte* ptr, byte* end)
