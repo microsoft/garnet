@@ -7,11 +7,10 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe class KeyOverflowAllocator(int pageSize, int expectedAverageKeySize = 32)
+    public unsafe class KeyOverflowAllocator(int pageSize, int expectedAverageKeySize)
     {
         private const int InitialPageCount = 1024;
 
-        // TODO: Need config for the key overflow page size, max inline key size, and maybe average key size
         private int OverflowSizeLimit = pageSize - expectedAverageKeySize * 2;
 
         // We use a separate array so we do not take cacheline space for a linked-list pointer (as oversizeList does).

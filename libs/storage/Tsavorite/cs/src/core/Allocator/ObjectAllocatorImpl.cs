@@ -19,29 +19,38 @@ namespace Tsavorite.core
         // Circular buffer definition (the long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation easier).
         long* pagePointers;
 
+        // The values array, per-page.
+        readonly IHeapObject[][] values;
+
+        readonly int maxInlineKeySize;
+        readonly KeyOverflowAllocator keyOverflowAllocator;
+        readonly ObjectIdMap objectIdMap;
+
         // Size of object chunks being written to storage
-        private readonly int ObjectBlockSize = 100 * (1 << 20);
+        private readonly int objectBlockSize = 100 * (1 << 20);
 
         // RecordSize and Value size are constant; only the key size is variable.
-        private static int FixedValueSize => ObjectLogRecord.ObjectIdSize;
+        private static int FixedValueSize => ObjectIdMap.ObjectIdSize;
 
-        // The values array, per-page.
-        private IHeapObject[][] values;
+        /// <summary>Minimum size of a record: header, key (length and 4 bytes), and Value Id. Does not include optional fields such as DBId, ETag, Expiration, or FillerLen.</summary>
+        private static int MinRecordSize => RecordInfo.GetLength() + (sizeof(int) * 2) + ObjectIdMap.ObjectIdSize;
 
         private readonly OverflowPool<PageUnit> overflowPagePool;
-
-        int adjustedPageSize;
 
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
             values = new IHeapObject[BufferSize][];
+
+            // TODO: Verify LogSettings.MaxInlineKeySizeBits and .KeyOverflowPageSizeBits are in range. Do we need config for AverageKeySizeBits?
+            maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
+            keyOverflowAllocator = new(1 << settings.LogSettings.KeyOverflowPageSizeBits, 1 << (settings.LogSettings.MaxInlineKeySizeBits - 1));
+            objectIdMap = new(PageSize / MinRecordSize);
+
             overflowPagePool = new OverflowPool<PageUnit>(4, p => { });
 
-            adjustedPageSize = PageSize + 2 * sectorSize;
-
             var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
-            pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, (nuint)Constants.kCacheLineBytes);
+            pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
             NativeMemory.Clear(pagePointers, bufferSizeInBytes);
         }
 
@@ -66,7 +75,7 @@ namespace Tsavorite.core
             if (overflowPagePool.TryGet(out var item))
                 pagePointers[index] = item.pointer;
             else
-                pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)adjustedPageSize, (nuint)sectorSize);
+                pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
         }
 
         void ReturnPage(int index)
@@ -92,23 +101,15 @@ namespace Tsavorite.core
         /// <summary>Get first valid address</summary>
         public long GetFirstValidLogicalAddress(long page) => page == 0 ? Constants.kFirstValidAddress : page << LogPageSizeBits;
 
-        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref new ObjectLogRecord(physicalAddress).InfoRef;
+        public ref RecordInfo GetInfoRef(long physicalAddress) => ref new ObjectLogRecord(physicalAddress).recBase.InfoRef;
 
-        public static ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
+        public ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
 
-        internal static SpanByte GetKey(long physicalAddress) => new ObjectLogRecord(physicalAddress).Key;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref IHeapObject GetValue(long physicalAddress)
-        {
-            var valuePtr = (long*)ValueOffset(physicalAddress);
-            if (*valuePtr == ObjectIdMap.InvalidObjectId)
-                *valuePtr = objectIdMap.Allocate();
-            return ref objectIdMap.GetRef(*valuePtr);
-        }
+        // GetKey is used in TracebackForKeyMatch. We do not need GetValue because it is obtained from ObjectLogRecord.
+        public SpanByte GetKey(long physicalAddress) => new ObjectLogRecord(physicalAddress).recBase.Key;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref IHeapObject GetAndInitializeValue(long physicalAddress, long _ /* endAddress */) => ref GetValue(physicalAddress);
+        public void InitializeValue(long physicalAddress, long _ /* endAddress */) { }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static long KeyOffset(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
@@ -441,7 +442,7 @@ namespace Tsavorite.core
                     }
 
                     // If this record's serialized size surpassed ObjectBlockSize or it's the last record to be written, write to the object log.
-                    if (endPosition > ObjectBlockSize || i == (end / RecordSize) - 1)
+                    if (endPosition > objectBlockSize || i == (end / RecordSize) - 1)
                     {
                         var memoryStreamActualLength = ms.Position;
                         var memoryStreamTotalLength = (int)endPosition;
@@ -635,7 +636,7 @@ namespace Tsavorite.core
             }
 
             // We will now be able to process all records until (but not including) untilPtr
-            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, ObjectBlockSize, out long startptr, out long alignedLength);
+            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, objectBlockSize, out long startptr, out long alignedLength);
 
             // Object log fragment should be aligned by construction
             Debug.Assert(startptr % sectorSize == 0);

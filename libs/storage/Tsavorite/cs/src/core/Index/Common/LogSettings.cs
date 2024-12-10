@@ -80,5 +80,15 @@ namespace Tsavorite.core
         /// Whether to preallocate the entire log (pages) in memory
         /// </summary>
         public bool PreallocateLog = false;
+
+        /// <summary>
+        /// Size of the page used for in-memory Keys larger than <see cref="MaxInlineKeySizeBits"/>
+        /// </summary>
+        public int KeyOverflowPageSizeBits = 20;
+
+        /// <summary>
+        /// Maximum size of a key stored inline in the in-memory portion of the main log.
+        /// </summary>
+        public int MaxInlineKeySizeBits = 6;
     }
 }

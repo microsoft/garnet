@@ -14,14 +14,8 @@ namespace Tsavorite.core
         AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> GetBase<TAllocator>()
             where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>;
 
-        /// <summary>Whether this allocator uses fixed-length records</summary>
-        bool IsFixedLength { get; }
-
-        /// <summary>Whether this allocator uses a separate object log</summary>
-        bool HasObjectLog { get; }
-
         /// <summary>Cast address range to <typeparamref name="TValue"/>. For <see cref="SpanByte"/> this will also initialize the value to span the address range.</summary>
-        ref TValue GetAndInitializeValue(long physicalAddress, long endPhysicalAddress);
+        void InitializeValue(long physicalAddress, long endPhysicalAddress);
 
         /// <summary>Get copy destination size for RMW, taking Input into account</summary>
         (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref TKey key, ref TInput input, ref TValue value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
@@ -37,9 +31,6 @@ namespace Tsavorite.core
 
         /// <summary>Get record size required for the given <paramref name="key"/> and <paramref name="value"/></summary>
         (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref TKey key, ref TValue value);
-
-        /// <summary>Get the size of the given <paramref name="value"/></summary>
-        int GetValueLength(ref TValue value);
 
         /// <summary>Mark the page that contains <paramref name="logicalAddress"/> as dirty</summary>
         void MarkPage(long logicalAddress, long version);

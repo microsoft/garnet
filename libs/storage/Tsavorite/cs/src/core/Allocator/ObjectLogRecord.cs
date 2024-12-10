@@ -14,13 +14,21 @@ namespace Tsavorite.core
     ///     </list>
     /// This lets us get to the key and value without intermediate computations to account for the optional fields.
     /// </remarks>
-    public unsafe struct ObjectLogRecord(long physicalAddress, KeyOverflowAllocator keyAlloc, ObjectIdMap objectIdMap)
+    public unsafe struct ObjectLogRecord(long physicalAddress)
     {
-        private readonly LogRecordBase recBase = new(physicalAddress);
-        KeyOverflowAllocator keyAlloc = keyAlloc;
-        ObjectIdMap objectIdMap = objectIdMap;
+        internal readonly LogRecordBase recBase = new(physicalAddress);
+        KeyOverflowAllocator keyAlloc;
+        ObjectIdMap objectIdMap;
 
         private const int ValueLen = ObjectIdMap.ObjectIdSize;
+
+        public ObjectLogRecord(long physicalAddress, KeyOverflowAllocator keyAlloc, ObjectIdMap objectIdMap = null)
+            : this(physicalAddress)
+        {
+            // This overload is primarily used in passing to IObjectSessionFunctions callbacks; the primary constructor is just for record parsing.
+            this.keyAlloc = keyAlloc;
+            this.objectIdMap = objectIdMap;
+        }
 
         private readonly int* ValueAddress => (int*)(physicalAddress + recBase.ValueOffset);
 

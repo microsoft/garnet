@@ -88,7 +88,7 @@ namespace Tsavorite.core
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ref RecordInfo GetInfo(long physicalAddress) => ref Unsafe.AsRef<RecordInfo>((void*)physicalAddress);
+        public static ref RecordInfo GetInfo(long physicalAddress) => ref new StringLogRecord(physicalAddress).recBase.InfoRef;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
@@ -97,16 +97,11 @@ namespace Tsavorite.core
         public static ref SpanByte GetKey(long physicalAddress) => ref Unsafe.AsRef<SpanByte>((byte*)physicalAddress + RecordInfo.GetLength());
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref SpanByte GetValue(long physicalAddress) => ref Unsafe.AsRef<SpanByte>((byte*)ValueOffset(physicalAddress));
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref SpanByte GetAndInitializeValue(long physicalAddress, long endAddress)
+        public void InitializeValue(long physicalAddress, long endAddress)
         {
-            var src = (byte*)ValueOffset(physicalAddress);
-
             // Initialize the SpanByte to the length of the entire value space, less the length of the int size prefix.
+            var src = (byte*)ValueOffset(physicalAddress);
             *(int*)src = (int)((byte*)endAddress - src) - sizeof(int);
-            return ref Unsafe.AsRef<SpanByte>(src);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

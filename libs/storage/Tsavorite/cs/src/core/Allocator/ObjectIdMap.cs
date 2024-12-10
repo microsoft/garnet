@@ -13,11 +13,11 @@ namespace Tsavorite.core
         internal IHeapObject[] objectVector;
         int tail = 0;
 
-        internal ObjectIdMap(int entriesPerPage, ILogger logger = null)
+        internal ObjectIdMap(int recordsPerPage)
         {
             // entriesPerPage comes from ObjectAllocator's minimum pagesize / expected record size so is the maximum possible number of records.
             // Records may be larger due to key size but we have limits on that so it is unlikely we will waste very much of this allocation.
-            objectVector = new IHeapObject[entriesPerPage];
+            objectVector = new IHeapObject[recordsPerPage];
         }
 
         // We will never return a negative index from Allocate

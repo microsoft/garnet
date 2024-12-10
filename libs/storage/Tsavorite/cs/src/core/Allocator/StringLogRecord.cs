@@ -17,7 +17,7 @@ namespace Tsavorite.core
     /// </remarks>
     public unsafe struct StringLogRecord(long physicalAddress)
     {
-        private readonly LogRecordBase recBase = new(physicalAddress);
+        internal readonly LogRecordBase recBase = new(physicalAddress);
 
         /// <summary>The value object id (index into the object values array)</summary>
         public readonly ref SpanByte ValueRef => ref *(SpanByte*)(physicalAddress + recBase.ValueOffset);

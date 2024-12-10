@@ -28,10 +28,7 @@ namespace Tsavorite.core
         unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr);
 
         /// <summary>Get <typeparamref name="TKey"/> from <paramref name="physicalAddress"/></summary>
-        ref TKey GetKey(long physicalAddress);
-
-        /// <summary>Get <typeparamref name="TValue"/> from <paramref name="physicalAddress"/></summary>
-        ref TValue GetValue(long physicalAddress);
+        TKey GetKey(long physicalAddress);
 
         /// <summary>Get the actual (used) and allocated record sizes at <paramref name="physicalAddress"/></summary>
         (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress);

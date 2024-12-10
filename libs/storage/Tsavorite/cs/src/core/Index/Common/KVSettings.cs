@@ -82,9 +82,7 @@ namespace Tsavorite.core
         public long ReadCacheMemorySize = 1L << 34;
 
         /// <summary>
-        /// Fraction of log head (in memory) used for second chance 
-        /// copy to tail. This is (1 - MutableFraction) for the 
-        /// underlying log.
+        /// Fraction of log head (in memory) used for second chance copy to tail. This is (1 - MutableFraction) for the underlying log.
         /// </summary>
         public double ReadCacheSecondChanceFraction = 0.1;
 
