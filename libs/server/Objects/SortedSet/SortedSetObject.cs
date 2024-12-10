@@ -28,6 +28,7 @@ namespace Garnet.server
         ZRANK,
         ZRANGE,
         ZRANGEBYSCORE,
+        ZRANGESTORE,
         GEOADD,
         GEOHASH,
         GEODIST,
@@ -35,6 +36,7 @@ namespace Garnet.server
         GEOSEARCH,
         GEOSEARCHSTORE,
         ZREVRANGE,
+        ZREVRANGEBYLEX,
         ZREVRANGEBYSCORE,
         ZREVRANK,
         ZREMRANGEBYLEX,
@@ -256,6 +258,7 @@ namespace Garnet.server
                         SortedSetRank(ref input, ref output);
                         break;
                     case SortedSetOperation.ZRANGE:
+                    case SortedSetOperation.ZRANGESTORE:
                         SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.ZRANGEBYSCORE:
@@ -280,6 +283,7 @@ namespace Garnet.server
                     case SortedSetOperation.ZREVRANGE:
                         SortedSetRange(ref input, ref output);
                         break;
+                    case SortedSetOperation.ZREVRANGEBYLEX:
                     case SortedSetOperation.ZREVRANGEBYSCORE:
                         SortedSetRange(ref input, ref output);
                         break;
