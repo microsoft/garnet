@@ -20,16 +20,17 @@ namespace Tsavorite.core
         /// Create a storage device for the log
         /// </summary>
         /// <param name="logPath">Path to file that will store the log (empty for null device)</param>
-        /// <param name="preallocateFile">Whether we try to preallocate the file on creation</param>
+        /// <param name="preallocateFile">Whether we try to pre-allocate the file on creation</param>
         /// <param name="deleteOnClose">Delete files on close</param>
-        /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit</param>
+        /// <param name="capacity">The maximal number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit</param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="useIoCompletionPort">Whether we use IO completion port with polling</param>
         /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
         /// <param name="useNativeDeviceLinux">Use native device on Linux, instead of managed device based on FileStream</param>
+        /// <param name="readOnly">Open file in readOnly mode</param>
         /// <param name="logger"></param>
         /// <returns>Device instance</returns>
-        public static IDevice CreateLogDevice(string logPath, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool useIoCompletionPort = false, bool disableFileBuffering = true, bool useNativeDeviceLinux = false, ILogger logger = null)
+        public static IDevice CreateLogDevice(string logPath, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool useIoCompletionPort = false, bool disableFileBuffering = true, bool useNativeDeviceLinux = false, bool readOnly = false, ILogger logger = null)
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -39,7 +40,7 @@ namespace Tsavorite.core
                     return new ManagedLocalStorageDevice(logPath, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice);
             }
             else
-                return new LocalStorageDevice(logPath, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort);
+                return new LocalStorageDevice(logPath, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort, readOnly: readOnly);
         }
     }
 }
