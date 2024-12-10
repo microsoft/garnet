@@ -163,23 +163,6 @@ namespace Garnet.client
         /// Execute command (async)
         /// </summary>
         /// <param name="respOp">Operation in resp format</param>
-        /// <param name="clusterOp"></param>
-        /// <param name="nodeId"></param>
-        /// <param name="currentAddress"></param>
-        /// <param name="nextAddress"></param>
-        /// <param name="payloadPtr"></param>
-        /// <param name="payloadLength"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        public async Task ExecuteForVoidResultWithCancellationAsync(Memory<byte> respOp, Memory<byte> clusterOp, string nodeId, long currentAddress, long nextAddress, long payloadPtr, int payloadLength, CancellationToken token = default)
-        {
-            await InternalExecuteAsync(respOp, clusterOp, nodeId, currentAddress, nextAddress, payloadPtr, payloadLength, token);
-        }
-
-        /// <summary>
-        /// Execute command (async)
-        /// </summary>
-        /// <param name="respOp">Operation in resp format</param>
         /// <param name="param1"></param>
         /// <param name="param2"></param>
         /// <param name="token"></param>
@@ -1061,7 +1044,6 @@ namespace Garnet.client
             }
         }
 
-
         /// <summary>
         /// Execute command (async) with cancellation token
         /// </summary>
@@ -1087,6 +1069,26 @@ namespace Garnet.client
             }
         }
 
+        /// <summary>
+        /// Execute command (async) with cancellation token
+        /// </summary>
+        /// <param name="op"></param>
+        /// <param name="param1"></param>
+        /// <param name="param2"></param>
+        /// <param name="param3"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public async Task<long> ExecuteFireAndForgetWithNoResponse(Memory<byte> op, Memory<byte> param1, Memory<byte> param2, Memory<byte> param3, CancellationToken token = default)
+        {
+            var tcs = new TcsWrapper { taskType = TaskType.LongAsync, longTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously) };
+            var _ = InternalExecuteFireAndForgetWithNoResponse(tcs, op, param1, param2, param3, token);
+            return await tcs.longTcs.Task.ConfigureAwait(false);
+        }
+
+        public void ExecuteForNoResponse(Memory<byte> op, Memory<byte> param1, Memory<byte> param2, Memory<byte> param3, CancellationToken token = default)
+        {
+            var _ = InternalExecuteForNoResponse(op, param1, param2, param3, token);
+        }
 
         #endregion
 

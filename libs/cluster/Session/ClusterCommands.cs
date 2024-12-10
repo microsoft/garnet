@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using Garnet.common;
 using Garnet.server;
 
 namespace Garnet.cluster
@@ -165,6 +164,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_MYID => NetworkClusterMyId(out invalidParameters),
                 RespCommand.CLUSTER_MYPARENTID => NetworkClusterMyParentId(out invalidParameters),
                 RespCommand.CLUSTER_NODES => NetworkClusterNodes(out invalidParameters),
+                RespCommand.CLUSTER_PUBLISH or RespCommand.CLUSTER_SPUBLISH => NetworkClusterPublish(out invalidParameters),
                 RespCommand.CLUSTER_REPLICAS => NetworkClusterReplicas(out invalidParameters),
                 RespCommand.CLUSTER_REPLICATE => NetworkClusterReplicate(out invalidParameters),
                 RespCommand.CLUSTER_RESET => NetworkClusterReset(out invalidParameters),
