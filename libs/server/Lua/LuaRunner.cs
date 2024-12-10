@@ -314,17 +314,15 @@ namespace Garnet.server
                         return LuaError(CmdStrings.RESP_ERR_NOAUTH);
                     }
 
-                    // todo: no alloc
-                    var keyBuf = state.CheckBuffer(2);
-                    var valBuf = state.CheckBuffer(3);
-
-                    if (keyBuf == null || valBuf == null)
+                    if(!NativeMethods.CheckBuffer(state.Handle, 2, out var keySpan) || !NativeMethods.CheckBuffer(state.Handle, 3, out var valSpan))
                     {
                         return ErrorInvalidArgumentType(state);
                     }
 
-                    var key = scratchBufferManager.CreateArgSlice(keyBuf);
-                    var value = scratchBufferManager.CreateArgSlice(valBuf);
+                    // note these spans are implicitly pinned, as they're actually on the Lua stack
+                    var key = ArgSlice.FromPinnedSpan(keySpan);
+                    var value = ArgSlice.FromPinnedSpan(valSpan);
+                    
                     _ = api.SET(key, value);
 
                     NativeMethods.PushBuffer(state.Handle, "OK"u8);
@@ -337,15 +335,13 @@ namespace Garnet.server
                         return LuaError(CmdStrings.RESP_ERR_NOAUTH);
                     }
 
-                    // todo: no alloc
-                    var keyBuf = state.CheckBuffer(2);
-
-                    if (keyBuf == null)
+                    if(!NativeMethods.CheckBuffer(state.Handle, 2, out var keySpan))
                     {
                         return ErrorInvalidArgumentType(state);
                     }
 
-                    var key = scratchBufferManager.CreateArgSlice(keyBuf);
+                    // span is (implicitly) pinned since it's actually on the Lua stack
+                    var key = ArgSlice.FromPinnedSpan(keySpan);
                     var status = api.GET(key, out var value);
                     if (status == GarnetStatus.OK)
                     {

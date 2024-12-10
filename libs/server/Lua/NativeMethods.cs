@@ -43,16 +43,21 @@ namespace Garnet.server
         private static extern charptr_t lua_pushlstring(lua_State L, charptr_t s, size_t len);
 
         /// <summary>
-        /// Returns true if the given index on the stack holds a string.
+        /// Returns true if the given index on the stack holds a string or a number.
         /// 
-        /// Sets <paramref name="str"/> to the string if so, otherwise leaves it empty.
+        /// Sets <paramref name="str"/> to the string equivalent if so, otherwise leaves it empty.
         /// 
         /// <paramref name="str"/> only remains valid as long as the buffer remains on the stack,
         /// use with care.
+        /// 
+        /// Note that is changes the value on the stack to be a string if it returns true, regardless of
+        /// what it was originally.
         /// </summary>
         internal static bool CheckBuffer(lua_State luaState, int index, out ReadOnlySpan<byte> str)
         {
-            if (lua_type(luaState, index) != LuaType.String)
+            var type = lua_type(luaState, index);
+
+            if (type != LuaType.String && type != LuaType.Number)
             {
                 str = [];
                 return false;
