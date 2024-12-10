@@ -158,9 +158,9 @@ namespace Garnet.cluster
             byte[] byteArray;
             if (conf != lastConfig)
             {
-                if (clusterProvider.replicationManager != null) conf.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset);
-                byteArray = conf.ToByteArray();
                 lastConfig = conf;
+                if (clusterProvider.replicationManager != null) lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset);
+                byteArray = lastConfig.ToByteArray();
             }
             else
             {
