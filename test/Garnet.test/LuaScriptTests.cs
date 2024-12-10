@@ -608,5 +608,18 @@ return redis.status_reply("OK")
             var readTrickyValue2 = (byte[])readTrickyValue2Raw;
             ClassicAssert.IsTrue(trickyValue2.AsSpan().SequenceEqual(readTrickyValue2));
         }
+
+        [Test]
+        public void NumberArgumentCoercion()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            db.StringSet("2", "hello");
+            db.StringSet("2.1", "world");
+
+            var res = (string)db.ScriptEvaluate("return redis.call('GET', 2.1)");
+            ClassicAssert.AreEqual("world", res);
+        }
     }
 }

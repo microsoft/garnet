@@ -21,10 +21,10 @@ namespace Garnet.server
     /// </summary>
     internal sealed class LuaRunner : IDisposable
     {
-        // rooted to keep function pointer alive
+        // Rooted to keep function pointer alive
         readonly LuaFunction garnetCall;
 
-        // references into Registry on the Lua side
+        // References into Registry on the Lua side
         readonly int sandboxEnvRegistryIndex;
         readonly int keysTableRegistryIndex;
         readonly int argvTableRegistryIndex;
@@ -60,13 +60,13 @@ namespace Garnet.server
             loadSandboxedRegistryIndex = -1;
             functionRegistryIndex = -1;
 
-            // todo: custom allocator?
+            // TODO: custom allocator?
             state = new Lua();
             Debug.Assert(state.GetTop() == 0, "Stack should be empty at allocation");
 
             if (txnMode)
             {
-                this.txnKeyEntries = new TxnKeyEntries(16, respServerSession.storageSession.lockableContext, respServerSession.storageSession.objectStoreLockableContext);
+                txnKeyEntries = new TxnKeyEntries(16, respServerSession.storageSession.lockableContext, respServerSession.storageSession.objectStoreLockableContext);
 
                 garnetCall = garnet_call_txn;
             }
@@ -140,7 +140,7 @@ namespace Garnet.server
                 throw new GarnetException("Could not initialize Lua sandbox state");
             }
 
-            // register garnet_call in global namespace
+            // Register garnet_call in global namespace
             state.Register("garnet_call", garnetCall);
 
             var sandboxEnvType = state.GetGlobal("sandbox_env");
@@ -191,7 +191,7 @@ namespace Garnet.server
                 Debug.Assert(loadRes == LuaType.Function, "Unexpected load_sandboxed type");
 
                 state.PushString(source);
-                state.Call(1, -1);  // multiple returns allowed
+                state.Call(1, -1);  // Multiple returns allowed
 
                 var numRets = state.GetTop();
                 if (numRets == 0)
@@ -227,7 +227,7 @@ namespace Garnet.server
             }
             finally
             {
-                // force stack empty after compilation, no matter what happens
+                // Force stack empty after compilation, no matter what happens
                 state.SetTop(0);
             }
         }
@@ -319,7 +319,7 @@ namespace Garnet.server
                         return ErrorInvalidArgumentType(state);
                     }
 
-                    // note these spans are implicitly pinned, as they're actually on the Lua stack
+                    // Note these spans are implicitly pinned, as they're actually on the Lua stack
                     var key = ArgSlice.FromPinnedSpan(keySpan);
                     var value = ArgSlice.FromPinnedSpan(valSpan);
 
@@ -340,7 +340,7 @@ namespace Garnet.server
                         return ErrorInvalidArgumentType(state);
                     }
 
-                    // span is (implicitly) pinned since it's actually on the Lua stack
+                    // Span is (implicitly) pinned since it's actually on the Lua stack
                     var key = ArgSlice.FromPinnedSpan(keySpan);
                     var status = api.GET(key, out var value);
                     if (status == GarnetStatus.OK)
@@ -357,51 +357,52 @@ namespace Garnet.server
 
                 // As fallback, we use RespServerSession with a RESP-formatted input. This could be optimized
                 // in future to provide parse state directly.
+                var trueArgCount = argCount - 1;
 
-                // todo: remove all these allocations
-                var stackArgs = ArrayPool<string>.Shared.Rent(argCount);
-                var cmd = Encoding.UTF8.GetString(cmdSpan);
+                // Avoid allocating entirely if fewer than 16 commands (note we only store pointers, we make no copies)
+                //
+                // At 17+ we'll rent an array, which might allocate, but typically won't
+                var cmdArgsArr = trueArgCount <= 16 ? null : ArrayPool<ArgSlice>.Shared.Rent(argCount);
+                var cmdArgs = cmdArgsArr != null ? cmdArgsArr.AsSpan()[..trueArgCount] : stackalloc ArgSlice[trueArgCount];
 
                 try
                 {
-                    var top = state.GetTop();
-
-                    // move backwards validating arguments
-                    // and removing them from the stack
-                    for (var i = argCount - 1; i >= 0; i--)
+                    for (var i = 0; i < argCount - 1; i++)
                     {
-                        var argType = state.Type(top);
+                        // Index 1 holds the command, so skip it
+                        var argIx = 2 + i;
+
+                        var argType = state.Type(argIx);
                         if (argType == LuaType.Nil)
                         {
-                            stackArgs[i] = null;
+                            cmdArgs[i] = new ArgSlice(null, -1);
                         }
-                        else if (argType == LuaType.String)
+                        else if (argType is LuaType.String or LuaType.Number)
                         {
-                            stackArgs[i] = state.CheckString(top);
-                        }
-                        else if (argType == LuaType.Number)
-                        {
-                            var asNum = state.CheckNumber(top);
-                            stackArgs[i] = ((long)asNum).ToString();
+                            // CheckBuffer will coerce a number into a string
+                            //
+                            // Redis nominally converts numbers to integers, but in this case just ToStrings things
+                            var checkRes = NativeMethods.CheckBuffer(state.Handle, argIx, out var span);
+                            Debug.Assert(checkRes, "Should never fail");
+
+                            // Span remains pinned so long as we don't pop the stack
+                            cmdArgs[i] = ArgSlice.FromPinnedSpan(span);
                         }
                         else
                         {
-                            state.Pop(1);
-
                             return ErrorInvalidArgumentType(state);
                         }
-
-                        state.Pop(1);
-                        top--;
                     }
 
-                    Debug.Assert(state.GetTop() == 0, "Should have emptied the stack");
+                    var request = scratchBufferManager.FormatCommandAsResp(cmdSpan, cmdArgs);
 
-                    // command is handled specially, so trim it off
-                    var cmdArgs = stackArgs.AsSpan().Slice(1, argCount - 1);
+                    // Once the request is formatted, we can release all the args on the Lua stack
+                    //
+                    // This keeps the stack size down for processing the response
+                    state.Pop(argCount);
 
-                    var request = scratchBufferManager.FormatCommandAsResp(cmd, cmdArgs);
                     _ = respServerSession.TryConsumeMessages(request.ptr, request.length);
+
                     var response = scratchBufferNetworkSender.GetResponse();
                     var result = ProcessResponse(response.ptr, response.length);
                     scratchBufferNetworkSender.Reset();
@@ -409,7 +410,10 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    ArrayPool<string>.Shared.Return(stackArgs);
+                    if (cmdArgsArr != null)
+                    {
+                        ArrayPool<ArgSlice>.Shared.Return(cmdArgsArr);
+                    }
                 }
 
             }
@@ -421,6 +425,7 @@ namespace Garnet.server
                 return state.Error();
             }
 
+            // Common failure mode is passing wrong arg
             static int ErrorInvalidArgumentType(Lua state)
             {
                 NativeMethods.PushBuffer(state.Handle, "Lua redis lib command arguments must be strings or integers"u8);
@@ -483,7 +488,7 @@ namespace Garnet.server
                         return LuaError("Unknown Redis command called from script"u8);
                     }
 
-                    // todo: remove alloc
+                    // TIDI: remove alloc
                     if (RespReadUtils.ReadErrorAsString(out resultStr, ref ptr, ptr + length))
                     {
                         state.PushString(resultStr);
@@ -492,7 +497,7 @@ namespace Garnet.server
                     goto default;
 
                 case (byte)'$':
-                    // todo: remove alloc
+                    // TODO: remove alloc
                     if (RespReadUtils.ReadStringResponseWithLengthHeader(out resultStr, ref ptr, ptr + length))
                     {
                         // bulk null strings are mapped to FALSE
@@ -510,7 +515,7 @@ namespace Garnet.server
                     goto default;
 
                 case (byte)'*':
-                    // todo: remove allocs
+                    // TODO: remove allocs
                     if (RespReadUtils.ReadRentedStringArrayResponseWithLengthHeader(ArrayPool<string>.Shared, out var resultArray, ref ptr, ptr + length))
                     {
                         try
@@ -580,7 +585,7 @@ namespace Garnet.server
 
             if (nKeys > 0)
             {
-                // get KEYS on the stack
+                // Get KEYS on the stack
                 state.PushNumber(keysTableRegistryIndex);
                 var loadedType = state.RawGet(LuaRegistry.Index);
                 Debug.Assert(loadedType == LuaType.Table, "Unexpected type loaded when expecting KEYS");
@@ -596,7 +601,7 @@ namespace Garnet.server
                             txnKeyEntries.AddKey(key, true, Tsavorite.core.LockType.Exclusive);
                     }
 
-                    // equivalent to KEYS[i+1] = key
+                    // Equivalent to KEYS[i+1] = key
                     state.PushNumber(i + 1);
                     NativeMethods.PushBuffer(state.Handle, key.ReadOnlySpan);
                     state.RawSet(1);
@@ -604,7 +609,7 @@ namespace Garnet.server
                     offset++;
                 }
 
-                // remove KEYS from the stack
+                // Remove KEYS from the stack
                 state.Pop(1);
 
                 count -= nKeys;
@@ -612,7 +617,7 @@ namespace Garnet.server
 
             if (count > 0)
             {
-                // GET ARGV on the stack
+                // Get ARGV on the stack
                 state.PushNumber(argvTableRegistryIndex);
                 var loadedType = state.RawGet(LuaRegistry.Index);
                 Debug.Assert(loadedType == LuaType.Table, "Unexpected type loaded when expecting ARGV");
@@ -621,7 +626,7 @@ namespace Garnet.server
                 {
                     ref var argv = ref parseState.GetArgSliceByRef(offset);
 
-                    // equivalent to ARGV[i+1] = argv
+                    // Equivalent to ARGV[i+1] = argv
                     state.PushNumber(i + 1);
                     NativeMethods.PushBuffer(state.Handle, argv.ReadOnlySpan);
                     state.RawSet(1);
@@ -629,7 +634,7 @@ namespace Garnet.server
                     offset++;
                 }
 
-                // remove ARGV from the stack
+                // Remove ARGV from the stack
                 state.Pop(1);
             }
 
@@ -702,12 +707,12 @@ namespace Garnet.server
 
             if (keyLength > nKeys)
             {
-                // get KEYS on the stack
+                // Get KEYS on the stack
                 state.PushNumber(keysTableRegistryIndex);
                 var loadRes = state.GetTable(LuaRegistry.Index);
                 Debug.Assert(loadRes == LuaType.Table, "Unexpected type for KEYS");
 
-                // clear all the values in KEYS that we aren't going to set anyway
+                // Clear all the values in KEYS that we aren't going to set anyway
                 for (var i = nKeys + 1; i <= keyLength; i++)
                 {
                     state.PushNil();
@@ -721,7 +726,7 @@ namespace Garnet.server
 
             if (argvLength > nArgs)
             {
-                // get ARGV on the stack
+                // Get ARGV on the stack
                 state.PushNumber(argvTableRegistryIndex);
                 var loadRes = state.GetTable(LuaRegistry.Index);
                 Debug.Assert(loadRes == LuaType.Table, "Unexpected type for ARGV");
@@ -792,10 +797,10 @@ namespace Garnet.server
         /// </summary>
         object Run()
         {
-            // todo: mapping is dependent on Resp2 vs Resp3 settings
+            // TODO: mapping is dependent on Resp2 vs Resp3 settings
             //       and that's not implemented at all
 
-            // todo: this shouldn't read the result, it should write the response out
+            // TODO: this shouldn't read the result, it should write the response out
             Debug.Assert(state.GetTop() == 0, "Stack should be empty at start of invocation");
 
             if (!state.CheckStack(2))
@@ -812,7 +817,7 @@ namespace Garnet.server
                 var callRes = state.PCall(0, 1, 0);
                 if (callRes == LuaStatus.OK)
                 {
-                    // the actual call worked, handle the response
+                    // The actual call worked, handle the response
 
                     if (state.GetTop() == 0)
                     {
@@ -826,9 +831,9 @@ namespace Garnet.server
                     }
                     else if (retType == LuaType.Number)
                     {
-                        // Redis unconditionally converts all "number" replies to integer replies
-                        // so we match that
-                        // see: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                        // Redis unconditionally converts all "number" replies to integer replies so we match that
+                        // 
+                        // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
                         return (long)state.CheckNumber(1);
                     }
                     else if (retType == LuaType.String)
@@ -837,9 +842,9 @@ namespace Garnet.server
                     }
                     else if (retType == LuaType.Boolean)
                     {
-                        // Redis maps Lua false to null, and Lua true to 1
-                        // this is strange, but documented
-                        // see: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                        // Redis maps Lua false to null, and Lua true to 1  this is strange, but documented
+                        //
+                        // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
                         if (state.ToBoolean(1))
                         {
                             return 1L;
@@ -851,11 +856,11 @@ namespace Garnet.server
                     }
                     else if (retType == LuaType.Table)
                     {
-                        // todo: this is hacky, and doesn't support nested arrays or whatever
+                        // TODO: this is hacky, and doesn't support nested arrays or whatever
                         //       but is good enough for now
                         //       when refactored to avoid intermediate objects this should be fixed
 
-                        // note: because we are dealing with a user provided type, we MUST respect
+                        // TODO: because we are dealing with a user provided type, we MUST respect
                         //       metatables - so we can't use any of the RawXXX methods
 
                         // if the key err is in there, we need to short circuit 
@@ -872,7 +877,7 @@ namespace Garnet.server
 
                         state.Pop(1);
 
-                        // otherwise, we need to convert the table to an array
+                        // Otherwise, we need to convert the table to an array
                         var tableLength = state.Length(1);
 
                         var ret = new object[tableLength];
@@ -891,7 +896,7 @@ namespace Garnet.server
                                     ret[i - 1] = state.ToBoolean(2) ? 1L : null;
                                     break;
                                 // Redis stops processesing the array when a nil is encountered
-                                // see: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                                // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
                                 case LuaType.Nil:
                                     return ret.Take(i - 1).ToArray();
                             }
@@ -903,13 +908,13 @@ namespace Garnet.server
                     }
                     else
                     {
-                        // todo: implement
+                        // TODO: implement
                         throw new NotImplementedException();
                     }
                 }
                 else
                 {
-                    // an error was raised
+                    // An error was raised
 
                     var stackTop = state.GetTop();
                     if (stackTop == 0)
@@ -918,8 +923,7 @@ namespace Garnet.server
                         throw new GarnetException("An error occurred while invoking a Lua script");
                     }
 
-                    // todo: we should just write this out, not throw
-                    //       it's not exceptional
+                    // Todo: we should just write this out, not throw it's not exceptional
                     var msg = state.CheckString(stackTop);
                     throw new GarnetException(msg);
                 }
