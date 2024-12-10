@@ -105,7 +105,7 @@ namespace Garnet.cluster
         public Task InitializeAsync()
         {
             // Ensure initialize executes only once
-            if (Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return Task.CompletedTask;
+            if (initialized != 0 || Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return Task.CompletedTask;
 
             cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
             return gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);

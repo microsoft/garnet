@@ -786,30 +786,22 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        ///  Return the nodeIds of all nodes in the shard
+        /// NodeIds
         /// </summary>
-        /// <returns></returns>
-        public IEnumerable<string> GetShardNodeIds()
+        /// <param name="allNodeIds"></param>
+        /// <param name="shardNodeIds"></param>
+        public void GetNodeIdsForPublishedMessageForwarding(out List<string> allNodeIds, out List<string> shardNodeIds)
         {
             var primaryId = LocalNodeRole == NodeRole.PRIMARY ? LocalNodeId : workers[1].ReplicaOfNodeId;
-            if (primaryId == null) yield break;
-
+            allNodeIds = [];
+            shardNodeIds = [];
             for (ushort i = 2; i < workers.Length; i++)
             {
+                allNodeIds.Add(workers[i].Nodeid);
                 var replicaOf = workers[i].ReplicaOfNodeId;
-                if ((replicaOf != null && replicaOf.Equals(primaryId, StringComparison.OrdinalIgnoreCase)) || primaryId.Equals(workers[i].Nodeid))
-                    yield return workers[i].Nodeid;
+                if (primaryId != null && ((replicaOf != null && replicaOf.Equals(primaryId, StringComparison.OrdinalIgnoreCase)) || primaryId.Equals(workers[i].Nodeid)))
+                    shardNodeIds.Add(workers[i].Nodeid);
             }
-        }
-
-        /// <summary>
-        /// Return the nodeIds of all nodes in the cluster
-        /// </summary>
-        /// <returns></returns>
-        public IEnumerable<string> GetAllNodeIds()
-        {
-            for (ushort i = 2; i < workers.Length; i++)
-                yield return workers[i].Nodeid;
         }
 
         /// <summary>
