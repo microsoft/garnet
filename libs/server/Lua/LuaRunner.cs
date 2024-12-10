@@ -298,128 +298,124 @@ namespace Garnet.server
 
                 if (argCount == 0)
                 {
-                    return state.Error("Please specify at least one argument for this redis lib call script");
+                    return LuaError("Please specify at least one argument for this redis lib call script"u8);
                 }
 
-                // todo: no alloc
-                var cmd = state.CheckString(1).ToUpperInvariant();
-
-                switch (cmd)
+                if (!NativeMethods.CheckBuffer(state.Handle, 1, out var cmdSpan))
                 {
-                    // We special-case a few performance-sensitive operations to directly invoke via the storage API
-                    case "SET" when argCount == 3:
-                        {
-                            if (!respServerSession.CheckACLPermissions(RespCommand.SET))
-                            {
-                                // todo: no alloc
-                                return state.Error(Encoding.UTF8.GetString(CmdStrings.RESP_ERR_NOAUTH));
-                            }
-
-                            // todo: no alloc
-                            var keyBuf = state.CheckBuffer(2);
-                            var valBuf = state.CheckBuffer(3);
-
-                            if (keyBuf == null || valBuf == null)
-                            {
-                                return ErrorInvalidArgumentType(state);
-                            }
-
-                            var key = scratchBufferManager.CreateArgSlice(keyBuf);
-                            var value = scratchBufferManager.CreateArgSlice(valBuf);
-                            _ = api.SET(key, value);
-
-                            state.PushString("OK");
-                            return 1;
-                        }
-                    case "GET" when argCount == 2:
-                        {
-                            if (!respServerSession.CheckACLPermissions(RespCommand.GET))
-                            {
-                                // todo: no alloc
-                                return state.Error(Encoding.UTF8.GetString(CmdStrings.RESP_ERR_NOAUTH));
-                            }
-
-                            // todo: no alloc
-                            var keyBuf = state.CheckBuffer(2);
-
-                            if (keyBuf == null)
-                            {
-                                return ErrorInvalidArgumentType(state);
-                            }
-
-                            var key = scratchBufferManager.CreateArgSlice(keyBuf);
-                            var status = api.GET(key, out var value);
-                            if (status == GarnetStatus.OK)
-                            {
-                                // todo: no alloc
-                                state.PushBuffer(value.ToArray());
-                            }
-                            else
-                            {
-                                state.PushNil();
-                            }
-
-                            return 1;
-                        }
-
-                    // As fallback, we use RespServerSession with a RESP-formatted input. This could be optimized
-                    // in future to provide parse state directly.
-                    default:
-                        {
-                            // todo: remove all these allocations
-                            var stackArgs = ArrayPool<string>.Shared.Rent(argCount);
-
-                            try
-                            {
-                                var top = state.GetTop();
-
-                                // move backwards validating arguments
-                                // and removing them from the stack
-                                for (var i = argCount - 1; i >= 0; i--)
-                                {
-                                    var argType = state.Type(top);
-                                    if (argType == LuaType.Nil)
-                                    {
-                                        stackArgs[i] = null;
-                                    }
-                                    else if (argType == LuaType.String)
-                                    {
-                                        stackArgs[i] = state.CheckString(top);
-                                    }
-                                    else if (argType == LuaType.Number)
-                                    {
-                                        var asNum = state.CheckNumber(top);
-                                        stackArgs[i] = ((long)asNum).ToString();
-                                    }
-                                    else
-                                    {
-                                        state.Pop(1);
-
-                                        return ErrorInvalidArgumentType(state);
-                                    }
-
-                                    state.Pop(1);
-                                    top--;
-                                }
-
-                                Debug.Assert(state.GetTop() == 0, "Should have emptied the stack");
-
-                                // command is handled specially, so trim it off
-                                var cmdArgs = stackArgs.AsSpan().Slice(1, argCount - 1);
-
-                                var request = scratchBufferManager.FormatCommandAsResp(cmd, cmdArgs);
-                                _ = respServerSession.TryConsumeMessages(request.ptr, request.length);
-                                var response = scratchBufferNetworkSender.GetResponse();
-                                var result = ProcessResponse(response.ptr, response.length);
-                                scratchBufferNetworkSender.Reset();
-                                return result;
-                            }
-                            finally
-                            {
-                                ArrayPool<string>.Shared.Return(stackArgs);
-                            }
-                        }
+                    return LuaError("Unknown Redis command called from script"u8);
                 }
+
+                // We special-case a few performance-sensitive operations to directly invoke via the storage API
+                if (AsciiUtils.EqualsUpperCaseSpanIgnoringCase(cmdSpan, "SET"u8) && argCount == 3)
+                {
+                    if (!respServerSession.CheckACLPermissions(RespCommand.SET))
+                    {
+                        return LuaError(CmdStrings.RESP_ERR_NOAUTH);
+                    }
+
+                    // todo: no alloc
+                    var keyBuf = state.CheckBuffer(2);
+                    var valBuf = state.CheckBuffer(3);
+
+                    if (keyBuf == null || valBuf == null)
+                    {
+                        return ErrorInvalidArgumentType(state);
+                    }
+
+                    var key = scratchBufferManager.CreateArgSlice(keyBuf);
+                    var value = scratchBufferManager.CreateArgSlice(valBuf);
+                    _ = api.SET(key, value);
+
+                    NativeMethods.PushBuffer(state.Handle, "OK"u8);
+                    return 1;
+                }
+                else if (AsciiUtils.EqualsUpperCaseSpanIgnoringCase(cmdSpan, "GET"u8) && argCount == 2)
+                {
+                    if (!respServerSession.CheckACLPermissions(RespCommand.GET))
+                    {
+                        return LuaError(CmdStrings.RESP_ERR_NOAUTH);
+                    }
+
+                    // todo: no alloc
+                    var keyBuf = state.CheckBuffer(2);
+
+                    if (keyBuf == null)
+                    {
+                        return ErrorInvalidArgumentType(state);
+                    }
+
+                    var key = scratchBufferManager.CreateArgSlice(keyBuf);
+                    var status = api.GET(key, out var value);
+                    if (status == GarnetStatus.OK)
+                    {
+                        NativeMethods.PushBuffer(state.Handle, value.ReadOnlySpan);
+                    }
+                    else
+                    {
+                        state.PushNil();
+                    }
+
+                    return 1;
+                }
+
+                // As fallback, we use RespServerSession with a RESP-formatted input. This could be optimized
+                // in future to provide parse state directly.
+
+                // todo: remove all these allocations
+                var stackArgs = ArrayPool<string>.Shared.Rent(argCount);
+                var cmd = Encoding.UTF8.GetString(cmdSpan);
+
+                try
+                {
+                    var top = state.GetTop();
+
+                    // move backwards validating arguments
+                    // and removing them from the stack
+                    for (var i = argCount - 1; i >= 0; i--)
+                    {
+                        var argType = state.Type(top);
+                        if (argType == LuaType.Nil)
+                        {
+                            stackArgs[i] = null;
+                        }
+                        else if (argType == LuaType.String)
+                        {
+                            stackArgs[i] = state.CheckString(top);
+                        }
+                        else if (argType == LuaType.Number)
+                        {
+                            var asNum = state.CheckNumber(top);
+                            stackArgs[i] = ((long)asNum).ToString();
+                        }
+                        else
+                        {
+                            state.Pop(1);
+
+                            return ErrorInvalidArgumentType(state);
+                        }
+
+                        state.Pop(1);
+                        top--;
+                    }
+
+                    Debug.Assert(state.GetTop() == 0, "Should have emptied the stack");
+
+                    // command is handled specially, so trim it off
+                    var cmdArgs = stackArgs.AsSpan().Slice(1, argCount - 1);
+
+                    var request = scratchBufferManager.FormatCommandAsResp(cmd, cmdArgs);
+                    _ = respServerSession.TryConsumeMessages(request.ptr, request.length);
+                    var response = scratchBufferNetworkSender.GetResponse();
+                    var result = ProcessResponse(response.ptr, response.length);
+                    scratchBufferNetworkSender.Reset();
+                    return result;
+                }
+                finally
+                {
+                    ArrayPool<string>.Shared.Return(stackArgs);
+                }
+
             }
             catch (Exception e)
             {
@@ -431,9 +427,23 @@ namespace Garnet.server
 
             static int ErrorInvalidArgumentType(Lua state)
             {
-                state.PushString("Lua redis lib command arguments must be strings or integers");
+                NativeMethods.PushBuffer(state.Handle, "Lua redis lib command arguments must be strings or integers"u8);
                 return state.Error();
             }
+        }
+
+        /// <summary>
+        /// Cause a lua error to be raised with the given message.
+        /// </summary>
+        int LuaError(ReadOnlySpan<byte> msg)
+        {
+            if (!state.CheckStack(1))
+            {
+                throw new GarnetException("Insufficient stack space to error");
+            }
+
+            NativeMethods.PushBuffer(state.Handle, msg);
+            return state.Error();
         }
 
         /// <summary>
