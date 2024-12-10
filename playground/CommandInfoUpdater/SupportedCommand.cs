@@ -271,6 +271,7 @@ namespace CommandInfoUpdater
             new("ZINCRBY", RespCommand.ZINCRBY),
             new("ZLEXCOUNT", RespCommand.ZLEXCOUNT),
             new("ZMSCORE", RespCommand.ZMSCORE),
+            new("ZMPOP", RespCommand.ZMPOP),
             new("ZPOPMAX", RespCommand.ZPOPMAX),
             new("ZPOPMIN", RespCommand.ZPOPMIN),
             new("ZRANDMEMBER", RespCommand.ZRANDMEMBER),

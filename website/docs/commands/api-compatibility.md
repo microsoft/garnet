@@ -331,7 +331,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | ZINTERCARD | ➖ |  |
 |  | ZINTERSTORE | ➖ |  |
 |  | [ZLEXCOUNT](data-structures.md#zlexcount) | ➕ |  |
-|  | ZMPOP | ➖ |  |
+|  | [ZMPOP](data-structures.md#zmpop) | ➕ |  |
 |  | [ZMSCORE](data-structures.md#zmscore) | ➕ |  |
 |  | [ZPOPMAX](data-structures.md#zpopmax) | ➕ |  |
 |  | [ZPOPMIN](data-structures.md#zpopmin) | ➕ |  |

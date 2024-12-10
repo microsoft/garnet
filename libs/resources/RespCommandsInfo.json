@@ -4323,6 +4323,28 @@
     ]
   },
   {
+    "Command": "ZMPOP",
+    "Name": "ZMPOP",
+    "Arity": -4,
+    "Flags": "MovableKeys, Write",
+    "AclCategories": "SortedSet, Slow, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysKeyNum",
+          "KeyNumIdx": 0,
+          "FirstKey": 1,
+          "KeyStep": 1
+        },
+        "Flags": "RW, Access, Delete"
+      }
+    ]
+  },
+  {
     "Command": "ZMSCORE",
     "Name": "ZMSCORE",
     "Arity": -3,
