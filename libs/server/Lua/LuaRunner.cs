@@ -116,15 +116,10 @@ namespace Garnet.server
                     return function()
                         local rawRet = rawFunc()
 
-                        -- handle err and ok response wrappers without crossing the pinvoke boundary                        
-                        if rawRet and type(rawRet) == ""table"" then
-                            if rawRet.err then
-                                error(rawRet.err)
-                            end
-
-                            if rawRet.ok then
-                                return rawRet.ok
-                            end
+                        -- handle ok response wrappers without crossing the pinvoke boundary
+                        -- err response wrapper requires a bit more work, but is also rarer
+                        if rawRet and type(rawRet) == ""table"" and rawRet.ok then
+                            return rawRet.ok
                         end
 
                         return rawRet
@@ -361,7 +356,7 @@ namespace Garnet.server
                     default:
                         {
                             // todo: remove all these allocations
-                            var args = ArrayPool<string>.Shared.Rent(argCount);
+                            var stackArgs = ArrayPool<string>.Shared.Rent(argCount);
 
                             try
                             {
@@ -374,16 +369,16 @@ namespace Garnet.server
                                     var argType = state.Type(top);
                                     if (argType == LuaType.Nil)
                                     {
-                                        args[i] = null;
+                                        stackArgs[i] = null;
                                     }
                                     else if (argType == LuaType.String)
                                     {
-                                        args[i] = state.CheckString(top);
+                                        stackArgs[i] = state.CheckString(top);
                                     }
                                     else if (argType == LuaType.Number)
                                     {
                                         var asNum = state.CheckNumber(top);
-                                        args[i] = ((long)asNum).ToString();
+                                        stackArgs[i] = ((long)asNum).ToString();
                                     }
                                     else
                                     {
@@ -398,7 +393,10 @@ namespace Garnet.server
 
                                 Debug.Assert(state.GetTop() == 0, "Should have emptied the stack");
 
-                                var request = scratchBufferManager.FormatCommandAsResp(cmd, args.AsSpan()[..argCount]);
+                                // command is handled specially, so trim it off
+                                var cmdArgs = stackArgs.AsSpan().Slice(1, argCount - 1);
+
+                                var request = scratchBufferManager.FormatCommandAsResp(cmd, cmdArgs);
                                 _ = respServerSession.TryConsumeMessages(request.ptr, request.length);
                                 var response = scratchBufferNetworkSender.GetResponse();
                                 var result = ProcessResponse(response.ptr, response.length);
@@ -407,7 +405,7 @@ namespace Garnet.server
                             }
                             finally
                             {
-                                ArrayPool<string>.Shared.Return(args);
+                                ArrayPool<string>.Shared.Return(stackArgs);
                             }
                         }
                 }
@@ -682,6 +680,8 @@ namespace Garnet.server
                     state.PushNil();
                     state.RawSetInteger(1, i);
                 }
+
+                state.Pop(1);
             }
 
             keyLength = nKeys;
@@ -698,6 +698,8 @@ namespace Garnet.server
                     state.PushNil();
                     state.RawSetInteger(1, i);
                 }
+
+                state.Pop(1);
             }
 
             argvLength = nArgs;
@@ -772,7 +774,9 @@ namespace Garnet.server
                     }
                     else if (retType == LuaType.Number)
                     {
-                        return state.CheckNumber(1);
+                        // Redis appears to unconditionally convert all "number" replies to integer replies
+                        // so we match that
+                        return (long)state.CheckNumber(1);
                     }
                     else if (retType == LuaType.String)
                     {

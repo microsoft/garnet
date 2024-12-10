@@ -143,7 +143,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             // Create a sorted set
-            var script = "local ptable = {100, \"value1\", 200, \"value2\"}; return redis.call('zadd', KEYS[1], ptable)";
+            var script = "return redis.call('zadd', KEYS[1], 100, \"value1\", 200, \"value2\")";
             var result = db.ScriptEvaluate(script, [(RedisKey)"mysskey"]);
             ClassicAssert.IsTrue(result.ToString() == "2");
 
@@ -156,7 +156,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(result.ToString() == "0");
 
             // Add more pairs
-            script = "local ptable = {300, \"value3\", 400, \"value4\"}; return redis.call('zadd', KEYS[1], ptable)";
+            script = "return redis.call('zadd', KEYS[1], 300, \"value3\", 400, \"value4\")";
             result = db.ScriptEvaluate(script, [(RedisKey)"mysskey"]);
             ClassicAssert.IsTrue(result.ToString() == "2");
 

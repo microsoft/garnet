@@ -292,6 +292,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteInteger(l, ref dcurr, dend))
                         SendAndReset();
                 }
+
                 else
                 {
                     // todo: this should all go away
