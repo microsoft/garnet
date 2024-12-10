@@ -78,8 +78,8 @@ namespace Garnet.server
             var sandboxRes = state.DoString(@"
                 import = function () end
                 redis = {}
-                function redis.call(cmd, ...)
-                    return garnet_call(cmd, ...)
+                function redis.call(...)
+                    return garnet_call(...)
                 end
                 function redis.status_reply(text)
                     return text
@@ -298,7 +298,7 @@ namespace Garnet.server
 
                 if (argCount == 0)
                 {
-                    return LuaError("Please specify at least one argument for this redis lib call script"u8);
+                    return LuaError("Please specify at least one argument for this redis lib call"u8);
                 }
 
                 if (!NativeMethods.CheckBuffer(state.Handle, 1, out var cmdSpan))
@@ -314,7 +314,7 @@ namespace Garnet.server
                         return LuaError(CmdStrings.RESP_ERR_NOAUTH);
                     }
 
-                    if(!NativeMethods.CheckBuffer(state.Handle, 2, out var keySpan) || !NativeMethods.CheckBuffer(state.Handle, 3, out var valSpan))
+                    if (!NativeMethods.CheckBuffer(state.Handle, 2, out var keySpan) || !NativeMethods.CheckBuffer(state.Handle, 3, out var valSpan))
                     {
                         return ErrorInvalidArgumentType(state);
                     }
@@ -322,7 +322,7 @@ namespace Garnet.server
                     // note these spans are implicitly pinned, as they're actually on the Lua stack
                     var key = ArgSlice.FromPinnedSpan(keySpan);
                     var value = ArgSlice.FromPinnedSpan(valSpan);
-                    
+
                     _ = api.SET(key, value);
 
                     NativeMethods.PushBuffer(state.Handle, "OK"u8);
@@ -335,7 +335,7 @@ namespace Garnet.server
                         return LuaError(CmdStrings.RESP_ERR_NOAUTH);
                     }
 
-                    if(!NativeMethods.CheckBuffer(state.Handle, 2, out var keySpan))
+                    if (!NativeMethods.CheckBuffer(state.Handle, 2, out var keySpan))
                     {
                         return ErrorInvalidArgumentType(state);
                     }
@@ -476,6 +476,13 @@ namespace Garnet.server
                     goto default;
 
                 case (byte)'-':
+                    var errSpan = new ReadOnlySpan<byte>(ptr + 1, length - 3); // cut \r\n off too
+                    if (errSpan.SequenceEqual(CmdStrings.RESP_ERR_GENERIC_UNK_CMD))
+                    {
+                        // gets a special response
+                        return LuaError("Unknown Redis command called from script"u8);
+                    }
+
                     // todo: remove alloc
                     if (RespReadUtils.ReadErrorAsString(out resultStr, ref ptr, ptr + length))
                     {
