@@ -5,7 +5,6 @@ using System;
 using System.Buffers;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 using KeraLua;
@@ -280,7 +279,7 @@ namespace Garnet.server
         {
             logger?.LogError("Lua call came in without a valid resp session");
 
-            state.PushString("No session available");
+            NativeMethods.PushBuffer(state.Handle, "No session available"u8);
 
             // this will never return, but we can pretend it does
             return state.Error();
@@ -757,41 +756,81 @@ namespace Garnet.server
             }
 
             ResetParameters(keys?.Length ?? 0, argv?.Length ?? 0);
-            if (keys != null)
-            {
-                // get KEYS on the stack
-                state.PushNumber(keysTableRegistryIndex);
-                var loadRes = state.GetTable(LuaRegistry.Index);
-                Debug.Assert(loadRes == LuaType.Table, "Unexpected type for KEYS");
 
-                for (var i = 0; i < keys.Length; i++)
+            byte[] encodingBufferArr = null;
+            Span<byte> encodingBuffer = stackalloc byte[64];
+            try
+            {
+
+                if (keys != null)
                 {
-                    // equivalent to KEYS[i+1] = keys[i]
-                    state.PushString(keys[i]);
-                    state.RawSetInteger(1, i + 1);
+                    // get KEYS on the stack
+                    state.PushNumber(keysTableRegistryIndex);
+                    var loadRes = state.GetTable(LuaRegistry.Index);
+                    Debug.Assert(loadRes == LuaType.Table, "Unexpected type for KEYS");
+
+                    for (var i = 0; i < keys.Length; i++)
+                    {
+                        // equivalent to KEYS[i+1] = keys[i]
+                        var key = keys[i];
+
+                        var keyLen = PrepareString(key, ref encodingBufferArr, ref encodingBuffer);
+                        NativeMethods.PushBuffer(state.Handle, encodingBuffer[..keyLen]);
+
+                        state.RawSetInteger(1, i + 1);
+                    }
+
+                    state.Pop(1);
                 }
 
-                state.Pop(1);
-            }
-
-            if (argv != null)
-            {
-                // get ARGV on the stack
-                state.PushNumber(argvTableRegistryIndex);
-                var loadRes = state.GetTable(LuaRegistry.Index);
-                Debug.Assert(loadRes == LuaType.Table, "Unexpected type for ARGV");
-
-                for (var i = 0; i < argv.Length; i++)
+                if (argv != null)
                 {
-                    // equivalent to ARGV[i+1] = keys[i]
-                    state.PushString(argv[i]);
-                    state.RawSetInteger(1, i + 1);
-                }
+                    // get ARGV on the stack
+                    state.PushNumber(argvTableRegistryIndex);
+                    var loadRes = state.GetTable(LuaRegistry.Index);
+                    Debug.Assert(loadRes == LuaType.Table, "Unexpected type for ARGV");
 
-                state.Pop(1);
+                    for (var i = 0; i < argv.Length; i++)
+                    {
+                        // equivalent to ARGV[i+1] = keys[i]
+                        var arg = argv[i];
+
+                        var argLen = PrepareString(arg, ref encodingBufferArr, ref encodingBuffer);
+                        NativeMethods.PushBuffer(state.Handle, encodingBuffer[..argLen]);
+
+                        state.RawSetInteger(1, i + 1);
+                    }
+
+                    state.Pop(1);
+                }
             }
+            finally
+            {
+                if(encodingBufferArr != null)
+                {
+                    ArrayPool<byte>.Shared.Return(encodingBufferArr);
+                }
+            }
+
 
             Debug.Assert(state.GetTop() == 0, "Stack should be empty when invocation ends");
+
+            static int PrepareString(string raw, ref byte[] arr, ref Span<byte> span)
+            {
+                var maxLen = Encoding.UTF8.GetMaxByteCount(raw.Length);
+                if(span.Length < maxLen)
+                {
+                    if(arr != null)
+                    {
+                        ArrayPool<byte>.Shared.Return(arr);
+                    }
+
+                    arr = ArrayPool<byte>.Shared.Rent(maxLen);
+                    span = arr;
+                }
+
+                return Encoding.UTF8.GetBytes(raw, span);
+            }
         }
 
         /// <summary>
@@ -866,7 +905,7 @@ namespace Garnet.server
                         //       metatables - so we can't use any of the RawXXX methods
 
                         // if the key err is in there, we need to short circuit 
-                        state.PushString("err");
+                        NativeMethods.PushBuffer(state.Handle, "err"u8);
 
                         var errType = state.GetTable(1);
                         if (errType == LuaType.String)
