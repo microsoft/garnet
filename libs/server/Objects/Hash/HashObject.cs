@@ -51,6 +51,9 @@ namespace Garnet.server
         Dictionary<byte[], long> expirationTimes;
         PriorityQueue<byte[], long> expirationQueue;
 
+        // Byte #31 is used to denote if key has expiration (1) or not (0) 
+        private const int ExpirationBitMask = 1 << 31;
+
         /// <summary>
         ///  Constructor
         /// </summary>
@@ -66,34 +69,37 @@ namespace Garnet.server
         public HashObject(BinaryReader reader)
             : base(reader, MemoryUtils.DictionaryOverhead)
         {
-            // TODO: Handle deserialization of expiration times
             hash = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
 
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)
             {
-                var item = reader.ReadBytes(reader.ReadInt32());
+                var keyLength = reader.ReadInt32();
+                var hasExpiration = (keyLength & ExpirationBitMask) != 0;
+                keyLength &= ~ExpirationBitMask;
+                var item = reader.ReadBytes(keyLength);
                 var value = reader.ReadBytes(reader.ReadInt32());
-                hash.Add(item, value);
+
+                if (hasExpiration)
+                {
+                    var expiration = reader.ReadInt64();
+                    var isExpired = expiration < DateTimeOffset.UtcNow.Ticks;
+                    if (!isExpired)
+                    {
+                        hash.Add(item, value);
+                        expirationTimes ??= new Dictionary<byte[], long>(ByteArrayComparer.Instance);
+                        expirationQueue ??= new PriorityQueue<byte[], long>();
+                        expirationTimes.Add(item, expiration);
+                        expirationQueue.Enqueue(item, expiration);
+                        // TODO: Update size
+                    }
+                }
+                else
+                {
+                    hash.Add(item, value);
+                }
 
                 this.UpdateSize(item, value);
-            }
-
-            int expireCount = reader.ReadInt32();
-            // TODO: Can we delete expired items during serialization and deserialization?
-            if (expireCount > 0)
-            {
-                expirationTimes = new Dictionary<byte[], long>(ByteArrayComparer.Instance);
-                expirationQueue = new PriorityQueue<byte[], long>();
-                for (int i = 0; i < count; i++)
-                {
-                    var item = reader.ReadBytes(reader.ReadInt32());
-                    var value = reader.ReadInt64();
-                    expirationTimes.Add(item, value);
-                    expirationQueue.Enqueue(item, value);
-
-                    // TODO: Update size
-                }
             }
         }
 
@@ -116,10 +122,23 @@ namespace Garnet.server
         {
             base.DoSerialize(writer);
 
-            int count = hash.Count;
+            DeleteExpiredItems();
+
+            int count = hash.Count; // Since expired items are already deleted, no need to worry about expiring items
             writer.Write(count);
             foreach (var kvp in hash)
             {
+                if (expirationTimes is not null && expirationTimes.TryGetValue(kvp.Key, out var expiration))
+                {
+                    writer.Write(kvp.Key.Length | ExpirationBitMask);
+                    writer.Write(kvp.Key);
+                    writer.Write(kvp.Value.Length);
+                    writer.Write(kvp.Value);
+                    writer.Write(expiration);
+                    count--;
+                    continue;
+                }
+
                 writer.Write(kvp.Key.Length);
                 writer.Write(kvp.Key);
                 writer.Write(kvp.Value.Length);
@@ -127,22 +146,6 @@ namespace Garnet.server
                 count--;
             }
 
-            if (expirationTimes is not null)
-            {
-                // TODO: Can we delete expired items during serialization and deserialization?
-                writer.Write(expirationTimes.Count);
-                foreach (var kvp in expirationTimes)
-                {
-                    writer.Write(kvp.Key.Length);
-                    writer.Write(kvp.Key);
-                    writer.Write(kvp.Value);
-                }
-            }
-            else
-            {
-                // TODO: This will break backward compatibility, Do we need to handle this?
-                writer.Write(0);
-            }
             Debug.Assert(count == 0);
         }
 
@@ -419,11 +422,25 @@ namespace Garnet.server
         {
             if (HasExpirableItems())
             {
-                // TODO: Check the performance of this implementation
-                return hash.Where(x => !IsExpired(x.Key));
+                return GetNonExpiredItems();
             }
 
-            return hash;
+            return hash.AsEnumerable();
+        }
+
+        /// <summary>
+        /// Use `AsEnumerable` instead of this method to avoid checking for expired items if there is no expiring item
+        /// </summary>
+        /// <returns></returns>
+        private IEnumerable<KeyValuePair<byte[], byte[]>> GetNonExpiredItems()
+        {
+            foreach (var item in hash)
+            {
+                if (!IsExpired(item.Key))
+                {
+                    yield return item;
+                }
+            }
         }
 
         private void Add(byte[] key, byte[] value)
