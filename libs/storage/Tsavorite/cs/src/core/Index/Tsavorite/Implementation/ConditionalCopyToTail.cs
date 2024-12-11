@@ -29,7 +29,7 @@ namespace Tsavorite.core
         private OperationStatus ConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext,
                 ref TKey key, ref TInput input, ref TValue value, ref TOutput output, TContext userContext,
-                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, WriteReason writeReason, bool wantIO = true)
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, WriteReason writeReason, bool wantIO = true, long maxAddress = long.MaxValue)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             bool callerHasTransientLock = stackCtx.recSrc.HasTransientSLock;
@@ -70,7 +70,7 @@ namespace Tsavorite.core
                 bool needIO;
                 do
                 {
-                    if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx2, stackCtx.recSrc.LogicalAddress, minAddress, out status, out needIO))
+                    if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx2, stackCtx.recSrc.LogicalAddress, minAddress, maxAddress, out status, out needIO))
                         return OperationStatus.SUCCESS;
                 }
                 while (HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
@@ -84,13 +84,13 @@ namespace Tsavorite.core
                 }
                 else if (needIO)
                     return PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, userContext,
-                                                      ref stackCtx2, minAddress, WriteReason.Compaction);
+                                                      ref stackCtx2, minAddress, maxAddress, WriteReason.Compaction);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status CompactionConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key, ref TInput input, ref TValue value,
-                ref TOutput output, long currentAddress, long minAddress)
+                ref TOutput output, long currentAddress, long minAddress, long maxAddress = long.MaxValue)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
@@ -101,16 +101,16 @@ namespace Tsavorite.core
             bool needIO;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, currentAddress, minAddress, out status, out needIO))
+                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, currentAddress, minAddress, maxAddress, out status, out needIO))
                     return Status.CreateFound();
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
 
             if (needIO)
                 status = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default,
-                                                    ref stackCtx, minAddress, WriteReason.Compaction);
+                                                    ref stackCtx, minAddress, maxAddress, WriteReason.Compaction);
             else
-                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default, ref stackCtx, WriteReason.Compaction);
+                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default, ref stackCtx, WriteReason.Compaction, true, maxAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, status, out _);
         }
 
@@ -118,12 +118,13 @@ namespace Tsavorite.core
         internal OperationStatus PrepareIOForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                                         ref PendingContext<TInput, TOutput, TContext> pendingContext,
                                         ref TKey key, ref TInput input, ref TValue value, ref TOutput output, TContext userContext,
-                                        ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, WriteReason writeReason,
+                                        ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, WriteReason writeReason,
                                         OperationType opType = OperationType.CONDITIONAL_INSERT)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             pendingContext.type = opType;
             pendingContext.minAddress = minAddress;
+            pendingContext.maxAddress = maxAddress;
             pendingContext.writeReason = writeReason;
             pendingContext.InitialEntryAddress = Constants.kInvalidAddress;
             pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
