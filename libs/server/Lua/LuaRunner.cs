@@ -399,7 +399,7 @@ namespace Garnet.server
 
                 if (argCount == 0)
                 {
-                    return LuaError("Please specify at least one argument for this redis lib call"u8);
+                    return LuaError("ERR Please specify at least one argument for this redis lib call"u8);
                 }
 
                 ForceGrowLuaStack(AdditionalStackSpace);
@@ -551,7 +551,7 @@ namespace Garnet.server
         /// </summary>
         int ErrorInvalidArgumentType(int neededCapacity)
         {
-            CheckedPushBuffer(neededCapacity, "Lua redis lib command arguments must be strings or integers"u8);
+            CheckedPushBuffer(neededCapacity, "ERR Lua redis lib command arguments must be strings or integers"u8);
             return state.Error();
         }
 
@@ -609,7 +609,7 @@ namespace Garnet.server
                         if (errSpan.SequenceEqual(CmdStrings.RESP_ERR_GENERIC_UNK_CMD))
                         {
                             // Gets a special response
-                            return LuaError("Unknown Redis command called from script"u8);
+                            return LuaError("ERR Unknown Redis command called from script"u8);
                         }
 
                         CheckedPushBuffer(NeededStackSize, errSpan);
@@ -989,13 +989,12 @@ namespace Garnet.server
             // TODO: mapping is dependent on Resp2 vs Resp3 settings
             //       and that's not implemented at all
 
-            // TODO: this shouldn't read the result, it should write the response out
             AssertLuaStackEmpty();
-
-            ForceGrowLuaStack(NeededStackSize);
 
             try
             {
+                ForceGrowLuaStack(NeededStackSize);
+
                 CheckedPushNumber(NeededStackSize, functionRegistryIndex);
                 var loadRes = state.GetTable(LuaRegistry.Index);
                 Debug.Assert(loadRes == LuaType.Function, "Unexpected type for function to invoke");
@@ -1007,113 +1006,89 @@ namespace Garnet.server
 
                     if (state.GetTop() == 0)
                     {
-                        while (!RespWriteUtils.WriteNull(ref resp.BufferCur, resp.BufferEnd))
-                            resp.SendAndReset();
-
+                        WriteNull(state, 0, ref resp);
                         return;
                     }
 
                     var retType = state.Type(1);
                     if (retType == LuaType.Nil)
                     {
-                        while (!RespWriteUtils.WriteNull(ref resp.BufferCur, resp.BufferEnd))
-                            resp.SendAndReset();
-
+                        WriteNull(state, 1, ref resp);
                         return;
                     }
                     else if (retType == LuaType.Number)
                     {
-                        // Redis unconditionally converts all "number" replies to integer replies so we match that
-                        // 
-                        // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                        var num = (long)state.CheckNumber(1);
-
-                        while (!RespWriteUtils.WriteInteger(num, ref resp.BufferCur, resp.BufferEnd))
-                            resp.SendAndReset();
-
+                        WriteNumber(state, 1, ref resp);
                         return;
                     }
                     else if (retType == LuaType.String)
                     {
-                        var checkRes = NativeMethods.CheckBuffer(state.Handle, 1, out var buf);
-                        Debug.Assert(checkRes, "Should never fail");
-
-                        while (!RespWriteUtils.WriteBulkString(buf, ref resp.BufferCur, resp.BufferEnd))
-                            resp.SendAndReset();
-
+                        WriteString(state, 1, ref resp);
                         return;
                     }
                     else if (retType == LuaType.Boolean)
                     {
-                        // Redis maps Lua false to null, and Lua true to 1  this is strange, but documented
-                        //
-                        // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                        if (state.ToBoolean(1))
-                        {
-                            while (!RespWriteUtils.WriteInteger(1, ref resp.BufferCur, resp.BufferEnd))
-                                resp.SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteNull(ref resp.BufferCur, resp.BufferEnd))
-                                resp.SendAndReset();
-                        }
-
+                        WriteBoolean(state, 1, ref resp);
                         return;
                     }
                     else if (retType == LuaType.Table)
                     {
-                        throw new NotImplementedException();
+                        // TODO: this is hacky, and doesn't support nested arrays or whatever
+                        //       but is good enough for now
+                        //       when refactored to avoid intermediate objects this should be fixed
 
-                        //// TODO: this is hacky, and doesn't support nested arrays or whatever
-                        ////       but is good enough for now
-                        ////       when refactored to avoid intermediate objects this should be fixed
+                        // TODO: because we are dealing with a user provided type, we MUST respect
+                        //       metatables - so we can't use any of the RawXXX methods
+                        //       so we need a test that use metatables (and compare to how Redis does this)
 
-                        //// TODO: because we are dealing with a user provided type, we MUST respect
-                        ////       metatables - so we can't use any of the RawXXX methods
+                        // If the key err is in there, we need to short circuit 
+                        CheckedPushBuffer(NeededStackSize, "err"u8);
 
-                        //// if the key err is in there, we need to short circuit 
-                        //CheckedPushBuffer(NeededStackSize, "err"u8);
+                        var errType = state.GetTable(1);
+                        if (errType == LuaType.String)
+                        {
+                            WriteError(state, 2, ref resp);
 
-                        //var errType = state.GetTable(1);
-                        //if (errType == LuaType.String)
-                        //{
-                        //    var errStr = state.CheckString(2);
-                        //    // hack hack hack
-                        //    // todo: all this goes away when we write results directly
-                        //    return new ErrorResult(errStr);
-                        //}
+                            // Remove table from stack
+                            state.Pop(1);
 
-                        //state.Pop(1);
+                            return;
+                        }
 
-                        //// Otherwise, we need to convert the table to an array
-                        //var tableLength = state.Length(1);
+                        // Remove whatever we read from the table under the "err" key
+                        state.Pop(1);
 
-                        //var ret = new object[tableLength];
-                        //for (var i = 1; i <= tableLength; i++)
-                        //{
-                        //    var type = state.GetInteger(1, i);
-                        //    switch (type)
-                        //    {
-                        //        case LuaType.String:
-                        //            ret[i - 1] = state.CheckString(2);
-                        //            break;
-                        //        case LuaType.Number:
-                        //            ret[i - 1] = (long)state.CheckNumber(2);
-                        //            break;
-                        //        case LuaType.Boolean:
-                        //            ret[i - 1] = state.ToBoolean(2) ? 1L : null;
-                        //            break;
-                        //        // Redis stops processesing the array when a nil is encountered
-                        //        // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                        //        case LuaType.Nil:
-                        //            return ret.Take(i - 1).ToArray();
-                        //    }
+                        // Map this table to an array
 
-                        //    state.Pop(1);
-                        //}
+                        // Lua # operator - this stops at nils, so we don't need to explicitly handle them
+                        // See: https://www.lua.org/manual/5.3/manual.html#3.4.7
+                        var tableLength = state.Length(1);
 
-                        //return ret;
+                        while (!RespWriteUtils.WriteArrayLength((int)tableLength, ref resp.BufferCur, resp.BufferEnd))
+                            resp.SendAndReset();
+
+                        for (var i = 1; i <= tableLength; i++)
+                        {
+                            // Push item at index i onto the stack
+                            var type = state.GetInteger(1, i);
+                            switch (type)
+                            {
+                                case LuaType.String:
+                                    WriteString(state, 2, ref resp);
+                                    break;
+                                case LuaType.Number:
+                                    WriteNumber(state, 2, ref resp);
+                                    break;
+                                case LuaType.Boolean:
+                                    WriteBoolean(state, 2, ref resp);
+                                    break;
+                                default:
+                                    throw new NotImplementedException();
+                            }
+                        }
+
+                        // Remove table from stack
+                        state.Pop(1);
                     }
                     else
                     {
@@ -1128,19 +1103,122 @@ namespace Garnet.server
                     var stackTop = state.GetTop();
                     if (stackTop == 0)
                     {
-                        // and we got nothing back
-                        throw new GarnetException("An error occurred while invoking a Lua script");
-                    }
+                        while (!RespWriteUtils.WriteError("ERR An error occurred while invoking a Lua script"u8, ref resp.BufferCur, resp.BufferEnd))
+                            resp.SendAndReset();
 
-                    // Todo: we should just write this out, not throw it's not exceptional
-                    var msg = state.CheckString(stackTop);
-                    throw new GarnetException(msg);
+                        return;
+                    }
+                    else if (stackTop == 1)
+                    {
+                        if (NativeMethods.CheckBuffer(state.Handle, 1, out var errBuf))
+                        {
+                            while (!RespWriteUtils.WriteError(errBuf, ref resp.BufferCur, resp.BufferEnd))
+                                resp.SendAndReset();
+                        }
+
+                        state.Pop(1);
+
+                        return;
+                    }
+                    else
+                    {
+                        logger?.LogError("Got an unexpected number of values back from a pcall error {stackTop} {callRes}", stackTop, callRes);
+
+                        while (!RespWriteUtils.WriteError("ERR Unexpected error response"u8, ref resp.BufferCur, resp.BufferEnd))
+                            resp.SendAndReset();
+
+                        state.Pop(stackTop);
+
+                        return;
+                    }
                 }
             }
             finally
             {
-                // FORCE the stack to be empty now
-                state.SetTop(0);
+                AssertLuaStackEmpty();
+            }
+
+            // Write a null RESP value, remove the top value on the stack if there is one
+            static void WriteNull(Lua state, int top, ref TResponse resp)
+            {
+                Debug.Assert(state.GetTop() == top, "Lua stack was not expected size");
+
+                while (!RespWriteUtils.WriteNull(ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                // The stack _could_ be empty if we're writing a null, so check before popping
+                if (top != 0)
+                {
+                    state.Pop(1);
+                }
+            }
+
+            // Writes the number on the top of the stack, removes it from the stack
+            static void WriteNumber(Lua state, int top, ref TResponse resp)
+            {
+                Debug.Assert(state.GetTop() == top, "Lua stack was not expected size");
+                Debug.Assert(state.Type(top) == LuaType.Number, "Number was not on top of stack");
+
+                // Redis unconditionally converts all "number" replies to integer replies so we match that
+                // 
+                // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                var num = (long)state.CheckNumber(top);
+
+                while (!RespWriteUtils.WriteInteger(num, ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                state.Pop(1);
+            }
+
+            // Writes the string on the top of the stack, removes it from the stack
+            static void WriteString(Lua state, int top, ref TResponse resp)
+            {
+                Debug.Assert(state.GetTop() == top, "Lua stack was not expected size");
+
+                var checkRes = NativeMethods.CheckBuffer(state.Handle, top, out var buf);
+                Debug.Assert(checkRes, "Should never fail");
+
+                while (!RespWriteUtils.WriteBulkString(buf, ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                state.Pop(1);
+            }
+
+            // Writes the boolean on the top of the stack, removes it from the stack
+            static void WriteBoolean(Lua state, int top, ref TResponse resp)
+            {
+                Debug.Assert(state.GetTop() == top, "Lua stack was not expected size");
+                Debug.Assert(state.Type(top) == LuaType.Boolean, "Boolean was not on top of stack");
+
+                // Redis maps Lua false to null, and Lua true to 1  this is strange, but documented
+                //
+                // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                if (state.ToBoolean(top))
+                {
+                    while (!RespWriteUtils.WriteInteger(1, ref resp.BufferCur, resp.BufferEnd))
+                        resp.SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteNull(ref resp.BufferCur, resp.BufferEnd))
+                        resp.SendAndReset();
+                }
+
+                state.Pop(1);
+            }
+
+            // Writes the string on the top of the stack out as an error, removes the string from the stack
+            static void WriteError(Lua state, int top, ref TResponse resp)
+            {
+                Debug.Assert(state.GetTop() == top, "Lua stack was not expected size");
+
+                var errRes = NativeMethods.CheckBuffer(state.Handle, top, out var errBuff);
+                Debug.Assert(errRes, "Should never fail");
+
+                while (!RespWriteUtils.WriteError(errBuff, ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                state.Pop(1);
             }
         }
 
