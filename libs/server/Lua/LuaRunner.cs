@@ -435,7 +435,7 @@ namespace Garnet.server
 
             if (respServerSession == null)
             {
-                return NoSessionError();
+                return NoSessionResponse();
             }
 
             return ProcessCommandFromScripting(respServerSession.basicGarnetApi);
@@ -450,7 +450,7 @@ namespace Garnet.server
 
             if (respServerSession == null)
             {
-                return NoSessionError();
+                return NoSessionResponse();
             }
 
             return ProcessCommandFromScripting(respServerSession.lockableGarnetApi);
@@ -459,21 +459,16 @@ namespace Garnet.server
         /// <summary>
         /// Call somehow came in with no valid resp server session.
         /// 
-        /// Raise an error.
+        /// This is used in benchmarking.
         /// </summary>
-        /// <returns></returns>
-        int NoSessionError()
+        int NoSessionResponse()
         {
             const int NeededStackSpace = 1;
 
-            logger?.LogError("Lua call came in without a valid resp session");
-
             ForceGrowLuaStack(NeededStackSpace);
 
-            CheckedPushConstantString(NeededStackSpace, noSessionAvailableConstStringRegisteryIndex);
-
-            // this will never return, but we can pretend it does
-            return state.Error();
+            CheckedPushNil(NeededStackSpace);
+            return 1;
         }
 
         /// <summary>
