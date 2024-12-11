@@ -32,18 +32,16 @@ namespace Garnet.server
 
             var digestAsSpanByteMem = new SpanByteAndMemory(digest.SpanByte);
 
-            var result = false;
             if (!sessionScriptCache.TryGetFromDigest(digestAsSpanByteMem, out var runner))
             {
                 if (storeWrapper.storeScriptCache.TryGetValue(digestAsSpanByteMem, out var source))
                 {
-                    if (!sessionScriptCache.TryLoad(source, digestAsSpanByteMem, out runner, out var error))
+                    if (!sessionScriptCache.TryLoad(this, source, digestAsSpanByteMem, out runner, out var error))
                     {
-                        while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
-                            SendAndReset();
+                        // TryLoad will have written an error out, it any
 
                         _ = storeWrapper.storeScriptCache.TryRemove(digestAsSpanByteMem, out _);
-                        return result;
+                        return true;
                     }
                 }
             }
@@ -55,10 +53,10 @@ namespace Garnet.server
             }
             else
             {
-                result = ExecuteScript(count - 1, runner);
+                ExecuteScript(count - 1, runner);
             }
 
-            return result;
+            return true;
         }
 
 
@@ -85,13 +83,10 @@ namespace Garnet.server
             Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
             sessionScriptCache.GetScriptDigest(script, digest);
 
-            var result = false;
-            if (!sessionScriptCache.TryLoad(script, new SpanByteAndMemory(SpanByte.FromPinnedSpan(digest)), out var runner, out var error))
+            if (!sessionScriptCache.TryLoad(this, script, new SpanByteAndMemory(SpanByte.FromPinnedSpan(digest)), out var runner, out var error))
             {
-                while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
-                    SendAndReset();
-
-                return result;
+                // TryLoad will have written any errors out
+                return true;
             }
 
             if (runner == null)
@@ -101,10 +96,10 @@ namespace Garnet.server
             }
             else
             {
-                result = ExecuteScript(count - 1, runner);
+                ExecuteScript(count - 1, runner);
             }
 
-            return result;
+            return true;
         }
 
         /// <summary>
@@ -200,10 +195,9 @@ namespace Garnet.server
             }
 
             var source = parseState.GetArgSliceByRef(0).ToArray();
-            if (!sessionScriptCache.TryLoad(source, out var digest, out _, out var error))
+            if (!sessionScriptCache.TryLoad(this, source, out var digest, out _, out var error))
             {
-                while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
-                    SendAndReset();
+                // TryLoad will write any errors out
             }
             else
             {
@@ -240,7 +234,7 @@ namespace Garnet.server
         /// <summary>
         /// Invoke the execution of a server-side Lua script.
         /// </summary>
-        private unsafe bool ExecuteScript(int count, LuaRunner scriptRunner)
+        private void ExecuteScript(int count, LuaRunner scriptRunner)
         {
             try
             {
@@ -251,120 +245,7 @@ namespace Garnet.server
                 logger?.LogError(ex, "Error executing Lua script");
                 while (!RespWriteUtils.WriteError("ERR " + ex.Message, ref dcurr, dend))
                     SendAndReset();
-                return true;
             }
-            return true;
         }
-
-        //void WriteObject(object scriptResult)
-        //{
-        //    if (scriptResult != null)
-        //    {
-        //        if (scriptResult is string s)
-        //        {
-        //            while (!RespWriteUtils.WriteAsciiBulkString(s, ref dcurr, dend))
-        //                SendAndReset();
-        //        }
-        //        else if ((scriptResult as byte?) != null && (byte)scriptResult == 36) //equals to $
-        //        {
-        //            while (!RespWriteUtils.WriteDirect((byte[])scriptResult, ref dcurr, dend))
-        //                SendAndReset();
-        //        }
-        //        else if (scriptResult is bool b)
-        //        {
-        //            if (b)
-        //            {
-        //                while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
-        //                    SendAndReset();
-        //            }
-        //            else
-        //            {
-        //                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-        //                    SendAndReset();
-        //            }
-        //        }
-        //        else if (scriptResult is long l)
-        //        {
-        //            while (!RespWriteUtils.WriteInteger(l, ref dcurr, dend))
-        //                SendAndReset();
-        //        }
-        //        else if (scriptResult is object[] o)
-        //        {
-        //            var count = o.Length;
-        //            while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
-        //                SendAndReset();
-
-        //            foreach (var value in o)
-        //            {
-        //                WriteObject(value);
-        //            }
-        //        }
-        //        else if (scriptResult is ErrorResult e)
-        //        {
-        //            while (!RespWriteUtils.WriteError(e.Message, ref dcurr, dend))
-        //                SendAndReset();
-        //        }
-        //        else
-        //        {
-        //            // todo: this should all go away
-        //            throw new NotImplementedException();
-        //        }
-        //        //else if (scriptResult is ArgSlice a)
-        //        //{
-        //        //    while (!RespWriteUtils.WriteBulkString(a.ReadOnlySpan, ref dcurr, dend))
-        //        //        SendAndReset();
-        //        //}
-        //        //else if (scriptResult is object[] o)
-        //        //{
-        //        //    // Two objects one boolean value and the result from the Lua Call
-        //        //    while (!RespWriteUtils.WriteAsciiBulkString(o[1].ToString().AsSpan(), ref dcurr, dend))
-        //        //        SendAndReset();
-        //        //}
-        //        //else if (scriptResult is LuaTable luaTable)
-        //        //{
-        //        //    try
-        //        //    {
-        //        //        var retVal = luaTable["err"];
-        //        //        if (retVal != null)
-        //        //        {
-        //        //            while (!RespWriteUtils.WriteError((string)retVal, ref dcurr, dend))
-        //        //                SendAndReset();
-        //        //        }
-        //        //        else
-        //        //        {
-        //        //            retVal = luaTable["ok"];
-        //        //            if (retVal != null)
-        //        //            {
-        //        //                while (!RespWriteUtils.WriteAsciiBulkString((string)retVal, ref dcurr, dend))
-        //        //                    SendAndReset();
-        //        //            }
-        //        //            else
-        //        //            {
-        //        //                int count = luaTable.Values.Count;
-        //        //                while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
-        //        //                    SendAndReset();
-        //        //                foreach (var value in luaTable.Values)
-        //        //                {
-        //        //                    WriteObject(value);
-        //        //                }
-        //        //            }
-        //        //        }
-        //        //    }
-        //        //    finally
-        //        //    {
-        //        //        luaTable.Dispose();
-        //        //    }
-        //        //}
-        //        //else
-        //        //{
-        //        //    throw new LuaScriptException("Unknown return type", "");
-        //        //}
-        //    }
-        //    else
-        //    {
-        //        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-        //            SendAndReset();
-        //    }
-        //}
     }
 }

@@ -35,13 +35,13 @@ namespace BDN.benchmark.Lua
         public void GlobalSetup()
         {
             r1 = new LuaRunner("return");
-            r1.Compile();
+            r1.CompileForRunner();
             r2 = new LuaRunner("return 1 + 1");
-            r2.Compile();
+            r2.CompileForRunner();
             r3 = new LuaRunner("return KEYS[1]");
-            r3.Compile();
+            r3.CompileForRunner();
             r4 = new LuaRunner("return redis.call(KEYS[1])");
-            r4.Compile();
+            r4.CompileForRunner();
         }
 
         [GlobalCleanup]

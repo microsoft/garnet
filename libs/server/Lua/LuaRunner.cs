@@ -95,13 +95,23 @@ namespace Garnet.server
             /// Gets a span that covers the responses as written so far.
             /// </summary>
             public readonly ReadOnlySpan<byte> Response
-            => new(cur, (int)(BufferEnd - cur));
+
+            {
+                get
+                {
+                    var origin = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(pinnedArr));
+                    var length = (int)(cur - origin);
+
+                    return new(origin, length);
+                }
+            }
 
             /// <inheritdoc />
             public void SendAndReset()
             {
+                // We don't actually send anywhere, we grow the backing array
                 var newLen = pinnedArr.Length * 2;
-                var newPinnedArr = GC.AllocateUninitializedArray<byte>(newLen);
+                var newPinnedArr = GC.AllocateUninitializedArray<byte>(newLen, pinned: true);
                 var copyLen = pinnedArr.Length - (int)(BufferEnd - cur);
 
                 pinnedArr.AsSpan()[..copyLen].CopyTo(newPinnedArr);
@@ -267,12 +277,42 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Compile script
+        /// Compile script for running in a .NET host.
+        /// 
+        /// Errors are raised as exceptions.
         /// </summary>
-        public void Compile()
+        public unsafe void CompileForRunner()
         {
-            // TODO: remove exceptions from this path
+            var adapter = new RunnerAdapter(GC.AllocateUninitializedArray<byte>(64, pinned: true));
+            CompileCommon(ref adapter);
 
+            var resp = adapter.Response;
+            var respStart = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(resp));
+            var respEnd = respStart + resp.Length;
+            if (RespReadUtils.TryReadErrorAsSpan(out var errSpan, ref respStart, respEnd))
+            {
+                var errStr = Encoding.UTF8.GetString(errSpan);
+                throw new GarnetException(errStr);
+            }
+        }
+
+        /// <summary>
+        /// Compile script for a <see cref="RespServerSession"/>.
+        /// 
+        /// Any errors encountered are written out as Resp errors.
+        /// </summary>
+        public void CompileForSession(RespServerSession session)
+        {
+            var adapter = new RespResponseAdapter(session);
+            CompileCommon(ref adapter);
+        }
+
+        /// <summary>
+        /// Compile script, writing errors out to given response.
+        /// </summary>
+        unsafe void CompileCommon<TResponse>(ref TResponse resp)
+            where TResponse : struct, IResponseAdapter
+        {
             const int NeededStackSpace = 2;
 
             Debug.Assert(functionRegistryIndex == -1, "Shouldn't compile multiple times");
@@ -293,14 +333,21 @@ namespace Garnet.server
                 var numRets = state.GetTop();
                 if (numRets == 0)
                 {
-                    throw new GarnetException("Shouldn't happen, no returns from load_sandboxed");
+                    while (!RespWriteUtils.WriteError("Shouldn't happen, no returns from load_sandboxed"u8, ref resp.BufferCur, resp.BufferEnd))
+                        resp.SendAndReset();
+
+                    return;
                 }
                 else if (numRets == 1)
                 {
                     var returnType = state.Type(1);
                     if (returnType != LuaType.Function)
                     {
-                        throw new GarnetException($"Could not compile function, got back a {returnType}");
+                        var errStr = $"Could not compile function, got back a {returnType}";
+                        while (!RespWriteUtils.WriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
+                            resp.SendAndReset();
+
+                        return;
                     }
 
                     functionRegistryIndex = state.Ref(LuaRegistry.Index);
@@ -309,11 +356,18 @@ namespace Garnet.server
                 {
                     var error = state.CheckString(2);
 
-                    throw new GarnetException($"Compilation error: {error}");
+                    var errStr = $"Compilation error: {error}";
+                    while (!RespWriteUtils.WriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
+                        resp.SendAndReset();
 
+                    state.Pop(2);
+
+                    return;
                 }
                 else
                 {
+                    state.Pop(numRets);
+
                     throw new GarnetException($"Unexpected error compiling, got too many replies back: reply count = {numRets}");
                 }
             }
@@ -324,8 +378,7 @@ namespace Garnet.server
             }
             finally
             {
-                // Force stack empty after compilation, no matter what happens
-                state.SetTop(0);
+                AssertLuaStackEmpty();
             }
         }
 
@@ -783,7 +836,7 @@ namespace Garnet.server
         /// 
         /// Meant for use from a .NET host rather than in Garnet properly.
         /// </summary>
-        public object RunForRunner(string[] keys = null, string[] argv = null)
+        public unsafe object RunForRunner(string[] keys = null, string[] argv = null)
         {
             const int InitialSize = 64;
 
@@ -810,8 +863,72 @@ namespace Garnet.server
                 RunCommon(ref adapter);
             }
 
-            // TODO: convert response into object
-            throw new NotImplementedException();
+            var resp = adapter.Response;
+            var respCur = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(resp));
+            var respEnd = respCur + resp.Length;
+
+            if (RespReadUtils.TryReadErrorAsSpan(out var errSpan, ref respCur, respEnd))
+            {
+                var errStr = Encoding.UTF8.GetString(errSpan);
+                throw new GarnetException(errStr);
+            }
+
+            var ret = MapRespToObject(ref respCur, respEnd);
+            Debug.Assert(respCur == respEnd, "Should have fully consumed response");
+
+            return ret;
+
+            static object MapRespToObject(ref byte* cur, byte* end)
+            {
+                switch (*cur)
+                {
+                    case (byte)'+':
+                        var simpleStrRes = RespReadUtils.ReadSimpleString(out var simpleStr, ref cur, end);
+                        Debug.Assert(simpleStrRes, "Should never fail");
+
+                        return simpleStr;
+
+                    case (byte)':':
+                        var readIntRes = RespReadUtils.Read64Int(out var int64, ref cur, end);
+                        Debug.Assert(readIntRes, "Should never fail");
+
+                        return int64;
+
+                    // Error ('-') is handled before call to MapRespToObject
+
+                    case (byte)'$':
+                        var length = end - cur;
+
+                        if (length >= 5 && new ReadOnlySpan<byte>(cur + 1, 4).SequenceEqual("-1\r\n"u8))
+                        {
+                            return null;
+                        }
+
+                        var bulkStrRes = RespReadUtils.ReadStringResponseWithLengthHeader(out var bulkStr, ref cur, end);
+                        Debug.Assert(bulkStrRes, "Should never fail");
+
+                        return bulkStr;
+
+                    case (byte)'*':
+                        var arrayLengthRes = RespReadUtils.ReadUnsignedArrayLength(out var itemCount, ref cur, end);
+                        Debug.Assert(arrayLengthRes, "Should never fail");
+
+                        if (itemCount == 0)
+                        {
+                            return Array.Empty<object>();
+                        }
+
+                        var array = new object[itemCount];
+                        for (var i = 0; i < array.Length; i++)
+                        {
+                            array[i] = MapRespToObject(ref cur, end);
+                        }
+
+                        return array;
+
+                    default: throw new NotImplementedException($"Unexpected sigil {(char)*cur}");
+                }
+            }
         }
 
         /// <summary>
@@ -1037,10 +1154,6 @@ namespace Garnet.server
                     }
                     else if (retType == LuaType.Table)
                     {
-                        // TODO: this is hacky, and doesn't support nested arrays or whatever
-                        //       but is good enough for now
-                        //       when refactored to avoid intermediate objects this should be fixed
-
                         // TODO: because we are dealing with a user provided type, we MUST respect
                         //       metatables - so we can't use any of the RawXXX methods
                         //       so we need a test that use metatables (and compare to how Redis does this)

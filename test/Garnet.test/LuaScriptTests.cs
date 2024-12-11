@@ -537,25 +537,25 @@ return redis.status_reply("OK")
         [Test]
         public void RedisCallErrors()
         {
-            // testing that our error replies for redis.call match Redis behavior
+            // Testing that our error replies for redis.call match Redis behavior
             //
-            // todo: exact matching of the hash and line number would also be nice, but that is trickier
+            // TODO: exact matching of the hash and line number would also be nice, but that is trickier
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            // no args
+            // No args
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call()"));
                 ClassicAssert.IsTrue(exc.Message.StartsWith("ERR Please specify at least one argument for this redis lib call"));
             }
 
-            // unknown command
+            // Unknown command
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('123')"));
                 ClassicAssert.IsTrue(exc.Message.StartsWith("ERR Unknown Redis command called from script"));
             }
 
-            // bad command type
+            // Bad command type
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call({ foo = 'bar'})"));
                 ClassicAssert.IsTrue(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
@@ -576,7 +576,7 @@ return redis.status_reply("OK")
                 ClassicAssert.IsTrue(exc2.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
             }
 
-            // other bad arg types
+            // Other bad arg types
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('DEL', { foo = 'bar' })"));
                 ClassicAssert.IsTrue(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));

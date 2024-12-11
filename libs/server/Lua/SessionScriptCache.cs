@@ -58,15 +58,15 @@ namespace Garnet.server
         /// <summary>
         /// Load script into the cache
         /// </summary>
-        public bool TryLoad(byte[] source, out byte[] digest, out LuaRunner runner, out string error)
+        public bool TryLoad(RespServerSession session, byte[] source, out byte[] digest, out LuaRunner runner, out string error)
         {
             digest = new byte[SHA1Len];
             GetScriptDigest(source, digest);
 
-            return TryLoad(source, new SpanByteAndMemory(new ScriptHashOwner(digest), digest.Length), out runner, out error);
+            return TryLoad(session, source, new SpanByteAndMemory(new ScriptHashOwner(digest), digest.Length), out runner, out error);
         }
 
-        internal bool TryLoad(byte[] source, SpanByteAndMemory digest, out LuaRunner runner, out string error)
+        internal bool TryLoad(RespServerSession session, byte[] source, SpanByteAndMemory digest, out LuaRunner runner, out string error)
         {
             error = null;
 
@@ -76,7 +76,7 @@ namespace Garnet.server
             try
             {
                 runner = new LuaRunner(source, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
-                runner.Compile();
+                runner.CompileForSession(session);
 
                 // need to make sure the key is on the heap, so move it over if needed
                 var storeKeyDigest = digest;
