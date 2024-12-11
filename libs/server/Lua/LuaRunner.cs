@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 using KeraLua;
@@ -13,14 +14,106 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
-    // hack hack hack
-    internal sealed record ErrorResult(string Message);
-
     /// <summary>
     /// Creates the instance to run Lua scripts
     /// </summary>
     internal sealed class LuaRunner : IDisposable
     {
+        /// <summary>
+        /// Adapter to allow us to write directly to the network
+        /// when in Garnet and still keep script runner work.
+        /// </summary>
+        private unsafe interface IResponseAdapter
+        {
+            /// <summary>
+            /// Equivalent to the ref curr we pass into <see cref="RespWriteUtils"/> methods.
+            /// </summary>
+            ref byte* BufferCur { get; }
+
+            /// <summary>
+            /// Equivalent to the end we pass into <see cref="RespWriteUtils"/> methods.
+            /// </summary>
+            byte* BufferEnd { get; }
+
+            /// <summary>
+            /// Equivalent to <see cref="RespServerSession.SendAndReset()"/>.
+            /// </summary>
+            void SendAndReset();
+        }
+
+        /// <summary>
+        /// Adapter <see cref="RespServerSession"/> so script results go directly
+        /// to the network.
+        /// </summary>
+        private readonly struct RespResponseAdapter : IResponseAdapter
+        {
+            private readonly RespServerSession session;
+
+            internal RespResponseAdapter(RespServerSession session)
+            {
+                this.session = session;
+            }
+
+            /// <inheritdoc />
+            public unsafe ref byte* BufferCur
+            => ref session.dcurr;
+
+            /// <inheritdoc />
+            public unsafe byte* BufferEnd
+            => session.dend;
+
+            /// <inheritdoc />
+            public void SendAndReset()
+            => session.SendAndReset();
+        }
+
+        /// <summary>
+        /// For the runner, put output into an array.
+        /// </summary>
+        private unsafe struct RunnerAdapter : IResponseAdapter
+        {
+            private byte* cur;
+            private byte[] pinnedArr;
+
+            internal RunnerAdapter(byte[] initialPinnedArr)
+            {
+                pinnedArr = initialPinnedArr;
+                cur = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(initialPinnedArr));
+                BufferEnd = cur + initialPinnedArr.Length;
+            }
+
+#pragma warning disable CS9084 // Struct member returns 'this' or other instance members by reference
+            /// <inheritdoc />
+            public unsafe ref byte* BufferCur
+            => ref cur;
+#pragma warning restore CS9084
+
+            /// <inheritdoc />
+            public unsafe byte* BufferEnd { readonly get; private set; }
+
+            /// <summary>
+            /// Gets a span that covers the responses as written so far.
+            /// </summary>
+            public readonly ReadOnlySpan<byte> Response
+            => new(cur, (int)(BufferEnd - cur));
+
+            /// <inheritdoc />
+            public void SendAndReset()
+            {
+                var newLen = pinnedArr.Length * 2;
+                var newPinnedArr = GC.AllocateUninitializedArray<byte>(newLen);
+                var copyLen = pinnedArr.Length - (int)(BufferEnd - cur);
+
+                pinnedArr.AsSpan()[..copyLen].CopyTo(newPinnedArr);
+
+                pinnedArr = newPinnedArr;
+                cur = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(newPinnedArr));
+
+                BufferEnd = cur + newLen;
+                cur += copyLen;
+            }
+        }
+
         // Rooted to keep function pointer alive
         readonly LuaFunction garnetCall;
 
@@ -310,7 +403,7 @@ namespace Garnet.server
                 }
 
                 ForceGrowLuaStack(AdditionalStackSpace);
-                
+
                 var neededStackSpace = argCount + AdditionalStackSpace;
 
                 if (!NativeMethods.CheckBuffer(state.Handle, 1, out var cmdSpan))
@@ -470,7 +563,7 @@ namespace Garnet.server
             const int NeededStackSize = 1;
 
             ForceGrowLuaStack(NeededStackSize);
-            
+
             CheckedPushBuffer(NeededStackSize, msg);
             return state.Error();
         }
@@ -593,11 +686,11 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Runs the precompiled Lua function with specified parse state.
+        /// Runs the precompiled Lua function with the given outer session.
         /// 
-        /// Meant for use directly from Garnet.
+        /// Response is written directly into the <see cref="RespServerSession"/>.
         /// </summary>
-        public object RunForParseState(int count, SessionParseState parseState)
+        public void RunForSession(int count, RespServerSession outerSession)
         {
             const int NeededStackSize = 3;
 
@@ -606,6 +699,8 @@ namespace Garnet.server
             ForceGrowLuaStack(NeededStackSize);
 
             scratchBufferManager.Reset();
+
+            var parseState = outerSession.parseState;
 
             var offset = 1;
             var nKeys = parseState.GetInt(offset++);
@@ -669,13 +764,15 @@ namespace Garnet.server
 
             AssertLuaStackEmpty();
 
+            var adapter = new RespResponseAdapter(outerSession);
+
             if (txnMode && nKeys > 0)
             {
-                return RunInTransaction();
+                RunInTransaction(ref adapter);
             }
             else
             {
-                return RunCommon();
+                RunCommon(ref adapter);
             }
         }
 
@@ -686,8 +783,13 @@ namespace Garnet.server
         /// </summary>
         public object RunForRunner(string[] keys = null, string[] argv = null)
         {
+            const int InitialSize = 64;
+
             scratchBufferManager?.Reset();
             LoadParametersForRunner(keys, argv);
+
+            var adapter = new RunnerAdapter(GC.AllocateUninitializedArray<byte>(InitialSize, pinned: true));
+
             if (txnMode && keys?.Length > 0)
             {
                 // Add keys to the transaction
@@ -698,18 +800,23 @@ namespace Garnet.server
                     if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
                         txnKeyEntries.AddKey(_key, true, Tsavorite.core.LockType.Exclusive);
                 }
-                return RunInTransaction();
+
+                RunInTransaction(ref adapter);
             }
             else
             {
-                return RunCommon();
+                RunCommon(ref adapter);
             }
+
+            // TODO: convert response into object
+            throw new NotImplementedException();
         }
 
         /// <summary>
         /// Calls <see cref="RunCommon"/> after setting up appropriate state for a transaction.
         /// </summary>
-        object RunInTransaction()
+        void RunInTransaction<TResponse>(ref TResponse response)
+            where TResponse : struct, IResponseAdapter
         {
             try
             {
@@ -719,7 +826,7 @@ namespace Garnet.server
                 respServerSession.SetTransactionMode(true);
                 txnKeyEntries.LockAllKeys();
 
-                return RunCommon();
+                RunCommon(ref response);
             }
             finally
             {
@@ -874,7 +981,8 @@ namespace Garnet.server
         /// <summary>
         /// Runs the precompiled Lua function.
         /// </summary>
-        object RunCommon()
+        unsafe void RunCommon<TResponse>(ref TResponse resp)
+            where TResponse : struct, IResponseAdapter
         {
             const int NeededStackSize = 2;
 
@@ -899,24 +1007,41 @@ namespace Garnet.server
 
                     if (state.GetTop() == 0)
                     {
-                        return null;
+                        while (!RespWriteUtils.WriteNull(ref resp.BufferCur, resp.BufferEnd))
+                            resp.SendAndReset();
+
+                        return;
                     }
 
                     var retType = state.Type(1);
                     if (retType == LuaType.Nil)
                     {
-                        return null;
+                        while (!RespWriteUtils.WriteNull(ref resp.BufferCur, resp.BufferEnd))
+                            resp.SendAndReset();
+
+                        return;
                     }
                     else if (retType == LuaType.Number)
                     {
                         // Redis unconditionally converts all "number" replies to integer replies so we match that
                         // 
                         // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                        return (long)state.CheckNumber(1);
+                        var num = (long)state.CheckNumber(1);
+
+                        while (!RespWriteUtils.WriteInteger(num, ref resp.BufferCur, resp.BufferEnd))
+                            resp.SendAndReset();
+
+                        return;
                     }
                     else if (retType == LuaType.String)
                     {
-                        return state.CheckString(1);
+                        var checkRes = NativeMethods.CheckBuffer(state.Handle, 1, out var buf);
+                        Debug.Assert(checkRes, "Should never fail");
+
+                        while (!RespWriteUtils.WriteBulkString(buf, ref resp.BufferCur, resp.BufferEnd))
+                            resp.SendAndReset();
+
+                        return;
                     }
                     else if (retType == LuaType.Boolean)
                     {
@@ -925,64 +1050,70 @@ namespace Garnet.server
                         // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
                         if (state.ToBoolean(1))
                         {
-                            return 1L;
+                            while (!RespWriteUtils.WriteInteger(1, ref resp.BufferCur, resp.BufferEnd))
+                                resp.SendAndReset();
                         }
                         else
                         {
-                            return null;
+                            while (!RespWriteUtils.WriteNull(ref resp.BufferCur, resp.BufferEnd))
+                                resp.SendAndReset();
                         }
+
+                        return;
                     }
                     else if (retType == LuaType.Table)
                     {
-                        // TODO: this is hacky, and doesn't support nested arrays or whatever
-                        //       but is good enough for now
-                        //       when refactored to avoid intermediate objects this should be fixed
+                        throw new NotImplementedException();
 
-                        // TODO: because we are dealing with a user provided type, we MUST respect
-                        //       metatables - so we can't use any of the RawXXX methods
+                        //// TODO: this is hacky, and doesn't support nested arrays or whatever
+                        ////       but is good enough for now
+                        ////       when refactored to avoid intermediate objects this should be fixed
 
-                        // if the key err is in there, we need to short circuit 
-                        CheckedPushBuffer(NeededStackSize, "err"u8);
+                        //// TODO: because we are dealing with a user provided type, we MUST respect
+                        ////       metatables - so we can't use any of the RawXXX methods
 
-                        var errType = state.GetTable(1);
-                        if (errType == LuaType.String)
-                        {
-                            var errStr = state.CheckString(2);
-                            // hack hack hack
-                            // todo: all this goes away when we write results directly
-                            return new ErrorResult(errStr);
-                        }
+                        //// if the key err is in there, we need to short circuit 
+                        //CheckedPushBuffer(NeededStackSize, "err"u8);
 
-                        state.Pop(1);
+                        //var errType = state.GetTable(1);
+                        //if (errType == LuaType.String)
+                        //{
+                        //    var errStr = state.CheckString(2);
+                        //    // hack hack hack
+                        //    // todo: all this goes away when we write results directly
+                        //    return new ErrorResult(errStr);
+                        //}
 
-                        // Otherwise, we need to convert the table to an array
-                        var tableLength = state.Length(1);
+                        //state.Pop(1);
 
-                        var ret = new object[tableLength];
-                        for (var i = 1; i <= tableLength; i++)
-                        {
-                            var type = state.GetInteger(1, i);
-                            switch (type)
-                            {
-                                case LuaType.String:
-                                    ret[i - 1] = state.CheckString(2);
-                                    break;
-                                case LuaType.Number:
-                                    ret[i - 1] = (long)state.CheckNumber(2);
-                                    break;
-                                case LuaType.Boolean:
-                                    ret[i - 1] = state.ToBoolean(2) ? 1L : null;
-                                    break;
-                                // Redis stops processesing the array when a nil is encountered
-                                // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                                case LuaType.Nil:
-                                    return ret.Take(i - 1).ToArray();
-                            }
+                        //// Otherwise, we need to convert the table to an array
+                        //var tableLength = state.Length(1);
 
-                            state.Pop(1);
-                        }
+                        //var ret = new object[tableLength];
+                        //for (var i = 1; i <= tableLength; i++)
+                        //{
+                        //    var type = state.GetInteger(1, i);
+                        //    switch (type)
+                        //    {
+                        //        case LuaType.String:
+                        //            ret[i - 1] = state.CheckString(2);
+                        //            break;
+                        //        case LuaType.Number:
+                        //            ret[i - 1] = (long)state.CheckNumber(2);
+                        //            break;
+                        //        case LuaType.Boolean:
+                        //            ret[i - 1] = state.ToBoolean(2) ? 1L : null;
+                        //            break;
+                        //        // Redis stops processesing the array when a nil is encountered
+                        //        // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                        //        case LuaType.Nil:
+                        //            return ret.Take(i - 1).ToArray();
+                        //    }
 
-                        return ret;
+                        //    state.Pop(1);
+                        //}
+
+                        //return ret;
                     }
                     else
                     {
