@@ -776,6 +776,25 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// NodeIds
+        /// </summary>
+        /// <param name="allNodeIds"></param>
+        /// <param name="shardNodeIds"></param>
+        public void GetNodeIdsForPublishedMessageForwarding(out List<string> allNodeIds, out List<string> shardNodeIds)
+        {
+            var primaryId = LocalNodeRole == NodeRole.PRIMARY ? LocalNodeId : workers[1].ReplicaOfNodeId;
+            allNodeIds = [];
+            shardNodeIds = [];
+            for (ushort i = 2; i < workers.Length; i++)
+            {
+                allNodeIds.Add(workers[i].Nodeid);
+                var replicaOf = workers[i].ReplicaOfNodeId;
+                if (primaryId != null && ((replicaOf != null && replicaOf.Equals(primaryId, StringComparison.OrdinalIgnoreCase)) || primaryId.Equals(workers[i].Nodeid)))
+                    shardNodeIds.Add(workers[i].Nodeid);
+            }
+        }
+
+        /// <summary>
         /// 
         /// </summary>
         /// <param name="nodeid"></param>

@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -65,6 +66,16 @@ namespace Garnet.cluster
         public int Port;
 
         /// <summary>
+        /// Default send page size for GarnetClient
+        /// </summary>
+        const int defaultSendPageSize = 1 << 17;
+
+        /// <summary>
+        /// Default max outstanding tasks for GarnetClient
+        /// </summary>
+        const int defaultMaxOutstandingTask = 8;
+
+        /// <summary>
         /// GarnetServerNode constructor
         /// </summary>
         /// <param name="clusterProvider"></param>
@@ -74,13 +85,14 @@ namespace Garnet.cluster
         /// <param name="logger"></param>
         public GarnetServerNode(ClusterProvider clusterProvider, string address, int port, SslClientAuthenticationOptions tlsOptions, ILogger logger = null)
         {
+            var opts = clusterProvider.storeWrapper.serverOptions;
             this.clusterProvider = clusterProvider;
             this.Address = address;
             this.Port = port;
             this.gc = new GarnetClient(
                 address, port, tlsOptions,
-                sendPageSize: 1 << 17,
-                maxOutstandingTasks: 8,
+                sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
+                maxOutstandingTasks: opts.DisablePubSub ? defaultMaxOutstandingTask : Math.Max(defaultMaxOutstandingTask, opts.MaxPubSubTasks),
                 authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
                 logger: logger);
@@ -98,7 +110,7 @@ namespace Garnet.cluster
         public void Initialize()
         {
             // Ensure initialize executes only once
-            if (Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return;
+            if (initialized != 0 || Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return;
 
             cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
             gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).GetAwaiter().GetResult();
@@ -151,9 +163,9 @@ namespace Garnet.cluster
             byte[] byteArray;
             if (conf != lastConfig)
             {
-                if (clusterProvider.replicationManager != null) conf.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset);
-                byteArray = conf.ToByteArray();
                 lastConfig = conf;
+                if (clusterProvider.replicationManager != null) lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset);
+                byteArray = lastConfig.ToByteArray();
             }
             else
             {
@@ -272,5 +284,13 @@ namespace Garnet.cluster
                 lastIO = last_io_seconds,
             };
         }
+
+        /// <summary>
+        /// Send a CLUSTER PUBLISH message to another remote node
+        /// </summary>
+        /// <param name="channel"></param>
+        /// <param name="message"></param>
+        public void TryClusterPublish(RespCommand cmd, Memory<byte> channel, Memory<byte> message)
+            => gc.ClusterPublish(cmd, channel, message).GetAwaiter().GetResult();
     }
 }

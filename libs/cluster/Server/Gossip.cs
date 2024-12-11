@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -26,6 +27,14 @@ namespace Garnet.cluster
         public TimeSpan GetClusterTimeout() => clusterTimeout;
         readonly ConcurrentDictionary<string, long> workerBanList = new();
         public readonly CancellationTokenSource ctsGossip = new();
+
+        /// <summary>
+        /// Last transmitted configuration
+        /// </summary>
+        ClusterConfig lastConfig = null;
+
+        List<string> shardIds;
+        List<string> allNodeIds;
 
         public List<string> GetBanList()
         {
@@ -197,6 +206,59 @@ namespace Garnet.cluster
             finally
             {
                 resp.Dispose();
+            }
+        }
+
+        public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
+        {
+            GarnetServerNode gsn = null;
+            var conf = CurrentConfig;
+            var created = false;
+
+            var _channel = channel.ToArray();
+            var _message = message.ToArray();
+
+            // Ensure we calculate the list of nodeIds only once for every update in the configuration
+            if (lastConfig == null || conf != lastConfig)
+            {
+                lastConfig = conf;
+                lastConfig.GetNodeIdsForPublishedMessageForwarding(out allNodeIds, out shardIds);
+            }
+
+            var nodes = cmd == RespCommand.PUBLISH ? allNodeIds : shardIds;
+            foreach (var nodeId in nodes)
+            {
+                try
+                {
+                    if (nodeId != null)
+                        clusterConnectionStore.GetConnection(nodeId, out gsn);
+
+                    if (gsn == null)
+                    {
+                        var (address, port) = conf.GetEndpointFromNodeId(nodeId);
+                        gsn = new GarnetServerNode(clusterProvider, address, port, tlsOptions?.TlsClientOptions, logger: logger);
+                        created = true;
+                    }
+
+                    // Initialize GarnetServerNode
+                    // Thread-Safe initialization executes only once
+                    gsn.Initialize();
+
+                    // Publish to remote nodes
+                    gsn.TryClusterPublish(cmd, _channel, _message);
+
+                    if (created && !clusterConnectionStore.AddConnection(gsn))
+                        gsn.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, $"{nameof(ClusterManager)}.{nameof(TryClusterPublish)}");
+                    if (created) gsn?.Dispose();
+                }
+                finally
+                {
+
+                }
             }
         }
 
