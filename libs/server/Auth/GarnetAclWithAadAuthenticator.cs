@@ -43,8 +43,7 @@ namespace Garnet.server.Auth
         {
             get
             {
-                return this._garnetAuthenticator.IsAuthenticated 
-                    && base.IsAuthenticated;
+                return this._garnetAuthenticator.IsAuthenticated && base.IsAuthenticated;
             }
         }
     }
