@@ -273,7 +273,7 @@ namespace Garnet.server
                         {
                             if (!ParseUtils.TryReadLong(ref value, out var idParsed))
                             {
-                                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "client-id")));
+                                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "client-id")));
                             }
 
                             if (id is not null)
