@@ -1,6 +1,6 @@
 {
-  "_comment": "NOTE: If adding a new BDN perf test to this file, you will need to add the name to the test: line in ce-bdnbenchmark.yml (~line 45). This ensures all the tests are not ran sequentially when ran as github action.",
-  "_comment2": "NOTE: The BDN Perf name in the yml test: line should NOT have the BDN.benchmark prefix and the .* ending. It needs to be this way for the reporting part of the BDN Charts.",
+  "_comment": "NOTE: If adding a new BDN perf test to this file, you will need to add the name to the test: line in ci-bdnbenchmark.yml (~line 45). This ensures all the tests are not ran sequentially when ran as github action.",
+  "_comment2": "NOTE: The BDN Perf name in the ci-bdnbenchmark.yml file test: line should NOT have the BDN.benchmark prefix and the .* ending. It needs to be this way for the reporting part of the BDN Charts.",
 
   "BDN.benchmark.Operations.BasicOperations.*": {
     "expected_InlinePing_ACL": 0,

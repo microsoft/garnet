@@ -11,8 +11,8 @@ env:
 
 permissions:
   actions: write
-  deployments: write  #permission to deploy GitHub pages website
-  contents: write  # permission to update benchmark contents in gh-pages branch
+  deployments: write  # permission to deploy GitHub pages website
+  contents: write  # permission to update benchmark contents in continuousbenchmark branch
 
 jobs:
   changes:
