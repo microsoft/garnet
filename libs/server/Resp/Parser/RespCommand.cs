@@ -134,6 +134,7 @@ namespace Garnet.server
         BRPOP,
         BLMOVE,
         BRPOPLPUSH,
+        BLMPOP,
         MIGRATE,
         MSET,
         MSETNX,
@@ -169,6 +170,7 @@ namespace Garnet.server
         ZADD,
         ZDIFFSTORE,
         ZINCRBY,
+        ZMPOP,
         ZPOPMAX,
         ZPOPMIN,
         ZRANGESTORE,
@@ -1061,6 +1063,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.ZSCAN;
                                         }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZMPOP\r\n"u8))
+                                        {
+                                            return RespCommand.ZMPOP;
+                                        }
                                         break;
                                 }
                                 break;
@@ -1072,6 +1078,10 @@ namespace Garnet.server
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BLMOVE\r\n"u8))
                                         {
                                             return RespCommand.BLMOVE;
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BLMPOP\r\n"u8))
+                                        {
+                                            return RespCommand.BLMPOP;
                                         }
                                         break;
                                     case 'D':

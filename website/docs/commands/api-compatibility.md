@@ -209,7 +209,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | LATEST | ➖ |  |
 |  | [RESET](server.md#latency-reset) | ➕ |  |
 | <span id="list">**LIST**</span> | [BLMOVE](data-structures.md#blmove) | ➕ |  |
-|  | BLMPOP | ➖ |  |
+|  | [BLMPOP](data-structures.md#blmpop) | ➕ |  |
 |  | [BLPOP](data-structures.md#blpop) | ➕ |  |
 |  | [BRPOP](data-structures.md#brpop) | ➕ |  |
 |  | [BRPOPLPUSH](data-structures.md#brpoplpush) | ➕ | (Deprecated) |
@@ -331,7 +331,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | ZINTERCARD | ➖ |  |
 |  | ZINTERSTORE | ➖ |  |
 |  | [ZLEXCOUNT](data-structures.md#zlexcount) | ➕ |  |
-|  | ZMPOP | ➖ |  |
+|  | [ZMPOP](data-structures.md#zmpop) | ➕ |  |
 |  | [ZMSCORE](data-structures.md#zmscore) | ➕ |  |
 |  | [ZPOPMAX](data-structures.md#zpopmax) | ➕ |  |
 |  | [ZPOPMIN](data-structures.md#zpopmin) | ➕ |  |

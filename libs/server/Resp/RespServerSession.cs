@@ -615,6 +615,7 @@ namespace Garnet.server
                 RespCommand.ZREMRANGEBYSCORE => SortedSetRemoveRange(cmd, ref storageApi),
                 RespCommand.ZLEXCOUNT => SortedSetLengthByValue(cmd, ref storageApi),
                 RespCommand.ZPOPMIN => SortedSetPop(cmd, ref storageApi),
+                RespCommand.ZMPOP => SortedSetMPop(ref storageApi),
                 RespCommand.ZRANDMEMBER => SortedSetRandomMember(ref storageApi),
                 RespCommand.ZDIFF => SortedSetDifference(ref storageApi),
                 RespCommand.ZDIFFSTORE => SortedSetDifferenceStore(ref storageApi),
@@ -662,6 +663,7 @@ namespace Garnet.server
                 RespCommand.BRPOP => ListBlockingPop(cmd),
                 RespCommand.BLMOVE => ListBlockingMove(),
                 RespCommand.BRPOPLPUSH => ListBlockingPopPush(),
+                RespCommand.BLMPOP => ListBlockingPopMultiple(),
                 // Hash Commands
                 RespCommand.HSET => HashSet(cmd, ref storageApi),
                 RespCommand.HMSET => HashSet(cmd, ref storageApi),

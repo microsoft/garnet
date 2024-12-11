@@ -306,6 +306,28 @@
     ]
   },
   {
+    "Command": "BLMPOP",
+    "Name": "BLMPOP",
+    "Arity": -5,
+    "Flags": "Blocking, MovableKeys, Write",
+    "AclCategories": "Blocking, List, Slow, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysKeyNum",
+          "KeyNumIdx": 0,
+          "FirstKey": 1,
+          "KeyStep": 1
+        },
+        "Flags": "RW, Access, Delete"
+      }
+    ]
+  },
+  {
     "Command": "BLPOP",
     "Name": "BLPOP",
     "Arity": -3,
@@ -4522,6 +4544,28 @@
           "Limit": 0
         },
         "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "ZMPOP",
+    "Name": "ZMPOP",
+    "Arity": -4,
+    "Flags": "MovableKeys, Write",
+    "AclCategories": "SortedSet, Slow, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysKeyNum",
+          "KeyNumIdx": 0,
+          "FirstKey": 1,
+          "KeyStep": 1
+        },
+        "Flags": "RW, Access, Delete"
       }
     ]
   },
