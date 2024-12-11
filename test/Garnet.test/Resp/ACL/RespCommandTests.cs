@@ -3736,6 +3736,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task BLMPopACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "BLMPOP",
+                [DoBLMPopAsync]
+            );
+
+            static async Task DoBLMPopAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("BLMPOP", ["1", "1", "foo", "RIGHT"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
         public async Task BLPopACLsAsync()
         {
             await CheckCommandsAsync(

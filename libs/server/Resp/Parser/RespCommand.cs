@@ -125,6 +125,7 @@ namespace Garnet.server
         BRPOP,
         BLMOVE,
         BRPOPLPUSH,
+        BLMPOP,
         MIGRATE,
         MSET,
         MSETNX,
@@ -1063,6 +1064,10 @@ namespace Garnet.server
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BLMOVE\r\n"u8))
                                         {
                                             return RespCommand.BLMOVE;
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BLMPOP\r\n"u8))
+                                        {
+                                            return RespCommand.BLMPOP;
                                         }
                                         break;
                                     case 'D':

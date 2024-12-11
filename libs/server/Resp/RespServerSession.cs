@@ -663,6 +663,7 @@ namespace Garnet.server
                 RespCommand.BRPOP => ListBlockingPop(cmd),
                 RespCommand.BLMOVE => ListBlockingMove(),
                 RespCommand.BRPOPLPUSH => ListBlockingPopPush(),
+                RespCommand.BLMPOP => ListBlockingPopMultiple(),
                 // Hash Commands
                 RespCommand.HSET => HashSet(cmd, ref storageApi),
                 RespCommand.HMSET => HashSet(cmd, ref storageApi),
