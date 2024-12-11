@@ -21,11 +21,11 @@ namespace Tsavorite.core
         /// <summary>Get physical address from <paramref name="logicalAddress"/></summary>
         long GetPhysicalAddress(long logicalAddress);
 
-        /// <summary>Get <see cref="RecordInfo"/> from <paramref name="physicalAddress"/></summary>
-        ref RecordInfo GetInfo(long physicalAddress);
+        /// <summary>Get ref <see cref="RecordInfo"/> from <paramref name="physicalAddress"/></summary>
+        ref RecordInfo GetInfoRef(long physicalAddress);
 
         /// <summary>Get <see cref="RecordInfo"/> from pinned memory</summary>
-        unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr);
+        unsafe ref RecordInfo GetInfoRefFromBytePointer(byte* ptr);
 
         /// <summary>Get <typeparamref name="TKey"/> from <paramref name="physicalAddress"/></summary>
         TKey GetKey(long physicalAddress);

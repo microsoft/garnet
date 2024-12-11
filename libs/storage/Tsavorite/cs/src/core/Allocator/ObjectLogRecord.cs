@@ -7,7 +7,7 @@ using System.Diagnostics;
 
 namespace Tsavorite.core
 {
-    /// <summary>The record on the log: header, key, value, and optional fields</summary>
+    /// <summary>The in-memory record on the log: header, key, value, and optional fields</summary>
     /// <remarks>The space is laid out as:
     ///     <list>
     ///     <item>[RecordInfo][SpanByte key][int valueId][DBId?][ETag?][Expiration?][FillerLen]</item>
@@ -44,6 +44,7 @@ namespace Tsavorite.core
         }
 
         public readonly int RecordSize => recBase.GetRecordSize(ValueLen);
+        public readonly (int actualSize, int allocatedSize) RecordSizes => recBase.GetRecordSizes(ValueLen);
 
         public readonly int ExtraValueLen => recBase.GetFillerLen(ValueLen);
 

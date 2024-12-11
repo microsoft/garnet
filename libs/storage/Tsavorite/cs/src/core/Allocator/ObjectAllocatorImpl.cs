@@ -101,12 +101,12 @@ namespace Tsavorite.core
         /// <summary>Get first valid address</summary>
         public long GetFirstValidLogicalAddress(long page) => page == 0 ? Constants.kFirstValidAddress : page << LogPageSizeBits;
 
-        public ref RecordInfo GetInfoRef(long physicalAddress) => ref new ObjectLogRecord(physicalAddress).recBase.InfoRef;
+        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref new ObjectLogRecord(physicalAddress).recBase.InfoRef;
 
-        public ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
+        public static ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
 
         // GetKey is used in TracebackForKeyMatch. We do not need GetValue because it is obtained from ObjectLogRecord.
-        public SpanByte GetKey(long physicalAddress) => new ObjectLogRecord(physicalAddress).recBase.Key;
+        public static SpanByte GetKey(long physicalAddress) => new ObjectLogRecord(physicalAddress).recBase.Key;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitializeValue(long physicalAddress, long _ /* endAddress */) { }
@@ -115,10 +115,7 @@ namespace Tsavorite.core
         private static long KeyOffset(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private long ValueOffset(long physicalAddress) => KeyOffset(physicalAddress) + AlignedKeySize(physicalAddress);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int AlignedKeySize(long physicalAddress) => RoundUp(KeySize(physicalAddress), Constants.kRecordAlignment);
+        private long ValueOffset(long physicalAddress) => new ObjectLogRecord(physicalAddress).recBase.ValueOffset;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private int KeySize(long physicalAddress) => (*(SpanByte*)KeyOffset(physicalAddress)).TotalSize;
@@ -130,15 +127,7 @@ namespace Tsavorite.core
         public static int GetValueLength(ref IHeapObject value) => FixedValueSize;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress)
-        {
-            ref var recordInfo = ref GetInfo(physicalAddress);
-            if (recordInfo.IsNull())
-                return (RecordInfo.GetLength(), RecordInfo.GetLength());
-
-            var size = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + ValueSize(physicalAddress);
-            return (size, RoundUp(size, Constants.kRecordAlignment));
-        }
+        public (int actualSize, int allocatedSize) GetRecordSizes(long physicalAddress) => new ObjectLogRecord(physicalAddress).RecordSizes;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void SerializeKey(ref SpanByte src, long physicalAddress) => src.CopyTo((byte*)KeyOffset(physicalAddress));

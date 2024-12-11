@@ -1724,7 +1724,7 @@ namespace Tsavorite.core
                 int requiredBytes = _wrapper.GetRequiredRecordSize((long)record, ctx.record.available_bytes);
                 if (ctx.record.available_bytes >= requiredBytes)
                 {
-                    Debug.Assert(!_wrapper.GetInfoFromBytePointer(record).Invalid, "Invalid records should not be in the hash chain for pending IO");
+                    Debug.Assert(!_wrapper.GetInfoRefFromBytePointer(record).Invalid, "Invalid records should not be in the hash chain for pending IO");
 
                     // We have all the required bytes. If we don't have the complete record, RetrievedFullRecord calls AsyncGetFromDisk.
                     if (!_wrapper.RetrievedFullRecord(record, ref ctx))
@@ -1734,7 +1734,7 @@ namespace Tsavorite.core
                     if (ctx.request_key is not null && !_storeFunctions.KeysEqual(ref ctx.request_key.Get(), ref _wrapper.GetContextRecordKey(ref ctx)))
                     {
                         // Keys don't match so request the previous record in the chain if it is in the range to resolve.
-                        ctx.logicalAddress = _wrapper.GetInfoFromBytePointer(record).PreviousAddress;
+                        ctx.logicalAddress = _wrapper.GetInfoRefFromBytePointer(record).PreviousAddress;
                         if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                         {
                             ctx.record.Return();

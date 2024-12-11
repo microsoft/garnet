@@ -49,12 +49,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref RecordInfo GetInfo(long physicalAddress)
-            => ref SpanByteAllocatorImpl<TStoreFunctions>.GetInfo(physicalAddress);
+        public readonly ref RecordInfo GetInfoRef(long physicalAddress)
+            => ref SpanByteAllocatorImpl<TStoreFunctions>.GetInfoRef(physicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr)
+        public readonly unsafe ref RecordInfo GetInfoRefFromBytePointer(byte* ptr)
             => ref SpanByteAllocatorImpl<TStoreFunctions>.GetInfoFromBytePointer(ptr);
 
         /// <inheritdoc/>
@@ -64,11 +64,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref SpanByte GetValue(long physicalAddress) => ref _this.GetValue(physicalAddress);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref SpanByte GetAndInitializeValue(long physicalAddress, long endPhysicalAddress) => ref _this.GetAndInitializeValue(physicalAddress, endPhysicalAddress);
+        public readonly void InitializeValue(long physicalAddress, long endPhysicalAddress) => _this.InitializeValue(physicalAddress, endPhysicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

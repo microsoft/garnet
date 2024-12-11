@@ -88,7 +88,7 @@ namespace Tsavorite.core
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ref RecordInfo GetInfo(long physicalAddress) => ref new StringLogRecord(physicalAddress).recBase.InfoRef;
+        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref new StringLogRecord(physicalAddress).recBase.InfoRef;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
@@ -108,10 +108,7 @@ namespace Tsavorite.core
         private static long KeyOffset(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private long ValueOffset(long physicalAddress) => KeyOffset(physicalAddress) + AlignedKeySize(physicalAddress);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int AlignedKeySize(long physicalAddress) => RoundUp(KeySize(physicalAddress), Constants.kRecordAlignment);
+        private long ValueOffset(long physicalAddress) => new StringLogRecord(physicalAddress).recBase.ValueOffset;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private int KeySize(long physicalAddress) => (*(SpanByte*)KeyOffset(physicalAddress)).TotalSize;
@@ -125,19 +122,7 @@ namespace Tsavorite.core
         const int FieldInitialLength = sizeof(int);     // The .Length field of a SpanByte is the initial length
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress)
-        {
-            ref var recordInfo = ref GetInfo(physicalAddress);
-            if (recordInfo.IsNull())
-                return (RecordInfo.GetLength(), RecordInfo.GetLength());
-
-            var valueLen = ValueSize(physicalAddress);
-            if (recordInfo.HasFiller)  // Get the extraValueLength
-                valueLen += *(int*)(ValueOffset(physicalAddress) + RoundUp(valueLen, sizeof(int)));
-
-            var size = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + valueLen;
-            return (size, RoundUp(size, Constants.kRecordAlignment));
-        }
+        public (int actualSize, int allocatedSize) GetRecordSizes(long physicalAddress) => new StringLogRecord(physicalAddress).RecordSizes;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref SpanByte key, ref TInput input, ref SpanByte value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
@@ -149,7 +134,7 @@ namespace Tsavorite.core
             return (size, RoundUp(size, Constants.kRecordAlignment), keySize);
         }
 
-         public int GetRequiredRecordSize(long physicalAddress, int availableBytes)
+        public int GetRequiredRecordSize(long physicalAddress, int availableBytes)
         {
             // We need at least [average record size]...
             var reqBytes = GetAverageRecordSize();
@@ -162,7 +147,7 @@ namespace Tsavorite.core
                 return reqBytes;
 
             // We need at least [RecordInfo size] + [actual key size] + [actual value size]
-            var recordInfo = GetInfo(physicalAddress);
+            var recordInfo = GetInfoRef(physicalAddress);
             var valueLen = ValueSize(physicalAddress);
             if (recordInfo.HasFiller)
             {

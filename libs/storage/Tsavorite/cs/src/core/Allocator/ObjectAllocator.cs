@@ -51,15 +51,15 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref RecordInfo GetInfo(long physicalAddress) => ref ObjectAllocatorImpl<TStoreFunctions>.GetInfo(physicalAddress);
+        public readonly ref RecordInfo GetInfoRef(long physicalAddress) => ref ObjectAllocatorImpl<TStoreFunctions>.GetInfoRef(physicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref ObjectAllocatorImpl<TStoreFunctions>.GetInfoFromBytePointer(ptr);
+        public readonly unsafe ref RecordInfo GetInfoRefFromBytePointer(byte* ptr) => ref ObjectAllocatorImpl<TStoreFunctions>.GetInfoFromBytePointer(ptr);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref SpanByte GetKey(long physicalAddress) => ref ObjectAllocatorImpl<TStoreFunctions>.GetKey(physicalAddress);
+        public readonly SpanByte GetKey(long physicalAddress) => ObjectAllocatorImpl<TStoreFunctions>.GetKey(physicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

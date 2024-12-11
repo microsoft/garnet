@@ -8,7 +8,7 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    /// <summary>The record on the log: header, key, value, and optional fields</summary>
+    /// <summary>The in-memory record on the log: header, key, value, and optional fields</summary>
     /// <remarks>The space is laid out as:
     ///     <list>
     ///     <item>[RecordInfo][SpanByte key][SpanByte value][DBId?][ETag?][Expiration?][FillerLength]</item>
@@ -23,6 +23,7 @@ namespace Tsavorite.core
         public readonly ref SpanByte ValueRef => ref *(SpanByte*)(physicalAddress + recBase.ValueOffset);
 
         public readonly int RecordSize => recBase.GetRecordSize(ValueRef.TotalSize);
+        public readonly (int actualSize, int allocatedSize) RecordSizes => recBase.GetRecordSizes(ValueRef.TotalSize);
 
         public readonly bool TrySetValueLength(int newValueLen)
         {

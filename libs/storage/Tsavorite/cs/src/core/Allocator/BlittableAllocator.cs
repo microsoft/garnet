@@ -56,7 +56,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr)
+        public readonly unsafe ref RecordInfo GetInfoRefFromBytePointer(byte* ptr)
             => ref BlittableAllocatorImpl<TKey, TValue, TStoreFunctions>.GetInfoFromBytePointer(ptr);
 
         /// <inheritdoc/>

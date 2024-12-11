@@ -170,7 +170,7 @@ namespace Tsavorite.core
             if (completionEvent.request.logicalAddress < BeginAddress)
                 return false;
 
-            RecordInfo recordInfo = _wrapper.GetInfoFromBytePointer(completionEvent.request.record.GetValidPointer());
+            RecordInfo recordInfo = _wrapper.GetInfoRefFromBytePointer(completionEvent.request.record.GetValidPointer());
             recordInfo.ClearBitsForDiskImages();
             stop = !scanFunctions.SingleReader(ref key, ref _wrapper.GetContextRecordValue(ref completionEvent.request), new RecordMetadata(recordInfo, completionEvent.request.logicalAddress), numRecords, out _);
             logicalAddress = recordInfo.PreviousAddress;

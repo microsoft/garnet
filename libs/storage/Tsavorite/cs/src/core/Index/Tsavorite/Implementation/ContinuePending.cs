@@ -32,7 +32,7 @@ namespace Tsavorite.core
                                                         ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            ref RecordInfo srcRecordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
+            ref RecordInfo srcRecordInfo = ref hlog.GetInfoRefFromBytePointer(request.record.GetValidPointer());
             srcRecordInfo.ClearBitsForDiskImages();
 
             if (request.logicalAddress >= hlogBase.BeginAddress && request.logicalAddress >= pendingContext.minAddress)
@@ -193,7 +193,7 @@ namespace Tsavorite.core
             SpinWaitUntilClosed(request.logicalAddress);
 
             byte* recordPointer = request.record.GetValidPointer();
-            var requestRecordInfo = hlog.GetInfoFromBytePointer(recordPointer); // Not ref, as we don't want to write into request.record
+            var requestRecordInfo = hlog.GetInfoRefFromBytePointer(recordPointer); // Not ref, as we don't want to write into request.record
             ref var srcRecordInfo = ref requestRecordInfo;
             srcRecordInfo.ClearBitsForDiskImages();
 
@@ -281,6 +281,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // If the key was found at or above minAddress, do nothing.
+            // TODO: Verify this early exit correctly handles exiting the traceback on a non-match due to .PreviousAddress being below range
             if (request.logicalAddress >= pendingContext.minAddress)
                 return OperationStatus.SUCCESS;
 
@@ -337,6 +338,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // If the key was found at or above minAddress, do nothing; we'll push it when we get to it. If we flagged the iteration to stop, do nothing.
+            // TODO: Verify this early exit correctly handles exiting the traceback on a non-match due to .PreviousAddress being below range
             if (request.logicalAddress >= pendingContext.minAddress || pendingContext.scanCursorState.stop)
                 return OperationStatus.SUCCESS;
 

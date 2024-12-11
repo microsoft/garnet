@@ -188,7 +188,7 @@ namespace Tsavorite.core
 
             unsafe
             {
-                ref RecordInfo recordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
+                ref RecordInfo recordInfo = ref hlog.GetInfoRefFromBytePointer(request.record.GetValidPointer());
                 storeFunctions.DisposeRecord(ref hlog.GetContextRecordKey(ref request), ref hlog.GetContextRecordValue(ref request), DisposeReason.DeserializedFromDisk);
             }
             request.Dispose();

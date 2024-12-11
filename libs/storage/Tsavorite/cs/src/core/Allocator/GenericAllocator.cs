@@ -55,7 +55,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref _this.GetInfoFromBytePointer(ptr);
+        public readonly unsafe ref RecordInfo GetInfoRefFromBytePointer(byte* ptr) => ref _this.GetInfoFromBytePointer(ptr);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

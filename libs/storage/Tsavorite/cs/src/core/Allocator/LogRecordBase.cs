@@ -8,10 +8,10 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
-    /// <summary>The record on the log: header, key, value, and optional fields</summary>
+    /// <summary>The in-memory record on the log: header, key, value, and optional fields</summary>
     /// <remarks>The space is laid out as:
     ///     <list>
-    ///     <item>[RecordInfo][key][valueId][DBId?][ETag?][Expiration?][FillerLen]</item>
+    ///     <item>[RecordInfo][SpanByte key][Value Id or SpanByte][DBId?][ETag?][Expiration?][FillerLen]</item>
     ///     </list>
     /// This lets us get to the key without intermediate computations to account for the optional fields.
     /// </remarks>
@@ -42,7 +42,12 @@ namespace Tsavorite.core
         private readonly int ExpirationLen => Info.HasExpiration ? Constants.ExpirationSize : 0;
 
         /// <summary>The total size of the main-log (inline) portion of the record, not including extra value length.</summary>
-        public readonly int GetRecordSize(int valueLen) => RoundUp(RecordInfo.GetLength() + Key.TotalInlineSize + valueLen + DBIdLen + ETagLen + ExpirationLen, Constants.kRecordAlignment);
+        public readonly int GetRecordSize(int valueLen) => RecordInfo.GetLength() + Key.TotalInlineSize + valueLen + DBIdLen + ETagLen + ExpirationLen;
+        public readonly (int actualSize, int allocatedSize) GetRecordSizes(int valueLen)
+        {
+            var actualSize = RecordInfo.GetLength() + Key.TotalInlineSize + valueLen + DBIdLen + ETagLen + ExpirationLen;
+            return (actualSize, actualSize + GetFillerLen(valueLen));
+        }
 
         internal readonly long GetOptionalStartAddress(int valueLen) => physicalAddress + RecordInfo.GetLength() + Key.TotalInlineSize + valueLen;
 
@@ -60,7 +65,7 @@ namespace Tsavorite.core
         public readonly int GetFillerLen(int valueLen)
         {
             if (Info.HasFiller)
-                return *(int*)(GetOptionalStartAddress(valueLen) + DBIdLen + ETagLen + ExpirationLen);
+                return *(int*)GetFillerLenAddress(valueLen);
 
             // Filler includes extra space opened up by removing ETag or Expiration. If there is no Filler, we may still have a couple bytes (< Constants.FillerLenSize) due to RoundUp of record size.
             var recSize = GetRecordSize(valueLen);
