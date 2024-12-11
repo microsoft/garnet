@@ -34,7 +34,7 @@ namespace Garnet.server
         private readonly Lazy<AsyncQueue<BrokerEventBase>> brokerEventsQueueLazy = new();
         private readonly Lazy<ConcurrentDictionary<int, CollectionItemObserver>> sessionIdToObserverLazy = new();
         private readonly Lazy<Dictionary<byte[], Queue<CollectionItemObserver>>> keysToObserversLazy =
-            new(() => new Dictionary<byte[], Queue<CollectionItemObserver>>(new ByteArrayComparer()));
+            new(() => new Dictionary<byte[], Queue<CollectionItemObserver>>(ByteArrayComparer.Instance));
 
         // Cancellation token for the main loop
         private readonly CancellationTokenSource cts = new();
