@@ -341,10 +341,18 @@ namespace Garnet.server
 
             while (expiration < DateTimeOffset.UtcNow.Ticks)
             {
-                expirationQueue.TryDequeue(out key, out _);
-                expirationTimes.Remove(key);
-                hash.Remove(key);
-                // TODO: Update size
+                if (expirationTimes.TryGetValue(key, out var actualExpiration) && actualExpiration == expiration)
+                {
+                    hash.Remove(key);
+                    expirationTimes.Remove(key);
+                    expirationQueue.Dequeue();
+                }
+                else
+                {
+                    expirationQueue.Dequeue();
+                }
+
+                // TODO: Update size based on if or else condition
                 hasValue = expirationQueue.TryPeek(out key, out expiration);
                 if (!hasValue)
                 {
@@ -353,8 +361,6 @@ namespace Garnet.server
                     break;
                 }
             }
-
-            // TODO: Delete the hash set if all the fields are expired
         }
 
         private bool TryGetValue(byte[] key, out byte[] value)
@@ -430,6 +436,13 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
             hash[key] = value;
+            Persist(key);
+        }
+
+        private void SetWithoutPersist(byte[] key, byte[] value)
+        {
+            DeleteExpiredItems();
+            hash[key] = value;
         }
 
         private int SetExpiration(byte[] key, long expiration, ExpireOption expireOption)
@@ -441,7 +454,7 @@ namespace Garnet.server
 
             if (expiration <= DateTimeOffset.UtcNow.Ticks)
             {
-                Persist(key);
+                Remove(key, out _);
                 return 2;
             }
 
@@ -496,7 +509,6 @@ namespace Garnet.server
             if (expirationTimes is not null && expirationTimes.TryGetValue(key, out var currentExpiration))
             {
                 expirationTimes.Remove(key);
-                expirationQueue.TryDequeue(out key, out _);
 
                 if (expirationTimes.Count == 0)
                 {

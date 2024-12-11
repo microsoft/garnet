@@ -594,12 +594,12 @@ namespace Garnet.server
 
             long expireAt = 0;
             var isMilliseconds = false;
-            if (!parseState.TryGetLong(1, out var expireTime))
+            if (!parseState.TryGetLong(1, out expireAt))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
-            if (expireTime < 0)
+            if (expireAt < 0)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
             }
@@ -607,11 +607,11 @@ namespace Garnet.server
             switch (command)
             {
                 case RespCommand.HEXPIRE:
-                    expireAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expireTime;
+                    expireAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expireAt;
                     isMilliseconds = false;
                     break;
                 case RespCommand.HPEXPIRE:
-                    expireAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expireTime;
+                    expireAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expireAt;
                     isMilliseconds = true;
                     break;
                 case RespCommand.HPEXPIREAT:

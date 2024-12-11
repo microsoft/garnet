@@ -205,6 +205,15 @@ namespace Garnet.server
                 if (includedCount)
                 {
                     var count = Count();
+
+                    if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
+                    {
+                        while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        _output.result1 = 0;
+                        return;
+                    }
+
                     if (countParameter > 0 && countParameter > count)
                         countParameter = count;
 
@@ -233,7 +242,16 @@ namespace Garnet.server
                 else // No count parameter is present, we just return a random field
                 {
                     // Write a bulk string value of a random field from the hash value stored at key.
-                    var index = RandomUtils.PickRandomIndex(Count(), seed);
+                    var count = Count();
+                    if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
+                    {
+                        while (!RespWriteUtils.WriteNull(ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        _output.result1 = 0;
+                        return;
+                    }
+
+                    var index = RandomUtils.PickRandomIndex(count, seed);
                     var pair = ElementAt(index);
                     while (!RespWriteUtils.WriteBulkString(pair.Key, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -269,9 +287,9 @@ namespace Garnet.server
                     this.UpdateSize(key, value);
                     _output->result1++;
                 }
-                else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default &&
-                         !hashValue.AsSpan().SequenceEqual(value))
+                else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default)
                 {
+                    // TODO: Update size to remove expiration
                     Set(key, value);
                     // Skip overhead as existing item is getting replaced.
                     this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
@@ -377,7 +395,7 @@ namespace Garnet.server
                         resultSpan = resultSpan.Slice(0, bytesWritten);
 
                         resultBytes = resultSpan.ToArray();
-                        Set(key, resultBytes);
+                        SetWithoutPersist(key, resultBytes);
                         Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) -
                                 Utility.RoundUp(value.Length, IntPtr.Size);
                     }
@@ -418,7 +436,7 @@ namespace Garnet.server
                         result += incr;
 
                         resultBytes = Encoding.ASCII.GetBytes(result.ToString(CultureInfo.InvariantCulture));
-                        Set(key, resultBytes);
+                        SetWithoutPersist(key, resultBytes);
                         Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) -
                                 Utility.RoundUp(value.Length, IntPtr.Size);
                     }
