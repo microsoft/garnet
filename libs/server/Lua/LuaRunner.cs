@@ -128,11 +128,21 @@ namespace Garnet.server
         readonly LuaFunction garnetCall;
 
         // References into Registry on the Lua side
-        // TODO: essentially all constant strings should be pulled out of registry too to avoid copying cost
+        //
+        // These are mix of objects we regularly update,
+        // constants we want to avoid copying from .NET to Lua,
+        // and the compiled function definition.
         readonly int sandboxEnvRegistryIndex;
         readonly int keysTableRegistryIndex;
         readonly int argvTableRegistryIndex;
         readonly int loadSandboxedRegistryIndex;
+        readonly int okConstStringRegisteryIndex;
+        readonly int errConstStringRegistryIndex;
+        readonly int noSessionAvailableConstStringRegisteryIndex;
+        readonly int pleaseSpecifyRedisCallConstStringRegistryIndex;
+        readonly int errNoAuthConstStringRegistryIndex;
+        readonly int errUnknownConstStringRegistryIndex;
+        readonly int errBadArgConstStringRegistryIndex;
         int functionRegistryIndex;
 
         readonly ReadOnlyMemory<byte> source;
@@ -153,6 +163,8 @@ namespace Garnet.server
         /// </summary>
         public LuaRunner(ReadOnlyMemory<byte> source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
         {
+            const int NeededStackSize = 1;
+
             this.source = source;
             this.txnMode = txnMode;
             this.respServerSession = respServerSession;
@@ -169,6 +181,8 @@ namespace Garnet.server
             // TODO: custom allocator?
             state = new Lua();
             AssertLuaStackEmpty();
+
+            ForceGrowLuaStack(NeededStackSize);
 
             if (txnMode)
             {
@@ -265,6 +279,15 @@ namespace Garnet.server
             Debug.Assert(loadSandboxedType == LuaType.Function, "Unexpected load_sandboxed type");
             loadSandboxedRegistryIndex = state.Ref(LuaRegistry.Index);
 
+            // Commonly used strings, register them once so we don't have to copy them over each time we need them
+            okConstStringRegisteryIndex = ConstantStringToRegistery(NeededStackSize, CmdStrings.LUA_OK);
+            errConstStringRegistryIndex = ConstantStringToRegistery(NeededStackSize, CmdStrings.LUA_err);
+            noSessionAvailableConstStringRegisteryIndex = ConstantStringToRegistery(NeededStackSize, CmdStrings.LUA_No_session_available);
+            pleaseSpecifyRedisCallConstStringRegistryIndex = ConstantStringToRegistery(NeededStackSize, CmdStrings.LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call);
+            errNoAuthConstStringRegistryIndex = ConstantStringToRegistery(NeededStackSize, CmdStrings.RESP_ERR_NOAUTH);
+            errUnknownConstStringRegistryIndex = ConstantStringToRegistery(NeededStackSize, CmdStrings.LUA_ERR_Unknown_Redis_command_called_from_script);
+            errBadArgConstStringRegistryIndex = ConstantStringToRegistery(NeededStackSize, CmdStrings.LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers);
+
             AssertLuaStackEmpty();
         }
 
@@ -274,6 +297,19 @@ namespace Garnet.server
         public LuaRunner(string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
             : this(Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, logger)
         {
+        }
+
+        /// <summary>
+        /// Some strings we use a bunch, and copying them to Lua each time is wasteful
+        ///
+        /// So instead we stash them in the Registry and load them by index
+        /// </summary>
+        int ConstantStringToRegistery(int top, ReadOnlySpan<byte> str)
+        {
+            AssertLuaStackEmpty();
+
+            CheckedPushBuffer(top, str);
+            return state.Ref(LuaRegistry.Index);
         }
 
         /// <summary>
@@ -434,7 +470,7 @@ namespace Garnet.server
 
             ForceGrowLuaStack(NeededStackSpace);
 
-            CheckedPushBuffer(NeededStackSpace, "No session available"u8);
+            CheckedPushConstantString(NeededStackSpace, noSessionAvailableConstStringRegisteryIndex);
 
             // this will never return, but we can pretend it does
             return state.Error();
@@ -454,16 +490,15 @@ namespace Garnet.server
 
                 if (argCount == 0)
                 {
-                    return LuaError("ERR Please specify at least one argument for this redis lib call"u8);
+                    return LuaStaticError(argCount, pleaseSpecifyRedisCallConstStringRegistryIndex);
                 }
 
                 ForceGrowLuaStack(AdditionalStackSpace);
-
                 var neededStackSpace = argCount + AdditionalStackSpace;
 
                 if (!NativeMethods.CheckBuffer(state.Handle, 1, out var cmdSpan))
                 {
-                    return ErrorInvalidArgumentType(neededStackSpace);
+                    return LuaStaticError(neededStackSpace, errBadArgConstStringRegistryIndex);
                 }
 
                 // We special-case a few performance-sensitive operations to directly invoke via the storage API
@@ -471,12 +506,12 @@ namespace Garnet.server
                 {
                     if (!respServerSession.CheckACLPermissions(RespCommand.SET))
                     {
-                        return LuaError(CmdStrings.RESP_ERR_NOAUTH);
+                        return LuaStaticError(neededStackSpace, errNoAuthConstStringRegistryIndex);
                     }
 
                     if (!NativeMethods.CheckBuffer(state.Handle, 2, out var keySpan) || !NativeMethods.CheckBuffer(state.Handle, 3, out var valSpan))
                     {
-                        return ErrorInvalidArgumentType(neededStackSpace);
+                        return LuaStaticError(neededStackSpace, errBadArgConstStringRegistryIndex);
                     }
 
                     // Note these spans are implicitly pinned, as they're actually on the Lua stack
@@ -485,19 +520,19 @@ namespace Garnet.server
 
                     _ = api.SET(key, value);
 
-                    CheckedPushBuffer(neededStackSpace, "OK"u8);
+                    CheckedPushConstantString(neededStackSpace, okConstStringRegisteryIndex);
                     return 1;
                 }
                 else if (AsciiUtils.EqualsUpperCaseSpanIgnoringCase(cmdSpan, "GET"u8) && argCount == 2)
                 {
                     if (!respServerSession.CheckACLPermissions(RespCommand.GET))
                     {
-                        return LuaError(CmdStrings.RESP_ERR_NOAUTH);
+                        return LuaStaticError(neededStackSpace, errNoAuthConstStringRegistryIndex);
                     }
 
                     if (!NativeMethods.CheckBuffer(state.Handle, 2, out var keySpan))
                     {
-                        return ErrorInvalidArgumentType(neededStackSpace);
+                        return LuaStaticError(neededStackSpace, errBadArgConstStringRegistryIndex);
                     }
 
                     // Span is (implicitly) pinned since it's actually on the Lua stack
@@ -550,7 +585,7 @@ namespace Garnet.server
                         }
                         else
                         {
-                            return ErrorInvalidArgumentType(neededStackSpace);
+                            return LuaStaticError(neededStackSpace, errBadArgConstStringRegistryIndex);
                         }
                     }
 
@@ -575,7 +610,6 @@ namespace Garnet.server
                         ArrayPool<ArgSlice>.Shared.Return(cmdArgsArr);
                     }
                 }
-
             }
             catch (Exception e)
             {
@@ -584,42 +618,25 @@ namespace Garnet.server
                 // Clear the stack
                 state.SetTop(0);
 
-                // Try real hard to raise an error in Lua, but we may just be SOL
-                //
-                // We don't use ForceGrowLuaStack here because we're in an exception handler
-                if (state.CheckStack(AdditionalStackSpace))
-                {
-                    // TODO: Remove alloc
-                    var b = Encoding.UTF8.GetBytes(e.Message);
-                    CheckedPushBuffer(AdditionalStackSpace, b);
-                    return state.Error();
-                }
+                ForceGrowLuaStack(1);
 
-                throw;
+                // TODO: Remove alloc
+                var b = Encoding.UTF8.GetBytes(e.Message);
+                CheckedPushBuffer(AdditionalStackSpace, b);
+                return state.Error();
             }
         }
 
-
-
         /// <summary>
-        /// Common failure mode is passing wrong arg, so DRY it up.
+        /// Cause a Lua error to be raised with a message previously registered.
         /// </summary>
-        int ErrorInvalidArgumentType(int neededCapacity)
-        {
-            CheckedPushBuffer(neededCapacity, "ERR Lua redis lib command arguments must be strings or integers"u8);
-            return state.Error();
-        }
-
-        /// <summary>
-        /// Cause a lua error to be raised with the given message.
-        /// </summary>
-        int LuaError(ReadOnlySpan<byte> msg)
+        int LuaStaticError(int top, int constStringRegistryIndex)
         {
             const int NeededStackSize = 1;
 
             ForceGrowLuaStack(NeededStackSize);
 
-            CheckedPushBuffer(NeededStackSize, msg);
+            CheckedPushConstantString(top + NeededStackSize, constStringRegistryIndex);
             return state.Error();
         }
 
@@ -664,7 +681,7 @@ namespace Garnet.server
                         if (errSpan.SequenceEqual(CmdStrings.RESP_ERR_GENERIC_UNK_CMD))
                         {
                             // Gets a special response
-                            return LuaError("ERR Unknown Redis command called from script"u8);
+                            return LuaStaticError(NeededStackSize, errUnknownConstStringRegistryIndex);
                         }
 
                         CheckedPushBuffer(NeededStackSize, errSpan);
@@ -1079,6 +1096,7 @@ namespace Garnet.server
 
             AssertLuaStackEmpty();
 
+            // TODO: replace with scratchBufferManager
             static int PrepareString(string raw, ref byte[] arr, ref Span<byte> span)
             {
                 var maxLen = Encoding.UTF8.GetMaxByteCount(raw.Length);
@@ -1159,7 +1177,7 @@ namespace Garnet.server
                         //       so we need a test that use metatables (and compare to how Redis does this)
 
                         // If the key err is in there, we need to short circuit 
-                        CheckedPushBuffer(NeededStackSize, "err"u8);
+                        CheckedPushConstantString(NeededStackSize, errConstStringRegistryIndex);
 
                         var errType = state.GetTable(1);
                         if (errType == LuaType.String)
@@ -1442,6 +1460,8 @@ namespace Garnet.server
 
         /// <summary>
         /// This should be used for all PushBuffer calls into Lua.
+        /// 
+        /// If the string is a constant, consider registering it in the constructor and using <see cref="CheckedPushConstantString"/> instead.
         /// </summary>
         /// <seealso cref="AssertLuaStackBelow"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1486,6 +1506,32 @@ namespace Garnet.server
             AssertLuaStackBelow(reservedCapacity, file, method, line);
 
             state.PushBoolean(b);
+        }
+
+        /// <summary>
+        /// This should be used to push all known constants strings (registered in constructor with <see cref="ConstantStringToRegistery(int, ReadOnlySpan{byte})"/>)
+        /// into Lua.
+        /// 
+        /// This avoids extra copying of data between .NET and Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedPushConstantString(int reservedCapacity, int constStringRegistryIndex, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
+        {
+            AssertLuaStackBelow(reservedCapacity, file, method, line);
+            Debug.Assert(IsConstantStringRegistryIndex(constStringRegistryIndex), "Can't use this with unknown string");
+
+            var loadRes = state.RawGetInteger(LuaRegistry.Index, constStringRegistryIndex);
+            Debug.Assert(loadRes == LuaType.String, "Expected constant string to be loaded on stack");
+
+            // Check if index corresponds to value registered in constructor
+            bool IsConstantStringRegistryIndex(int index)
+            => index == okConstStringRegisteryIndex ||
+               index == errConstStringRegistryIndex ||
+               index == noSessionAvailableConstStringRegisteryIndex ||
+               index == pleaseSpecifyRedisCallConstStringRegistryIndex ||
+               index == errNoAuthConstStringRegistryIndex ||
+               index == errUnknownConstStringRegistryIndex ||
+               index == errBadArgConstStringRegistryIndex;
         }
     }
 }
