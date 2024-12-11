@@ -233,9 +233,9 @@ namespace Garnet.server.Custom
                 RegisterArgs.Name,
                 RegisterArgs.CommandType,
                 factory,
-                RegisterArgs.ObjectCommand,
                 RegisterArgs.CommandInfo,
-                RegisterArgs.CommandDocs);
+                RegisterArgs.CommandDocs,
+                RegisterArgs.ObjectCommand);
         }
     }
 
