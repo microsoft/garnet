@@ -1,0 +1,48 @@
+{
+  "_comment": "NOTE: If adding a new BDN perf test to this file, you will need to add the name to the test: line in ci-bdnbenchmark.yml (~line 45). This ensures all the tests are not ran sequentially when ran as github action.",
+  "_comment2": "NOTE: The BDN Perf name in the ci-bdnbenchmark.yml file test: line should NOT have the BDN.benchmark prefix and the .* ending. It needs to be this way for the reporting part of the BDN Charts.",
+
+  "BDN.benchmark.Operations.BasicOperations.*": {
+    "expected_InlinePing_ACL": 0,
+    "expected_InlinePing_AOF": 0,
+    "expected_InlinePing_None": 0
+  },
+  "BDN.benchmark.Operations.ObjectOperations.*": {
+    "expected_ZAddRem_ACL": 17.97,
+    "expected_LPushPop_ACL": 14.06,
+    "expected_SAddRem_ACL": 12.5,
+    "expected_HSetDel_ACL": 42.19,
+    "expected_ZAddRem_AOF": 17.97,
+    "expected_LPushPop_AOF": 14.06,
+    "expected_SAddRem_AOF": 12.5,
+    "expected_HSetDel_AOF": 42.19,
+    "expected_ZAddRem_None": 17.97,
+    "expected_LPushPop_None": 14.06,
+    "expected_SAddRem_None": 12.5,
+    "expected_HSetDel_None": 42.19
+  },
+  "BDN.benchmark.Cluster.ClusterOperations.*": {
+    "expected_Get_DSV": 0,
+    "expected_Set_DSV": 0,
+    "expected_MGet_DSV": 0,
+    "expected_MSet_DSV": 0,
+    "expected_CPBSet_DSV": 0,
+    "expected_Get_None": 0,
+    "expected_Set_None": 0,
+    "expected_MGet_None": 0,
+    "expected_MSet_None": 0,
+    "expected_CPBSet_None": 0
+  },
+  "BDN.benchmark.Cluster.ClusterMigrate.*": {
+    "expected_Get_None": 0,
+    "expected_Set_None": 0,
+    "expected_MGet_None": 0,
+    "expected_MSet_None": 0
+  },
+  "BDN.benchmark.Lua.LuaScripts.*": {
+    "expected_Script1_None": 24,
+    "expected_Script2_None": 144,
+    "expected_Script3_None": 240,
+    "expected_Script4_None": 776
+  }
+}
