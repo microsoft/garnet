@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Interfaces;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
@@ -23,7 +24,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, lowMemory: true);
             server.Start();
         }
 
@@ -1091,6 +1092,67 @@ namespace Garnet.test
 
             items = db.HashGetAll("myhash");
             ClassicAssert.AreEqual(0, items.Length);
+        }
+
+        [Test]
+        public async Task CanDoHashExpireLTM()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var server = redis.GetServer(TestUtils.Address, TestUtils.Port);
+
+            string[] smallExpireKeys = ["user:user0", "user:user1"];
+            string[] largeExpireKeys = ["user:user2", "user:user3"];
+
+            foreach (var key in smallExpireKeys)
+            {
+                db.HashSet(key, [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
+                db.Execute("HEXPIRE", key, "2", "FIELDS", "1", "Field1");
+            }
+
+            foreach (var key in largeExpireKeys)
+            {
+                db.HashSet(key, [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
+                db.Execute("HEXPIRE", key, "4", "FIELDS", "1", "Field1");
+            }
+
+            // Create LTM (larger than memory) DB by inserting 100 keys
+            for (int i = 4; i < 100; i++)
+            {
+                var key = "user:user" + i;
+                db.HashSet(key, [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
+            }
+
+            var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true, isObjectStore: true);
+            // Ensure data has spilled to disk
+            ClassicAssert.Greater(info.HeadAddress, info.BeginAddress);
+
+            await Task.Delay(2000);
+
+            var result = db.HashExists(smallExpireKeys[0], "Field1");
+            ClassicAssert.IsFalse(result);
+            result = db.HashExists(smallExpireKeys[1], "Field1");
+            ClassicAssert.IsFalse(result);
+            result = db.HashExists(largeExpireKeys[0], "Field1");
+            ClassicAssert.IsTrue(result);
+            result = db.HashExists(largeExpireKeys[1], "Field1");
+            ClassicAssert.IsTrue(result);
+            var ttl = db.HashFieldGetTimeToLive(largeExpireKeys[0], ["Field1"]);
+            ClassicAssert.AreEqual(ttl.Length, 1);
+            ClassicAssert.Greater(ttl[0], 0);
+            ClassicAssert.LessOrEqual(ttl[0], 2000);
+            ttl = db.HashFieldGetTimeToLive(largeExpireKeys[1], ["Field1"]);
+            ClassicAssert.AreEqual(ttl.Length, 1);
+            ClassicAssert.Greater(ttl[0], 0);
+            ClassicAssert.LessOrEqual(ttl[0], 2000);
+
+            await Task.Delay(2000);
+
+            result = db.HashExists(largeExpireKeys[0], "Field1");
+            ClassicAssert.IsFalse(result);
+            result = db.HashExists(largeExpireKeys[1], "Field1");
+            ClassicAssert.IsFalse(result);
+
         }
 
         [Test]
