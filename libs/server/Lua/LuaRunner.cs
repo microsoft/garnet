@@ -271,6 +271,8 @@ namespace Garnet.server
         /// </summary>
         public void Compile()
         {
+            // TODO: remove exceptions from this path
+
             const int NeededStackSpace = 2;
 
             Debug.Assert(functionRegistryIndex == -1, "Shouldn't compile multiple times");
@@ -1011,7 +1013,9 @@ namespace Garnet.server
                     }
 
                     var retType = state.Type(1);
-                    if (retType == LuaType.Nil)
+                    var isNullish = retType is LuaType.Nil or LuaType.UserData or LuaType.Function or LuaType.Thread or LuaType.UserData;
+
+                    if (isNullish)
                     {
                         WriteNull(state, 1, ref resp);
                         return;
@@ -1059,41 +1063,8 @@ namespace Garnet.server
                         state.Pop(1);
 
                         // Map this table to an array
-
-                        // Lua # operator - this stops at nils, so we don't need to explicitly handle them
-                        // See: https://www.lua.org/manual/5.3/manual.html#3.4.7
-                        var tableLength = state.Length(1);
-
-                        while (!RespWriteUtils.WriteArrayLength((int)tableLength, ref resp.BufferCur, resp.BufferEnd))
-                            resp.SendAndReset();
-
-                        for (var i = 1; i <= tableLength; i++)
-                        {
-                            // Push item at index i onto the stack
-                            var type = state.GetInteger(1, i);
-                            switch (type)
-                            {
-                                case LuaType.String:
-                                    WriteString(state, 2, ref resp);
-                                    break;
-                                case LuaType.Number:
-                                    WriteNumber(state, 2, ref resp);
-                                    break;
-                                case LuaType.Boolean:
-                                    WriteBoolean(state, 2, ref resp);
-                                    break;
-                                default:
-                                    throw new NotImplementedException();
-                            }
-                        }
-
-                        // Remove table from stack
-                        state.Pop(1);
-                    }
-                    else
-                    {
-                        // TODO: implement
-                        throw new NotImplementedException();
+                        var maxStackDepth = NeededStackSize;
+                        WriteArray(state, 1, ref resp, ref maxStackDepth);
                     }
                 }
                 else
@@ -1220,6 +1191,86 @@ namespace Garnet.server
 
                 state.Pop(1);
             }
+
+            static void WriteArray(Lua state, int top, ref TResponse resp, ref int maxStackDepth)
+            {
+                // 1 for the table, 1 for the pending value
+                const int AdditonalNeededStackSize = 2;
+
+                Debug.Assert(state.GetTop() == top, "Lua stack was not expected size");
+                Debug.Assert(state.Type(top) == LuaType.Table, "Table was not on top of stack");
+
+                // Lua # operator - this MAY stop at nils, but isn't guaranteed to
+                // See: https://www.lua.org/manual/5.3/manual.html#3.4.7
+                var maxLen = state.Length(top);
+
+                // Find the TRUE length by scanning for nils
+                var trueLen = 0;
+                for (trueLen = 0; trueLen < maxLen; trueLen++)
+                {
+                    var type = state.GetInteger(top, trueLen + 1);
+                    state.Pop(1);
+
+                    if (type == LuaType.Nil)
+                    {
+                        break;
+                    }
+                }
+
+                while (!RespWriteUtils.WriteArrayLength((int)trueLen, ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                var valueStackSlot = top + 1;
+
+                for (var i = 1; i <= trueLen; i++)
+                {
+                    // Push item at index i onto the stack
+                    var type = state.GetInteger(top, i);
+
+                    switch (type)
+                    {
+                        case LuaType.String:
+                            WriteString(state, valueStackSlot, ref resp);
+                            break;
+                        case LuaType.Number:
+                            WriteNumber(state, valueStackSlot, ref resp);
+                            break;
+                        case LuaType.Boolean:
+                            WriteBoolean(state, valueStackSlot, ref resp);
+                            break;
+
+
+                        case LuaType.Table:
+                            // For tables, we need to recurse - which means we need to check stack sizes again
+                            if (maxStackDepth < valueStackSlot + AdditonalNeededStackSize)
+                            {
+                                try
+                                {
+                                    ForceGrowLuaStack(state, AdditonalNeededStackSize);
+                                    maxStackDepth += AdditonalNeededStackSize;
+                                }
+                                catch
+                                {
+                                    // This is the only place we can raise an exception, cull the Stack
+                                    state.SetTop(0);
+
+                                    throw;
+                                }
+                            }
+
+                            WriteArray(state, valueStackSlot, ref resp, ref maxStackDepth);
+
+                            break;
+
+                        // All other Lua types map to nulls
+                        default:
+                            WriteNull(state, valueStackSlot, ref resp);
+                            break;
+                    }
+                }
+
+                state.Pop(1);
+            }
         }
 
         /// <summary>
@@ -1231,6 +1282,17 @@ namespace Garnet.server
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ForceGrowLuaStack(int additionalCapacity)
+        => ForceGrowLuaStack(state, additionalCapacity);
+
+        /// <summary>
+        /// Ensure there's enough space on the Lua stack for <paramref name="additionalCapacity"/> more items.
+        /// 
+        /// Throws if there is not.
+        /// 
+        /// Prefer using this to calling <see cref="Lua.CheckStack(int)"/> directly.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void ForceGrowLuaStack(Lua state, int additionalCapacity)
         {
             if (!state.CheckStack(additionalCapacity))
             {

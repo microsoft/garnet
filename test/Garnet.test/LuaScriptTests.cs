@@ -621,5 +621,120 @@ return redis.status_reply("OK")
             var res = (string)db.ScriptEvaluate("return redis.call('GET', 2.1)");
             ClassicAssert.AreEqual("world", res);
         }
+
+        [Test]
+        public void ComplexLuaReturns()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Relatively complicated
+            {
+                var res1 = (RedisResult[])db.ScriptEvaluate("return { 1, 'hello', { true, false }, { fizz = 'buzz', hello = 'world' }, 5, 6 }");
+                ClassicAssert.AreEqual(6, res1.Length);
+                ClassicAssert.AreEqual(1, (long)res1[0]);
+                ClassicAssert.AreEqual("hello", (string)res1[1]);
+                var res1Sub1 = (RedisResult[])res1[2];
+                ClassicAssert.AreEqual(2, res1Sub1.Length);
+                ClassicAssert.AreEqual(1, (long)res1Sub1[0]);
+                ClassicAssert.IsTrue(res1Sub1[1].IsNull);
+                var res1Sub2 = (RedisResult[])res1[2];
+                ClassicAssert.AreEqual(2, res1Sub2.Length);
+                ClassicAssert.IsTrue((bool)res1Sub2[0]);
+                ClassicAssert.IsTrue(res1Sub2[1].IsNull);
+                var res1Sub3 = (RedisResult[])res1[3];
+                ClassicAssert.AreEqual(0, res1Sub3.Length);
+                ClassicAssert.AreEqual(5, (long)res1[4]);
+                ClassicAssert.AreEqual(6, (long)res1[5]);
+            }
+
+            // Only indexable will be included
+            {
+                var res2 = (RedisResult[])db.ScriptEvaluate("return { 1, 2, fizz='buzz' }");
+                ClassicAssert.AreEqual(2, res2.Length);
+                ClassicAssert.AreEqual(1, (long)res2[0]);
+                ClassicAssert.AreEqual(2, (long)res2[1]);
+            }
+
+            // Non-string, non-number, are nullish
+            {
+                var res3 = (RedisResult[])db.ScriptEvaluate("return { 1, function() end, 3 }");
+                ClassicAssert.AreEqual(3, res3.Length);
+                ClassicAssert.AreEqual(1, (long)res3[0]);
+                ClassicAssert.IsTrue(res3[1].IsNull);
+                ClassicAssert.AreEqual(3, (long)res3[2]);
+            }
+
+            // Nil stops return of subsequent values
+            {
+                var res4 = (RedisResult[])db.ScriptEvaluate("return { 1, nil, 3 }");
+                ClassicAssert.AreEqual(1, res4.Length);
+                ClassicAssert.AreEqual(1, (long)res4[0]);
+            }
+
+            // Incredibly deeply nested return
+            {
+                const int Depth = 100;
+
+                var tableDepth = new StringBuilder();
+                for (var i = 1; i <= Depth; i++)
+                {
+                    if (i != 1)
+                    {
+                        tableDepth.Append(", ");
+                    }
+                    tableDepth.Append("{ ");
+                    tableDepth.Append(i);
+                }
+                for (var i = 1; i <= Depth; i++)
+                {
+                    tableDepth.Append(" }");
+                }
+
+                var script = "return " + tableDepth.ToString();
+
+                var res5 = db.ScriptEvaluate(script);
+
+                var cur = res5;
+                for (var i = 1; i < Depth; i++)
+                {
+                    var top = (RedisResult[])cur;
+                    ClassicAssert.AreEqual(2, top.Length);
+                    ClassicAssert.AreEqual(i, (long)top[0]);
+
+                    cur = top[1];
+                }
+
+                // Remainder should have a single element
+                var remainder = (RedisResult[])cur;
+                ClassicAssert.AreEqual(1, remainder.Length);
+                ClassicAssert.AreEqual(Depth, (long)remainder[0]);
+            }
+
+            // Incredibly wide
+            {
+                const int Width = 100_000;
+
+                var tableDepth = new StringBuilder();
+                for (var i = 1; i <= Width; i++)
+                {
+                    if (i != 1)
+                    {
+                        tableDepth.Append(", ");
+                    }
+                    tableDepth.Append("{ " + i + " }");
+                }
+
+                var script = "return { " + tableDepth.ToString() + " }";
+
+                var res5 = (RedisResult[])db.ScriptEvaluate(script);
+                for (var i = 0; i < Width; i++)
+                {
+                    var elem = (RedisResult[])res5[i];
+                    ClassicAssert.AreEqual(1, elem.Length);
+                    ClassicAssert.AreEqual(i + 1, (long)elem[0]);
+                }
+            }
+        }
     }
 }
