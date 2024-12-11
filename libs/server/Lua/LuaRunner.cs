@@ -5,10 +5,12 @@ using System;
 using System.Buffers;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Garnet.server
 {
@@ -24,13 +26,14 @@ namespace Garnet.server
         readonly LuaFunction garnetCall;
 
         // References into Registry on the Lua side
+        // TODO: essentially all constant strings should be pulled out of registry too to avoid copying cost
         readonly int sandboxEnvRegistryIndex;
         readonly int keysTableRegistryIndex;
         readonly int argvTableRegistryIndex;
         readonly int loadSandboxedRegistryIndex;
         int functionRegistryIndex;
 
-        readonly string source;
+        readonly ReadOnlyMemory<byte> source;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly RespServerSession respServerSession;
         readonly ScratchBufferManager scratchBufferManager;
@@ -44,7 +47,7 @@ namespace Garnet.server
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public LuaRunner(string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
+        public LuaRunner(ReadOnlyMemory<byte> source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
         {
             this.source = source;
             this.txnMode = txnMode;
@@ -61,7 +64,7 @@ namespace Garnet.server
 
             // TODO: custom allocator?
             state = new Lua();
-            Debug.Assert(state.GetTop() == 0, "Stack should be empty at allocation");
+            AssertLuaStackEmpty();
 
             if (txnMode)
             {
@@ -158,14 +161,14 @@ namespace Garnet.server
             Debug.Assert(loadSandboxedType == LuaType.Function, "Unexpected load_sandboxed type");
             loadSandboxedRegistryIndex = state.Ref(LuaRegistry.Index);
 
-            Debug.Assert(state.GetTop() == 0, "Stack should be empty after initialization");
+            AssertLuaStackEmpty();
         }
 
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public LuaRunner(ReadOnlySpan<byte> source, bool txnMode, RespServerSession respServerSession, ScratchBufferNetworkSender scratchBufferNetworkSender, ILogger logger = null)
-            : this(Encoding.UTF8.GetString(source), txnMode, respServerSession, scratchBufferNetworkSender, logger)
+        public LuaRunner(string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
+            : this(Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, logger)
         {
         }
 
@@ -174,22 +177,21 @@ namespace Garnet.server
         /// </summary>
         public void Compile()
         {
+            const int NeededStackSpace = 2;
+
             Debug.Assert(functionRegistryIndex == -1, "Shouldn't compile multiple times");
 
-            Debug.Assert(state.GetTop() == 0, "Stack should be empty at start of compilation");
+            AssertLuaStackEmpty();
 
             try
             {
-                if (!state.CheckStack(2))
-                {
-                    throw new GarnetException("Insufficient stack space to compile function");
-                }
+                ForceGrowLuaStack(NeededStackSpace);
 
-                state.PushNumber(loadSandboxedRegistryIndex);
+                CheckedPushNumber(NeededStackSpace, loadSandboxedRegistryIndex);
                 var loadRes = state.GetTable(LuaRegistry.Index);
                 Debug.Assert(loadRes == LuaType.Function, "Unexpected load_sandboxed type");
 
-                state.PushString(source);
+                CheckedPushBuffer(NeededStackSpace, source.Span);
                 state.Call(1, -1);  // Multiple returns allowed
 
                 var numRets = state.GetTop();
@@ -277,9 +279,13 @@ namespace Garnet.server
         /// <returns></returns>
         int NoSessionError()
         {
+            const int NeededStackSpace = 1;
+
             logger?.LogError("Lua call came in without a valid resp session");
 
-            NativeMethods.PushBuffer(state.Handle, "No session available"u8);
+            ForceGrowLuaStack(NeededStackSpace);
+
+            CheckedPushBuffer(NeededStackSpace, "No session available"u8);
 
             // this will never return, but we can pretend it does
             return state.Error();
@@ -291,6 +297,8 @@ namespace Garnet.server
         unsafe int ProcessCommandFromScripting<TGarnetApi>(TGarnetApi api)
             where TGarnetApi : IGarnetApi
         {
+            const int AdditionalStackSpace = 1;
+
             try
             {
                 var argCount = state.GetTop();
@@ -300,9 +308,13 @@ namespace Garnet.server
                     return LuaError("Please specify at least one argument for this redis lib call"u8);
                 }
 
+                ForceGrowLuaStack(AdditionalStackSpace);
+                
+                var neededStackSpace = argCount + AdditionalStackSpace;
+
                 if (!NativeMethods.CheckBuffer(state.Handle, 1, out var cmdSpan))
                 {
-                    return ErrorInvalidArgumentType(state);
+                    return ErrorInvalidArgumentType(neededStackSpace);
                 }
 
                 // We special-case a few performance-sensitive operations to directly invoke via the storage API
@@ -315,7 +327,7 @@ namespace Garnet.server
 
                     if (!NativeMethods.CheckBuffer(state.Handle, 2, out var keySpan) || !NativeMethods.CheckBuffer(state.Handle, 3, out var valSpan))
                     {
-                        return ErrorInvalidArgumentType(state);
+                        return ErrorInvalidArgumentType(neededStackSpace);
                     }
 
                     // Note these spans are implicitly pinned, as they're actually on the Lua stack
@@ -324,7 +336,7 @@ namespace Garnet.server
 
                     _ = api.SET(key, value);
 
-                    NativeMethods.PushBuffer(state.Handle, "OK"u8);
+                    CheckedPushBuffer(neededStackSpace, "OK"u8);
                     return 1;
                 }
                 else if (AsciiUtils.EqualsUpperCaseSpanIgnoringCase(cmdSpan, "GET"u8) && argCount == 2)
@@ -336,7 +348,7 @@ namespace Garnet.server
 
                     if (!NativeMethods.CheckBuffer(state.Handle, 2, out var keySpan))
                     {
-                        return ErrorInvalidArgumentType(state);
+                        return ErrorInvalidArgumentType(neededStackSpace);
                     }
 
                     // Span is (implicitly) pinned since it's actually on the Lua stack
@@ -344,11 +356,11 @@ namespace Garnet.server
                     var status = api.GET(key, out var value);
                     if (status == GarnetStatus.OK)
                     {
-                        NativeMethods.PushBuffer(state.Handle, value.ReadOnlySpan);
+                        CheckedPushBuffer(neededStackSpace, value.ReadOnlySpan);
                     }
                     else
                     {
-                        state.PushNil();
+                        CheckedPushNil(neededStackSpace);
                     }
 
                     return 1;
@@ -389,7 +401,7 @@ namespace Garnet.server
                         }
                         else
                         {
-                            return ErrorInvalidArgumentType(state);
+                            return ErrorInvalidArgumentType(neededStackSpace);
                         }
                     }
 
@@ -420,16 +432,33 @@ namespace Garnet.server
             {
                 logger?.LogError(e, "During Lua script execution");
 
-                state.PushString(e.Message);
-                return state.Error();
-            }
+                // Clear the stack
+                state.SetTop(0);
 
-            // Common failure mode is passing wrong arg
-            static int ErrorInvalidArgumentType(Lua state)
-            {
-                NativeMethods.PushBuffer(state.Handle, "Lua redis lib command arguments must be strings or integers"u8);
-                return state.Error();
+                // Try real hard to raise an error in Lua, but we may just be SOL
+                //
+                // We don't use ForceGrowLuaStack here because we're in an exception handler
+                if (state.CheckStack(AdditionalStackSpace))
+                {
+                    // TODO: Remove alloc
+                    var b = Encoding.UTF8.GetBytes(e.Message);
+                    CheckedPushBuffer(AdditionalStackSpace, b);
+                    return state.Error();
+                }
+
+                throw;
             }
+        }
+
+
+
+        /// <summary>
+        /// Common failure mode is passing wrong arg, so DRY it up.
+        /// </summary>
+        int ErrorInvalidArgumentType(int neededCapacity)
+        {
+            CheckedPushBuffer(neededCapacity, "Lua redis lib command arguments must be strings or integers"u8);
+            return state.Error();
         }
 
         /// <summary>
@@ -437,12 +466,11 @@ namespace Garnet.server
         /// </summary>
         int LuaError(ReadOnlySpan<byte> msg)
         {
-            if (!state.CheckStack(1))
-            {
-                throw new GarnetException("Insufficient stack space to error");
-            }
+            const int NeededStackSize = 1;
 
-            NativeMethods.PushBuffer(state.Handle, msg);
+            ForceGrowLuaStack(NeededStackSize);
+            
+            CheckedPushBuffer(NeededStackSize, msg);
             return state.Error();
         }
 
@@ -453,12 +481,11 @@ namespace Garnet.server
         /// </summary>
         unsafe int ProcessResponse(byte* ptr, int length)
         {
-            Debug.Assert(state.GetTop() == 0, "Stack should be empty before processing response");
+            const int NeededStackSize = 3;
 
-            if (!state.CheckStack(3))
-            {
-                throw new GarnetException("Insufficent space on stack to prepare response");
-            }
+            AssertLuaStackEmpty();
+
+            ForceGrowLuaStack(NeededStackSize);
 
             switch (*ptr)
             {
@@ -467,7 +494,7 @@ namespace Garnet.server
                     length--;
                     if (RespReadUtils.ReadAsSpan(out var resultSpan, ref ptr, ptr + length))
                     {
-                        NativeMethods.PushBuffer(state.Handle, resultSpan);
+                        CheckedPushBuffer(NeededStackSize, resultSpan);
                         return 1;
                     }
                     goto default;
@@ -475,7 +502,7 @@ namespace Garnet.server
                 case (byte)':':
                     if (RespReadUtils.Read64Int(out var number, ref ptr, ptr + length))
                     {
-                        state.PushNumber(number);
+                        CheckedPushNumber(NeededStackSize, number);
                         return 1;
                     }
                     goto default;
@@ -491,7 +518,7 @@ namespace Garnet.server
                             return LuaError("Unknown Redis command called from script"u8);
                         }
 
-                        NativeMethods.PushBuffer(state.Handle, errSpan);
+                        CheckedPushBuffer(NeededStackSize, errSpan);
                         return state.Error();
 
                     }
@@ -502,13 +529,13 @@ namespace Garnet.server
                     {
                         // Bulk null strings are mapped to FALSE
                         // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                        state.PushBoolean(false);
+                        CheckedPushBoolean(NeededStackSize, false);
 
                         return 1;
                     }
                     else if (RespReadUtils.ReadSpanWithLengthHeader(out var bulkSpan, ref ptr, ptr + length))
                     {
-                        NativeMethods.PushBuffer(state.Handle, bulkSpan);
+                        CheckedPushBuffer(NeededStackSize, bulkSpan);
 
                         return 1;
                     }
@@ -530,15 +557,14 @@ namespace Garnet.server
                                 {
                                     // Null strings are mapped to false
                                     // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                                    state.PushBoolean(false);
+                                    CheckedPushBoolean(NeededStackSize, false);
                                 }
                                 else if (RespReadUtils.ReadSpanWithLengthHeader(out var strSpan, ref ptr, ptr + length))
                                 {
-                                    NativeMethods.PushBuffer(state.Handle, strSpan);
+                                    CheckedPushBuffer(NeededStackSize, strSpan);
                                 }
                                 else
                                 {
-
                                     // Error, drop the table we allocated
                                     state.Pop(1);
                                     goto default;
@@ -570,12 +596,11 @@ namespace Garnet.server
         /// </summary>
         public object Run(int count, SessionParseState parseState)
         {
-            Debug.Assert(state.GetTop() == 0, "Stack should be empty at invocation start");
+            const int NeededStackSize = 3;
 
-            if (!state.CheckStack(3))
-            {
-                throw new GarnetException("Insufficient stack space to run script");
-            }
+            AssertLuaStackEmpty();
+
+            ForceGrowLuaStack(NeededStackSize);
 
             scratchBufferManager.Reset();
 
@@ -587,7 +612,7 @@ namespace Garnet.server
             if (nKeys > 0)
             {
                 // Get KEYS on the stack
-                state.PushNumber(keysTableRegistryIndex);
+                CheckedPushNumber(NeededStackSize, keysTableRegistryIndex);
                 var loadedType = state.RawGet(LuaRegistry.Index);
                 Debug.Assert(loadedType == LuaType.Table, "Unexpected type loaded when expecting KEYS");
 
@@ -603,8 +628,8 @@ namespace Garnet.server
                     }
 
                     // Equivalent to KEYS[i+1] = key
-                    state.PushNumber(i + 1);
-                    NativeMethods.PushBuffer(state.Handle, key.ReadOnlySpan);
+                    CheckedPushNumber(NeededStackSize, i + 1);
+                    CheckedPushBuffer(NeededStackSize, key.ReadOnlySpan);
                     state.RawSet(1);
 
                     offset++;
@@ -619,7 +644,7 @@ namespace Garnet.server
             if (count > 0)
             {
                 // Get ARGV on the stack
-                state.PushNumber(argvTableRegistryIndex);
+                CheckedPushNumber(NeededStackSize, argvTableRegistryIndex);
                 var loadedType = state.RawGet(LuaRegistry.Index);
                 Debug.Assert(loadedType == LuaType.Table, "Unexpected type loaded when expecting ARGV");
 
@@ -628,8 +653,8 @@ namespace Garnet.server
                     ref var argv = ref parseState.GetArgSliceByRef(offset);
 
                     // Equivalent to ARGV[i+1] = argv
-                    state.PushNumber(i + 1);
-                    NativeMethods.PushBuffer(state.Handle, argv.ReadOnlySpan);
+                    CheckedPushNumber(NeededStackSize, i + 1);
+                    CheckedPushBuffer(NeededStackSize, argv.ReadOnlySpan);
                     state.RawSet(1);
 
                     offset++;
@@ -639,7 +664,7 @@ namespace Garnet.server
                 state.Pop(1);
             }
 
-            Debug.Assert(state.GetTop() == 0, "Stack should be empty before running function");
+            AssertLuaStackEmpty();
 
             if (txnMode && nKeys > 0)
             {
@@ -699,24 +724,24 @@ namespace Garnet.server
 
         void ResetParameters(int nKeys, int nArgs)
         {
-            Debug.Assert(state.GetTop() == 0, "Stack should be empty before resetting parameters");
+            // TODO: is this faster than punching a function in to do it?
+            const int NeededStackSize = 2;
 
-            if (!state.CheckStack(2))
-            {
-                throw new GarnetException("Insufficient space on stack to reset parameters");
-            }
+            AssertLuaStackEmpty();
+
+            ForceGrowLuaStack(NeededStackSize);
 
             if (keyLength > nKeys)
             {
                 // Get KEYS on the stack
-                state.PushNumber(keysTableRegistryIndex);
+                CheckedPushNumber(NeededStackSize, keysTableRegistryIndex);
                 var loadRes = state.GetTable(LuaRegistry.Index);
                 Debug.Assert(loadRes == LuaType.Table, "Unexpected type for KEYS");
 
                 // Clear all the values in KEYS that we aren't going to set anyway
                 for (var i = nKeys + 1; i <= keyLength; i++)
                 {
-                    state.PushNil();
+                    CheckedPushNil(NeededStackSize);
                     state.RawSetInteger(1, i);
                 }
 
@@ -728,13 +753,13 @@ namespace Garnet.server
             if (argvLength > nArgs)
             {
                 // Get ARGV on the stack
-                state.PushNumber(argvTableRegistryIndex);
+                CheckedPushNumber(NeededStackSize, argvTableRegistryIndex);
                 var loadRes = state.GetTable(LuaRegistry.Index);
                 Debug.Assert(loadRes == LuaType.Table, "Unexpected type for ARGV");
 
                 for (var i = nArgs + 1; i <= argvLength; i++)
                 {
-                    state.PushNil();
+                    CheckedPushNil(NeededStackSize);
                     state.RawSetInteger(1, i);
                 }
 
@@ -743,17 +768,16 @@ namespace Garnet.server
 
             argvLength = nArgs;
 
-            Debug.Assert(state.GetTop() == 0, "Stack should be empty after resetting parameters");
+            AssertLuaStackEmpty();
         }
 
         void LoadParameters(string[] keys, string[] argv)
         {
-            Debug.Assert(state.GetTop() == 0, "Stack should be empty before invocation starts");
+            const int NeededStackSize = 2;
 
-            if (!state.CheckStack(2))
-            {
-                throw new GarnetException("Insufficient stack space to call function");
-            }
+            AssertLuaStackEmpty();
+
+            ForceGrowLuaStack(NeededStackSize);
 
             ResetParameters(keys?.Length ?? 0, argv?.Length ?? 0);
 
@@ -765,7 +789,7 @@ namespace Garnet.server
                 if (keys != null)
                 {
                     // get KEYS on the stack
-                    state.PushNumber(keysTableRegistryIndex);
+                    CheckedPushNumber(NeededStackSize, keysTableRegistryIndex);
                     var loadRes = state.GetTable(LuaRegistry.Index);
                     Debug.Assert(loadRes == LuaType.Table, "Unexpected type for KEYS");
 
@@ -775,7 +799,7 @@ namespace Garnet.server
                         var key = keys[i];
 
                         var keyLen = PrepareString(key, ref encodingBufferArr, ref encodingBuffer);
-                        NativeMethods.PushBuffer(state.Handle, encodingBuffer[..keyLen]);
+                        CheckedPushBuffer(NeededStackSize, encodingBuffer[..keyLen]);
 
                         state.RawSetInteger(1, i + 1);
                     }
@@ -786,7 +810,7 @@ namespace Garnet.server
                 if (argv != null)
                 {
                     // get ARGV on the stack
-                    state.PushNumber(argvTableRegistryIndex);
+                    CheckedPushNumber(NeededStackSize, argvTableRegistryIndex);
                     var loadRes = state.GetTable(LuaRegistry.Index);
                     Debug.Assert(loadRes == LuaType.Table, "Unexpected type for ARGV");
 
@@ -796,7 +820,7 @@ namespace Garnet.server
                         var arg = argv[i];
 
                         var argLen = PrepareString(arg, ref encodingBufferArr, ref encodingBuffer);
-                        NativeMethods.PushBuffer(state.Handle, encodingBuffer[..argLen]);
+                        CheckedPushBuffer(NeededStackSize, encodingBuffer[..argLen]);
 
                         state.RawSetInteger(1, i + 1);
                     }
@@ -806,21 +830,20 @@ namespace Garnet.server
             }
             finally
             {
-                if(encodingBufferArr != null)
+                if (encodingBufferArr != null)
                 {
                     ArrayPool<byte>.Shared.Return(encodingBufferArr);
                 }
             }
 
-
-            Debug.Assert(state.GetTop() == 0, "Stack should be empty when invocation ends");
+            AssertLuaStackEmpty();
 
             static int PrepareString(string raw, ref byte[] arr, ref Span<byte> span)
             {
                 var maxLen = Encoding.UTF8.GetMaxByteCount(raw.Length);
-                if(span.Length < maxLen)
+                if (span.Length < maxLen)
                 {
-                    if(arr != null)
+                    if (arr != null)
                     {
                         ArrayPool<byte>.Shared.Return(arr);
                     }
@@ -838,20 +861,19 @@ namespace Garnet.server
         /// </summary>
         object Run()
         {
+            const int NeededStackSize = 2;
+
             // TODO: mapping is dependent on Resp2 vs Resp3 settings
             //       and that's not implemented at all
 
             // TODO: this shouldn't read the result, it should write the response out
-            Debug.Assert(state.GetTop() == 0, "Stack should be empty at start of invocation");
+            AssertLuaStackEmpty();
 
-            if (!state.CheckStack(2))
-            {
-                throw new GarnetException("Insufficient stack space to run function");
-            }
+            ForceGrowLuaStack(NeededStackSize);
 
             try
             {
-                state.PushNumber(functionRegistryIndex);
+                CheckedPushNumber(NeededStackSize, functionRegistryIndex);
                 var loadRes = state.GetTable(LuaRegistry.Index);
                 Debug.Assert(loadRes == LuaType.Function, "Unexpected type for function to invoke");
 
@@ -905,7 +927,7 @@ namespace Garnet.server
                         //       metatables - so we can't use any of the RawXXX methods
 
                         // if the key err is in there, we need to short circuit 
-                        NativeMethods.PushBuffer(state.Handle, "err"u8);
+                        CheckedPushBuffer(NeededStackSize, "err"u8);
 
                         var errType = state.GetTable(1);
                         if (errType == LuaType.String)
@@ -974,6 +996,97 @@ namespace Garnet.server
                 // FORCE the stack to be empty now
                 state.SetTop(0);
             }
+        }
+
+        /// <summary>
+        /// Ensure there's enough space on the Lua stack for <paramref name="additionalCapacity"/> more items.
+        /// 
+        /// Throws if there is not.
+        /// 
+        /// Prefer using this to calling <see cref="Lua.CheckStack(int)"/> directly.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ForceGrowLuaStack(int additionalCapacity)
+        {
+            if (!state.CheckStack(additionalCapacity))
+            {
+                throw new GarnetException("Could not reserve additional capacity on the Lua stack");
+            }
+        }
+
+        /// <summary>
+        /// Check that the Lua stack is empty in DEBUG builds.
+        /// 
+        /// This is never necessary for correctness, but is often useful to find logical bugs.
+        /// </summary>
+        [Conditional("DEBUG")]
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void AssertLuaStackEmpty([CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
+        {
+            Debug.Assert(state.GetTop() == 0, $"Lua stack not empty when expected ({method}:{line} in {file})");
+        }
+
+        /// <summary>
+        /// Check the Lua stack has not grown beyond the capacity we initially reserved.
+        /// 
+        /// This asserts (in DEBUG) that the next .PushXXX will succeed.
+        /// 
+        /// In practice, Lua almost always gives us enough space (default is ~20 slots) but that's not guaranteed and can be false
+        /// for complicated redis.call invocations.
+        /// </summary>
+        [Conditional("DEBUG")]
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void AssertLuaStackBelow(int reservedCapacity, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
+        {
+            Debug.Assert(state.GetTop() < reservedCapacity, $"About to push to Lua stack without having reserved sufficient capacity.");
+        }
+
+        /// <summary>
+        /// This should be used for all PushBuffer calls into Lua.
+        /// </summary>
+        /// <seealso cref="AssertLuaStackBelow"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedPushBuffer(int reservedCapacity, ReadOnlySpan<byte> buffer, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
+        {
+            AssertLuaStackBelow(reservedCapacity, file, method, line);
+
+            NativeMethods.PushBuffer(state.Handle, buffer);
+        }
+
+        /// <summary>
+        /// This should be used for all PushNil calls into Lua.
+        /// </summary>
+        /// <seealso cref="AssertLuaStackBelow"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedPushNil(int reservedCapacity, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
+        {
+            AssertLuaStackBelow(reservedCapacity, file, method, line);
+
+            state.PushNil();
+        }
+
+        /// <summary>
+        /// This should be used for all PushNumber calls into Lua.
+        /// </summary>
+        /// <seealso cref="AssertLuaStackBelow"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedPushNumber(int reservedCapacity, double number, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
+        {
+            AssertLuaStackBelow(reservedCapacity, file, method, line);
+
+            state.PushNumber(number);
+        }
+
+        /// <summary>
+        /// This should be used for all PushBoolean calls into Lua.
+        /// </summary>
+        /// <seealso cref="AssertLuaStackBelow"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedPushBoolean(int reservedCapacity, bool b, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
+        {
+            AssertLuaStackBelow(reservedCapacity, file, method, line);
+
+            state.PushBoolean(b);
         }
     }
 }
