@@ -105,7 +105,11 @@ Please check the syntax of your command. For detailed usage information run with
                     cmdLineOptions.AzureStorageConnectionString);
 
                 if (!importSuccessful)
+                {
+                    exitGracefully = false;
+                    logger?.LogWarning(@"Config Import of options from: {ConfigImportPath} was not successful.", cmdLineOptions.ConfigImportPath);
                     return false;
+                }
             }
             else
             {
