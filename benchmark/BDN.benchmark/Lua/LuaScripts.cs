@@ -55,18 +55,18 @@ namespace BDN.benchmark.Lua
 
         [Benchmark]
         public void Script1()
-            => r1.Run();
+            => r1.RunForRunner();
 
         [Benchmark]
         public void Script2()
-            => r2.Run();
+            => r2.RunForRunner();
 
         [Benchmark]
         public void Script3()
-            => r3.Run(keys, null);
+            => r3.RunForRunner(keys, null);
 
         [Benchmark]
         public void Script4()
-            => r4.Run(keys, null);
+            => r4.RunForRunner(keys, null);
     }
 }

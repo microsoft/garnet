@@ -10,7 +10,6 @@ using System.Text;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Garnet.server
 {
@@ -36,6 +35,8 @@ namespace Garnet.server
         readonly ReadOnlyMemory<byte> source;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly RespServerSession respServerSession;
+
+        // TODO: all buffers should be rented from this, remove ArrayPool use
         readonly ScratchBufferManager scratchBufferManager;
         readonly ILogger logger;
         readonly Lua state;
@@ -592,9 +593,11 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Runs the precompiled Lua function with specified parse state
+        /// Runs the precompiled Lua function with specified parse state.
+        /// 
+        /// Meant for use directly from Garnet.
         /// </summary>
-        public object Run(int count, SessionParseState parseState)
+        public object RunForParseState(int count, SessionParseState parseState)
         {
             const int NeededStackSize = 3;
 
@@ -668,21 +671,23 @@ namespace Garnet.server
 
             if (txnMode && nKeys > 0)
             {
-                return RunTransaction();
+                return RunInTransaction();
             }
             else
             {
-                return Run();
+                return RunCommon();
             }
         }
 
         /// <summary>
-        /// Runs the precompiled Lua function with specified (keys, argv) state
+        /// Runs the precompiled Lua function with specified (keys, argv) state.
+        /// 
+        /// Meant for use from a .NET host rather than in Garnet properly.
         /// </summary>
-        public object Run(string[] keys = null, string[] argv = null)
+        public object RunForRunner(string[] keys = null, string[] argv = null)
         {
             scratchBufferManager?.Reset();
-            LoadParameters(keys, argv);
+            LoadParametersForRunner(keys, argv);
             if (txnMode && keys?.Length > 0)
             {
                 // Add keys to the transaction
@@ -693,15 +698,18 @@ namespace Garnet.server
                     if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
                         txnKeyEntries.AddKey(_key, true, Tsavorite.core.LockType.Exclusive);
                 }
-                return RunTransaction();
+                return RunInTransaction();
             }
             else
             {
-                return Run();
+                return RunCommon();
             }
         }
 
-        object RunTransaction()
+        /// <summary>
+        /// Calls <see cref="RunCommon"/> after setting up appropriate state for a transaction.
+        /// </summary>
+        object RunInTransaction()
         {
             try
             {
@@ -710,7 +718,8 @@ namespace Garnet.server
                     respServerSession.storageSession.objectStoreLockableContext.BeginLockable();
                 respServerSession.SetTransactionMode(true);
                 txnKeyEntries.LockAllKeys();
-                return Run();
+
+                return RunCommon();
             }
             finally
             {
@@ -722,6 +731,9 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Remove extra keys and args from KEYS and ARGV globals.
+        /// </summary>
         void ResetParameters(int nKeys, int nArgs)
         {
             // TODO: is this faster than punching a function in to do it?
@@ -771,7 +783,10 @@ namespace Garnet.server
             AssertLuaStackEmpty();
         }
 
-        void LoadParameters(string[] keys, string[] argv)
+        /// <summary>
+        /// Takes .NET strings for keys and args and pushes them into KEYS and ARGV globals.
+        /// </summary>
+        void LoadParametersForRunner(string[] keys, string[] argv)
         {
             const int NeededStackSize = 2;
 
@@ -857,9 +872,9 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Runs the precompiled Lua function
+        /// Runs the precompiled Lua function.
         /// </summary>
-        object Run()
+        object RunCommon()
         {
             const int NeededStackSize = 2;
 

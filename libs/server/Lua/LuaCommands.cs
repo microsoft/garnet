@@ -240,14 +240,11 @@ namespace Garnet.server
         /// <summary>
         /// Invoke the execution of a server-side Lua script.
         /// </summary>
-        /// <param name="count"></param>
-        /// <param name="scriptRunner"></param>
-        /// <returns></returns>
         private unsafe bool ExecuteScript(int count, LuaRunner scriptRunner)
         {
             try
             {
-                var scriptResult = scriptRunner.Run(count, parseState);
+                var scriptResult = scriptRunner.RunForParseState(count, parseState);
                 WriteObject(scriptResult);
             }
             catch (Exception ex)
