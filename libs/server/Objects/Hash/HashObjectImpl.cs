@@ -298,6 +298,16 @@ namespace Garnet.server
             }
         }
 
+        private void HashCollect(ref ObjectInput input, byte* output)
+        {
+            var _output = (ObjectOutputHeader*)output;
+            *_output = default;
+
+            DeleteExpiredItems();
+
+            _output->result1 = 1;
+        }
+
         private void HashGetKeysOrValues(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             var count = Count();

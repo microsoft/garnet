@@ -3136,6 +3136,165 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task HExpireACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HEXPIRE",
+                [DoHExpireAsync]
+            );
+
+            static async Task DoHExpireAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HEXPIRE", ["foo", "1", "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HPExpireACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HPEXPIRE",
+                [DoHPExpireAsync]
+            );
+
+            static async Task DoHPExpireAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HPEXPIRE", ["foo", "1", "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HExpireAtACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HEXPIREAT",
+                [DoHExpireAtAsync]
+            );
+
+            static async Task DoHExpireAtAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HEXPIREAT", ["foo", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds().ToString(), "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HPExpireAtACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HPEXPIREAT",
+                [DoHPExpireAtAsync]
+            );
+
+            static async Task DoHPExpireAtAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HPEXPIREAT", ["foo", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds().ToString(), "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HExpireTimeACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HEXPIRETIME",
+                [DoHExpireTimeAsync]
+            );
+
+            static async Task DoHExpireTimeAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HEXPIRETIME", ["foo", "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HPExpireTimeACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HPEXPIRETIME",
+                [DoHPExpireTimeAsync]
+            );
+
+            static async Task DoHPExpireTimeAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HPEXPIRETIME", ["foo", "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HTTLACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HTTL",
+                [DoHETTLAsync]
+            );
+
+            static async Task DoHETTLAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HTTL", ["foo", "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HPTTLACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HPTTL",
+                [DoHPETTLAsync]
+            );
+
+            static async Task DoHPETTLAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HPTTL", ["foo", "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HPersistACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HPERSIST",
+                [DoHPersistAsync]
+            );
+
+            static async Task DoHPersistAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HPERSIST", ["foo", "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HCollectACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HCOLLECT",
+                [DoHCollectAsync]
+            );
+
+            static async Task DoHCollectAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("HCOLLECT", ["foo"]);
+                ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
         public async Task HDelACLsAsync()
         {
             await CheckCommandsAsync(

@@ -18,7 +18,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private void ProcessAdminCommands(RespCommand command)
+        private void ProcessAdminCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi) where TGarnetApi : IGarnetApi
         {
             /*
              * WARNING: Here is safe to add @slow commands (check how containsSlowCommand is used).
@@ -49,6 +49,7 @@ namespace Garnet.server
                 RespCommand.BGSAVE => NetworkBGSAVE(),
                 RespCommand.COMMITAOF => NetworkCOMMITAOF(),
                 RespCommand.FORCEGC => NetworkFORCEGC(),
+                RespCommand.HCOLLECT => NetworkHCOLLECT(ref storageApi),
                 RespCommand.MONITOR => NetworkMonitor(),
                 RespCommand.ACL_DELUSER => NetworkAclDelUser(),
                 RespCommand.ACL_LIST => NetworkAclList(),
@@ -563,6 +564,36 @@ namespace Garnet.server
             GC.Collect(generation, GCCollectionMode.Forced, true);
             while (!RespWriteUtils.WriteSimpleString("GC completed"u8, ref dcurr, dend))
                 SendAndReset();
+
+            return true;
+        }
+
+        private bool NetworkHCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.HCOLLECT));
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
+            var input = new ObjectInput(header);
+
+            var status = storageApi.HashCollect(key, ref input);
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
 
             return true;
         }

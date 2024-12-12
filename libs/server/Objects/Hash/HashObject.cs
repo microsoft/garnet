@@ -227,6 +227,9 @@ namespace Garnet.server
                     case HashOperation.HRANDFIELD:
                         HashRandomField(ref input, ref output);
                         break;
+                    case HashOperation.HCOLLECT:
+                        HashCollect(ref input, _output);
+                        break;
                     case HashOperation.HSCAN:
                         if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
                                 out var patternLength, out var limitCount, out bool isNoValue, out var error))

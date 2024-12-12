@@ -130,8 +130,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual("2021", result[1].ToString());
         }
 
-
-
         [Test]
         public void CanDelSingleField()
         {
@@ -1159,6 +1157,48 @@ namespace Garnet.test
             ClassicAssert.AreEqual("StringValue", data[0].Value.ToString());
             ClassicAssert.AreEqual("Field2", data[1].Name.ToString());
             ClassicAssert.AreEqual("1", data[1].Value.ToString());
+        }
+
+        [Test]
+        public void CanDoHashExpireWithNonExistKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = db.Execute("HEXPIRE", "myhash", "3", "FIELDS", "1", "field1");
+            var results = (RedisResult[])result;
+            ClassicAssert.AreEqual(1, results.Length);
+            ClassicAssert.AreEqual(-2, (long)results[0]);
+        }
+
+        [Test]
+        public async Task CanDoHashCollect()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "value3"), new HashEntry("field4", "value4"), new HashEntry("field5", "value5"), new HashEntry("field6", "value6")]);
+
+            var result = db.Execute("HEXPIRE", "myhash", "1", "FIELDS", "2", "field1", "field2");
+            var results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(1, (long)results[1]);
+
+            result = db.Execute("HEXPIRE", "myhash", "2", "FIELDS", "2", "field3", "field4");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(1, (long)results[1]);
+
+            await Task.Delay(1000);
+
+            var collectResult = (string)db.Execute("HCOLLECT", "myhash");
+            ClassicAssert.AreEqual("OK", collectResult);
+
+            await Task.Delay(1000);
+
+            collectResult = (string)db.Execute("HCOLLECT", "*");
+            ClassicAssert.AreEqual("OK", collectResult);
         }
 
         [Test]

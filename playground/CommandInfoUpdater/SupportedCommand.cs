@@ -136,6 +136,7 @@ namespace CommandInfoUpdater
             new("GETDEL", RespCommand.GETDEL),
             new("GETRANGE", RespCommand.GETRANGE),
             new("GETSET", RespCommand.GETSET),
+            new("HCOLLECT", RespCommand.HCOLLECT),
             new("HDEL", RespCommand.HDEL),
             new("HELLO", RespCommand.HELLO),
             new("HEXISTS", RespCommand.HEXISTS),

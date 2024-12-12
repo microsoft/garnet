@@ -659,6 +659,15 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteArrayLength(numFields, ref dcurr, dend))
+                        SendAndReset();
+                    for (var i = 0; i < numFields; i++)
+                    {
+                        while (!RespWriteUtils.WriteInteger(-2, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    break;
                 default:
                     ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
@@ -740,6 +749,15 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteArrayLength(numFields, ref dcurr, dend))
+                        SendAndReset();
+                    for (var i = 0; i < numFields; i++)
+                    {
+                        while (!RespWriteUtils.WriteInteger(-2, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    break;
                 default:
                     ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
@@ -792,6 +810,15 @@ namespace Garnet.server
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteArrayLength(numFields, ref dcurr, dend))
+                        SendAndReset();
+                    for (var i = 0; i < numFields; i++)
+                    {
+                        while (!RespWriteUtils.WriteInteger(-2, ref dcurr, dend))
+                            SendAndReset();
+                    }
                     break;
                 default:
                     ProcessOutputWithHeader(outputFooter.spanByteAndMemory);

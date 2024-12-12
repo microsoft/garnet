@@ -1562,6 +1562,16 @@
     "SubCommands": null
   },
   {
+    "Command": "HCOLLECT",
+    "Name": "HCOLLECT",
+    "Arity": 1,
+    "Flags": "Admin, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Write, Admin, Garnet"
+  },
+  {
     "Command": "HDEL",
     "Name": "HDEL",
     "Arity": -3,

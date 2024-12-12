@@ -2752,6 +2752,12 @@
     ]
   },
   {
+    "Command": "HCOLLECT",
+    "Name": "HCOLLECT",
+    "Summary": "Manually trigger deletion of expired fields from memory",
+    "Group": "Hash"
+  },
+  {
     "Command": "HDEL",
     "Name": "HDEL",
     "Summary": "Deletes one or more fields and their values from a hash. Deletes the hash if no fields remain.",

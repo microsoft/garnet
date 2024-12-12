@@ -585,7 +585,7 @@ namespace Garnet.server
         {
             var innerInput = new ObjectInput(input.header, ref input.parseState, arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0);
 
-            return RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref outputFooter);
+            return ReadObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref outputFooter);
         }
 
         /// <summary>
@@ -600,5 +600,36 @@ namespace Garnet.server
         public GarnetStatus HashPersist<TObjectContext>(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
             => RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
+
+        public GarnetStatus HashCollect<TObjectContext>(ArgSlice key, ref ObjectInput input, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            if (key.ReadOnlySpan.SequenceEqual("*"u8))
+            {
+                long cursor = 0;
+                long storeCursor = 0;
+
+                // Scan all hash keys in batches
+                do
+                {
+                    if (!DbScan(key, true, cursor, out storeCursor, out var hashKeys, 100, CmdStrings.HASH))
+                    {
+                        return GarnetStatus.NOTFOUND;
+                    }
+
+                    // Process each hash key
+                    foreach (var hashKey in hashKeys)
+                    {
+                        RMWObjectStoreOperation(hashKey, ref input, out _, ref objectContext);
+                    }
+
+                    cursor = storeCursor;
+                } while (storeCursor != 0);
+
+                return GarnetStatus.OK;
+            }
+
+            return RMWObjectStoreOperation(key.ToArray(), ref input, out _, ref objectContext);
+        }
     }
 }

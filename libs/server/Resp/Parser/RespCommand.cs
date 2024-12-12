@@ -107,6 +107,7 @@ namespace Garnet.server
         GETDEL,
         GETEX,
         GETSET,
+        HCOLLECT,
         HDEL,
         HEXPIRE,
         HPEXPIRE,
@@ -2098,6 +2099,10 @@ namespace Garnet.server
                     success = false;
                     return RespCommand.NONE;
                 }
+            }
+            else if (command.SequenceEqual(CmdStrings.HCOLLECT))
+            {
+                return RespCommand.HCOLLECT;
             }
             else
             {

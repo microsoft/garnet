@@ -993,6 +993,13 @@ namespace Garnet.server
         /// <returns>The status of the operation.</returns>
         GarnetStatus HashPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
+        /// <summary>
+        /// Delete already expired fields from the hash.
+        /// </summary>
+        /// <param name="key">The key of the hash.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus HashCollect(ArgSlice key, ref ObjectInput input);
+
         #endregion
 
         #region BitMaps Methods

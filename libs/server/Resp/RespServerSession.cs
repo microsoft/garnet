@@ -758,7 +758,7 @@ namespace Garnet.server
                 RespCommand.SCRIPT => TrySCRIPT(),
                 RespCommand.EVAL => TryEVAL(),
                 RespCommand.EVALSHA => TryEVALSHA(),
-                _ => Process(command)
+                _ => Process(command, ref storageApi)
             };
 
             bool NetworkCLIENTID()
@@ -806,9 +806,9 @@ namespace Garnet.server
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            bool Process(RespCommand command)
+            bool Process(RespCommand command, ref TGarnetApi storageApi)
             {
-                ProcessAdminCommands(command);
+                ProcessAdminCommands(command, ref storageApi);
                 return true;
             }
 
