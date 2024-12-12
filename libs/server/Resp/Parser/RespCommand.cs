@@ -58,6 +58,7 @@ namespace Garnet.server
         SCARD,
         SDIFF,
         SINTER,
+        SINTERCARD,
         SISMEMBER,
         SMEMBERS,
         SMISMEMBER,
@@ -124,6 +125,7 @@ namespace Garnet.server
         BRPOP,
         BLMOVE,
         BRPOPLPUSH,
+        BLMPOP,
         MIGRATE,
         MSET,
         MSETNX,
@@ -159,8 +161,10 @@ namespace Garnet.server
         ZADD,
         ZDIFFSTORE,
         ZINCRBY,
+        ZMPOP,
         ZPOPMAX,
         ZPOPMIN,
+        ZRANGESTORE,
         ZREM,
         ZREMRANGEBYLEX,
         ZREMRANGEBYRANK,
@@ -201,6 +205,9 @@ namespace Garnet.server
         CLIENT_INFO,
         CLIENT_LIST,
         CLIENT_KILL,
+        CLIENT_GETNAME,
+        CLIENT_SETNAME,
+        CLIENT_SETINFO,
 
         MONITOR,
         MODULE,
@@ -352,6 +359,9 @@ namespace Garnet.server
             RespCommand.CLIENT_INFO,
             RespCommand.CLIENT_LIST,
             RespCommand.CLIENT_KILL,
+            RespCommand.CLIENT_GETNAME,
+            RespCommand.CLIENT_SETNAME,
+            RespCommand.CLIENT_SETINFO,
             // Command
             RespCommand.COMMAND,
             RespCommand.COMMAND_COUNT,
@@ -1036,6 +1046,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.ZSCAN;
                                         }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZMPOP\r\n"u8))
+                                        {
+                                            return RespCommand.ZMPOP;
+                                        }
                                         break;
                                 }
                                 break;
@@ -1047,6 +1061,10 @@ namespace Garnet.server
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BLMOVE\r\n"u8))
                                         {
                                             return RespCommand.BLMOVE;
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BLMPOP\r\n"u8))
+                                        {
+                                            return RespCommand.BLMPOP;
                                         }
                                         break;
                                     case 'D':
@@ -1364,6 +1382,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.SMISMEMBER;
                                 }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nSINT"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("ERCARD\r\n"u8))
+                                {
+                                    return RespCommand.SINTERCARD;
+                                }
                                 else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nZDIF"u8) && *(uint*)(ptr + 9) == MemoryMarshal.Read<uint>("FSTORE\r\n"u8))
                                 {
                                     return RespCommand.ZDIFFSTORE;
@@ -1406,6 +1428,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nINCRB"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("YFLOAT\r\n"u8))
                                 {
                                     return RespCommand.INCRBYFLOAT;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZRANG"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("ESTORE\r\n"u8))
+                                {
+                                    return RespCommand.ZRANGESTORE;
                                 }
                                 break;
 
@@ -1588,6 +1614,18 @@ namespace Garnet.server
                     else if (subCommand.SequenceEqual(CmdStrings.KILL))
                     {
                         return RespCommand.CLIENT_KILL;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.GETNAME))
+                    {
+                        return RespCommand.CLIENT_GETNAME;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETNAME))
+                    {
+                        return RespCommand.CLIENT_SETNAME;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETINFO))
+                    {
+                        return RespCommand.CLIENT_SETINFO;
                     }
                 }
             }

@@ -61,7 +61,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [GETBIT](analytics.md#getbit) | ➕ |  |
 |  | [SETBIT](analytics.md#setbit) | ➕ |  |
 | <span id="client">**CLIENT**</span> | CACHING | ➖ |  |
-|  | GETNAME | ➖ |  |
+|  | [GETNAME](client.md#client-getname) | ➕ |  |
 |  | GETREDIR | ➖ |  |
 |  | HELP | ➖ |  |
 |  | [ID](client.md#client-id) | ➕ |  |
@@ -72,8 +72,8 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | NO-TOUCH | ➖ |  |
 |  | PAUSE | ➖ |  |
 |  | REPLY | ➖ |  |
-|  | SETINFO | ➖ |  |
-|  | SETNAME | ➖ |  |
+|  | [SETINFO](client.md#client-setinfo) | ➕ |  |
+|  | [SETNAME](client.md#client-setname) | ➕ |  |
 |  | TRACKING | ➖ |  |
 |  | TRACKINGINFO | ➖ |  |
 |  | UNBLOCK | ➖ |  |
@@ -209,7 +209,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | LATEST | ➖ |  |
 |  | [RESET](server.md#latency-reset) | ➕ |  |
 | <span id="list">**LIST**</span> | [BLMOVE](data-structures.md#blmove) | ➕ |  |
-|  | BLMPOP | ➖ |  |
+|  | [BLMPOP](data-structures.md#blmpop) | ➕ |  |
 |  | [BLPOP](data-structures.md#blpop) | ➕ |  |
 |  | [BRPOP](data-structures.md#brpop) | ➕ |  |
 |  | [BRPOPLPUSH](data-structures.md#brpoplpush) | ➕ | (Deprecated) |
@@ -300,7 +300,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SDIFFSTORE](data-structures.md#sdiffstore) | ➕ |  |
 |  | [SINTER](data-structures.md#sinter) | ➕ |  |
 |  | [SINTERSTORE](data-structures.md#sinterstore) | ➕ |  |
-|  | SINTERCARD | ➖ |  |
+|  | [SINTERCARD](data-structures.md#sintercard) | ➕ |  |
 |  | [SISMEMBER](data-structures.md#sismember) | ➕ |  |
 |  | [SMEMBERS](data-structures.md#smembers) | ➕ |  |
 |  | [SMISMEMBER](data-structures.md#smismember) | ➕ |  |
@@ -331,7 +331,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | ZINTERCARD | ➖ |  |
 |  | ZINTERSTORE | ➖ |  |
 |  | [ZLEXCOUNT](data-structures.md#zlexcount) | ➕ |  |
-|  | ZMPOP | ➖ |  |
+|  | [ZMPOP](data-structures.md#zmpop) | ➕ |  |
 |  | [ZMSCORE](data-structures.md#zmscore) | ➕ |  |
 |  | [ZPOPMAX](data-structures.md#zpopmax) | ➕ |  |
 |  | [ZPOPMIN](data-structures.md#zpopmin) | ➕ |  |
@@ -339,7 +339,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZRANGE](data-structures.md#zrange) | ➕ |  |
 |  | [ZRANGEBYLEX](data-structures.md#zrangebylex) | ➕ | (Deprecated) |
 |  | [ZRANGEBYSCORE](data-structures.md#zrangebyscore) | ➕ | (Deprecated) |
-|  | ZRANGESTORE | ➖ |  |
+|  | [ZRANGESTORE](data-structures.md#zrangestore) | ➕ |  |
 |  | [ZRANK](data-structures.md#zrank) | ➕ |  |
 |  | [ZREM](data-structures.md#zrem) | ➕ |  |
 |  | [ZREMRANGEBYLEX](data-structures.md#zremrangebylex) | ➕ |  |
