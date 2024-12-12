@@ -162,6 +162,8 @@ namespace Garnet.server
 
         int keyLength, argvLength;
 
+        int curStackSize, curStackTop;
+
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
@@ -185,6 +187,7 @@ namespace Garnet.server
             // TODO: custom allocator?
             state = new Lua();
             AssertLuaStackEmpty();
+            curStackTop = 0;
 
             ForceGrowLuaStack(NeededStackSize);
 
@@ -280,25 +283,20 @@ namespace Garnet.server
             // Register garnet_call in global namespace
             state.Register("garnet_call", garnetCall);
 
-            var sandboxEnvType = state.GetGlobal("sandbox_env");
-            Debug.Assert(sandboxEnvType == LuaType.Table, "Unexpected sandbox_env type");
-            sandboxEnvRegistryIndex = state.Ref(LuaRegistry.Index);
+            CheckedGetGlobal(LuaType.Table, "sandbox_env");
+            sandboxEnvRegistryIndex = CheckedRef();
 
-            var keyTableType = state.GetGlobal("KEYS");
-            Debug.Assert(keyTableType == LuaType.Table, "Unexpected KEYS type");
-            keysTableRegistryIndex = state.Ref(LuaRegistry.Index);
+            CheckedGetGlobal(LuaType.Table, "KEYS");
+            keysTableRegistryIndex = CheckedRef();
 
-            var argvTableType = state.GetGlobal("ARGV");
-            Debug.Assert(argvTableType == LuaType.Table, "Unexpected ARGV type");
-            argvTableRegistryIndex = state.Ref(LuaRegistry.Index);
+            CheckedGetGlobal(LuaType.Table, "ARGV");
+            argvTableRegistryIndex = CheckedRef();
 
-            var loadSandboxedType = state.GetGlobal("load_sandboxed");
-            Debug.Assert(loadSandboxedType == LuaType.Function, "Unexpected load_sandboxed type");
-            loadSandboxedRegistryIndex = state.Ref(LuaRegistry.Index);
+            CheckedGetGlobal(LuaType.Function, "load_sandboxed");
+            loadSandboxedRegistryIndex = CheckedRef();
 
-            var resetKeysAndArgvType = state.GetGlobal("reset_keys_and_argv");
-            Debug.Assert(resetKeysAndArgvType == LuaType.Function, "Unexpected reset_keys_and_argv type");
-            resetKeysAndArgvRegistryIndex = state.Ref(LuaRegistry.Index);
+            CheckedGetGlobal(LuaType.Function, "reset_keys_and_argv");
+            resetKeysAndArgvRegistryIndex = CheckedRef();
 
             // Commonly used strings, register them once so we don't have to copy them over each time we need them
             okConstStringRegisteryIndex = ConstantStringToRegistery(NeededStackSize, CmdStrings.LUA_OK);
@@ -330,7 +328,7 @@ namespace Garnet.server
             AssertLuaStackEmpty();
 
             CheckedPushBuffer(top, str);
-            return state.Ref(LuaRegistry.Index);
+            return CheckedRef();
         }
 
         /// <summary>
@@ -375,19 +373,21 @@ namespace Garnet.server
             Debug.Assert(functionRegistryIndex == -1, "Shouldn't compile multiple times");
 
             AssertLuaStackEmpty();
+            curStackTop = 0;
 
             try
             {
                 ForceGrowLuaStack(NeededStackSpace);
 
                 CheckedPushNumber(NeededStackSpace, loadSandboxedRegistryIndex);
-                var loadRes = state.GetTable(LuaRegistry.Index);
-                Debug.Assert(loadRes == LuaType.Function, "Unexpected load_sandboxed type");
+                CheckedGetTable(LuaType.Function, (int)LuaRegistry.Index);
 
                 CheckedPushBuffer(NeededStackSpace, source.Span);
-                state.Call(1, -1);  // Multiple returns allowed
+                CheckedCall(1, -1); // Multiple returns allowed
 
                 var numRets = state.GetTop();
+                curStackTop = numRets;
+
                 if (numRets == 0)
                 {
                     while (!RespWriteUtils.WriteError("Shouldn't happen, no returns from load_sandboxed"u8, ref resp.BufferCur, resp.BufferEnd))
@@ -407,23 +407,23 @@ namespace Garnet.server
                         return;
                     }
 
-                    functionRegistryIndex = state.Ref(LuaRegistry.Index);
+                    functionRegistryIndex = CheckedRef();
                 }
                 else if (numRets == 2)
                 {
-                    var error = state.CheckString(2);
+                    NativeMethods.CheckBuffer(state.Handle, 2, out var errorBuf);
 
-                    var errStr = $"Compilation error: {error}";
+                    var errStr = $"Compilation error: {Encoding.UTF8.GetString(errorBuf)}";
                     while (!RespWriteUtils.WriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
                         resp.SendAndReset();
 
-                    state.Pop(2);
+                    CheckedPop(2);
 
                     return;
                 }
                 else
                 {
-                    state.Pop(numRets);
+                    CheckedPop(numRets);
 
                     throw new GarnetException($"Unexpected error compiling, got too many replies back: reply count = {numRets}");
                 }
@@ -500,9 +500,13 @@ namespace Garnet.server
         {
             const int AdditionalStackSpace = 1;
 
+            // This is LUA_MINSTACK, which is 20
+            curStackSize = 20;
+            curStackTop = state.GetTop();
+
             try
             {
-                var argCount = state.GetTop();
+                var argCount = curStackTop;
 
                 if (argCount == 0)
                 {
@@ -587,7 +591,7 @@ namespace Garnet.server
                         //
                         // Redis nominally converts numbers to integers, but in this case just ToStrings things
                         NativeMethods.KnownStringToBuffer(state.Handle, argIx, out var span);
-                        
+
                         // Span remains pinned so long as we don't pop the stack
                         scratchBufferManager.WriteArgument(span);
                     }
@@ -602,7 +606,7 @@ namespace Garnet.server
                 // Once the request is formatted, we can release all the args on the Lua stack
                 //
                 // This keeps the stack size down for processing the response
-                state.Pop(argCount);
+                CheckedPop(argCount);
 
                 _ = respServerSession.TryConsumeMessages(request.ptr, request.length);
 
@@ -617,6 +621,7 @@ namespace Garnet.server
 
                 // Clear the stack
                 state.SetTop(0);
+                curStackTop = 0;
 
                 ForceGrowLuaStack(1);
 
@@ -711,8 +716,7 @@ namespace Garnet.server
                     if (RespReadUtils.ReadUnsignedArrayLength(out var itemCount, ref ptr, ptr + length))
                     {
                         // Create the new table
-                        state.CreateTable(itemCount, 0);
-                        Debug.Assert(state.GetTop() == 1, "New table should be at top of stack");
+                        CheckedCreateTable(itemCount, 0);
 
                         for (var itemIx = 0; itemIx < itemCount; itemIx++)
                         {
@@ -732,7 +736,7 @@ namespace Garnet.server
                                 else
                                 {
                                     // Error, drop the table we allocated
-                                    state.Pop(1);
+                                    CheckedPop(1);
                                     goto default;
                                 }
                             }
@@ -744,10 +748,9 @@ namespace Garnet.server
                             }
 
                             // Stack now has table and value at itemIx on it
-                            state.RawSetInteger(1, itemIx + 1);
+                            CheckedRawSetInteger(1, itemIx + 1);
                         }
 
-                        Debug.Assert(state.GetTop() == 1, "Only the table should be on the stack");
                         return 1;
                     }
                     goto default;
@@ -783,8 +786,7 @@ namespace Garnet.server
             {
                 // Get KEYS on the stack
                 CheckedPushNumber(NeededStackSize, keysTableRegistryIndex);
-                var loadedType = state.RawGet(LuaRegistry.Index);
-                Debug.Assert(loadedType == LuaType.Table, "Unexpected type loaded when expecting KEYS");
+                CheckedRawGet(LuaType.Table, (int)LuaRegistry.Index);
 
                 for (var i = 0; i < nKeys; i++)
                 {
@@ -800,13 +802,13 @@ namespace Garnet.server
                     // Equivalent to KEYS[i+1] = key
                     CheckedPushNumber(NeededStackSize, i + 1);
                     CheckedPushBuffer(NeededStackSize, key.ReadOnlySpan);
-                    state.RawSet(1);
+                    CheckedRawSet(1);
 
                     offset++;
                 }
 
                 // Remove KEYS from the stack
-                state.Pop(1);
+                CheckedPop(1);
 
                 count -= nKeys;
             }
@@ -815,8 +817,7 @@ namespace Garnet.server
             {
                 // Get ARGV on the stack
                 CheckedPushNumber(NeededStackSize, argvTableRegistryIndex);
-                var loadedType = state.RawGet(LuaRegistry.Index);
-                Debug.Assert(loadedType == LuaType.Table, "Unexpected type loaded when expecting ARGV");
+                CheckedRawGet(LuaType.Table, (int)LuaRegistry.Index);
 
                 for (var i = 0; i < count; i++)
                 {
@@ -825,13 +826,13 @@ namespace Garnet.server
                     // Equivalent to ARGV[i+1] = argv
                     CheckedPushNumber(NeededStackSize, i + 1);
                     CheckedPushBuffer(NeededStackSize, argv.ReadOnlySpan);
-                    state.RawSet(1);
+                    CheckedRawSet(1);
 
                     offset++;
                 }
 
                 // Remove ARGV from the stack
-                state.Pop(1);
+                CheckedPop(1);
             }
 
             AssertLuaStackEmpty();
@@ -985,12 +986,12 @@ namespace Garnet.server
 
             if (keyLength > nKeys || argvLength > nArgs)
             {
-                var getRes = state.RawGetInteger(LuaRegistry.Index, resetKeysAndArgvRegistryIndex);
-                Debug.Assert(getRes == LuaType.Function, "Unexpected type when loading reset_keys_and_argv");
+                CheckedRawGetInteger(LuaType.Function, (int)LuaRegistry.Index, resetKeysAndArgvRegistryIndex);
 
                 CheckedPushNumber(NeededStackSize, nKeys + 1);
                 CheckedPushNumber(NeededStackSize, nArgs + 1);
-                var resetRes = state.PCall(2, 0, 0);
+
+                var resetRes = CheckedPCall(2, 0);
                 Debug.Assert(resetRes == LuaStatus.OK, "Resetting should never fail");
             }
 
@@ -1017,8 +1018,7 @@ namespace Garnet.server
             {
                 // get KEYS on the stack
                 CheckedPushNumber(NeededStackSize, keysTableRegistryIndex);
-                var loadRes = state.GetTable(LuaRegistry.Index);
-                Debug.Assert(loadRes == LuaType.Table, "Unexpected type for KEYS");
+                CheckedGetTable(LuaType.Table, (int)LuaRegistry.Index);
 
                 for (var i = 0; i < keys.Length; i++)
                 {
@@ -1026,18 +1026,17 @@ namespace Garnet.server
                     var key = keys[i];
                     PrepareString(key, scratchBufferManager, out var encoded);
                     CheckedPushBuffer(NeededStackSize, encoded);
-                    state.RawSetInteger(1, i + 1);
+                    CheckedRawSetInteger(1, i + 1);
                 }
 
-                state.Pop(1);
+                CheckedPop(1);
             }
 
             if (argv != null)
             {
                 // get ARGV on the stack
                 CheckedPushNumber(NeededStackSize, argvTableRegistryIndex);
-                var loadRes = state.GetTable(LuaRegistry.Index);
-                Debug.Assert(loadRes == LuaType.Table, "Unexpected type for ARGV");
+                CheckedGetTable(LuaType.Table, (int)LuaRegistry.Index);
 
                 for (var i = 0; i < argv.Length; i++)
                 {
@@ -1045,10 +1044,10 @@ namespace Garnet.server
                     var arg = argv[i];
                     PrepareString(arg, scratchBufferManager, out var encoded);
                     CheckedPushBuffer(NeededStackSize, encoded);
-                    state.RawSetInteger(1, i + 1);
+                    CheckedRawSetInteger(1, i + 1);
                 }
 
-                state.Pop(1);
+                CheckedPop(1);
             }
 
             AssertLuaStackEmpty();
@@ -1084,17 +1083,16 @@ namespace Garnet.server
                 ForceGrowLuaStack(NeededStackSize);
 
                 CheckedPushNumber(NeededStackSize, functionRegistryIndex);
-                var loadRes = state.GetTable(LuaRegistry.Index);
-                Debug.Assert(loadRes == LuaType.Function, "Unexpected type for function to invoke");
+                CheckedGetTable(LuaType.Function, (int)LuaRegistry.Index);
 
-                var callRes = state.PCall(0, 1, 0);
+                var callRes = CheckedPCall(0, 1);
                 if (callRes == LuaStatus.OK)
                 {
                     // The actual call worked, handle the response
 
-                    if (state.GetTop() == 0)
+                    if (curStackTop == 0)
                     {
-                        WriteNull(state, 0, ref resp);
+                        WriteNull(this, ref resp);
                         return;
                     }
 
@@ -1103,22 +1101,22 @@ namespace Garnet.server
 
                     if (isNullish)
                     {
-                        WriteNull(state, 1, ref resp);
+                        WriteNull(this, ref resp);
                         return;
                     }
                     else if (retType == LuaType.Number)
                     {
-                        WriteNumber(state, 1, ref resp);
+                        WriteNumber(this, ref resp);
                         return;
                     }
                     else if (retType == LuaType.String)
                     {
-                        WriteString(state, 1, ref resp);
+                        WriteString(this, ref resp);
                         return;
                     }
                     else if (retType == LuaType.Boolean)
                     {
-                        WriteBoolean(state, 1, ref resp);
+                        WriteBoolean(this, ref resp);
                         return;
                     }
                     else if (retType == LuaType.Table)
@@ -1130,38 +1128,36 @@ namespace Garnet.server
                         // If the key err is in there, we need to short circuit 
                         CheckedPushConstantString(NeededStackSize, errConstStringRegistryIndex);
 
-                        var errType = state.GetTable(1);
+                        var errType = CheckedGetTable(null, 1);
                         if (errType == LuaType.String)
                         {
-                            WriteError(state, 2, ref resp);
+                            WriteError(this, ref resp);
 
                             // Remove table from stack
-                            state.Pop(1);
+                            CheckedPop(1);
 
                             return;
                         }
 
                         // Remove whatever we read from the table under the "err" key
-                        state.Pop(1);
+                        CheckedPop(1);
 
                         // Map this table to an array
-                        var maxStackDepth = NeededStackSize;
-                        WriteArray(state, 1, ref resp, ref maxStackDepth);
+                        WriteArray(this, ref resp);
                     }
                 }
                 else
                 {
                     // An error was raised
 
-                    var stackTop = state.GetTop();
-                    if (stackTop == 0)
+                    if (curStackTop == 0)
                     {
                         while (!RespWriteUtils.WriteError("ERR An error occurred while invoking a Lua script"u8, ref resp.BufferCur, resp.BufferEnd))
                             resp.SendAndReset();
 
                         return;
                     }
-                    else if (stackTop == 1)
+                    else if (curStackTop == 1)
                     {
                         if (NativeMethods.CheckBuffer(state.Handle, 1, out var errBuf))
                         {
@@ -1169,18 +1165,19 @@ namespace Garnet.server
                                 resp.SendAndReset();
                         }
 
-                        state.Pop(1);
+                        CheckedPop(1);
 
                         return;
                     }
                     else
                     {
-                        logger?.LogError("Got an unexpected number of values back from a pcall error {stackTop} {callRes}", stackTop, callRes);
+                        logger?.LogError("Got an unexpected number of values back from a pcall error {callRes}", callRes);
 
                         while (!RespWriteUtils.WriteError("ERR Unexpected error response"u8, ref resp.BufferCur, resp.BufferEnd))
                             resp.SendAndReset();
 
-                        state.Pop(stackTop);
+                        state.SetTop(0);
+                        curStackTop = 0;
 
                         return;
                     }
@@ -1192,60 +1189,54 @@ namespace Garnet.server
             }
 
             // Write a null RESP value, remove the top value on the stack if there is one
-            static void WriteNull(Lua state, int top, ref TResponse resp)
+            static void WriteNull(LuaRunner runner, ref TResponse resp)
             {
-                Debug.Assert(state.GetTop() == top, "Lua stack was not expected size");
-
                 while (!RespWriteUtils.WriteNull(ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
 
                 // The stack _could_ be empty if we're writing a null, so check before popping
-                if (top != 0)
+                if (runner.curStackTop != 0)
                 {
-                    state.Pop(1);
+                    runner.CheckedPop(1);
                 }
             }
 
             // Writes the number on the top of the stack, removes it from the stack
-            static void WriteNumber(Lua state, int top, ref TResponse resp)
+            static void WriteNumber(LuaRunner runner, ref TResponse resp)
             {
-                Debug.Assert(state.GetTop() == top, "Lua stack was not expected size");
-                Debug.Assert(state.Type(top) == LuaType.Number, "Number was not on top of stack");
+                Debug.Assert(runner.state.Type(runner.curStackTop) == LuaType.Number, "Number was not on top of stack");
 
                 // Redis unconditionally converts all "number" replies to integer replies so we match that
                 // 
                 // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                var num = (long)state.CheckNumber(top);
+                var num = (long)runner.state.CheckNumber(runner.curStackTop);
 
                 while (!RespWriteUtils.WriteInteger(num, ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
 
-                state.Pop(1);
+                runner.CheckedPop(1);
             }
 
             // Writes the string on the top of the stack, removes it from the stack
-            static void WriteString(Lua state, int top, ref TResponse resp)
+            static void WriteString(LuaRunner runner, ref TResponse resp)
             {
-                Debug.Assert(state.GetTop() == top, "Lua stack was not expected size");
-
-                NativeMethods.KnownStringToBuffer(state.Handle, top, out var buf);
+                NativeMethods.KnownStringToBuffer(runner.state.Handle, runner.curStackTop, out var buf);
 
                 while (!RespWriteUtils.WriteBulkString(buf, ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
 
-                state.Pop(1);
+                runner.CheckedPop(1);
             }
 
             // Writes the boolean on the top of the stack, removes it from the stack
-            static void WriteBoolean(Lua state, int top, ref TResponse resp)
+            static void WriteBoolean(LuaRunner runner, ref TResponse resp)
             {
-                Debug.Assert(state.GetTop() == top, "Lua stack was not expected size");
-                Debug.Assert(state.Type(top) == LuaType.Boolean, "Boolean was not on top of stack");
+                Debug.Assert(runner.state.Type(runner.curStackTop) == LuaType.Boolean, "Boolean was not on top of stack");
 
                 // Redis maps Lua false to null, and Lua true to 1  this is strange, but documented
                 //
                 // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                if (state.ToBoolean(top))
+                if (runner.state.ToBoolean(runner.curStackTop))
                 {
                     while (!RespWriteUtils.WriteInteger(1, ref resp.BufferCur, resp.BufferEnd))
                         resp.SendAndReset();
@@ -1256,40 +1247,38 @@ namespace Garnet.server
                         resp.SendAndReset();
                 }
 
-                state.Pop(1);
+                runner.CheckedPop(1);
             }
 
             // Writes the string on the top of the stack out as an error, removes the string from the stack
-            static void WriteError(Lua state, int top, ref TResponse resp)
+            static void WriteError(LuaRunner runner, ref TResponse resp)
             {
-                Debug.Assert(state.GetTop() == top, "Lua stack was not expected size");
-
-                NativeMethods.KnownStringToBuffer(state.Handle, top, out var errBuff);
+                NativeMethods.KnownStringToBuffer(runner.state.Handle, runner.curStackTop, out var errBuff);
 
                 while (!RespWriteUtils.WriteError(errBuff, ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
 
-                state.Pop(1);
+                runner.CheckedPop(1);
             }
 
-            static void WriteArray(Lua state, int top, ref TResponse resp, ref int maxStackDepth)
+            static void WriteArray(LuaRunner runner, ref TResponse resp)
             {
                 // 1 for the table, 1 for the pending value
                 const int AdditonalNeededStackSize = 2;
 
-                Debug.Assert(state.GetTop() == top, "Lua stack was not expected size");
-                Debug.Assert(state.Type(top) == LuaType.Table, "Table was not on top of stack");
+                Debug.Assert(runner.state.Type(runner.curStackTop) == LuaType.Table, "Table was not on top of stack");
 
                 // Lua # operator - this MAY stop at nils, but isn't guaranteed to
                 // See: https://www.lua.org/manual/5.3/manual.html#3.4.7
-                var maxLen = state.Length(top);
+                var maxLen = runner.state.Length(runner.curStackTop);
 
+                // TODO: is it faster to punch a function in for this?
                 // Find the TRUE length by scanning for nils
                 var trueLen = 0;
                 for (trueLen = 0; trueLen < maxLen; trueLen++)
                 {
-                    var type = state.GetInteger(top, trueLen + 1);
-                    state.Pop(1);
+                    var type = runner.CheckedGetInteger(null, runner.curStackTop, trueLen + 1);
+                    runner.CheckedPop(1);
 
                     if (type == LuaType.Nil)
                     {
@@ -1300,84 +1289,357 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteArrayLength((int)trueLen, ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
 
-                var valueStackSlot = top + 1;
-
                 for (var i = 1; i <= trueLen; i++)
                 {
                     // Push item at index i onto the stack
-                    var type = state.GetInteger(top, i);
+                    var type = runner.CheckedGetInteger(null, runner.curStackTop, i);
 
                     switch (type)
                     {
                         case LuaType.String:
-                            WriteString(state, valueStackSlot, ref resp);
+                            WriteString(runner, ref resp);
                             break;
                         case LuaType.Number:
-                            WriteNumber(state, valueStackSlot, ref resp);
+                            WriteNumber(runner, ref resp);
                             break;
                         case LuaType.Boolean:
-                            WriteBoolean(state, valueStackSlot, ref resp);
+                            WriteBoolean(runner, ref resp);
                             break;
 
 
                         case LuaType.Table:
                             // For tables, we need to recurse - which means we need to check stack sizes again
-                            if (maxStackDepth < valueStackSlot + AdditonalNeededStackSize)
+                            if (runner.curStackSize < runner.curStackTop + AdditonalNeededStackSize)
                             {
                                 try
                                 {
-                                    ForceGrowLuaStack(state, AdditonalNeededStackSize);
-                                    maxStackDepth += AdditonalNeededStackSize;
+                                    runner.ForceGrowLuaStack(AdditonalNeededStackSize);
                                 }
                                 catch
                                 {
                                     // This is the only place we can raise an exception, cull the Stack
-                                    state.SetTop(0);
+                                    runner.state.SetTop(0);
+                                    runner.curStackTop = 0;
 
                                     throw;
                                 }
                             }
 
-                            WriteArray(state, valueStackSlot, ref resp, ref maxStackDepth);
+                            WriteArray(runner, ref resp);
 
                             break;
 
                         // All other Lua types map to nulls
                         default:
-                            WriteNull(state, valueStackSlot, ref resp);
+                            WriteNull(runner, ref resp);
                             break;
                     }
                 }
 
-                state.Pop(1);
+                runner.CheckedPop(1);
             }
         }
 
-        /// <summary>
-        /// Ensure there's enough space on the Lua stack for <paramref name="additionalCapacity"/> more items.
-        /// 
-        /// Throws if there is not.
-        /// 
-        /// Prefer using this to calling <see cref="Lua.CheckStack(int)"/> directly.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ForceGrowLuaStack(int additionalCapacity)
-        => ForceGrowLuaStack(state, additionalCapacity);
+        // TODO: I think we'd prefer all these helpers factor into their own file
 
         /// <summary>
         /// Ensure there's enough space on the Lua stack for <paramref name="additionalCapacity"/> more items.
         /// 
         /// Throws if there is not.
         /// 
-        /// Prefer using this to calling <see cref="Lua.CheckStack(int)"/> directly.
+        /// Maintains <see cref="curStackTop"/> to avoid unnecessary p/invokes.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void ForceGrowLuaStack(Lua state, int additionalCapacity)
+        private void ForceGrowLuaStack(int additionalCapacity)
         {
-            if (!state.CheckStack(additionalCapacity))
+            var availableSpace = curStackSize - curStackTop;
+
+            if (availableSpace >= additionalCapacity)
+            {
+                return;
+            }
+
+            var needed = additionalCapacity - availableSpace;
+            if (!state.CheckStack(needed))
             {
                 throw new GarnetException("Could not reserve additional capacity on the Lua stack");
             }
+
+            curStackSize += additionalCapacity;
+        }
+
+        /// <summary>
+        /// This should be used for all PushBuffer calls into Lua.
+        /// 
+        /// If the string is a constant, consider registering it in the constructor and using <see cref="CheckedPushConstantString"/> instead.
+        /// </summary>
+        /// <seealso cref="AssertLuaStackBelow"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedPushBuffer(int reservedCapacity, ReadOnlySpan<byte> buffer, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
+        {
+            AssertLuaStackBelow(reservedCapacity, file, method, line);
+
+            NativeMethods.PushBuffer(state.Handle, buffer);
+            curStackTop++;
+        }
+
+        /// <summary>
+        /// This should be used for all PushNil calls into Lua.
+        /// </summary>
+        /// <seealso cref="AssertLuaStackBelow"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedPushNil(int reservedCapacity, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
+        {
+            AssertLuaStackBelow(reservedCapacity, file, method, line);
+
+            state.PushNil();
+            curStackTop++;
+        }
+
+        /// <summary>
+        /// This should be used for all PushNumber calls into Lua.
+        /// </summary>
+        /// <seealso cref="AssertLuaStackBelow"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedPushNumber(int reservedCapacity, double number, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
+        {
+            AssertLuaStackBelow(reservedCapacity, file, method, line);
+
+            state.PushNumber(number);
+            curStackTop++;
+        }
+
+        /// <summary>
+        /// This should be used for all PushBoolean calls into Lua.
+        /// </summary>
+        /// <seealso cref="AssertLuaStackBelow"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedPushBoolean(int reservedCapacity, bool b, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
+        {
+            AssertLuaStackBelow(reservedCapacity, file, method, line);
+
+            state.PushBoolean(b);
+            curStackTop++;
+        }
+
+        /// <summary>
+        /// This should be used for all Pop calls into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> to minimize p/invoke calls.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedPop(int num)
+        {
+            state.Pop(num);
+            curStackTop -= num;
+
+            AssertLuaStackExpected();
+        }
+
+        /// <summary>
+        /// This should be used for all Calls into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="curStackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedCall(int args, int rets)
+        {
+            var oldStackTop = curStackTop;
+            state.Call(args, rets);
+
+            if (rets < 0)
+            {
+                curStackTop = state.GetTop();
+            }
+            else
+            {
+                curStackTop = oldStackTop - (args + 1) + rets;
+            }
+
+            AssertLuaStackExpected();
+        }
+
+        /// <summary>
+        /// This should be used for all PCalls into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="curStackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private LuaStatus CheckedPCall(int args, int rets)
+        {
+            var oldStack = curStackTop;
+            var res = state.PCall(args, rets, 0);
+
+            if (res != LuaStatus.OK || rets < 0)
+            {
+                curStackTop = state.GetTop();
+            }
+            else
+            {
+                curStackTop = oldStack - (args + 1) + rets;
+            }
+
+            AssertLuaStackExpected();
+
+            return res;
+        }
+
+        /// <summary>
+        /// This should be used for all RawSetIntegers into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="curStackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedRawSetInteger(int stackIndex, int tableIndex)
+        {
+            state.RawSetInteger(stackIndex, tableIndex);
+            curStackTop--;
+
+            AssertLuaStackExpected();
+        }
+
+        /// This should be used for all RawSets into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="curStackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedRawSet(int stackIndex)
+        {
+            state.RawSet(stackIndex);
+            curStackTop -= 2;
+
+            AssertLuaStackExpected();
+        }
+
+        /// <summary>
+        /// This should be used for all RawGetIntegers into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="curStackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedRawGetInteger(LuaType expectedType, int stackIndex, int tableIndex)
+        {
+            var actual = state.RawGetInteger(stackIndex, tableIndex);
+            Debug.Assert(actual == expectedType, "Unexpected type received");
+            curStackTop++;
+
+            AssertLuaStackExpected();
+        }
+
+        /// <summary>
+        /// This should be used for all GetIntegers into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="curStackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private LuaType CheckedGetInteger(LuaType? expectedType, int stackIndex, int tableIndex)
+        {
+            var actual = state.GetInteger(stackIndex, tableIndex);
+            Debug.Assert(expectedType == null || actual == expectedType, "Unexpected type received");
+            curStackTop++;
+
+            AssertLuaStackExpected();
+
+            return actual;
+        }
+
+        /// <summary>
+        /// This should be used for all RawGets into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="curStackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedRawGet(LuaType expectedType, int stackIndex)
+        {
+            var actual = state.RawGet(stackIndex);
+            Debug.Assert(actual == expectedType, "Unexpected type received");
+
+            AssertLuaStackExpected();
+        }
+
+        /// <summary>
+        /// This should be used for all GetTables into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="curStackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private LuaType CheckedGetTable(LuaType? expectedType, int stackIndex)
+        {
+            var actual = state.GetTable(stackIndex);
+            Debug.Assert(expectedType == null || actual == expectedType, "Unexpected type received");
+
+            AssertLuaStackExpected();
+
+            return actual;
+        }
+
+        /// <summary>
+        /// This should be used for all Refs into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="curStackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int CheckedRef()
+        {
+            var ret = state.Ref(LuaRegistry.Index);
+            curStackTop--;
+
+            AssertLuaStackExpected();
+
+            return ret;
+        }
+
+        /// <summary>
+        /// This should be used for all CreateTables into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="curStackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        private void CheckedCreateTable(int numArr, int numRec)
+        {
+            state.CreateTable(numArr, numRec);
+            curStackTop++;
+
+            AssertLuaStackExpected();
+        }
+
+        /// <summary>
+        /// This should be used for all GetGlobals into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="curStackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        private void CheckedGetGlobal(LuaType expectedType, string globalName)
+        {
+            var type = state.GetGlobal(globalName);
+            Debug.Assert(type == expectedType, "Unexpected type received");
+
+            curStackTop++;
+
+            AssertLuaStackExpected();
+        }
+
+        /// <summary>
+        /// This should be used to push all known constants strings (registered in constructor with <see cref="ConstantStringToRegistery(int, ReadOnlySpan{byte})"/>)
+        /// into Lua.
+        /// 
+        /// This avoids extra copying of data between .NET and Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CheckedPushConstantString(int reservedCapacity, int constStringRegistryIndex, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
+        {
+            AssertLuaStackBelow(reservedCapacity, file, method, line);
+            Debug.Assert(IsConstantStringRegistryIndex(constStringRegistryIndex), "Can't use this with unknown string");
+
+            CheckedRawGetInteger(LuaType.String, (int)LuaRegistry.Index, constStringRegistryIndex);
+
+            // Check if index corresponds to value registered in constructor
+            bool IsConstantStringRegistryIndex(int index)
+            => index == okConstStringRegisteryIndex ||
+               index == errConstStringRegistryIndex ||
+               index == noSessionAvailableConstStringRegisteryIndex ||
+               index == pleaseSpecifyRedisCallConstStringRegistryIndex ||
+               index == errNoAuthConstStringRegistryIndex ||
+               index == errUnknownConstStringRegistryIndex ||
+               index == errBadArgConstStringRegistryIndex;
         }
 
         /// <summary>
@@ -1393,6 +1655,16 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Check that the Lua stack top is where expected in DEBUG builds.
+        /// </summary>
+        [Conditional("DEBUG")]
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void AssertLuaStackExpected([CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
+        {
+            Debug.Assert(state.GetTop() == curStackTop, $"Lua stack not where expected ({method}:{line} in {file})");
+        }
+
+        /// <summary>
         /// Check the Lua stack has not grown beyond the capacity we initially reserved.
         /// 
         /// This asserts (in DEBUG) that the next .PushXXX will succeed.
@@ -1405,82 +1677,6 @@ namespace Garnet.server
         private void AssertLuaStackBelow(int reservedCapacity, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
         {
             Debug.Assert(state.GetTop() < reservedCapacity, $"About to push to Lua stack without having reserved sufficient capacity.");
-        }
-
-        /// <summary>
-        /// This should be used for all PushBuffer calls into Lua.
-        /// 
-        /// If the string is a constant, consider registering it in the constructor and using <see cref="CheckedPushConstantString"/> instead.
-        /// </summary>
-        /// <seealso cref="AssertLuaStackBelow"/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void CheckedPushBuffer(int reservedCapacity, ReadOnlySpan<byte> buffer, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
-        {
-            AssertLuaStackBelow(reservedCapacity, file, method, line);
-
-            NativeMethods.PushBuffer(state.Handle, buffer);
-        }
-
-        /// <summary>
-        /// This should be used for all PushNil calls into Lua.
-        /// </summary>
-        /// <seealso cref="AssertLuaStackBelow"/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void CheckedPushNil(int reservedCapacity, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
-        {
-            AssertLuaStackBelow(reservedCapacity, file, method, line);
-
-            state.PushNil();
-        }
-
-        /// <summary>
-        /// This should be used for all PushNumber calls into Lua.
-        /// </summary>
-        /// <seealso cref="AssertLuaStackBelow"/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void CheckedPushNumber(int reservedCapacity, double number, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
-        {
-            AssertLuaStackBelow(reservedCapacity, file, method, line);
-
-            state.PushNumber(number);
-        }
-
-        /// <summary>
-        /// This should be used for all PushBoolean calls into Lua.
-        /// </summary>
-        /// <seealso cref="AssertLuaStackBelow"/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void CheckedPushBoolean(int reservedCapacity, bool b, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
-        {
-            AssertLuaStackBelow(reservedCapacity, file, method, line);
-
-            state.PushBoolean(b);
-        }
-
-        /// <summary>
-        /// This should be used to push all known constants strings (registered in constructor with <see cref="ConstantStringToRegistery(int, ReadOnlySpan{byte})"/>)
-        /// into Lua.
-        /// 
-        /// This avoids extra copying of data between .NET and Lua.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void CheckedPushConstantString(int reservedCapacity, int constStringRegistryIndex, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
-        {
-            AssertLuaStackBelow(reservedCapacity, file, method, line);
-            Debug.Assert(IsConstantStringRegistryIndex(constStringRegistryIndex), "Can't use this with unknown string");
-
-            var loadRes = state.RawGetInteger(LuaRegistry.Index, constStringRegistryIndex);
-            Debug.Assert(loadRes == LuaType.String, "Expected constant string to be loaded on stack");
-
-            // Check if index corresponds to value registered in constructor
-            bool IsConstantStringRegistryIndex(int index)
-            => index == okConstStringRegisteryIndex ||
-               index == errConstStringRegistryIndex ||
-               index == noSessionAvailableConstStringRegisteryIndex ||
-               index == pleaseSpecifyRedisCallConstStringRegistryIndex ||
-               index == errNoAuthConstStringRegistryIndex ||
-               index == errUnknownConstStringRegistryIndex ||
-               index == errBadArgConstStringRegistryIndex;
         }
     }
 }
