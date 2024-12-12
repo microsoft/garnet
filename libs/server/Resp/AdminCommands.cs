@@ -590,7 +590,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
