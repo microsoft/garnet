@@ -140,6 +140,7 @@ namespace Garnet.server
         readonly int keysTableRegistryIndex;
         readonly int argvTableRegistryIndex;
         readonly int loadSandboxedRegistryIndex;
+        readonly int resetKeysAndArgvRegistryIndex;
         readonly int okConstStringRegisteryIndex;
         readonly int errConstStringRegistryIndex;
         readonly int noSessionAvailableConstStringRegisteryIndex;
@@ -235,6 +236,19 @@ namespace Garnet.server
                     KEYS = KEYS;
                     ARGV = ARGV;
                 }
+                -- do resets in the Lua side to minimize pinvokes
+                function reset_keys_and_argv(fromKey, fromArgv)
+                    local keyCount = #KEYS
+                    for i = fromKey, keyCount do
+                        KEYS[i] = nil
+                    end
+
+                    local argvCount = #ARGV
+                    for i = fromArgv, argvCount do
+                        ARGV[i] = nil
+                    end
+                end
+                -- responsible for sandboxing user provided code
                 function load_sandboxed(source)
                     if (not source) then return nil end
                     local rawFunc, err = load(source, nil, nil, sandbox_env)
@@ -281,6 +295,10 @@ namespace Garnet.server
             var loadSandboxedType = state.GetGlobal("load_sandboxed");
             Debug.Assert(loadSandboxedType == LuaType.Function, "Unexpected load_sandboxed type");
             loadSandboxedRegistryIndex = state.Ref(LuaRegistry.Index);
+
+            var resetKeysAndArgvType = state.GetGlobal("reset_keys_and_argv");
+            Debug.Assert(resetKeysAndArgvType == LuaType.Function, "Unexpected reset_keys_and_argv type");
+            resetKeysAndArgvRegistryIndex = state.Ref(LuaRegistry.Index);
 
             // Commonly used strings, register them once so we don't have to copy them over each time we need them
             okConstStringRegisteryIndex = ConstantStringToRegistery(NeededStackSize, CmdStrings.LUA_OK);
@@ -967,42 +985,56 @@ namespace Garnet.server
 
             ForceGrowLuaStack(NeededStackSize);
 
-            if (keyLength > nKeys)
+            if (keyLength > nKeys || argvLength > nArgs)
             {
-                // Get KEYS on the stack
-                CheckedPushNumber(NeededStackSize, keysTableRegistryIndex);
-                var loadRes = state.GetTable(LuaRegistry.Index);
-                Debug.Assert(loadRes == LuaType.Table, "Unexpected type for KEYS");
+                var getRes = state.RawGetInteger(LuaRegistry.Index, resetKeysAndArgvRegistryIndex);
+                Debug.Assert(getRes == LuaType.Function, "Unexpected type when loading reset_keys_and_argv");
 
-                // Clear all the values in KEYS that we aren't going to set anyway
-                for (var i = nKeys + 1; i <= keyLength; i++)
-                {
-                    CheckedPushNil(NeededStackSize);
-                    state.RawSetInteger(1, i);
-                }
-
-                state.Pop(1);
+                CheckedPushNumber(NeededStackSize, nKeys + 1);
+                CheckedPushNumber(NeededStackSize, nArgs + 1);
+                var resetRes = state.PCall(2, 0, 0);
+                Debug.Assert(resetRes == LuaStatus.OK, "Resetting should never fail");
             }
 
             keyLength = nKeys;
-
-            if (argvLength > nArgs)
-            {
-                // Get ARGV on the stack
-                CheckedPushNumber(NeededStackSize, argvTableRegistryIndex);
-                var loadRes = state.GetTable(LuaRegistry.Index);
-                Debug.Assert(loadRes == LuaType.Table, "Unexpected type for ARGV");
-
-                for (var i = nArgs + 1; i <= argvLength; i++)
-                {
-                    CheckedPushNil(NeededStackSize);
-                    state.RawSetInteger(1, i);
-                }
-
-                state.Pop(1);
-            }
-
             argvLength = nArgs;
+
+            //if (keyLength > nKeys)
+            //{
+            //    // Get KEYS on the stack
+            //    CheckedPushNumber(NeededStackSize, keysTableRegistryIndex);
+            //    var loadRes = state.GetTable(LuaRegistry.Index);
+            //    Debug.Assert(loadRes == LuaType.Table, "Unexpected type for KEYS");
+
+            //    // Clear all the values in KEYS that we aren't going to set anyway
+            //    for (var i = nKeys + 1; i <= keyLength; i++)
+            //    {
+            //        CheckedPushNil(NeededStackSize);
+            //        state.RawSetInteger(1, i);
+            //    }
+
+            //    state.Pop(1);
+            //}
+
+            //keyLength = nKeys;
+
+            //if (argvLength > nArgs)
+            //{
+            //    // Get ARGV on the stack
+            //    CheckedPushNumber(NeededStackSize, argvTableRegistryIndex);
+            //    var loadRes = state.GetTable(LuaRegistry.Index);
+            //    Debug.Assert(loadRes == LuaType.Table, "Unexpected type for ARGV");
+
+            //    for (var i = nArgs + 1; i <= argvLength; i++)
+            //    {
+            //        CheckedPushNil(NeededStackSize);
+            //        state.RawSetInteger(1, i);
+            //    }
+
+            //    state.Pop(1);
+            //}
+
+            //argvLength = nArgs;
 
             AssertLuaStackEmpty();
         }
