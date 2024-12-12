@@ -2256,7 +2256,7 @@ namespace Garnet.test.cluster
         public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
     }
 
-    internal class HEXPIRE : BaseCommand 
+    internal class HEXPIRE : BaseCommand
     {
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => true;
@@ -2276,7 +2276,7 @@ namespace Garnet.test.cluster
     internal class HPEXPIRE : BaseCommand
     {
         public override bool IsArrayCommand => false;
-        public override bool ArrayResponse => true; 
+        public override bool ArrayResponse => true;
         public override string Command => nameof(HPEXPIRE);
 
         public override string[] GetSingleSlotRequest()
