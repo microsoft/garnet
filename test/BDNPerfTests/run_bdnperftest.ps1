@@ -135,7 +135,7 @@ $testProperties = $json.$currentTest
 
 # create a matrix of expected results for specific test
 $splitTextArray = New-Object 'string[]' 3
-$expectedResultsArray = New-Object 'string[,]' 40, 3
+$expectedResultsArray = New-Object 'string[,]' 70, 3
 
 [int]$currentRow = 0
 
