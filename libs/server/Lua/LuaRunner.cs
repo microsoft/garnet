@@ -978,8 +978,7 @@ namespace Garnet.server
         /// </summary>
         internal void ResetParameters(int nKeys, int nArgs)
         {
-            // TODO: is this faster than punching a function in to do it?
-            const int NeededStackSize = 2;
+            const int NeededStackSize = 3;
 
             AssertLuaStackEmpty();
 
@@ -998,43 +997,6 @@ namespace Garnet.server
 
             keyLength = nKeys;
             argvLength = nArgs;
-
-            //if (keyLength > nKeys)
-            //{
-            //    // Get KEYS on the stack
-            //    CheckedPushNumber(NeededStackSize, keysTableRegistryIndex);
-            //    var loadRes = state.GetTable(LuaRegistry.Index);
-            //    Debug.Assert(loadRes == LuaType.Table, "Unexpected type for KEYS");
-
-            //    // Clear all the values in KEYS that we aren't going to set anyway
-            //    for (var i = nKeys + 1; i <= keyLength; i++)
-            //    {
-            //        CheckedPushNil(NeededStackSize);
-            //        state.RawSetInteger(1, i);
-            //    }
-
-            //    state.Pop(1);
-            //}
-
-            //keyLength = nKeys;
-
-            //if (argvLength > nArgs)
-            //{
-            //    // Get ARGV on the stack
-            //    CheckedPushNumber(NeededStackSize, argvTableRegistryIndex);
-            //    var loadRes = state.GetTable(LuaRegistry.Index);
-            //    Debug.Assert(loadRes == LuaType.Table, "Unexpected type for ARGV");
-
-            //    for (var i = nArgs + 1; i <= argvLength; i++)
-            //    {
-            //        CheckedPushNil(NeededStackSize);
-            //        state.RawSetInteger(1, i);
-            //    }
-
-            //    state.Pop(1);
-            //}
-
-            //argvLength = nArgs;
 
             AssertLuaStackEmpty();
         }
