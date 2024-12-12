@@ -17,6 +17,7 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using static System.Reflection.Metadata.BlobBuilder;
     using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
@@ -413,6 +414,44 @@ namespace Garnet.server
             }
         }
 
+        async Task HashCollectTask(int hashCollectFrequencySecs, CancellationToken token = default)
+        {
+            Debug.Assert(hashCollectFrequencySecs > 0);
+            try
+            {
+                var scratchBufferManager = new ScratchBufferManager();
+                using var storageSession = new StorageSession(this, scratchBufferManager, null, null, logger);
+                var key = ArgSlice.FromPinnedSpan("*"u8);
+
+                while (true)
+                {
+                    if (token.IsCancellationRequested) return;
+
+                    if (objectStore is null)
+                    {
+                        logger?.LogWarning("HashCollectFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
+                        return;
+                    }
+
+                    var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
+                    var input = new ObjectInput(header);
+
+                    storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
+                    scratchBufferManager.Reset();
+
+                    await Task.Delay(hashCollectFrequencySecs * 1000, token);
+                }
+            }
+            catch (TaskCanceledException ex) when (token.IsCancellationRequested)
+            {
+                logger?.LogError(ex, "CompactionTask exception received for background hash collect task.");
+            }
+            catch (Exception ex)
+            {
+                logger?.LogCritical(ex, "Unknown exception received for background hash collect task. Hash collect task won't be resumed.");
+            }
+        }
+
         void DoCompaction()
         {
             // Periodic compaction -> no need to compact before checkpointing
@@ -565,6 +604,11 @@ namespace Garnet.server
             if (serverOptions.CompactionFrequencySecs > 0 && serverOptions.CompactionType != LogCompactionType.None)
             {
                 Task.Run(async () => await CompactionTask(serverOptions.CompactionFrequencySecs, ctsCommit.Token));
+            }
+
+            if (serverOptions.HashCollectFrequencySecs > 0)
+            {
+                Task.Run(async () => await HashCollectTask(serverOptions.HashCollectFrequencySecs, ctsCommit.Token));
             }
 
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)

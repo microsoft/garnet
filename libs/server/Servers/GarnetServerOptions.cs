@@ -137,6 +137,11 @@ namespace Garnet.server
         public int CompactionFrequencySecs = 0;
 
         /// <summary>
+        /// Hash collection frequency in seconds. 0 = disabled. Hash collect is used to delete expired fields from hash without waiting for a write operation.
+        /// </summary>
+        public int HashCollectFrequencySecs = 0;
+
+        /// <summary>
         /// Hybrid log compaction type.
         ///  None - no compaction.
         ///  Shift - shift begin address without compaction (data loss).
