@@ -1078,11 +1078,9 @@ namespace Garnet.client
         /// <param name="param3"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async Task<long> ExecuteFireAndForgetWithNoResponse(Memory<byte> op, Memory<byte> param1, Memory<byte> param2, Memory<byte> param3, CancellationToken token = default)
+        public void ExecuteFireAndForgetWithNoResponse(Memory<byte> op, Memory<byte> param1, Memory<byte> param2, Memory<byte> param3, CancellationToken token = default)
         {
-            var tcs = new TcsWrapper { taskType = TaskType.LongAsync, longTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously) };
-            var _ = InternalExecuteFireAndForgetWithNoResponse(tcs, op, param1, param2, param3, token);
-            return await tcs.longTcs.Task.ConfigureAwait(false);
+            InternalExecuteFireAndForgetWithNoResponse(op, param1, param2, param3, token);
         }
         #endregion
 

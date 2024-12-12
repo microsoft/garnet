@@ -278,6 +278,6 @@ namespace Garnet.cluster
         /// <param name="channel"></param>
         /// <param name="message"></param>
         public void TryClusterPublish(RespCommand cmd, Memory<byte> channel, Memory<byte> message)
-            => _ = gc.ClusterPublish(cmd, channel, message);
+            => gc.ClusterPublish(cmd, channel, message);
     }
 }
