@@ -16,7 +16,7 @@ namespace BDN.benchmark.Operations
         byte* scriptLoadRequestBufferPointer;
 
         static ReadOnlySpan<byte> SCRIPT_EXISTS_LOADED => "*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n$10\r\nreturn nil\r\n"u8;
-        
+
         static ReadOnlySpan<byte> SCRIPT_EXISTS_TRUE => "*3\r\n$6\r\nSCRIPT\r\n$6\r\nEXISTS\r\n$40\r\n79cefb99366d8809d2e903c5f36f50c2b731913f\r\n"u8;
         byte[] scriptExistsTrueRequestBuffer;
         byte* scriptExistsTrueRequestBufferPointer;
@@ -36,7 +36,7 @@ namespace BDN.benchmark.Operations
         public override void GlobalSetup()
         {
             base.GlobalSetup();
-            
+
             SetupOperation(ref scriptLoadRequestBuffer, ref scriptLoadRequestBufferPointer, SCRIPT_LOAD);
 
             byte[] scriptExistsLoadedBuffer = null;
