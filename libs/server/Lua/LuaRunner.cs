@@ -552,63 +552,49 @@ namespace Garnet.server
 
                 // As fallback, we use RespServerSession with a RESP-formatted input. This could be optimized
                 // in future to provide parse state directly.
-                var trueArgCount = argCount - 1;
 
-                scratchBufferManager.ResetScratchBuffer(0);
+                scratchBufferManager.Reset();
+                scratchBufferManager.StartCommand(cmdSpan, argCount - 1);
 
-                var cmdArgsArr = trueArgCount <= 16 ? null : ArrayPool<ArgSlice>.Shared.Rent(argCount);
-                var cmdArgs = cmdArgsArr != null ? cmdArgsArr.AsSpan()[..trueArgCount] : stackalloc ArgSlice[trueArgCount];
-
-                try
+                for (var i = 0; i < argCount - 1; i++)
                 {
-                    for (var i = 0; i < argCount - 1; i++)
+                    var argIx = 2 + i;
+
+                    var argType = state.Type(argIx);
+                    if (argType == LuaType.Nil)
                     {
-                        // Index 1 holds the command, so skip it
-                        var argIx = 2 + i;
-
-                        var argType = state.Type(argIx);
-                        if (argType == LuaType.Nil)
-                        {
-                            cmdArgs[i] = new ArgSlice(null, -1);
-                        }
-                        else if (argType is LuaType.String or LuaType.Number)
-                        {
-                            // CheckBuffer will coerce a number into a string
-                            //
-                            // Redis nominally converts numbers to integers, but in this case just ToStrings things
-                            var checkRes = NativeMethods.CheckBuffer(state.Handle, argIx, out var span);
-                            Debug.Assert(checkRes, "Should never fail");
-
-                            // Span remains pinned so long as we don't pop the stack
-                            cmdArgs[i] = ArgSlice.FromPinnedSpan(span);
-                        }
-                        else
-                        {
-                            return LuaStaticError(neededStackSpace, errBadArgConstStringRegistryIndex);
-                        }
+                        scratchBufferManager.WriteNullArgument();
                     }
-
-                    var request = scratchBufferManager.FormatCommandAsResp(cmdSpan, cmdArgs);
-
-                    // Once the request is formatted, we can release all the args on the Lua stack
-                    //
-                    // This keeps the stack size down for processing the response
-                    state.Pop(argCount);
-
-                    _ = respServerSession.TryConsumeMessages(request.ptr, request.length);
-
-                    var response = scratchBufferNetworkSender.GetResponse();
-                    var result = ProcessResponse(response.ptr, response.length);
-                    scratchBufferNetworkSender.Reset();
-                    return result;
-                }
-                finally
-                {
-                    if (cmdArgsArr != null)
+                    else if (argType is LuaType.String or LuaType.Number)
                     {
-                        ArrayPool<ArgSlice>.Shared.Return(cmdArgsArr);
+                        // CheckBuffer will coerce a number into a string
+                        //
+                        // Redis nominally converts numbers to integers, but in this case just ToStrings things
+                        var checkRes = NativeMethods.CheckBuffer(state.Handle, argIx, out var span);
+                        Debug.Assert(checkRes, "Should never fail");
+
+                        // Span remains pinned so long as we don't pop the stack
+                        scratchBufferManager.WriteArgument(span);
+                    }
+                    else
+                    {
+                        return LuaStaticError(neededStackSpace, errBadArgConstStringRegistryIndex);
                     }
                 }
+
+                var request = scratchBufferManager.ViewFullArgSlice();
+
+                // Once the request is formatted, we can release all the args on the Lua stack
+                //
+                // This keeps the stack size down for processing the response
+                state.Pop(argCount);
+
+                _ = respServerSession.TryConsumeMessages(request.ptr, request.length);
+
+                var response = scratchBufferNetworkSender.GetResponse();
+                var result = ProcessResponse(response.ptr, response.length);
+                scratchBufferNetworkSender.Reset();
+                return result;
             }
             catch (Exception e)
             {

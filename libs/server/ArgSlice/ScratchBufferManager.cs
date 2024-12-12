@@ -222,6 +222,54 @@ namespace Garnet.server
             return retVal;
         }
 
+        public void StartCommand(ReadOnlySpan<byte> cmd, int argCount)
+        {
+            if (scratchBuffer == null)
+                ExpandScratchBuffer(64);
+
+            var ptr = scratchBufferHead + scratchBufferOffset;
+
+            while (!RespWriteUtils.WriteArrayLength(argCount+1, ref ptr, scratchBufferHead + scratchBuffer.Length))
+            {
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ptr = scratchBufferHead + scratchBufferOffset;
+            }
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
+
+            while (!RespWriteUtils.WriteBulkString(cmd, ref ptr, scratchBufferHead + scratchBuffer.Length))
+            {
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ptr = scratchBufferHead + scratchBufferOffset;
+            }
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
+        }
+
+        public void WriteNullArgument()
+        {
+            var ptr = scratchBufferHead + scratchBufferOffset;
+
+            while (!RespWriteUtils.WriteNull(ref ptr, scratchBufferHead + scratchBuffer.Length))
+            {
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ptr = scratchBufferHead + scratchBufferOffset;
+            }
+
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
+        }
+
+        public void WriteArgument(ReadOnlySpan<byte> arg)
+        {
+            var ptr = scratchBufferHead + scratchBufferOffset;
+
+            while (!RespWriteUtils.WriteBulkString(arg, ref ptr, scratchBufferHead + scratchBuffer.Length))
+            {
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ptr = scratchBufferHead + scratchBufferOffset;
+            }
+
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
+        }
+
         /// <summary>
         /// Format specified command with arguments, as a RESP command. Lua state
         /// can be specified to handle Lua tables as arguments.
