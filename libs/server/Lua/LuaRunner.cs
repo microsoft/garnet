@@ -583,12 +583,11 @@ namespace Garnet.server
                     }
                     else if (argType is LuaType.String or LuaType.Number)
                     {
-                        // CheckBuffer will coerce a number into a string
+                        // KnownStringToBuffer will coerce a number into a string
                         //
                         // Redis nominally converts numbers to integers, but in this case just ToStrings things
-                        var checkRes = NativeMethods.CheckBuffer(state.Handle, argIx, out var span);
-                        Debug.Assert(checkRes, "Should never fail");
-
+                        NativeMethods.KnownStringToBuffer(state.Handle, argIx, out var span);
+                        
                         // Span remains pinned so long as we don't pop the stack
                         scratchBufferManager.WriteArgument(span);
                     }
@@ -1229,8 +1228,7 @@ namespace Garnet.server
             {
                 Debug.Assert(state.GetTop() == top, "Lua stack was not expected size");
 
-                var checkRes = NativeMethods.CheckBuffer(state.Handle, top, out var buf);
-                Debug.Assert(checkRes, "Should never fail");
+                NativeMethods.KnownStringToBuffer(state.Handle, top, out var buf);
 
                 while (!RespWriteUtils.WriteBulkString(buf, ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
@@ -1266,8 +1264,7 @@ namespace Garnet.server
             {
                 Debug.Assert(state.GetTop() == top, "Lua stack was not expected size");
 
-                var errRes = NativeMethods.CheckBuffer(state.Handle, top, out var errBuff);
-                Debug.Assert(errRes, "Should never fail");
+                NativeMethods.KnownStringToBuffer(state.Handle, top, out var errBuff);
 
                 while (!RespWriteUtils.WriteError(errBuff, ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();

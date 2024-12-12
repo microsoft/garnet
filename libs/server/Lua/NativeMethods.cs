@@ -22,6 +22,9 @@ namespace Garnet.server
     /// </summary>
     internal static class NativeMethods
     {
+        // TODO: LibraryImport?
+        // TODO: Suppress GC transition (requires Lua audit)
+
         private const string LuaLibraryName = "lua54";
 
         /// <summary>
@@ -68,6 +71,24 @@ namespace Garnet.server
             {
                 str = new ReadOnlySpan<byte>((byte*)start, (int)len);
                 return true;
+            }
+        }
+
+        /// <summary>
+        /// Call when value at index is KNOWN to be a string or number
+        /// 
+        /// <paramref name="str"/> only remains valid as long as the buffer remains on the stack,
+        /// use with care.
+        /// 
+        /// Note that is changes the value on the stack to be a string if it returns true, regardless of
+        /// what it was originally.
+        /// </summary>
+        internal static void KnownStringToBuffer(lua_State luaState, int index, out ReadOnlySpan<byte> str)
+        {
+            var start = lua_tolstring(luaState, index, out var len);
+            unsafe
+            {
+                str = new ReadOnlySpan<byte>((byte*)start, (int)len);
             }
         }
 
