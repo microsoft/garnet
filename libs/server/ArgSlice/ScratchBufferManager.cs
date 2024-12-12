@@ -43,6 +43,12 @@ namespace Garnet.server
         public void Reset() => scratchBufferOffset = 0;
 
         /// <summary>
+        /// Return the full buffer managed by this <see cref="ScratchBufferManager"/>.
+        /// </summary>
+        public Span<byte> FullBuffer()
+        => scratchBuffer;
+
+        /// <summary>
         /// Rewind (pop) the last entry of scratch buffer (rewinding the current scratch buffer offset),
         /// if it contains the given ArgSlice
         /// </summary>
@@ -328,6 +334,21 @@ namespace Garnet.server
         public ArgSlice GetSliceFromTail(int length)
         {
             return new ArgSlice(scratchBufferHead + scratchBufferOffset - length, length);
+        }
+
+        /// <summary>
+        /// Force backing buffer to grow.
+        /// </summary>
+        public void GrowBuffer()
+        {
+            if (scratchBuffer == null)
+            {
+                ExpandScratchBuffer(64);
+            }
+            else
+            {
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
+            }
         }
     }
 }

@@ -72,55 +72,60 @@ namespace Garnet.server
         /// </summary>
         private unsafe struct RunnerAdapter : IResponseAdapter
         {
-            private byte* cur;
-            private byte[] pinnedArr;
+            private readonly ScratchBufferManager bufferManager;
+            private byte* origin;
+            private byte* curHead;
+            private byte* curEnd;
 
-            internal RunnerAdapter(byte[] initialPinnedArr)
+            internal RunnerAdapter(ScratchBufferManager bufferManager)
             {
-                pinnedArr = initialPinnedArr;
-                cur = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(initialPinnedArr));
-                BufferEnd = cur + initialPinnedArr.Length;
+                this.bufferManager = bufferManager;
+                this.bufferManager.Reset();
+
+                var scratchSpace = bufferManager.FullBuffer();
+
+                origin = curHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(scratchSpace));
+                curEnd = curHead + scratchSpace.Length;
             }
 
 #pragma warning disable CS9084 // Struct member returns 'this' or other instance members by reference
             /// <inheritdoc />
             public unsafe ref byte* BufferCur
-            => ref cur;
+            => ref curHead;
 #pragma warning restore CS9084
 
             /// <inheritdoc />
-            public unsafe byte* BufferEnd { readonly get; private set; }
+            public unsafe byte* BufferEnd
+            => curEnd;
 
             /// <summary>
             /// Gets a span that covers the responses as written so far.
             /// </summary>
             public readonly ReadOnlySpan<byte> Response
-
             {
                 get
                 {
-                    var origin = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(pinnedArr));
-                    var length = (int)(cur - origin);
+                    var len = (int)(curHead - origin);
 
-                    return new(origin, length);
+                    var full = bufferManager.FullBuffer();
+
+                    return full[..len];
                 }
             }
 
             /// <inheritdoc />
             public void SendAndReset()
             {
+                var len = (int)(curHead - origin);
+
                 // We don't actually send anywhere, we grow the backing array
-                var newLen = pinnedArr.Length * 2;
-                var newPinnedArr = GC.AllocateUninitializedArray<byte>(newLen, pinned: true);
-                var copyLen = pinnedArr.Length - (int)(BufferEnd - cur);
+                bufferManager.GrowBuffer();
 
-                pinnedArr.AsSpan()[..copyLen].CopyTo(newPinnedArr);
+                var scratchSpace = bufferManager.FullBuffer();
 
-                pinnedArr = newPinnedArr;
-                cur = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(newPinnedArr));
-
-                BufferEnd = cur + newLen;
-                cur += copyLen;
+                origin = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(scratchSpace));
+                curEnd = origin + scratchSpace.Length;
+                curHead = origin + len;
             }
         }
 
@@ -169,7 +174,7 @@ namespace Garnet.server
             this.txnMode = txnMode;
             this.respServerSession = respServerSession;
             this.scratchBufferNetworkSender = scratchBufferNetworkSender;
-            this.scratchBufferManager = respServerSession?.scratchBufferManager;
+            this.scratchBufferManager = respServerSession?.scratchBufferManager ?? new();
             this.logger = logger;
 
             sandboxEnvRegistryIndex = -1;
@@ -319,7 +324,7 @@ namespace Garnet.server
         /// </summary>
         public unsafe void CompileForRunner()
         {
-            var adapter = new RunnerAdapter(GC.AllocateUninitializedArray<byte>(64, pinned: true));
+            var adapter = new RunnerAdapter(scratchBufferManager);
             CompileCommon(ref adapter);
 
             var resp = adapter.Response;
@@ -549,9 +554,8 @@ namespace Garnet.server
                 // in future to provide parse state directly.
                 var trueArgCount = argCount - 1;
 
-                // Avoid allocating entirely if fewer than 16 commands (note we only store pointers, we make no copies)
-                //
-                // At 17+ we'll rent an array, which might allocate, but typically won't
+                scratchBufferManager.ResetScratchBuffer(0);
+
                 var cmdArgsArr = trueArgCount <= 16 ? null : ArrayPool<ArgSlice>.Shared.Rent(argCount);
                 var cmdArgs = cmdArgsArr != null ? cmdArgsArr.AsSpan()[..trueArgCount] : stackalloc ArgSlice[trueArgCount];
 
@@ -850,12 +854,10 @@ namespace Garnet.server
         /// </summary>
         public unsafe object RunForRunner(string[] keys = null, string[] argv = null)
         {
-            const int InitialSize = 64;
-
             scratchBufferManager?.Reset();
             LoadParametersForRunner(keys, argv);
 
-            var adapter = new RunnerAdapter(GC.AllocateUninitializedArray<byte>(InitialSize, pinned: true));
+            var adapter = new RunnerAdapter(scratchBufferManager);
 
             if (txnMode && keys?.Length > 0)
             {
