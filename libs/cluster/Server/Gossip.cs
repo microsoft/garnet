@@ -209,6 +209,12 @@ namespace Garnet.cluster
             }
         }
 
+        /// <summary>
+        /// Forward message by issuing CLUSTER PUBLISH|SPUBLISH
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <param name="channel"></param>
+        /// <param name="message"></param>
         public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
         {
             GarnetServerNode gsn = null;

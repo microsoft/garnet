@@ -1084,12 +1084,6 @@ namespace Garnet.client
             var _ = InternalExecuteFireAndForgetWithNoResponse(tcs, op, param1, param2, param3, token);
             return await tcs.longTcs.Task.ConfigureAwait(false);
         }
-
-        public void ExecuteForNoResponse(Memory<byte> op, Memory<byte> param1, Memory<byte> param2, Memory<byte> param3, CancellationToken token = default)
-        {
-            var _ = InternalExecuteForNoResponse(op, param1, param2, param3, token);
-        }
-
         #endregion
 
         void TokenRegistrationLongCallback(object s) => ((TaskCompletionSource<long>)s).TrySetCanceled();
