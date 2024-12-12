@@ -218,6 +218,222 @@ Returns all values in the hash stored at **key**.
 
 ---
 
+### HEXPIRE
+
+#### Syntax
+
+```bash
+    HEXPIRE key seconds [NX | XX | GT | LT] FIELDS numfields field [field ...]
+```
+
+Sets a timeout on one or more fields of a hash key. After the timeout has expired, the fields will automatically be deleted. The timeout is specified in seconds.
+
+The command supports several options to control when the expiration should be set:
+
+* **NX:** Only set expiry on fields that have no existing expiry
+* **XX:** Only set expiry on fields that already have an expiry set
+* **GT:** Only set expiry when it's greater than the current expiry
+* **LT:** Only set expiry when it's less than the current expiry
+
+The **NX**, **XX**, **GT**, and **LT** options are mutually exclusive.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* 1 if the timeout was set
+* 0 if the field doesn't exist
+* -1 if timeout was not set due to condition not being met
+
+---
+
+### HEXPIREAT
+
+#### Syntax
+
+```bash
+    HEXPIREAT key unix-time-seconds [NX | XX | GT | LT] FIELDS numfields field [field ...]
+```
+
+Sets an absolute expiration time (Unix timestamp in seconds) for one or more hash fields. After the timestamp has passed, the fields will automatically be deleted.
+
+The command supports several options to control when the expiration should be set:
+
+* **NX:** Only set expiry on fields that have no existing expiry
+* **XX:** Only set expiry on fields that already have an expiry set
+* **GT:** Only set expiry when it's greater than the current expiry
+* **LT:** Only set expiry when it's less than the current expiry
+
+The **NX**, **XX**, **GT**, and **LT** options are mutually exclusive.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* 1 if the timeout was set
+* 0 if the field doesn't exist
+* -1 if timeout was not set due to condition not being met
+
+---
+
+### HPEXPIRE
+
+#### Syntax
+
+```bash
+    HPEXPIRE key milliseconds [NX | XX | GT | LT] FIELDS numfields field [field ...]
+```
+
+Similar to HEXPIRE but the timeout is specified in milliseconds instead of seconds.
+
+The command supports several options to control when the expiration should be set:
+
+* **NX:** Only set expiry on fields that have no existing expiry
+* **XX:** Only set expiry on fields that already have an expiry set
+* **GT:** Only set expiry when it's greater than the current expiry
+* **LT:** Only set expiry when it's less than the current expiry
+
+The **NX**, **XX**, **GT**, and **LT** options are mutually exclusive.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* 1 if the timeout was set
+* 0 if the field doesn't exist
+* -1 if timeout was not set due to condition not being met
+
+---
+
+### HPEXPIREAT
+
+#### Syntax
+
+```bash
+    HPEXPIREAT key unix-time-milliseconds [NX | XX | GT | LT] FIELDS numfields field [field ...]
+```
+
+Similar to HEXPIREAT but uses Unix timestamp in milliseconds instead of seconds.
+
+The command supports several options to control when the expiration should be set:
+
+* **NX:** Only set expiry on fields that have no existing expiry
+* **XX:** Only set expiry on fields that already have an expiry set
+* **GT:** Only set expiry when it's greater than the current expiry
+* **LT:** Only set expiry when it's less than the current expiry
+
+The **NX**, **XX**, **GT**, and **LT** options are mutually exclusive.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* 1 if the timeout was set
+* 0 if the field doesn't exist
+* -1 if timeout was not set due to condition not being met
+
+---
+
+### HTTL
+
+#### Syntax
+
+```bash
+    HTTL key FIELDS numfields field [field ...]
+```
+
+Returns the remaining time to live in seconds for one or more hash fields that have a timeout set.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* TTL in seconds if the field exists and has an expiry set
+* -1 if the field exists but has no expiry set
+* -2 if the field does not exist
+
+---
+
+### HPTTL
+
+#### Syntax
+
+```bash
+    HPTTL key FIELDS numfields field [field ...]
+```
+
+Similar to HTTL but returns the remaining time to live in milliseconds instead of seconds.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* TTL in milliseconds if the field exists and has an expiry set
+* -1 if the field exists but has no expiry set
+* -2 if the field does not exist
+
+---
+
+### HEXPIRETIME
+
+#### Syntax
+
+```bash
+    HEXPIRETIME key FIELDS numfields field [field ...]
+```
+
+Returns the absolute Unix timestamp (in seconds) at which the specified hash fields will expire.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* Unix timestamp in seconds when the field will expire
+* -1 if the field exists but has no expiry set
+* -2 if the field does not exist
+
+---
+
+### HPEXPIRETIME
+
+#### Syntax
+
+```bash
+    HPEXPIRETIME key FIELDS numfields field [field ...]
+```
+
+Similar to HEXPIRETIME but returns the expiry timestamp in milliseconds instead of seconds.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* Unix timestamp in milliseconds when the field will expire
+* -1 if the field exists but has no expiry set
+* -2 if the field does not exist
+
+---
+
+### HPERSIST
+
+#### Syntax
+
+```bash
+    HPERSIST key FIELDS numfields field [field ...]
+```
+
+Removes the expiration from the specified hash fields, making them persistent.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* 1 if the timeout was removed
+* 0 if the field exists but has no timeout
+* -1 if the field does not exist
+
+---
+
 ## List
 
 ### BLMOVE

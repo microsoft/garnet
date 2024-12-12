@@ -1153,6 +1153,12 @@ namespace Garnet.test
             result = db.HashExists(largeExpireKeys[1], "Field1");
             ClassicAssert.IsFalse(result);
 
+            var data = db.HashGetAll("user:user4");
+            ClassicAssert.AreEqual(2, data.Length);
+            ClassicAssert.AreEqual("Field1", data[0].Name.ToString());
+            ClassicAssert.AreEqual("StringValue", data[0].Value.ToString());
+            ClassicAssert.AreEqual("Field2", data[1].Name.ToString());
+            ClassicAssert.AreEqual("1", data[1].Value.ToString());
         }
 
         [Test]

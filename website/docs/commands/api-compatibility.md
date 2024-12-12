@@ -163,9 +163,9 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [GEOSEARCHSTORE](data-structures.md#geosearchstore) | ➕ | Partially Implemented |
 | <span id="hash">**HASH**</span> | [HDEL](data-structures.md#hdel) | ➕ |  |
 |  | [HEXISTS](data-structures.md#hexists) | ➕ |  |
-|  | HEXPIRE | ➖ |  |
-|  | HEXPIREAT | ➖ |  |
-|  | HEXPIRETIME | ➖ |  |
+|  | [HEXPIRE](data-structures.md#hexpire) | ➕ |  |
+|  | [HEXPIREAT](data-structures.md#hexpireat) | ➕ |  |
+|  | [HEXPIRETIME](data-structures.md#hexpiretime) | ➕ |  |
 |  | [HGET](data-structures.md#hget) | ➕ |  |
 |  | [HGETALL](data-structures.md#hgetall) | ➕ |  |
 |  | [HINCRBY](data-structures.md#hincrby) | ➕ |  |
@@ -174,17 +174,17 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [HLEN](data-structures.md#hlen) | ➕ |  |
 |  | [HMGET](data-structures.md#hmget) | ➕ |  |
 |  | [HMSET](data-structures.md#hmset) | ➕ | (Deprecated) |
-|  | HPERSIST | ➖ |  |
-|  | HPEXPIRE | ➖ |  |
-|  | HPEXPIREAT | ➖ |  |
-|  | HPEXPIRETIME | ➖ |  |
-|  | HPTTL | ➖ |  |
+|  | [HPERSIST](data-structures.md#hpersist) | ➕ |  |
+|  | [HPEXPIRE](data-structures.md#hpexpire) | ➕ |  |
+|  | [HPEXPIREAT](data-structures.md#hpexpireat) | ➕ |  |
+|  | [HPEXPIRETIME](data-structures.md#hepxpiretime) | ➕ |  |
+|  | [HPTTL](data-structures.md#hpttl) | ➕ |  |
 |  | [HRANDFIELD](data-structures.md#hrandfield) | ➕ |  |
 |  | [HSCAN](data-structures.md#hscan) | ➕ |  |
 |  | [HSET](data-structures.md#hset) | ➕ |  |
 |  | [HSETNX](data-structures.md#hsetnx) | ➕ |  |
 |  | [HSTRLEN](data-structures.md#hstrlen) | ➕ |  |
-|  | HTTL | ➖ |  |
+|  | [HTTL](data-structures.md#httl) | ➕ |  |
 |  | [HVALS](data-structures.md#hvals) | ➕ |  |
 | <span id="hyperloglog">**HYPERLOGLOG**</span> | [PFADD](analytics.md#pfadd) | ➕ |  |
 |  | [PFCOUNT](analytics.md#pfcount) | ➕ |  |
