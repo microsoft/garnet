@@ -339,6 +339,10 @@ namespace Garnet
         [Option("maxthreads", Required = false, HelpText = "Maximum worker and completion threads in thread pool, 0 uses the system default.")]
         public int ThreadPoolMaxThreads { get; set; }
 
+        [IntRangeValidation(-1, int.MaxValue)]
+        [Option("network-connection-limit", Required = false, Default = -1, HelpText = "Maximum number of simultaneously active network connections.")]
+        public int NetworkConnectionLimit { get; set; }
+
         [OptionValidation]
         [Option("use-azure-storage", Required = false, HelpText = "Use Azure Page Blobs for storage instead of local storage.")]
         public bool? UseAzureStorage { get; set; }
@@ -369,6 +373,10 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("replica-sync-delay", Required = false, HelpText = "Whether and by how much (milliseconds) should we throttle the replica sync: 0 - disable throttling")]
         public int ReplicaSyncDelayMs { get; set; }
+
+        [IntRangeValidation(-1, int.MaxValue)]
+        [Option("replica-offset-max-lag", Required = false, HelpText = "Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > ReplicationOffsetMaxLag. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag")]
+        public int ReplicationOffsetMaxLag { get; set; }
 
         [OptionValidation]
         [Option("main-memory-replication", Required = false, HelpText = "Use main-memory replication model.")]
@@ -487,6 +495,10 @@ namespace Garnet
         [IntRangeValidation(1, 100, isRequired: false)]
         [Option("index-resize-threshold", Required = false, HelpText = "Overflow bucket count over total index size in percentage to trigger index resize")]
         public int IndexResizeThreshold { get; set; }
+
+        [OptionValidation]
+        [Option("fail-on-recovery-error", Default = false, Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
+        public bool? FailOnRecoveryError { get; set; }
 
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
@@ -668,12 +680,14 @@ namespace Garnet
                 QuietMode = QuietMode.GetValueOrDefault(),
                 ThreadPoolMinThreads = ThreadPoolMinThreads,
                 ThreadPoolMaxThreads = ThreadPoolMaxThreads,
+                NetworkConnectionLimit = NetworkConnectionLimit,
                 DeviceFactoryCreator = useAzureStorage
                     ? () => new AzureStorageNamedDeviceFactory(AzureStorageConnectionString, logger)
                     : () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
+                ReplicationOffsetMaxLag = ReplicationOffsetMaxLag,
                 MainMemoryReplication = MainMemoryReplication.GetValueOrDefault(),
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),
@@ -693,7 +707,8 @@ namespace Garnet
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
-                LoadModuleCS = LoadModuleCS
+                LoadModuleCS = LoadModuleCS,
+                FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault()
             };
         }
 

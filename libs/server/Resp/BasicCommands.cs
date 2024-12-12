@@ -1648,13 +1648,13 @@ namespace Garnet.server
                 this.clientName = clientName;
             }
 
-            (string, string)[] helloResult =
+            (string, object)[] helloResult =
                 [
                     ("server", "redis"),
                     ("version", storeWrapper.redisProtocolVersion),
                     ("garnet_version", storeWrapper.version),
-                    ("proto", $"{this.respProtocolVersion}"),
-                    ("id", "63"),
+                    ("proto", this.respProtocolVersion),
+                    ("id", 63),
                     ("mode", storeWrapper.serverOptions.EnableCluster ? "cluster" : "standalone"),
                     ("role", storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() ? "replica" : "master"),
                 ];
@@ -1673,8 +1673,16 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.WriteAsciiBulkString(helloResult[i].Item1, ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.WriteAsciiBulkString(helloResult[i].Item2, ref dcurr, dend))
-                    SendAndReset();
+                if (helloResult[i].Item2 is int intValue)
+                {
+                    while (!RespWriteUtils.WriteInteger(intValue, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteAsciiBulkString(helloResult[i].Item2.ToString(), ref dcurr, dend))
+                        SendAndReset();
+                }
             }
             while (!RespWriteUtils.WriteAsciiBulkString("modules", ref dcurr, dend))
                 SendAndReset();
@@ -1816,6 +1824,8 @@ namespace Garnet.server
             }
 
             into.Append($" resp={resp}");
+            into.Append($" lib-name={targetSession.clientLibName}");
+            into.Append($" lib-ver={targetSession.clientLibVersion}");
         }
 
         bool ParseGETAndKey(ref SpanByte key)

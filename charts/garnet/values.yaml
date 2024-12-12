@@ -39,9 +39,23 @@ serviceAccount:
   # -- Creates the token object
   token: false
 
+config:
+  # -- Garnet secret (if you want to use an existing secret).
+  # This secret must contains a key called 'garnet.conf'.
+  existingSecret: ""
+  # -- The garnet.conf data content.
+  garnetConf: ""
+  #garnetConf: |
+  #  {
+  #    "AuthenticationMode": "Password",
+  #    "Password": "aStrongPassword",
+  #    "EnableStorageTier": true,
+  #    "LogDir": "/data"
+  #  }
+
 containers:
   # -- Containers args
-  args: ["--port", "6379", "-m", "128m", "-i", "128m"]
+  args: []
   # -- Containers port
   port: 6379
   # -- Containers livenessProbe
@@ -66,6 +80,9 @@ dnsPolicy: ClusterFirst
 persistence:
   # -- persistence enabled
   enabled: false
+  # -- The Storage directory for tiered records (hybrid log), if storage tiering (--storage-tier) is enabled.
+  # Default: "/data"
+  storageDir: ""
 
 volumeClaimTemplates:
   # -- Volume Claim Templates Storage Class Name

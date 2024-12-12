@@ -365,6 +365,9 @@ namespace Garnet.test
                 RespCommand.CLIENT_INFO,
                 RespCommand.CLIENT_LIST,
                 RespCommand.CLIENT_KILL,
+                RespCommand.CLIENT_GETNAME,
+                RespCommand.CLIENT_SETNAME,
+                RespCommand.CLIENT_SETINFO,
                 // Command
                 RespCommand.COMMAND,
                 RespCommand.COMMAND_COUNT,
@@ -441,7 +444,7 @@ namespace Garnet.test
             var libPathToFiles = new Dictionary<string, string[]>
             {
                 {
-                    Path.Combine(dir1, "testLib1.dll"),
+                    Path.Combine(dir1, "testLib5.dll"),
                     new[]
                     {
                         Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictObject.cs", TestUtils.RootTestsProjectPath),
@@ -461,7 +464,7 @@ namespace Garnet.test
             var cmdDocsPath = Path.Combine(dir1, Path.GetFileName(TestUtils.CustomRespCommandDocsJsonPath)!);
             File.Copy(TestUtils.CustomRespCommandDocsJsonPath!, cmdDocsPath);
 
-            return (cmdInfoPath, cmdDocsPath, Path.Combine(dir1, "testLib1.dll"));
+            return (cmdInfoPath, cmdDocsPath, Path.Combine(dir1, "testLib5.dll"));
         }
 
         private string[] DynamicallyRegisterCustomCommands(IDatabase db)

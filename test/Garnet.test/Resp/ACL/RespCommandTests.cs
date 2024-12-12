@@ -38,7 +38,7 @@ namespace Garnet.test.Resp.ACL
             server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), respCustomCommandsInfo["SETWPIFPGT"]);
             server.Register.NewCommand("MYDICTGET", CommandType.Read, new MyDictFactory(), new MyDictGet(), respCustomCommandsInfo["MYDICTGET"]);
             server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = 4 });
-            server.Register.NewProcedure("SUM", new Sum());
+            server.Register.NewProcedure("SUM", () => new Sum());
 
             server.Start();
         }
@@ -730,6 +730,51 @@ namespace Garnet.test.Resp.ACL
             {
                 var count = await client.ExecuteForLongResultAsync("CLIENT", ["KILL", "ID", "123"]);
                 ClassicAssert.AreEqual(0, count);
+            }
+        }
+
+        [Test]
+        public async Task ClientGetNameACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CLIENT GETNAME",
+                [DoClientGetNameAsync]
+            );
+
+            static async Task DoClientGetNameAsync(GarnetClient client)
+            {
+                var name = await client.ExecuteForStringResultAsync("CLIENT", ["GETNAME"]);
+                ClassicAssert.IsNotEmpty(name);
+            }
+        }
+
+        [Test]
+        public async Task ClientSetNameACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CLIENT SETNAME",
+                [DoClientSetNameAsync]
+            );
+
+            static async Task DoClientSetNameAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForStringResultAsync("CLIENT", ["SETNAME", "foo"]);
+                ClassicAssert.IsNotEmpty(count);
+            }
+        }
+
+        [Test]
+        public async Task ClientSetInfoACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CLIENT SETINFO",
+                [DoClientSetInfoAsync]
+            );
+
+            static async Task DoClientSetInfoAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForStringResultAsync("CLIENT", ["SETINFO", "LIB-NAME", "foo"]);
+                ClassicAssert.IsNotEmpty(count);
             }
         }
 
@@ -3626,6 +3671,36 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task BRPopLPushACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "BRPOPLPUSH",
+                [DoBRPopLPushAsync]
+            );
+
+            static async Task DoBRPopLPushAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("BRPOPLPUSH", ["foo", "bar", "1"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task BLMPopACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "BLMPOP",
+                [DoBLMPopAsync]
+            );
+
+            static async Task DoBLMPopAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("BLMPOP", ["1", "1", "foo", "RIGHT"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
         public async Task BLPopACLsAsync()
         {
             await CheckCommandsAsync(
@@ -5411,6 +5486,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task SInterCardACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SINTERCARD",
+                [DoUnionAsync]
+            );
+
+            static async Task DoUnionAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("SINTERCARD", ["2", "foo", "bar"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
         public async Task SInterStoreACLsAsync()
         {
             await CheckCommandsAsync(
@@ -5643,6 +5733,31 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
+
+
+        [Test]
+        public async Task ZMPopACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZMPOP",
+                [DoZMPopAsync, DoZMPopCountAsync]
+            );
+
+            static async Task DoZMPopAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZMPOP", ["2", "foo", "bar", "MIN"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.IsNull(val[0]);
+            }
+
+            static async Task DoZMPopCountAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZMPOP", ["2", "foo", "bar", "MAX", "COUNT", "10"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.IsNull(val[0]);
+            }
+        }
+
         [Test]
         public async Task ZPopMaxACLsAsync()
         {
@@ -5762,6 +5877,36 @@ namespace Garnet.test.Resp.ACL
             {
                 string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGE", ["key", "10", "20"]);
                 ClassicAssert.AreEqual(0, val.Length);
+            }
+        }
+
+        [Test]
+        public async Task ZRevRangeByLexACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZREVRANGEBYLEX",
+                [DoZRevRangeByLexAsync]
+            );
+
+            static async Task DoZRevRangeByLexAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZREVRANGEBYLEX", ["key", "10", "20"]);
+                ClassicAssert.AreEqual(0, val.Length);
+            }
+        }
+
+        [Test]
+        public async Task ZRangeStoreACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZRANGESTORE",
+                [DoZRangeStoreAsync]
+            );
+
+            static async Task DoZRangeStoreAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("ZRANGESTORE", ["dkey", "key", "0", "-1"]);
+                ClassicAssert.AreEqual(0, val);
             }
         }
 

@@ -1,8 +1,8 @@
 # garnet
 
-![Version: 0.1.1](https://img.shields.io/badge/Version-0.1.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.18](https://img.shields.io/badge/AppVersion-1.0.18-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.46](https://img.shields.io/badge/AppVersion-1.0.46-informational?style=flat-square)
 
-A Helm chart for Microsoft garnet
+A Helm chart for Microsoft Garnet
 
 **Homepage:** <https://github.com/microsoft/garnet>
 
@@ -10,12 +10,31 @@ A Helm chart for Microsoft garnet
 
 * <https://github.com/microsoft/garnet.git>
 
+## Usage
+
+[Helm](https://helm.sh) must be installed to use the charts. Please refer to
+Helm's [documentation](https://helm.sh/docs) to get started.
+
+To install the Garnet chart (using an OCI-based registry):
+
+```sh
+helm upgrade --install garnet oci://ghcr.io/microsoft/helm-charts/garnet
+ ```
+
+To uninstall the chart:
+
+```sh
+helm delete garnet
+```
+
 ## Values
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity |
-| containers.args | list | `["--port","6379","-m","128m","-i","128m"]` | Containers args |
+| config.existingSecret | string | `""` | Garnet secret (if you want to use an existing secret). This secret must contains a key called 'garnet.conf'. |
+| config.garnetConf | string | `""` | The garnet.conf data content. |
+| containers.args | list | `[]` | Containers args |
 | containers.livenessProbe | object | `{}` | Containers livenessProbe |
 | containers.port | int | `6379` | Containers port |
 | containers.readinessProbe | object | `{}` | Containers livenessProbe |
@@ -33,6 +52,7 @@ A Helm chart for Microsoft garnet
 | nameOverride | string | `""` | Chart name override |
 | nodeSelector | object | `{}` | Node Selector labels |
 | persistence.enabled | bool | `false` | persistence enabled |
+| persistence.storageDir | string | `""` | The Storage directory for tiered records (hybrid log), if storage tiering (--storage-tier) is enabled. Default: "/data" |
 | podAnnotations | object | `{}` | Pod annotations |
 | podSecurityContext | object | `{}` | Pod Security Context |
 | resources | object | `{}` | Resources |

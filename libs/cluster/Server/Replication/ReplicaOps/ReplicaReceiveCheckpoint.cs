@@ -40,6 +40,7 @@ namespace Garnet.cluster
             if (!replicateLock.TryWriteLock())
             {
                 errorMessage = "ERR Replicate already in progress"u8;
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_REPLICATE_LOCK;
                 return false;
             }
 
@@ -94,6 +95,9 @@ namespace Garnet.cluster
                 storeWrapper.appendOnlyFile?.Commit();
                 storeWrapper.appendOnlyFile?.WaitForCommit();
             }
+
+            // Reset background replay iterator
+            ResetReplayIterator();
 
             // Reset replication offset
             ReplicationOffset = 0;

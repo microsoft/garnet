@@ -112,6 +112,17 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> STOREDIST => "STOREDIST"u8;
         public static ReadOnlySpan<byte> WITHDIST => "WITHDIST"u8;
         public static ReadOnlySpan<byte> WITHHASH => "WITHHASH"u8;
+        public static ReadOnlySpan<byte> LIB_NAME => "LIB-NAME"u8;
+        public static ReadOnlySpan<byte> lib_name => "lib-name"u8;
+        public static ReadOnlySpan<byte> LIB_VER => "LIB-VER"u8;
+        public static ReadOnlySpan<byte> lib_ver => "lib-ver"u8;
+        public static ReadOnlySpan<byte> RIGHT => "RIGHT"u8;
+        public static ReadOnlySpan<byte> LEFT => "LEFT"u8;
+        public static ReadOnlySpan<byte> BYLEX => "BYLEX"u8;
+        public static ReadOnlySpan<byte> REV => "REV"u8;
+        public static ReadOnlySpan<byte> LIMIT => "LIMIT"u8;
+        public static ReadOnlySpan<byte> MIN => "MIN"u8;
+        public static ReadOnlySpan<byte> MAX => "MAX"u8;
 
         /// <summary>
         /// Response strings
@@ -215,6 +226,8 @@ namespace Garnet.server
             "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
         public const string GenericSyntaxErrorOption = "ERR Syntax error in {0} option '{1}'";
         public const string GenericParamShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
+        public const string GenericErrCantBeNegative = "ERR {0} can't be negative";
+        public const string GenericErrShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
         public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
         public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
         public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";
@@ -291,6 +304,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> REPLICATE => "REPLICATE"u8;
         public static ReadOnlySpan<byte> ID => "ID"u8;
         public static ReadOnlySpan<byte> KILL => "KILL"u8;
+        public static ReadOnlySpan<byte> GETNAME => "GETNAME"u8;
+        public static ReadOnlySpan<byte> SETINFO => "SETINFO"u8;
         public static ReadOnlySpan<byte> USER => "USER"u8;
         public static ReadOnlySpan<byte> ADDR => "ADDR"u8;
         public static ReadOnlySpan<byte> LADDR => "LADDR"u8;

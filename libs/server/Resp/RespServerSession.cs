@@ -65,6 +65,8 @@ namespace Garnet.server
         internal readonly ScratchBufferManager scratchBufferManager;
 
         internal SessionParseState parseState;
+        internal SessionParseState customCommandParseState;
+
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
 
@@ -152,6 +154,15 @@ namespace Garnet.server
         /// Client name for the session
         /// </summary>
         string clientName = null;
+
+        /// <summary>
+        /// Name of the client library.
+        /// </summary>
+        string clientLibName = null;
+        /// <summary>
+        /// Version of the client library.
+        /// </summary>
+        string clientLibVersion = null;
 
         /// <summary>
         /// Flag indicating whether any of the commands in one message
@@ -600,6 +611,7 @@ namespace Garnet.server
                 RespCommand.ZINCRBY => SortedSetIncrement(ref storageApi),
                 RespCommand.ZRANK => SortedSetRank(cmd, ref storageApi),
                 RespCommand.ZRANGE => SortedSetRange(cmd, ref storageApi),
+                RespCommand.ZRANGESTORE => SortedSetRangeStore(ref storageApi),
                 RespCommand.ZRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANK => SortedSetRank(cmd, ref storageApi),
                 RespCommand.ZREMRANGEBYLEX => SortedSetLengthByValue(cmd, ref storageApi),
@@ -607,10 +619,12 @@ namespace Garnet.server
                 RespCommand.ZREMRANGEBYSCORE => SortedSetRemoveRange(cmd, ref storageApi),
                 RespCommand.ZLEXCOUNT => SortedSetLengthByValue(cmd, ref storageApi),
                 RespCommand.ZPOPMIN => SortedSetPop(cmd, ref storageApi),
+                RespCommand.ZMPOP => SortedSetMPop(ref storageApi),
                 RespCommand.ZRANDMEMBER => SortedSetRandomMember(ref storageApi),
                 RespCommand.ZDIFF => SortedSetDifference(ref storageApi),
                 RespCommand.ZDIFFSTORE => SortedSetDifferenceStore(ref storageApi),
                 RespCommand.ZREVRANGE => SortedSetRange(cmd, ref storageApi),
+                RespCommand.ZREVRANGEBYLEX => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZSCAN => ObjectScan(GarnetObjectType.SortedSet, ref storageApi),
                 //SortedSet for Geo Commands
@@ -651,7 +665,9 @@ namespace Garnet.server
                 RespCommand.LSET => ListSet(ref storageApi),
                 RespCommand.BLPOP => ListBlockingPop(cmd),
                 RespCommand.BRPOP => ListBlockingPop(cmd),
-                RespCommand.BLMOVE => ListBlockingMove(cmd),
+                RespCommand.BLMOVE => ListBlockingMove(),
+                RespCommand.BRPOPLPUSH => ListBlockingPopPush(),
+                RespCommand.BLMPOP => ListBlockingPopMultiple(),
                 // Hash Commands
                 RespCommand.HSET => HashSet(cmd, ref storageApi),
                 RespCommand.HMSET => HashSet(cmd, ref storageApi),
@@ -681,6 +697,7 @@ namespace Garnet.server
                 RespCommand.SSCAN => ObjectScan(GarnetObjectType.Set, ref storageApi),
                 RespCommand.SMOVE => SetMove(ref storageApi),
                 RespCommand.SINTER => SetIntersect(ref storageApi),
+                RespCommand.SINTERCARD => SetIntersectLength(ref storageApi),
                 RespCommand.SINTERSTORE => SetIntersectStore(ref storageApi),
                 RespCommand.SUNION => SetUnion(ref storageApi),
                 RespCommand.SUNIONSTORE => SetUnionStore(ref storageApi),
@@ -706,6 +723,9 @@ namespace Garnet.server
                 RespCommand.CLIENT_INFO => NetworkCLIENTINFO(),
                 RespCommand.CLIENT_LIST => NetworkCLIENTLIST(),
                 RespCommand.CLIENT_KILL => NetworkCLIENTKILL(),
+                RespCommand.CLIENT_GETNAME => NetworkCLIENTGETNAME(),
+                RespCommand.CLIENT_SETNAME => NetworkCLIENTSETNAME(),
+                RespCommand.CLIENT_SETINFO => NetworkCLIENTSETINFO(),
                 RespCommand.COMMAND => NetworkCOMMAND(),
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
                 RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(),
@@ -760,7 +780,7 @@ namespace Garnet.server
                 // Perform the operation
                 TryTransactionProc(currentCustomTransaction.id,
                     customCommandManagerSession
-                        .GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager)
+                        .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager, scratchBufferManager)
                         .Item1);
                 currentCustomTransaction = null;
                 return true;
@@ -774,7 +794,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                TryCustomProcedure(currentCustomProcedure.CustomProcedureImpl);
+                TryCustomProcedure(customCommandManagerSession.GetCustomProcedure(currentCustomProcedure.Id, this));
 
                 currentCustomProcedure = null;
                 return true;
