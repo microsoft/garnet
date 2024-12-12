@@ -504,13 +504,15 @@ namespace Garnet.client
                         case TaskType.MemoryByteArrayAsync:
                             if (oldTcs.memoryByteArrayTcs != null) await oldTcs.memoryByteArrayTcs.Task.ConfigureAwait(false);
                             break;
+                        case TaskType.LongAsync:
+                            if (oldTcs.longTcs != null) await oldTcs.longTcs.Task.ConfigureAwait(false);
+                            break;
                     }
                 }
                 catch
                 {
                     if (Disposed) ThrowException(disposeException);
                 }
-                await Task.Yield();
                 oldTcs = tcsArray[shortTaskId];
             }
         }
@@ -742,35 +744,33 @@ namespace Garnet.client
             return;
         }
 
-        async ValueTask InternalExecuteFireAndForgetWithNoResponse(TcsWrapper tcs, Memory<byte> op, Memory<byte> subop, Memory<byte> param1, Memory<byte> param2, CancellationToken token = default)
+        void InternalExecuteFireAndForgetWithNoResponse(Memory<byte> op, Memory<byte> subop, Memory<byte> param1, Memory<byte> param2, CancellationToken token = default)
         {
-            int totalLen = 0;
-            int arraySize = 1;
-
-            totalLen += op.Length;
-
-            if (!subop.IsEmpty)
-            {
-                int len = subop.Length;
-                totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
-                arraySize++;
-            }
-            if (!param1.IsEmpty)
-            {
-                int len = param1.Length;
-                totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
-                arraySize++;
-            }
-            if (!param2.IsEmpty)
-            {
-                int len = param2.Length;
-                totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
-                arraySize++;
-            }
+            var tcs = new TcsWrapper { taskType = TaskType.LongAsync, longTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously) };
+            var totalLen = 0;
+            var arraySize = 4;
 
             totalLen += 1 + NumUtils.NumDigits(arraySize) + 2;
-            CheckLength(totalLen, tcs);
-            await InputGateAsync(token);
+            // op (NOTE: true length because op already resp formatted)
+            totalLen += op.Length;
+
+            // subop
+            var len = subop.Length;
+            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+
+            // param1
+            len = param1.Length;
+            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+
+            // param2
+            len = param2.Length;
+            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+
+            if (totalLen > networkWriter.PageSize)
+            {
+                var e = new Exception($"Entry of size {totalLen} does not fit on page of size {networkWriter.PageSize}. Try increasing sendPageSize parameter to GarnetClient constructor.");
+                ThrowException(e);
+            }
 
             try
             {
@@ -787,12 +787,12 @@ namespace Garnet.client
                         Dispose();
                         ThrowException(disposeException);
                     }
-                    (taskId, address) = networkWriter.TryAllocate(totalLen, out var flushEvent);
+                    (taskId, address) = networkWriter.TryAllocate(totalLen, out _);
                     if (address >= 0) break;
                     try
                     {
                         networkWriter.epoch.Suspend();
-                        await flushEvent.WaitAsync(token).ConfigureAwait(false);
+                        Thread.Yield();
                     }
                     finally
                     {
@@ -805,24 +805,21 @@ namespace Garnet.client
 
                 unsafe
                 {
-                    byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
-                    byte* end = curr + totalLen;
-                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
+                    var curr = (byte*)networkWriter.GetPhysicalAddress(address);
+                    var end = curr + totalLen;
 
+                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
                     RespWriteUtils.WriteDirect(op.Span, ref curr, end);
-                    if (!subop.IsEmpty)
-                        RespWriteUtils.WriteBulkString(subop.Span, ref curr, end);
-                    if (!param1.IsEmpty)
-                        RespWriteUtils.WriteBulkString(param1.Span, ref curr, end);
-                    if (!param2.IsEmpty)
-                        RespWriteUtils.WriteBulkString(param2.Span, ref curr, end);
+                    RespWriteUtils.WriteBulkString(subop.Span, ref curr, end);
+                    RespWriteUtils.WriteBulkString(param1.Span, ref curr, end);
+                    RespWriteUtils.WriteBulkString(param2.Span, ref curr, end);
 
                     Debug.Assert(curr == end);
                 }
                 #endregion
 
                 #region waitForEmptySlot
-                int shortTaskId = taskId & (maxOutstandingTasks - 1);
+                var shortTaskId = taskId & (maxOutstandingTasks - 1);
                 var oldTcs = tcsArray[shortTaskId];
                 //1. if taskType != None, we are waiting for previous task to finish
                 //2. if taskType == None and my taskId is not the next in line wait for previous task to acquire slot
@@ -834,7 +831,7 @@ namespace Garnet.client
                     try
                     {
                         networkWriter.epoch.Suspend();
-                        await AwaitPreviousTaskAsync(taskId); // does not take token, as task is not cancelable at this point
+                        AwaitPreviousTaskAsync(taskId).ConfigureAwait(false).GetAwaiter().GetResult(); // does not take token, as task is not cancelable at this point
                     }
                     finally
                     {
