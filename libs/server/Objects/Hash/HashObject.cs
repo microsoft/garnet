@@ -565,7 +565,6 @@ namespace Garnet.server
                 UpdateExpirationSize(key);
             }
 
-            
             return 1;
         }
 
