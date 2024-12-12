@@ -37,6 +37,7 @@ namespace BDN.benchmark.Cluster
             cc.CreateGetSet();
             cc.CreateMGetMSet();
             cc.CreateCTXNSET();
+            cc.CreatePublish();
 
             // Warmup/Prepopulate stage
             cc.Consume(cc.singleGetSet[1].ptr, cc.singleGetSet[1].buffer.Length);
@@ -44,6 +45,8 @@ namespace BDN.benchmark.Cluster
             cc.Consume(cc.singleMGetMSet[1].ptr, cc.singleMGetMSet[1].buffer.Length);
             // Warmup/Prepopulate stage
             cc.Consume(cc.singleCTXNSET.ptr, cc.singleCTXNSET.buffer.Length);
+            // Warmup/Prepopulate stage
+            cc.Consume(cc.singlePublish.ptr, cc.singlePublish.buffer.Length);
         }
 
         [GlobalCleanup]
@@ -80,6 +83,12 @@ namespace BDN.benchmark.Cluster
         public void CTXNSET()
         {
             cc.Consume(cc.singleCTXNSET.ptr, cc.singleCTXNSET.buffer.Length);
+        }
+
+        [Benchmark]
+        public void Publish()
+        {
+            cc.Consume(cc.singlePublish.ptr, cc.singlePublish.buffer.Length);
         }
     }
 }
