@@ -1174,8 +1174,9 @@ namespace Garnet.test
         [Test]
         public async Task CanDoHashCollect()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
+            var server = redis.GetServers().First();
             db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "value3"), new HashEntry("field4", "value4"), new HashEntry("field5", "value5"), new HashEntry("field6", "value6")]);
 
             var result = db.Execute("HEXPIRE", "myhash", "1", "FIELDS", "2", "field1", "field2");
@@ -1190,15 +1191,30 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]);
 
+            var orginalMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
+
             await Task.Delay(1000);
+
+            var newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
+            ClassicAssert.AreEqual(newMemory, orginalMemory);
 
             var collectResult = (string)db.Execute("HCOLLECT", "myhash");
             ClassicAssert.AreEqual("OK", collectResult);
 
+            newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
+            ClassicAssert.Less(newMemory, orginalMemory);
+            orginalMemory = newMemory;
+
             await Task.Delay(1000);
+
+            newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
+            ClassicAssert.AreEqual(newMemory, orginalMemory);
 
             collectResult = (string)db.Execute("HCOLLECT", "*");
             ClassicAssert.AreEqual("OK", collectResult);
+
+            newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
+            ClassicAssert.Less(newMemory, orginalMemory);
         }
 
         [Test]

@@ -154,7 +154,6 @@ namespace Garnet.server
                 if (Remove(key, out var hashValue))
                 {
                     _output->result1++;
-                    this.UpdateSize(key, hashValue, false);
                 }
             }
         }
@@ -284,16 +283,11 @@ namespace Garnet.server
                 if (!TryGetValue(key, out var hashValue))
                 {
                     Add(key, value);
-                    this.UpdateSize(key, value);
                     _output->result1++;
                 }
                 else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default)
                 {
-                    // TODO: Update size to remove expiration
                     Set(key, value);
-                    // Skip overhead as existing item is getting replaced.
-                    this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
-                                 Utility.RoundUp(hashValue.Length, IntPtr.Size);
                 }
             }
         }
@@ -406,14 +400,11 @@ namespace Garnet.server
 
                         resultBytes = resultSpan.ToArray();
                         SetWithoutPersist(key, resultBytes);
-                        Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) -
-                                Utility.RoundUp(value.Length, IntPtr.Size);
                     }
                     else
                     {
                         resultBytes = incrSlice.SpanByte.ToByteArray();
                         Add(key, resultBytes);
-                        UpdateSize(key, resultBytes);
                     }
 
                     while (!RespWriteUtils.WriteIntegerFromBytes(resultBytes, ref curr, end))
@@ -447,14 +438,11 @@ namespace Garnet.server
 
                         resultBytes = Encoding.ASCII.GetBytes(result.ToString(CultureInfo.InvariantCulture));
                         SetWithoutPersist(key, resultBytes);
-                        Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) -
-                                Utility.RoundUp(value.Length, IntPtr.Size);
                     }
                     else
                     {
                         resultBytes = incrSlice.SpanByte.ToByteArray();
                         Add(key, resultBytes);
-                        UpdateSize(key, resultBytes);
                     }
 
                     while (!RespWriteUtils.WriteBulkString(resultBytes, ref curr, end))
