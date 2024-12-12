@@ -1069,7 +1069,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(-1, (long)results[1]); // -1 if the field exists but has no associated expiration set.
             ClassicAssert.AreEqual(-2, (long)results[2]);
 
-            await Task.Delay(3000);
+            await Task.Delay(3500);
 
             var items = db.HashGetAll("myhash");
             ClassicAssert.AreEqual(2, items.Length);
