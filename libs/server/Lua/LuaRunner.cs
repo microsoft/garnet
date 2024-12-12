@@ -1022,79 +1022,56 @@ namespace Garnet.server
 
             ResetParameters(keys?.Length ?? 0, argv?.Length ?? 0);
 
-            byte[] encodingBufferArr = null;
-            Span<byte> encodingBuffer = stackalloc byte[64];
-            try
+            if (keys != null)
             {
+                // get KEYS on the stack
+                CheckedPushNumber(NeededStackSize, keysTableRegistryIndex);
+                var loadRes = state.GetTable(LuaRegistry.Index);
+                Debug.Assert(loadRes == LuaType.Table, "Unexpected type for KEYS");
 
-                if (keys != null)
+                for (var i = 0; i < keys.Length; i++)
                 {
-                    // get KEYS on the stack
-                    CheckedPushNumber(NeededStackSize, keysTableRegistryIndex);
-                    var loadRes = state.GetTable(LuaRegistry.Index);
-                    Debug.Assert(loadRes == LuaType.Table, "Unexpected type for KEYS");
-
-                    for (var i = 0; i < keys.Length; i++)
-                    {
-                        // equivalent to KEYS[i+1] = keys[i]
-                        var key = keys[i];
-
-                        var keyLen = PrepareString(key, ref encodingBufferArr, ref encodingBuffer);
-                        CheckedPushBuffer(NeededStackSize, encodingBuffer[..keyLen]);
-
-                        state.RawSetInteger(1, i + 1);
-                    }
-
-                    state.Pop(1);
+                    // equivalent to KEYS[i+1] = keys[i]
+                    var key = keys[i];
+                    PrepareString(key, scratchBufferManager, out var encoded);
+                    CheckedPushBuffer(NeededStackSize, encoded);
+                    state.RawSetInteger(1, i + 1);
                 }
 
-                if (argv != null)
-                {
-                    // get ARGV on the stack
-                    CheckedPushNumber(NeededStackSize, argvTableRegistryIndex);
-                    var loadRes = state.GetTable(LuaRegistry.Index);
-                    Debug.Assert(loadRes == LuaType.Table, "Unexpected type for ARGV");
-
-                    for (var i = 0; i < argv.Length; i++)
-                    {
-                        // equivalent to ARGV[i+1] = keys[i]
-                        var arg = argv[i];
-
-                        var argLen = PrepareString(arg, ref encodingBufferArr, ref encodingBuffer);
-                        CheckedPushBuffer(NeededStackSize, encodingBuffer[..argLen]);
-
-                        state.RawSetInteger(1, i + 1);
-                    }
-
-                    state.Pop(1);
-                }
+                state.Pop(1);
             }
-            finally
+
+            if (argv != null)
             {
-                if (encodingBufferArr != null)
+                // get ARGV on the stack
+                CheckedPushNumber(NeededStackSize, argvTableRegistryIndex);
+                var loadRes = state.GetTable(LuaRegistry.Index);
+                Debug.Assert(loadRes == LuaType.Table, "Unexpected type for ARGV");
+
+                for (var i = 0; i < argv.Length; i++)
                 {
-                    ArrayPool<byte>.Shared.Return(encodingBufferArr);
+                    // equivalent to ARGV[i+1] = keys[i]
+                    var arg = argv[i];
+                    PrepareString(arg, scratchBufferManager, out var encoded);
+                    CheckedPushBuffer(NeededStackSize, encoded);
+                    state.RawSetInteger(1, i + 1);
                 }
+
+                state.Pop(1);
             }
 
             AssertLuaStackEmpty();
 
-            // TODO: replace with scratchBufferManager
-            static int PrepareString(string raw, ref byte[] arr, ref Span<byte> span)
+            static void PrepareString(string raw, ScratchBufferManager buffer, out ReadOnlySpan<byte> strBytes)
             {
                 var maxLen = Encoding.UTF8.GetMaxByteCount(raw.Length);
-                if (span.Length < maxLen)
-                {
-                    if (arr != null)
-                    {
-                        ArrayPool<byte>.Shared.Return(arr);
-                    }
 
-                    arr = ArrayPool<byte>.Shared.Rent(maxLen);
-                    span = arr;
-                }
+                buffer.Reset();
+                var argSlice = buffer.CreateArgSlice(maxLen);
+                var span = argSlice.Span;
 
-                return Encoding.UTF8.GetBytes(raw, span);
+                var written = Encoding.UTF8.GetBytes(raw, span);
+                strBytes = span[..written];
             }
         }
 

@@ -222,6 +222,11 @@ namespace Garnet.server
             return retVal;
         }
 
+        /// <summary>
+        /// Start a RESP array to hold a command and arguments.
+        /// 
+        /// Fill it with <paramref name="argCount"/> calls to <see cref="WriteNullArgument"/> and/or <see cref="WriteArgument(ReadOnlySpan{byte})"/>.
+        /// </summary>
         public void StartCommand(ReadOnlySpan<byte> cmd, int argCount)
         {
             if (scratchBuffer == null)
@@ -229,7 +234,7 @@ namespace Garnet.server
 
             var ptr = scratchBufferHead + scratchBufferOffset;
 
-            while (!RespWriteUtils.WriteArrayLength(argCount+1, ref ptr, scratchBufferHead + scratchBuffer.Length))
+            while (!RespWriteUtils.WriteArrayLength(argCount + 1, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
                 ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
@@ -244,6 +249,9 @@ namespace Garnet.server
             scratchBufferOffset = (int)(ptr - scratchBufferHead);
         }
 
+        /// <summary>
+        /// Use to fill a RESP array with arguments after a call to <see cref="StartCommand(ReadOnlySpan{byte}, int)"/>.
+        /// </summary>
         public void WriteNullArgument()
         {
             var ptr = scratchBufferHead + scratchBufferOffset;
@@ -257,6 +265,9 @@ namespace Garnet.server
             scratchBufferOffset = (int)(ptr - scratchBufferHead);
         }
 
+        /// <summary>
+        /// Use to fill a RESP array with arguments after a call to <see cref="StartCommand(ReadOnlySpan{byte}, int)"/>.
+        /// </summary>
         public void WriteArgument(ReadOnlySpan<byte> arg)
         {
             var ptr = scratchBufferHead + scratchBufferOffset;
@@ -268,77 +279,6 @@ namespace Garnet.server
             }
 
             scratchBufferOffset = (int)(ptr - scratchBufferHead);
-        }
-
-        /// <summary>
-        /// Format specified command with arguments, as a RESP command. Lua state
-        /// can be specified to handle Lua tables as arguments.
-        /// </summary>
-        public ArgSlice FormatCommandAsResp(ReadOnlySpan<byte> cmd, ReadOnlySpan<ArgSlice> args)
-        {
-            if (scratchBuffer == null)
-                ExpandScratchBuffer(64);
-
-            scratchBufferOffset += 10; // Reserve space for the array length if it is larger than expected
-            var commandStartOffset = scratchBufferOffset;
-            var ptr = scratchBufferHead + scratchBufferOffset;
-
-            while (!RespWriteUtils.WriteArrayLength(args.Length + 1, ref ptr, scratchBufferHead + scratchBuffer.Length))
-            {
-                ExpandScratchBuffer(scratchBuffer.Length + 1);
-                ptr = scratchBufferHead + scratchBufferOffset;
-            }
-            scratchBufferOffset = (int)(ptr - scratchBufferHead);
-
-            while (!RespWriteUtils.WriteBulkString(cmd, ref ptr, scratchBufferHead + scratchBuffer.Length))
-            {
-                ExpandScratchBuffer(scratchBuffer.Length + 1);
-                ptr = scratchBufferHead + scratchBufferOffset;
-            }
-            scratchBufferOffset = (int)(ptr - scratchBufferHead);
-
-            var count = 1;
-            foreach (var str in args)
-            {
-                count++;
-
-                // Smuggling a null-ish value in
-                if (str.Length < 0)
-                {
-                    while (!RespWriteUtils.WriteNull(ref ptr, scratchBufferHead + scratchBuffer.Length))
-                    {
-                        ExpandScratchBuffer(scratchBuffer.Length + 1);
-                        ptr = scratchBufferHead + scratchBufferOffset;
-                    }
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteBulkString(str.ReadOnlySpan, ref ptr, scratchBufferHead + scratchBuffer.Length))
-                    {
-                        ExpandScratchBuffer(scratchBuffer.Length + 1);
-                        ptr = scratchBufferHead + scratchBufferOffset;
-                    }
-                }
-
-                scratchBufferOffset = (int)(ptr - scratchBufferHead);
-            }
-
-            if (count != args.Length + 1)
-            {
-                var extraSpace = NumUtils.NumDigits(count) - NumUtils.NumDigits(args.Length + 1);
-                if (commandStartOffset < extraSpace)
-                    throw new InvalidOperationException("Invalid number of arguments");
-
-                commandStartOffset -= extraSpace;
-                var head = scratchBufferHead + commandStartOffset;
-
-                // There should be space as we have reserved it
-                _ = RespWriteUtils.WriteArrayLength(count, ref head, scratchBufferHead + scratchBuffer.Length);
-            }
-
-            var retVal = new ArgSlice(scratchBufferHead + commandStartOffset, scratchBufferOffset - commandStartOffset);
-            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
-            return retVal;
         }
 
         /// <summary>
