@@ -958,7 +958,7 @@ namespace Garnet.server
         /// <summary>
         /// Remove extra keys and args from KEYS and ARGV globals.
         /// </summary>
-        void ResetParameters(int nKeys, int nArgs)
+        internal void ResetParameters(int nKeys, int nArgs)
         {
             // TODO: is this faster than punching a function in to do it?
             const int NeededStackSize = 2;

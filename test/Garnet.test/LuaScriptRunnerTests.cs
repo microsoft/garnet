@@ -101,5 +101,34 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("Compilation error: [string \"local list; list = ; return list;\"]:1: unexpected symbol near ';'", ex.Message);
             }
         }
+
+        [Test]
+        public void KeysAndArgsCleared()
+        {
+            using (var runner = new LuaRunner("return { KEYS[1], ARGV[1], KEYS[2], ARGV[2] }"))
+            {
+                runner.CompileForRunner();
+                var res1 = runner.RunForRunner(["hello", "world"], ["fizz", "buzz"]);
+                var obj1 = (object[])res1;
+                ClassicAssert.AreEqual(4, obj1.Length);
+                ClassicAssert.AreEqual("hello", (string)obj1[0]);
+                ClassicAssert.AreEqual("fizz", (string)obj1[1]);
+                ClassicAssert.AreEqual("world", (string)obj1[2]);
+                ClassicAssert.AreEqual("buzz", (string)obj1[3]);
+
+                var res2 = runner.RunForRunner(["abc"], ["def"]);
+                var obj2 = (object[])res2;
+                ClassicAssert.AreEqual(2, obj2.Length);
+                ClassicAssert.AreEqual("abc", (string)obj2[0]);
+                ClassicAssert.AreEqual("def", (string)obj2[1]);
+
+                var res3 = runner.RunForRunner(["012", "345"], ["678"]);
+                var obj3 = (object[])res3;
+                ClassicAssert.AreEqual(3, obj3.Length);
+                ClassicAssert.AreEqual("012", (string)obj3[0]);
+                ClassicAssert.AreEqual("678", (string)obj3[1]);
+                ClassicAssert.AreEqual("345", (string)obj3[2]);
+            }
+        }
     }
 }
