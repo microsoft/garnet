@@ -298,7 +298,7 @@ namespace Garnet.test
             var stringCmd = "*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n$40\r\nreturn redis.call('set',KEYS[1],ARGV[1])\r\n";
             var sha1SetScript = Encoding.ASCII.GetString(lightClientRequest.SendCommand(Encoding.ASCII.GetBytes(stringCmd), 1)).Substring(5, 40);
 
-            ClassicAssert.AreEqual("C686F316AAF1EB01D5A4DE1B0B63CD233010E63D", sha1SetScript);
+            ClassicAssert.AreEqual("c686f316aaf1eb01d5a4de1b0b63cd233010e63d", sha1SetScript);
             for (var i = 0; i < 5000; i++)
             {
                 var randPostFix = rnd.Next(1, 1000);

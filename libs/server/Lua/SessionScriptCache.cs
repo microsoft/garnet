@@ -112,7 +112,7 @@ namespace Garnet.server
             scriptCache.Clear();
         }
 
-        static ReadOnlySpan<byte> HEX_CHARS => "0123456789ABCDEF"u8; // upper case is important here for future lookup, and matches Redis behavior
+        static ReadOnlySpan<byte> HEX_CHARS => "0123456789abcdef"u8;
 
         public void GetScriptDigest(ReadOnlySpan<byte> source, Span<byte> into)
         {

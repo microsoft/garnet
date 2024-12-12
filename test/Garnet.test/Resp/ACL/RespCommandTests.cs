@@ -2503,7 +2503,7 @@ namespace Garnet.test.Resp.ACL
             async Task DoScriptLoadAsync(GarnetClient client)
             {
                 string res = await client.ExecuteForStringResultAsync("SCRIPT", ["LOAD", "return 'OK'"]);
-                ClassicAssert.AreEqual("57ADE87C8731F041ECAC85ABA56623F8AF391FAB", (string)res);
+                ClassicAssert.AreEqual("57ade87c8731f041ecac85aba56623f8af391fab", (string)res);
             }
         }
 
