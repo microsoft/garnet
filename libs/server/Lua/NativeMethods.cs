@@ -7,10 +7,8 @@ using System.Runtime.InteropServices;
 using KeraLua;
 using static System.Net.WebRequestMethods;
 using charptr_t = System.IntPtr;
-using lua_Integer = System.Int64;
 using lua_State = System.IntPtr;
 using size_t = System.UIntPtr;
-using voidptr_t = System.IntPtr;
 
 namespace Garnet.server
 {
@@ -44,6 +42,12 @@ namespace Garnet.server
         /// </summary>
         [DllImport(LuaLibraryName, CallingConvention = CallingConvention.Cdecl)]
         private static extern charptr_t lua_pushlstring(lua_State L, charptr_t s, size_t len);
+
+        /// <summary>
+        /// see: https://www.lua.org/manual/5.3/manual.html#luaL_loadbufferx
+        /// </summary>
+        [DllImport(LuaLibraryName, CallingConvention = CallingConvention.Cdecl)]
+        private static extern LuaStatus luaL_loadbufferx(lua_State luaState, charptr_t buff, size_t sz, charptr_t name, charptr_t mode);
 
         /// <summary>
         /// Returns true if the given index on the stack holds a string or a number.
@@ -102,6 +106,19 @@ namespace Garnet.server
             fixed (byte* ptr = str)
             {
                 lua_pushlstring(luaState, (charptr_t)ptr, (size_t)str.Length);
+            }
+        }
+
+        /// <summary>
+        /// Push given span to stack, and compiles it.
+        /// 
+        /// Provided data is copied, and can be reused once this call returns.
+        /// </summary>
+        internal static unsafe LuaStatus LoadBuffer(lua_State luaState, ReadOnlySpan<byte> str)
+        {
+            fixed (byte* ptr = str)
+            {
+                return luaL_loadbufferx(luaState, (charptr_t)ptr, (size_t)str.Length, (charptr_t)UIntPtr.Zero, (charptr_t)UIntPtr.Zero);
             }
         }
     }

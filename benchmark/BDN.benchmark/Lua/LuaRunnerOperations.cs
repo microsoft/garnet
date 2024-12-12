@@ -150,6 +150,9 @@ return returnValue
 
         private LuaRunner paramsRunner;
 
+        private LuaRunner smallCompileRunner;
+        private LuaRunner largeCompileRunner;
+
         [GlobalSetup]
         public void GlobalSetup()
         {
@@ -157,6 +160,9 @@ return returnValue
 
             session = server.GetRespSession();
             paramsRunner = new LuaRunner("return nil");
+
+            smallCompileRunner = new LuaRunner(SmallScript);
+            largeCompileRunner = new LuaRunner(LargeScript);
         }
 
         [GlobalCleanup]
@@ -202,19 +208,15 @@ return returnValue
         [Benchmark]
         public void CompileForSessionSmall()
         {
-            using (var runner = new LuaRunner(SmallScript))
-            {
-                runner.CompileForSession(session);
-            }
+            smallCompileRunner.ResetCompilation();
+            smallCompileRunner.CompileForSession(session);
         }
 
         [Benchmark]
         public void CompileForSessionLarge()
         {
-            using (var runner = new LuaRunner(LargeScript))
-            {
-                runner.CompileForSession(session);
-            }
+            largeCompileRunner.ResetCompilation();
+            largeCompileRunner.CompileForSession(session);
         }
     }
 }

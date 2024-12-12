@@ -128,6 +128,82 @@ namespace Garnet.server
             }
         }
 
+        const string LoaderBlock = @"
+import = function () end
+redis = {}
+function redis.call(...)
+    return garnet_call(...)
+end
+function redis.status_reply(text)
+    return text
+end
+function redis.error_reply(text)
+    return { err = 'ERR ' .. text }
+end
+KEYS = {}
+ARGV = {}
+sandbox_env = {
+    tostring = tostring;
+    next = next;
+    assert = assert;
+    tonumber = tonumber;
+    rawequal = rawequal;
+    collectgarbage = collectgarbage;
+    coroutine = coroutine;
+    type = type;
+    select = select;
+    unpack = table.unpack;
+    gcinfo = gcinfo;
+    pairs = pairs;
+    loadstring = loadstring;
+    ipairs = ipairs;
+    error = error;
+    redis = redis;
+    math = math;
+    table = table;
+    string = string;
+    KEYS = KEYS;
+    ARGV = ARGV;
+}
+-- do resets in the Lua side to minimize pinvokes
+function reset_keys_and_argv(fromKey, fromArgv)
+    local keyCount = #KEYS
+    for i = fromKey, keyCount do
+        KEYS[i] = nil
+    end
+
+    local argvCount = #ARGV
+    for i = fromArgv, argvCount do
+        ARGV[i] = nil
+    end
+end
+-- responsible for sandboxing user provided code
+function load_sandboxed(source)
+    if (not source) then return nil end
+    local rawFunc, err = load(source, nil, nil, sandbox_env)
+
+    -- compilation error is returned directly
+    if err then
+        return rawFunc, err
+    end
+
+    -- otherwise we wrap the compiled function in a helper
+    return function()
+        local rawRet = rawFunc()
+
+        -- handle ok response wrappers without crossing the pinvoke boundary
+        -- err response wrapper requires a bit more work, but is also rarer
+        if rawRet and type(rawRet) == ""table"" and rawRet.ok then
+            return rawRet.ok
+        end
+
+        return rawRet
+    end
+end
+";
+
+        private static readonly ReadOnlyMemory<byte> LoaderBlockBytes = Encoding.UTF8.GetBytes(LoaderBlock);
+
         // Rooted to keep function pointer alive
         readonly LuaFunction garnetCall;
 
@@ -187,9 +263,10 @@ namespace Garnet.server
             // TODO: custom allocator?
             state = new Lua();
             AssertLuaStackEmpty();
-            curStackTop = 0;
 
-            ForceGrowLuaStack(NeededStackSize);
+            ForceGrowLuaStack(20);
+
+            curStackSize = 20;
 
             if (txnMode)
             {
@@ -202,80 +279,14 @@ namespace Garnet.server
                 garnetCall = garnet_call;
             }
 
-            var sandboxRes = state.DoString(@"
-                import = function () end
-                redis = {}
-                function redis.call(...)
-                    return garnet_call(...)
-                end
-                function redis.status_reply(text)
-                    return text
-                end
-                function redis.error_reply(text)
-                    return { err = 'ERR ' .. text }
-                end
-                KEYS = {}
-                ARGV = {}
-                sandbox_env = {
-                    tostring = tostring;
-                    next = next;
-                    assert = assert;
-                    tonumber = tonumber;
-                    rawequal = rawequal;
-                    collectgarbage = collectgarbage;
-                    coroutine = coroutine;
-                    type = type;
-                    select = select;
-                    unpack = table.unpack;
-                    gcinfo = gcinfo;
-                    pairs = pairs;
-                    loadstring = loadstring;
-                    ipairs = ipairs;
-                    error = error;
-                    redis = redis;
-                    math = math;
-                    table = table;
-                    string = string;
-                    KEYS = KEYS;
-                    ARGV = ARGV;
-                }
-                -- do resets in the Lua side to minimize pinvokes
-                function reset_keys_and_argv(fromKey, fromArgv)
-                    local keyCount = #KEYS
-                    for i = fromKey, keyCount do
-                        KEYS[i] = nil
-                    end
+            var loadRes = CheckedLoadBuffer(LoaderBlockBytes.Span);
+            if (loadRes != LuaStatus.OK)
+            {
+                throw new GarnetException("Could load loader into Lua");
+            }
 
-                    local argvCount = #ARGV
-                    for i = fromArgv, argvCount do
-                        ARGV[i] = nil
-                    end
-                end
-                -- responsible for sandboxing user provided code
-                function load_sandboxed(source)
-                    if (not source) then return nil end
-                    local rawFunc, err = load(source, nil, nil, sandbox_env)
-
-                    -- compilation error is returned directly
-                    if err then
-                        return rawFunc, err
-                    end
-
-                    -- otherwise we wrap the compiled function in a helper
-                    return function()
-                        local rawRet = rawFunc()
-
-                        -- handle ok response wrappers without crossing the pinvoke boundary
-                        -- err response wrapper requires a bit more work, but is also rarer
-                        if rawRet and type(rawRet) == ""table"" and rawRet.ok then
-                            return rawRet.ok
-                        end
-
-                        return rawRet
-                    end
-                end
-            ");
-            if (sandboxRes)
+            var sandboxRes = CheckedPCall(0, -1);
+            if (sandboxRes != LuaStatus.OK)
             {
                 throw new GarnetException("Could not initialize Lua sandbox state");
             }
@@ -360,6 +371,18 @@ namespace Garnet.server
         {
             var adapter = new RespResponseAdapter(session);
             CompileCommon(ref adapter);
+        }
+
+        /// <summary>
+        /// Drops compiled function, just for benchmarking purposes.
+        /// </summary>
+        public void ResetCompilation()
+        {
+            if (functionRegistryIndex != -1)
+            {
+                state.Unref(LuaRegistry.Index, functionRegistryIndex);
+                functionRegistryIndex = -1;
+            }
         }
 
         /// <summary>
@@ -1594,6 +1617,7 @@ namespace Garnet.server
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="curStackTop"/> to minimize p/invoke calls.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void CheckedCreateTable(int numArr, int numRec)
         {
             state.CreateTable(numArr, numRec);
@@ -1615,6 +1639,25 @@ namespace Garnet.server
             curStackTop++;
 
             AssertLuaStackExpected();
+        }
+
+        /// <summary>
+        /// This should be used for all LoadBuffers into Lua.
+        /// 
+        /// Note that this is different from pushing a buffer, as the loaded buffer is compiled.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="curStackTop"/> to minimize p/invoke calls.
+        /// </summary>
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private LuaStatus CheckedLoadBuffer(ReadOnlySpan<byte> buffer)
+        {
+            var ret = NativeMethods.LoadBuffer(state.Handle, buffer);
+            curStackTop++;
+
+            AssertLuaStackExpected();
+
+            return ret;
         }
 
         /// <summary>
