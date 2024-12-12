@@ -2425,7 +2425,13 @@ namespace Garnet.test.cluster
 
         public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
 
-        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[1];
+            setup[0] = new ArraySegment<string>(["HSET", ssk[0], "a", "1", "b", "2", "c", "3"]);
+            return setup;
+        }
     }
 
     #endregion
