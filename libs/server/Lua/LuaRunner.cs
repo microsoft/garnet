@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -154,7 +153,6 @@ namespace Garnet.server
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly RespServerSession respServerSession;
 
-        // TODO: all buffers should be rented from this, remove ArrayPool use
         readonly ScratchBufferManager scratchBufferManager;
         readonly ILogger logger;
         readonly Lua state;
