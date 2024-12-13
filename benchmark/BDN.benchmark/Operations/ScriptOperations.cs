@@ -195,7 +195,7 @@ return returnValue
             var smallScriptHash = string.Join("", SHA1.HashData(Encoding.UTF8.GetBytes(SmallScriptText)).Select(static x => x.ToString("x2")));
             var evalShaSmallScript = $"*4\r\n$7\r\nEVALSHA\r\n$40\r\n{smallScriptHash}\r\n$1\r\n1\r\n$3\r\nfoo\r\n";
             evalShaSmallScriptBuffer = GC.AllocateUninitializedArray<byte>(evalShaSmallScript.Length * batchSize, pinned: true);
-            for(var i = 0; i < batchSize; i++)
+            for (var i = 0; i < batchSize; i++)
             {
                 var start = i * evalShaSmallScript.Length;
                 Encoding.UTF8.GetBytes(evalShaSmallScript, evalShaSmallScriptBuffer.AsSpan().Slice(start, evalShaSmallScript.Length));
