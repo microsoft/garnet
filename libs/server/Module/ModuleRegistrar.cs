@@ -152,7 +152,7 @@ namespace Garnet.server
             if (string.IsNullOrEmpty(name) || factory == null || command == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
-            customCommandManager.Register(name, type, factory, command, commandInfo, commandDocs);
+            customCommandManager.Register(name, type, factory, commandInfo, commandDocs, command);
 
             return ModuleActionStatus.Success;
         }

@@ -776,8 +776,8 @@ namespace Garnet.server
                 // Perform the operation
                 TryTransactionProc(currentCustomTransaction.id,
                     customCommandManagerSession
-                        .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager, scratchBufferManager)
-                        .Item1);
+                        .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager,
+                            scratchBufferManager, out _));
                 currentCustomTransaction = null;
                 return true;
             }
@@ -816,7 +816,7 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomRawStringCommand(currentCustomRawStringCommand.GetRespCommand(),
+            TryCustomRawStringCommand((RespCommand)currentCustomRawStringCommand.id,
                 currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
             currentCustomRawStringCommand = null;
             return true;
@@ -832,7 +832,7 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomObjectCommand(currentCustomObjectCommand.GetObjectType(), currentCustomObjectCommand.subid,
+            TryCustomObjectCommand((GarnetObjectType)currentCustomObjectCommand.id, currentCustomObjectCommand.subid,
                 currentCustomObjectCommand.type, ref storageApi);
             currentCustomObjectCommand = null;
             return true;
@@ -840,7 +840,7 @@ namespace Garnet.server
 
         private bool IsCommandArityValid(string cmdName, int count)
         {
-            if (storeWrapper.customCommandManager.CustomCommandsInfo.TryGetValue(cmdName, out var cmdInfo))
+            if (storeWrapper.customCommandManager.customCommandsInfo.TryGetValue(cmdName, out var cmdInfo))
             {
                 Debug.Assert(cmdInfo != null, "Custom command info should not be null");
                 if ((cmdInfo.Arity > 0 && count != cmdInfo.Arity - 1) ||

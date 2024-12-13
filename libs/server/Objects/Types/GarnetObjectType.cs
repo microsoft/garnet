@@ -34,6 +34,11 @@ namespace Garnet.server
         // Any new special type inserted here should update GarnetObjectTypeExtensions.FirstSpecialObjectType
 
         /// <summary>
+        /// Special type indicating PEXPIRE command
+        /// </summary>
+        PExpire = 0xf8,
+
+        /// <summary>
         /// Special type indicating EXPIRETIME command
         /// </summary>
         ExpireTime = 0xf9,
@@ -42,6 +47,16 @@ namespace Garnet.server
         /// Special type indicating PEXPIRETIME command
         /// </summary>
         PExpireTime = 0xfa,
+
+        /// <summary>
+        /// Indicating a Custom Object command
+        /// </summary>
+        All = 0xfb,
+
+        /// <summary>
+        /// Special type indicating PTTL command
+        /// </summary>
+        PTtl = 0xfc,
 
         /// <summary>
         /// Special type indicating PERSIST command
@@ -57,27 +72,12 @@ namespace Garnet.server
         /// Special type indicating EXPIRE command
         /// </summary>
         Expire = 0xff,
-
-        /// <summary>
-        /// Special type indicating PEXPIRE command
-        /// </summary>
-        PExpire = 0xf8,
-
-        /// <summary>
-        /// Special type indicating PTTL command
-        /// </summary>
-        PTtl = 0xfc,
-
-        /// <summary>
-        /// Indicating a Custom Object command
-        /// </summary>
-        All = 0xfb
     }
 
     public static class GarnetObjectTypeExtensions
     {
         internal const GarnetObjectType LastObjectType = GarnetObjectType.Set;
 
-        internal const GarnetObjectType FirstSpecialObjectType = GarnetObjectType.ExpireTime;
+        internal const GarnetObjectType FirstSpecialObjectType = GarnetObjectType.PExpire;
     }
 }
