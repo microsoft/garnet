@@ -87,7 +87,9 @@ namespace Tsavorite.test.recovery
         [Category("CheckpointRestore")]
         [Category("Smoke")]
 
-        public async ValueTask RecoveryCheck1([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+        public async ValueTask RecoveryCheck1(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
+            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
@@ -184,7 +186,9 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask RecoveryCheck2([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+        public async ValueTask RecoveryCheck2(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
+            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
@@ -273,7 +277,9 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public void RecoveryCheck2Repeated([Values] CheckpointType checkpointType)
+        public void RecoveryCheck2Repeated(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType
+            )
         {
             Guid token = default;
 
@@ -326,7 +332,9 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public void RecoveryRollback([Values] CheckpointType checkpointType)
+        public void RecoveryRollback(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType
+            )
         {
             using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
@@ -478,7 +486,9 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask RecoveryCheck3([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+        public async ValueTask RecoveryCheck3(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
+            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
@@ -578,7 +588,9 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask RecoveryCheck4([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+        public async ValueTask RecoveryCheck4(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
+            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
@@ -682,7 +694,9 @@ namespace Tsavorite.test.recovery
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
-        public async ValueTask RecoveryCheck5([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+        public async ValueTask RecoveryCheck5(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
+            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
@@ -917,6 +931,155 @@ namespace Tsavorite.test.recovery
                 }
             }
             _ = bc3.CompletePending(true);
+        }
+    }
+
+    [TestFixture]
+    public class RecoveryCheckStreamingSnapshotTests : RecoveryCheckBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
+
+        public class SnapshotIterator : IStreamingSnapshotIteratorFunctions<long, long>
+        {
+            readonly TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store2;
+            readonly long expectedCount;
+
+            ClientSession<long, long, long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator> session2;
+            BasicContext<long, long, long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator> bc2;
+
+            public SnapshotIterator(TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store2, long expectedCount)
+            {
+                this.store2 = store2;
+                this.expectedCount = expectedCount;
+            }
+
+            public bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion)
+            {
+                store2.SetVersion(targetVersion);
+                session2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
+                bc2 = session2.BasicContext;
+                return true;
+            }
+
+            public bool Reader(ref long key, ref long value, RecordMetadata recordMetadata, long numberOfRecords)
+            {
+                _ = bc2.Upsert(ref key, ref value);
+                return true;
+            }
+
+            public void OnException(Exception exception, long numberOfRecords)
+                => Assert.Fail(exception.Message);
+
+            public void OnStop(bool completed, long numberOfRecords)
+            {
+                Assert.That(numberOfRecords, Is.EqualTo(expectedCount));
+                session2.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+
+        public async ValueTask StreamingSnapshotBasicTest([Values] bool isAsync, [Values] bool useReadCache, [Values] bool reInsert, [Values(1L << 13, 1L << 16)] long indexSize)
+        {
+            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            using var s1 = store1.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
+            var bc1 = s1.BasicContext;
+
+            for (long key = 0; key < (reInsert ? 800 : 1000); key++)
+            {
+                // If reInsert, we insert the wrong key during the first pass for the first 500 keys
+                long value = reInsert && key < 500 ? key + 1 : key;
+                _ = bc1.Upsert(ref key, ref value);
+            }
+
+            if (reInsert)
+            {
+                store1.Log.FlushAndEvict(true);
+                for (long key = 0; key < 500; key++)
+                {
+                    _ = bc1.Upsert(ref key, ref key);
+                }
+                for (long key = 800; key < 1000; key++)
+                {
+                    _ = bc1.Upsert(ref key, ref key);
+                }
+            }
+
+            if (useReadCache)
+            {
+                store1.Log.FlushAndEvict(true);
+                for (long key = 0; key < 1000; key++)
+                {
+                    long output = default;
+                    var status = bc1.Read(ref key, ref output);
+                    if (!status.IsPending)
+                    {
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
+                    }
+                }
+                _ = bc1.CompletePending(true);
+            }
+
+            // First create the new store, we will insert into this store as part of the iterator functions on the old store
+            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            // Take a streaming snapshot checkpoint of the old store
+            var iterator = new SnapshotIterator(store2, 1000);
+            var task = store1.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: iterator);
+            if (isAsync)
+            {
+                var (status, token) = await task;
+            }
+            else
+            {
+                var (status, token) = task.AsTask().GetAwaiter().GetResult();
+            }
+
+            // Verify that the new store has all the records
+            using var s2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
+            var bc2 = s2.BasicContext;
+            for (long key = 0; key < 1000; key++)
+            {
+                long output = default;
+                var status = bc2.Read(ref key, ref output);
+                if (!status.IsPending)
+                {
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
+                }
+            }
+            _ = bc2.CompletePending(true);
         }
     }
 }

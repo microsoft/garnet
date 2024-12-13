@@ -293,14 +293,14 @@ namespace Tsavorite.core
             OperationStatus internalStatus;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, currentAddress: request.logicalAddress, minAddress, out internalStatus, out bool needIO))
+                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, currentAddress: request.logicalAddress, minAddress, pendingContext.maxAddress, out internalStatus, out bool needIO))
                     return OperationStatus.SUCCESS;
                 if (!OperationStatusUtils.IsRetry(internalStatus))
                 {
                     // HeadAddress may have risen above minAddress; if so, we need IO.
                     internalStatus = needIO
                         ? PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref pendingContext.input.Get(), ref pendingContext.value.Get(),
-                                                            ref pendingContext.output, pendingContext.userContext, ref stackCtx, minAddress, WriteReason.Compaction)
+                                                            ref pendingContext.output, pendingContext.userContext, ref stackCtx, minAddress, pendingContext.maxAddress, WriteReason.Compaction)
                         : ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref key, ref pendingContext.input.Get(), ref pendingContext.value.Get(),
                                                             ref pendingContext.output, pendingContext.userContext, ref stackCtx, pendingContext.writeReason);
                 }
@@ -344,7 +344,7 @@ namespace Tsavorite.core
             // and thus the request was not populated. The new minAddress should be the highest logicalAddress we previously saw, because we need to make sure the
             // record was not added to the log after we initialized the pending IO.
             hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.scanCursorState, pendingContext.recordInfo, ref pendingContext.key.Get(), ref pendingContext.value.Get(),
-                currentAddress: request.logicalAddress, minAddress: pendingContext.InitialLatestLogicalAddress + 1);
+                currentAddress: request.logicalAddress, minAddress: pendingContext.InitialLatestLogicalAddress + 1, maxAddress: pendingContext.maxAddress);
 
             // ConditionalScanPush has already called HandleOperationStatus, so return SUCCESS here.
             return OperationStatus.SUCCESS;

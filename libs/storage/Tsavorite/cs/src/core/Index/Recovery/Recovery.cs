@@ -539,6 +539,16 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Set store version directly. Useful if manually recovering by re-inserting data.
+        /// Warning: use only when the system is not taking a checkpoint.
+        /// </summary>
+        /// <param name="version">Version to set the store to</param>
+        public void SetVersion(long version)
+        {
+            systemState = SystemState.Make(Phase.REST, version);
+        }
+
+        /// <summary>
         /// Compute recovery address and determine where to recover to
         /// </summary>
         /// <param name="recoveredICInfo">IndexCheckpointInfo</param>

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -1087,6 +1088,196 @@ namespace Garnet.test
 
             var result = db.Execute("PROCINVALIDCMD", "key");
             ClassicAssert.AreEqual("OK", (string)result);
+        }
+
+        [Test]
+        [TestCase(true)]
+        [TestCase(false)]
+        public void MultiRegisterCommandTest(bool sync)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var regCount = 24;
+            var regCmdTasks = new Task[regCount];
+            for (var i = 0; i < regCount; i++)
+            {
+                var idx = i;
+                regCmdTasks[i] = new Task(() => server.Register.NewCommand($"SETIFPM{idx + 1}", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(),
+                    new RespCommandsInfo { Arity = 4 }));
+            }
+
+            for (var i = 0; i < regCount; i++)
+            {
+                if (sync)
+                {
+                    regCmdTasks[i].RunSynchronously();
+                }
+                else
+                {
+                    regCmdTasks[i].Start();
+                }
+            }
+
+            if (!sync) Task.WhenAll(regCmdTasks);
+
+            for (var i = 0; i < regCount; i++)
+            {
+                var key = $"mykey{i + 1}";
+                var origValue = "foovalue0";
+                db.StringSet(key, origValue);
+
+                var newValue1 = "foovalue1";
+                db.Execute($"SETIFPM{i + 1}", key, newValue1, "foo");
+
+                // This conditional set should pass (prefix matches)
+                string retValue = db.StringGet(key);
+                ClassicAssert.AreEqual(newValue1, retValue);
+            }
+        }
+
+        [Test]
+        [TestCase(true)]
+        [TestCase(false)]
+        public void MultiRegisterSubCommandTest(bool sync)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var factory = new MyDictFactory();
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
+
+            // Only able to register 31 sub-commands, try to register 32
+            var regCount = 32;
+            var failedTaskIdAndMessage = new ConcurrentBag<(int, string)>();
+            var regCmdTasks = new Task[regCount];
+            for (var i = 0; i < regCount; i++)
+            {
+                var idx = i;
+                regCmdTasks[i] = new Task(() =>
+                {
+                    try
+                    {
+                        server.Register.NewCommand($"MYDICTSET{idx + 1}",
+                            CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+                    }
+                    catch (Exception e)
+                    {
+                        failedTaskIdAndMessage.Add((idx, e.Message));
+                    }
+                });
+            }
+
+            for (var i = 0; i < regCount; i++)
+            {
+                if (sync)
+                {
+                    regCmdTasks[i].RunSynchronously();
+                }
+                else
+                {
+                    regCmdTasks[i].Start();
+                }
+            }
+
+            if (!sync) Task.WaitAll(regCmdTasks);
+
+            // Exactly one registration should fail
+            ClassicAssert.AreEqual(1, failedTaskIdAndMessage.Count);
+            failedTaskIdAndMessage.TryTake(out var failedTaskResult);
+
+            var failedTaskId = failedTaskResult.Item1;
+            var failedTaskMessage = failedTaskResult.Item2;
+            ClassicAssert.AreEqual("Out of registration space", failedTaskMessage);
+
+            var mainkey = "key";
+
+            // Check that all registrations worked except the failed one
+            for (var i = 0; i < regCount; i++)
+            {
+                if (i == failedTaskId) continue;
+                var key1 = $"mykey{i + 1}";
+                var value1 = $"foovalue{i + 1}";
+                db.Execute($"MYDICTSET{i + 1}", mainkey, key1, value1);
+
+                var retValue = db.Execute("MYDICTGET", mainkey, key1);
+                ClassicAssert.AreEqual(value1, (string)retValue);
+            }
+        }
+
+        [Test]
+        public void MultiRegisterTxnTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var regCount = byte.MaxValue + 1;
+            for (var i = 0; i < regCount; i++)
+            {
+                server.Register.NewTransactionProc($"GETTWOKEYSNOTXN{i + 1}", () => new GetTwoKeysNoTxn(), new RespCommandsInfo { Arity = 3 });
+            }
+
+            try
+            {
+                // This register should fail as there could only be byte.MaxValue + 1 transactions registered
+                server.Register.NewTransactionProc($"GETTWOKEYSNOTXN{byte.MaxValue + 3}", () => new GetTwoKeysNoTxn(), new RespCommandsInfo { Arity = 3 });
+                Assert.Fail();
+            }
+            catch (Exception e)
+            {
+                ClassicAssert.AreEqual("Out of registration space", e.Message);
+            }
+
+            for (var i = 0; i < regCount; i++)
+            {
+                var readkey1 = $"readkey{i + 1}.1";
+                var value1 = $"foovalue{i + 1}.1";
+                db.StringSet(readkey1, value1);
+
+                var readkey2 = $"readkey{i + 1}.2";
+                var value2 = $"foovalue{i + 1}.2";
+                db.StringSet(readkey2, value2);
+
+                var result = db.Execute($"GETTWOKEYSNOTXN{i + 1}", readkey1, readkey2);
+
+                ClassicAssert.AreEqual(value1, ((string[])result)?[0]);
+                ClassicAssert.AreEqual(value2, ((string[])result)?[1]);
+            }
+        }
+
+        [Test]
+        public void MultiRegisterProcTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var regCount = byte.MaxValue + 1;
+            for (var i = 0; i < regCount; i++)
+            {
+                server.Register.NewProcedure($"SUM{i + 1}", () => new Sum());
+            }
+
+            try
+            {
+                // This register should fail as there could only be byte.MaxValue + 1 procedures registered
+                server.Register.NewProcedure($"SUM{byte.MaxValue + 3}", () => new Sum());
+                Assert.Fail();
+            }
+            catch (Exception e)
+            {
+                ClassicAssert.AreEqual("Out of registration space", e.Message);
+            }
+
+            db.StringSet("key1", "10");
+            db.StringSet("key2", "35");
+            db.StringSet("key3", "20");
+
+            for (var i = 0; i < regCount; i++)
+            {
+                // Include non-existent and string keys as well
+                var retValue = db.Execute($"SUM{i + 1}", "key1", "key2", "key3", "key4");
+                ClassicAssert.AreEqual("65", retValue.ToString());
+            }
         }
     }
 }
