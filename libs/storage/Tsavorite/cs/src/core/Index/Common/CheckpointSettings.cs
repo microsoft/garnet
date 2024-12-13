@@ -17,7 +17,12 @@ namespace Tsavorite.core
         /// Flush current log (move read-only to tail)
         /// (enables incremental checkpointing, but log grows faster)
         /// </summary>
-        FoldOver
+        FoldOver,
+
+        /// <summary>
+        /// Yield a stream of key-value records in version (v), that can be used to rebuild the store
+        /// </summary>
+        StreamingSnapshot,
     }
 
     /// <summary>

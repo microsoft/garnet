@@ -36,7 +36,7 @@ namespace Tsavorite.test.recovery.objects
         [Category("Smoke")]
 
         public async ValueTask ObjectRecoveryTest2(
-            [Values] CheckpointType checkpointType,
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Range(300, 700, 300)] int iterations,
             [Values] bool isAsync)
         {

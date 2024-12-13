@@ -49,9 +49,21 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryFindRecordInMainLog(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress)
+        {
+            Debug.Assert(!stackCtx.recSrc.HasInMemorySrc, "Should not have found record before this call");
+            if (stackCtx.recSrc.LogicalAddress >= minAddress)
+            {
+                stackCtx.recSrc.SetPhysicalAddress();
+                TraceBackForKeyMatch(ref key, ref stackCtx.recSrc, minAddress, maxAddress);
+            }
+            return stackCtx.recSrc.HasInMemorySrc;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         // Return true if the record is found in the log, else false and an indication of whether we need to do IO to continue the search
         internal bool TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long currentAddress, long minAddress, out OperationStatus internalStatus, out bool needIO)
+                ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long currentAddress, long minAddress, long maxAddress, out OperationStatus internalStatus, out bool needIO)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (!FindTag(ref stackCtx.hei))
@@ -94,7 +106,7 @@ namespace Tsavorite.core
 
                 // We don't have a pendingContext here, so pass the minAddress directly.
                 needIO = false;
-                if (TryFindRecordInMainLogForPendingOperation(ref key, ref stackCtx, minAddress < hlogBase.HeadAddress ? hlogBase.HeadAddress : minAddress, out internalStatus))
+                if (TryFindRecordInMainLogForPendingOperation(ref key, ref stackCtx, minAddress < hlogBase.HeadAddress ? hlogBase.HeadAddress : minAddress, maxAddress, out internalStatus))
                     return true;
 
                 needIO = stackCtx.recSrc.LogicalAddress >= minAddress && stackCtx.recSrc.LogicalAddress < hlogBase.HeadAddress && stackCtx.recSrc.LogicalAddress >= hlogBase.BeginAddress;
@@ -130,6 +142,27 @@ namespace Tsavorite.core
             return false;
         }
 
+        // Overload with maxAddress to avoid the extra condition - TODO: check that this duplication saves on IL/perf
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool TraceBackForKeyMatch(ref TKey key, ref RecordSource<TKey, TValue, TStoreFunctions, TAllocator> recSrc, long minAddress, long maxAddress)
+        {
+            // PhysicalAddress must already be populated by callers.
+            ref var recordInfo = ref recSrc.GetInfo();
+            if (IsValidTracebackRecord(recordInfo) && recSrc.LogicalAddress < maxAddress && storeFunctions.KeysEqual(ref key, ref recSrc.GetKey()))
+            {
+                recSrc.SetHasMainLogSrc();
+                return true;
+            }
+
+            recSrc.LogicalAddress = recordInfo.PreviousAddress;
+            if (TraceBackForKeyMatch(ref key, recSrc.LogicalAddress, minAddress, maxAddress, out recSrc.LogicalAddress, out recSrc.PhysicalAddress))
+            {
+                recSrc.SetHasMainLogSrc();
+                return true;
+            }
+            return false;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TraceBackForKeyMatch(ref TKey key, long fromLogicalAddress, long minAddress, out long foundLogicalAddress, out long foundPhysicalAddress)
         {
@@ -141,6 +174,26 @@ namespace Tsavorite.core
 
                 ref var recordInfo = ref hlog.GetInfo(foundPhysicalAddress);
                 if (IsValidTracebackRecord(recordInfo) && storeFunctions.KeysEqual(ref key, ref hlog.GetKey(foundPhysicalAddress)))
+                    return true;
+
+                foundLogicalAddress = recordInfo.PreviousAddress;
+            }
+            foundPhysicalAddress = Constants.kInvalidAddress;
+            return false;
+        }
+
+        // Overload with maxAddress to avoid the extra condition - TODO: check that this duplication saves on IL/perf
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool TraceBackForKeyMatch(ref TKey key, long fromLogicalAddress, long minAddress, long maxAddress, out long foundLogicalAddress, out long foundPhysicalAddress)
+        {
+            // This overload is called when the record at the "current" logical address does not match 'key'; fromLogicalAddress is its .PreviousAddress.
+            foundLogicalAddress = fromLogicalAddress;
+            while (foundLogicalAddress >= minAddress)
+            {
+                foundPhysicalAddress = hlog.GetPhysicalAddress(foundLogicalAddress);
+
+                ref var recordInfo = ref hlog.GetInfo(foundPhysicalAddress);
+                if (IsValidTracebackRecord(recordInfo) && foundLogicalAddress < maxAddress && storeFunctions.KeysEqual(ref key, ref hlog.GetKey(foundPhysicalAddress)))
                     return true;
 
                 foundLogicalAddress = recordInfo.PreviousAddress;
@@ -204,14 +257,14 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordInMainLogForPendingOperation(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, out OperationStatus internalStatus)
+        private bool TryFindRecordInMainLogForPendingOperation(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, out OperationStatus internalStatus)
         {
             // This overload is called when we do not have a PendingContext to get minAddress from, and we've skipped the readcache if present.
 
             // This routine returns true if we find the key, else false.
             internalStatus = OperationStatus.SUCCESS;
 
-            if (!TryFindRecordInMainLog(ref key, ref stackCtx, minAddress))
+            if (!TryFindRecordInMainLog(ref key, ref stackCtx, minAddress, maxAddress))
                 return false;
             if (stackCtx.recSrc.GetInfo().IsClosed)
                 internalStatus = OperationStatus.RETRY_LATER;
