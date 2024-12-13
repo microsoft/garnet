@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -393,8 +392,8 @@ end
             {
                 state.ForceMinimumStackCapacity(NeededStackSpace);
 
-                state.PushNumber(loadSandboxedRegistryIndex);
-                state.GetTable(LuaType.Function, (int)LuaRegistry.Index);
+                state.PushInteger(loadSandboxedRegistryIndex);
+                _ = state.GetTable(LuaType.Function, (int)LuaRegistry.Index);
 
                 state.PushBuffer(source.Span);
                 state.Call(1, -1); // Multiple returns allowed
@@ -670,7 +669,7 @@ end
                 case (byte)':':
                     if (RespReadUtils.Read64Int(out var number, ref ptr, ptr + length))
                     {
-                        state.PushNumber(number);
+                        state.PushInteger(number);
                         return 1;
                     }
                     goto default;
@@ -780,7 +779,7 @@ end
             if (nKeys > 0)
             {
                 // Get KEYS on the stack
-                state.PushNumber(keysTableRegistryIndex);
+                state.PushInteger(keysTableRegistryIndex);
                 state.RawGet(LuaType.Table, (int)LuaRegistry.Index);
 
                 for (var i = 0; i < nKeys; i++)
@@ -795,7 +794,7 @@ end
                     }
 
                     // Equivalent to KEYS[i+1] = key
-                    state.PushNumber(i + 1);
+                    state.PushInteger(i + 1);
                     state.PushBuffer(key.ReadOnlySpan);
                     state.RawSet(1);
 
@@ -811,7 +810,7 @@ end
             if (count > 0)
             {
                 // Get ARGV on the stack
-                state.PushNumber(argvTableRegistryIndex);
+                state.PushInteger(argvTableRegistryIndex);
                 state.RawGet(LuaType.Table, (int)LuaRegistry.Index);
 
                 for (var i = 0; i < count; i++)
@@ -819,7 +818,7 @@ end
                     ref var argv = ref parseState.GetArgSliceByRef(offset);
 
                     // Equivalent to ARGV[i+1] = argv
-                    state.PushNumber(i + 1);
+                    state.PushInteger(i + 1);
                     state.PushBuffer(argv.ReadOnlySpan);
                     state.RawSet(1);
 
@@ -980,8 +979,8 @@ end
             {
                 state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, resetKeysAndArgvRegistryIndex);
 
-                state.PushNumber(nKeys + 1);
-                state.PushNumber(nArgs + 1);
+                state.PushInteger(nKeys + 1);
+                state.PushInteger(nArgs + 1);
 
                 var resetRes = state.PCall(2, 0);
                 Debug.Assert(resetRes == LuaStatus.OK, "Resetting should never fail");
@@ -1005,7 +1004,7 @@ end
             if (keys != null)
             {
                 // get KEYS on the stack
-                state.PushNumber(keysTableRegistryIndex);
+                state.PushInteger(keysTableRegistryIndex);
                 state.GetTable(LuaType.Table, (int)LuaRegistry.Index);
 
                 for (var i = 0; i < keys.Length; i++)
@@ -1023,7 +1022,7 @@ end
             if (argv != null)
             {
                 // get ARGV on the stack
-                state.PushNumber(argvTableRegistryIndex);
+                state.PushInteger(argvTableRegistryIndex);
                 state.GetTable(LuaType.Table, (int)LuaRegistry.Index);
 
                 for (var i = 0; i < argv.Length; i++)
@@ -1066,7 +1065,7 @@ end
             {
                 state.ForceMinimumStackCapacity(NeededStackSize);
 
-                state.PushNumber(functionRegistryIndex);
+                state.PushInteger(functionRegistryIndex);
                 _ = state.GetTable(LuaType.Function, (int)LuaRegistry.Index);
 
                 var callRes = state.PCall(0, 1);

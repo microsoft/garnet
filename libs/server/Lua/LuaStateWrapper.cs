@@ -95,7 +95,7 @@ namespace Garnet.server
         {
             Debug.Assert(luaStatePtr == state.Handle, "Unexpected Lua state presented");
 
-            StackTop = state.GetTop();
+            StackTop = NativeMethods.GetTop(state.Handle);
             curStackSize = StackTop > LUA_MINSTACK ? StackTop : LUA_MINSTACK;
         }
 
@@ -118,7 +118,7 @@ namespace Garnet.server
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
-            return state.Type(stackIndex);
+            return NativeMethods.Type(state.Handle, stackIndex);
         }
 
         /// <summary>
@@ -143,19 +143,20 @@ namespace Garnet.server
         {
             AssertLuaStackNotFull();
 
-            state.PushNil();
+            NativeMethods.PushNil(state.Handle);
             UpdateStackTop(1);
         }
 
         /// <summary>
-        /// This should be used for all PushNumber calls into Lua.
+        /// This should be used for all PushInteger calls into Lua.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void PushNumber(double number)
+        internal void PushInteger(long number)
         {
             AssertLuaStackNotFull();
 
-            state.PushNumber(number);
+            NativeMethods.PushInteger(state.Handle, number);
+
             UpdateStackTop(1);
         }
 
@@ -167,7 +168,7 @@ namespace Garnet.server
         {
             AssertLuaStackNotFull();
 
-            state.PushBoolean(b);
+            NativeMethods.PushBoolean(state.Handle, b);
             UpdateStackTop(1);
         }
 
@@ -179,7 +180,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Pop(int num)
         {
-            state.Pop(num);
+            NativeMethods.Pop(state.Handle, num);
+
             UpdateStackTop(-num);
         }
 
@@ -197,7 +199,7 @@ namespace Garnet.server
 
             if (rets < 0)
             {
-                StackTop = state.GetTop();
+                StackTop = NativeMethods.GetTop(state.Handle);
                 AssertLuaStackExpected();
             }
             else
@@ -222,7 +224,7 @@ namespace Garnet.server
 
             if (res != LuaStatus.OK || rets < 0)
             {
-                StackTop = state.GetTop();
+                StackTop = NativeMethods.GetTop(state.Handle);
                 AssertLuaStackExpected();
             }
             else
@@ -420,7 +422,7 @@ namespace Garnet.server
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
-            Debug.Assert(state.Type(stackIndex) is LuaType.String or LuaType.Number, "Called with non-string, non-number");
+            Debug.Assert(NativeMethods.Type(state.Handle, stackIndex) is LuaType.String or LuaType.Number, "Called with non-string, non-number");
 
             NativeMethods.KnownStringToBuffer(state.Handle, stackIndex, out str);
         }
@@ -444,7 +446,7 @@ namespace Garnet.server
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
-            return state.ToBoolean(stackIndex);
+            return NativeMethods.ToBoolean(state.Handle, stackIndex);
         }
 
         /// <summary>
@@ -536,7 +538,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.NoInlining)]
         private readonly void AssertLuaStackExpected()
         {
-            Debug.Assert(state.GetTop() == StackTop, "Lua stack not where expected");
+            Debug.Assert(NativeMethods.GetTop(state.Handle) == StackTop, "Lua stack not where expected");
         }
 
         /// <summary>
