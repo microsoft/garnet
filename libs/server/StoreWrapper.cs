@@ -100,7 +100,7 @@ namespace Garnet.server
         private SingleWriterMultiReaderLock _checkpointTaskLock;
 
         // Lua script cache
-        public readonly ConcurrentDictionary<byte[], byte[]> storeScriptCache;
+        public readonly ConcurrentDictionary<SpanByteAndMemory, byte[]> storeScriptCache;
 
         public readonly TimeSpan loggingFrequncy;
 
@@ -153,7 +153,7 @@ namespace Garnet.server
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)
-                this.storeScriptCache = new ConcurrentDictionary<byte[], byte[]>(new ByteArrayComparer());
+                this.storeScriptCache = new(SpanByteAndMemoryComparer.Instance);
 
             if (accessControlList == null)
             {
