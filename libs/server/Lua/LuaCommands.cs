@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -36,7 +37,7 @@ namespace Garnet.server
             {
                 if (storeWrapper.storeScriptCache.TryGetValue(digestAsSpanByteMem, out var source))
                 {
-                    if (!sessionScriptCache.TryLoad(this, source, digestAsSpanByteMem, out runner, out var error))
+                    if (!sessionScriptCache.TryLoad(this, source, digestAsSpanByteMem, out runner, out _, out var error))
                     {
                         // TryLoad will have written an error out, it any
 
@@ -77,13 +78,13 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("EVAL");
             }
 
-            var script = parseState.GetArgSliceByRef(0).ToArray();
+            ref var script = ref parseState.GetArgSliceByRef(0);
 
             // that this is stack allocated is load bearing - if it moves, things will break
             Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
-            sessionScriptCache.GetScriptDigest(script, digest);
+            sessionScriptCache.GetScriptDigest(script.ReadOnlySpan, digest);
 
-            if (!sessionScriptCache.TryLoad(this, script, new SpanByteAndMemory(SpanByte.FromPinnedSpan(digest)), out var runner, out var error))
+            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, new SpanByteAndMemory(SpanByte.FromPinnedSpan(digest)), out var runner, out _, out var error))
             {
                 // TryLoad will have written any errors out
                 return true;
@@ -194,17 +195,27 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("script|load");
             }
 
-            var source = parseState.GetArgSliceByRef(0).ToArray();
-            if (!sessionScriptCache.TryLoad(this, source, out var digest, out _, out var error))
+            ref var source = ref parseState.GetArgSliceByRef(0);
+
+            Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
+            sessionScriptCache.GetScriptDigest(source.Span, digest);
+
+            if (sessionScriptCache.TryLoad(this, source.ReadOnlySpan, SpanByteAndMemory.FromPinnedSpan(digest), out _, out var digestOnHeap, out var error))
             {
                 // TryLoad will write any errors out
-            }
-            else
-            {
 
                 // Add script to the store dictionary
-                var scriptKey = new SpanByteAndMemory(new ScriptHashOwner(digest.AsMemory()), digest.Length);
-                _ = storeWrapper.storeScriptCache.TryAdd(scriptKey, source);
+                if (digestOnHeap == null)
+                {
+                    var newAlloc = new SpanByteAndMemory(new ScriptHashOwner(digest.ToArray()));
+                    _ = storeWrapper.storeScriptCache.TryAdd(newAlloc, source.ToArray());
+                }
+                else
+                {
+                    _ = storeWrapper.storeScriptCache.TryAdd(digestOnHeap.Value, source.ToArray());
+                }
+
+
 
                 while (!RespWriteUtils.WriteBulkString(digest, ref dcurr, dend))
                     SendAndReset();

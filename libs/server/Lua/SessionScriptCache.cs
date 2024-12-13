@@ -56,26 +56,32 @@ namespace Garnet.server
         => scriptCache.TryGetValue(digest, out scriptRunner);
 
         /// <summary>
-        /// Load script into the cache
+        /// Load script into the cache.
+        /// 
+        /// If necessary, <paramref name="digestOnHeap"/> will be set so the allocation can be reused.
         /// </summary>
-        public bool TryLoad(RespServerSession session, byte[] source, out byte[] digest, out LuaRunner runner, out string error)
-        {
-            digest = new byte[SHA1Len];
-            GetScriptDigest(source, digest);
-
-            return TryLoad(session, source, new SpanByteAndMemory(new ScriptHashOwner(digest), digest.Length), out runner, out error);
-        }
-
-        internal bool TryLoad(RespServerSession session, byte[] source, SpanByteAndMemory digest, out LuaRunner runner, out string error)
+        internal bool TryLoad(
+            RespServerSession session, 
+            ReadOnlySpan<byte> source, 
+            SpanByteAndMemory digest, 
+            out LuaRunner runner, 
+            out SpanByteAndMemory? digestOnHeap,
+            out string error
+        )
         {
             error = null;
 
             if (scriptCache.TryGetValue(digest, out runner))
+            {
+                digestOnHeap = null;
                 return true;
+            }
 
             try
             {
-                runner = new LuaRunner(source, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
+                var sourceOnHeap = source.ToArray();
+
+                runner = new LuaRunner(sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
                 runner.CompileForSession(session);
 
                 // need to make sure the key is on the heap, so move it over if needed
@@ -85,7 +91,11 @@ namespace Garnet.server
                     var into = new byte[storeKeyDigest.Length];
                     storeKeyDigest.AsReadOnlySpan().CopyTo(into);
 
-                    storeKeyDigest = new SpanByteAndMemory(new ScriptHashOwner(into), into.Length);
+                    digestOnHeap = storeKeyDigest = new SpanByteAndMemory(new ScriptHashOwner(into), into.Length);
+                }
+                else
+                {
+                    digestOnHeap = digest;
                 }
 
                 _ = scriptCache.TryAdd(storeKeyDigest, runner);
@@ -93,6 +103,7 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 error = ex.Message;
+                digestOnHeap = null;
                 return false;
             }
 
