@@ -312,6 +312,15 @@ namespace Garnet.server
             }
             return garnetApi.SetDiff(keys, out output);
         }
+
+        public GarnetStatus SetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+        {
+            foreach (var key in keys)
+            {
+                garnetApi.WATCH(key, StoreType.Object);
+            }
+            return garnetApi.SetIntersectLength(keys, limit, out count);
+        }
         #endregion
 
         #region Hash Methods
