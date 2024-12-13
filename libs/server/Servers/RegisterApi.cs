@@ -58,14 +58,6 @@ namespace Garnet.server
             => provider.StoreWrapper.customCommandManager.RegisterType(factory);
 
         /// <summary>
-        /// Register object type with server, with specific type ID [0-55]
-        /// </summary>
-        /// <param name="type">Type ID for factory</param>
-        /// <param name="factory">Factory for object type</param>
-        public void NewType(int type, CustomObjectFactory factory)
-            => provider.StoreWrapper.customCommandManager.RegisterType(type, factory);
-
-        /// <summary>
         /// Register custom command with Garnet
         /// </summary>
         /// <param name="name">Name of command</param>
@@ -76,7 +68,7 @@ namespace Garnet.server
         /// <param name="commandDocs">RESP command docs</param>
         /// <returns>ID of the registered command</returns>
         public (int objectTypeId, int subCommandId) NewCommand(string name, CommandType commandType, CustomObjectFactory factory, CustomObjectFunctions customObjectFunctions, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
-            => provider.StoreWrapper.customCommandManager.Register(name, commandType, factory, customObjectFunctions, commandInfo, commandDocs);
+            => provider.StoreWrapper.customCommandManager.Register(name, commandType, factory, commandInfo, commandDocs, customObjectFunctions);
 
         /// <summary>
         /// Register custom procedure with Garnet
