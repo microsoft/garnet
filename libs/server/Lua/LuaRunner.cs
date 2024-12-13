@@ -143,25 +143,38 @@ end
 KEYS = {}
 ARGV = {}
 sandbox_env = {
-    tostring = tostring;
-    next = next;
+    _G = _G;
+    _VERSION = _VERSION;
+
     assert = assert;
-    tonumber = tonumber;
-    rawequal = rawequal;
     collectgarbage = collectgarbage;
     coroutine = coroutine;
-    type = type;
-    select = select;
-    unpack = table.unpack;
-    gcinfo = gcinfo;
-    pairs = pairs;
-    loadstring = loadstring;
-    ipairs = ipairs;
     error = error;
-    redis = redis;
+    gcinfo = gcinfo;
+    -- explicitly not allowing getfenv
+    getmetatable = getmetatable;
+    ipairs = ipairs;
+    load = load;
+    loadstring = loadstring;
     math = math;
-    table = table;
+    next = next;
+    pairs = pairs;
+    pcall = pcall;
+    rawequal = rawequal;
+    rawget = rawget;
+    rawset = rawset;
+    redis = redis;
+    select = select;
+    -- explicitly not allowing setfenv
     string = string;
+    setmetatable = setmetatable;
+    table = table;
+    tonumber = tonumber;
+    tostring = tostring;
+    type = type;
+    unpack = table.unpack;
+    xpcall = xpcall;
+
     KEYS = KEYS;
     ARGV = ARGV;
 }
@@ -393,7 +406,7 @@ end
                 state.ForceMinimumStackCapacity(NeededStackSpace);
 
                 state.PushInteger(loadSandboxedRegistryIndex);
-                _ = state.GetTable(LuaType.Function, (int)LuaRegistry.Index);
+                _ = state.RawGet(LuaType.Function, (int)LuaRegistry.Index);
 
                 state.PushBuffer(source.Span);
                 state.Call(1, -1); // Multiple returns allowed
@@ -1005,7 +1018,7 @@ end
             {
                 // get KEYS on the stack
                 state.PushInteger(keysTableRegistryIndex);
-                state.GetTable(LuaType.Table, (int)LuaRegistry.Index);
+                _ = state.RawGet(LuaType.Table, (int)LuaRegistry.Index);
 
                 for (var i = 0; i < keys.Length; i++)
                 {
@@ -1023,7 +1036,7 @@ end
             {
                 // get ARGV on the stack
                 state.PushInteger(argvTableRegistryIndex);
-                state.GetTable(LuaType.Table, (int)LuaRegistry.Index);
+                _ = state.RawGet(LuaType.Table, (int)LuaRegistry.Index);
 
                 for (var i = 0; i < argv.Length; i++)
                 {
@@ -1066,7 +1079,7 @@ end
                 state.ForceMinimumStackCapacity(NeededStackSize);
 
                 state.PushInteger(functionRegistryIndex);
-                _ = state.GetTable(LuaType.Function, (int)LuaRegistry.Index);
+                _ = state.RawGet(LuaType.Function, (int)LuaRegistry.Index);
 
                 var callRes = state.PCall(0, 1);
                 if (callRes == LuaStatus.OK)
@@ -1104,14 +1117,12 @@ end
                     }
                     else if (retType == LuaType.Table)
                     {
-                        // TODO: because we are dealing with a user provided type, we MUST respect
-                        //       metatables - so we can't use any of the RawXXX methods
-                        //       so we need a test that use metatables (and compare to how Redis does this)
+                        // Redis does not respect metatables, so RAW access is ok here
 
                         // If the key err is in there, we need to short circuit 
                         state.PushConstantString(errConstStringRegistryIndex);
 
-                        var errType =state.GetTable(null, 1);
+                        var errType = state.RawGet(null, 1);
                         if (errType == LuaType.String)
                         {
                             WriteError(this, ref resp);
@@ -1245,6 +1256,8 @@ end
 
             static void WriteArray(LuaRunner runner, ref TResponse resp)
             {
+                // Redis does not respect metatables, so RAW access is ok here
+
                 // 1 for the table, 1 for the pending value
                 const int AdditonalNeededStackSize = 2;
 
@@ -1252,13 +1265,13 @@ end
 
                 // Lua # operator - this MAY stop at nils, but isn't guaranteed to
                 // See: https://www.lua.org/manual/5.3/manual.html#3.4.7
-                var maxLen = runner.state.Length(runner.state.StackTop);
+                var maxLen = runner.state.RawLen(runner.state.StackTop);
 
                 // Find the TRUE length by scanning for nils
                 var trueLen = 0;
                 for (trueLen = 0; trueLen < maxLen; trueLen++)
                 {
-                    var type = runner.state.GetInteger(null, runner.state.StackTop, trueLen + 1);
+                    var type = runner.state.RawGetInteger(null, runner.state.StackTop, trueLen + 1);
                     runner.state.Pop(1);
 
                     if (type == LuaType.Nil)
@@ -1273,7 +1286,7 @@ end
                 for (var i = 1; i <= trueLen; i++)
                 {
                     // Push item at index i onto the stack
-                    var type = runner.state.GetInteger(null, runner.state.StackTop, i);
+                    var type = runner.state.RawGetInteger(null, runner.state.StackTop, i);
 
                     switch (type)
                     {

@@ -271,29 +271,12 @@ namespace Garnet.server
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void RawGetInteger(LuaType expectedType, int stackIndex, int tableIndex)
+        internal LuaType RawGetInteger(LuaType? expectedType, int stackIndex, int tableIndex)
         {
             AssertLuaStackIndexInBounds(stackIndex);
             AssertLuaStackNotFull();
 
             var actual = state.RawGetInteger(stackIndex, tableIndex);
-            Debug.Assert(actual == expectedType, "Unexpected type received");
-
-            UpdateStackTop(1);
-        }
-
-        /// <summary>
-        /// This should be used for all GetIntegers into Lua.
-        /// 
-        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LuaType GetInteger(LuaType? expectedType, int stackIndex, int tableIndex)
-        {
-            AssertLuaStackIndexInBounds(stackIndex);
-            AssertLuaStackNotFull();
-
-            var actual = state.GetInteger(stackIndex, tableIndex);
             Debug.Assert(expectedType == null || actual == expectedType, "Unexpected type received");
 
             UpdateStackTop(1);
@@ -307,27 +290,11 @@ namespace Garnet.server
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly void RawGet(LuaType expectedType, int stackIndex)
+        internal readonly LuaType RawGet(LuaType? expectedType, int stackIndex)
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
             var actual = state.RawGet(stackIndex);
-            Debug.Assert(actual == expectedType, "Unexpected type received");
-
-            AssertLuaStackExpected();
-        }
-
-        /// <summary>
-        /// This should be used for all GetTables into Lua.
-        /// 
-        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly LuaType GetTable(LuaType? expectedType, int stackIndex)
-        {
-            AssertLuaStackIndexInBounds(stackIndex);
-
-            var actual = state.GetTable(stackIndex);
             Debug.Assert(expectedType == null || actual == expectedType, "Unexpected type received");
 
             AssertLuaStackExpected();
@@ -450,14 +417,14 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// This should be used for all Lengths into Lua.
+        /// This should be used for all RawLens into Lua.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly long Length(int stackIndex)
+        internal readonly long RawLen(int stackIndex)
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
-            return state.Length(stackIndex);
+            return state.RawLen(stackIndex);
         }
 
         /// <summary>

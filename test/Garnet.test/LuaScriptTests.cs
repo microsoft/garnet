@@ -736,5 +736,54 @@ return redis.status_reply("OK")
                 }
             }
         }
+
+        [Test]
+        public void MetatableReturn()
+        {
+            const string Script = @"
+                local table = { abc = 'def', ghi = 'jkl' }
+                local ret = setmetatable(
+                    table,
+                    {
+                        __len = function (self)
+                            return 4
+                        end,
+                        __index = function(self, key)
+                            if key == 1 then
+                                return KEYS[1]
+                            end
+
+                            if key == 2 then
+                                return ARGV[1]
+                            end
+
+                            if key == 3 then
+                                return self.ghi
+                            end
+
+                            if key == 4 then
+                                return self.abc
+                            end
+
+                            return nil
+                        end
+                    }
+                )
+
+                -- prove that metatables WORK but also that we don't deconstruct them for returns
+                return { ret, ret[1], ret[2], ret[3], ret[4] }";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var ret = (RedisResult[])db.ScriptEvaluate(Script, [(RedisKey)"foo"], [(RedisValue)"bar"]);
+            ClassicAssert.AreEqual(5, ret.Length);
+            var firstEmpty = (RedisResult[])ret[0];
+            ClassicAssert.AreEqual(0, firstEmpty.Length);
+            ClassicAssert.AreEqual("foo", (string)ret[1]);
+            ClassicAssert.AreEqual("bar", (string)ret[2]);
+            ClassicAssert.AreEqual("jkl", (string)ret[3]);
+            ClassicAssert.AreEqual("def", (string)ret[4]);
+        }
     }
 }
