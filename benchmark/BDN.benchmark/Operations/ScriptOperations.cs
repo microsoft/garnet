@@ -160,6 +160,10 @@ return returnValue
         byte[] evalShaLargeScriptBuffer;
         byte* evalShaLargeScriptBufferPointer;
 
+        static ReadOnlySpan<byte> ARRAY_RETURN => "*3\r\n$4\r\nEVAL\r\n$22\r\nreturn {1, 2, 3, 4, 5}\r\n$1\r\n0\r\n"u8;
+        byte[] arrayReturnRequestBuffer;
+        byte* arrayReturnRequestBufferPointer;
+
         public override void GlobalSetup()
         {
             base.GlobalSetup();
@@ -177,6 +181,8 @@ return returnValue
             SetupOperation(ref evalRequestBuffer, ref evalRequestBufferPointer, EVAL);
 
             SetupOperation(ref evalShaRequestBuffer, ref evalShaRequestBufferPointer, EVALSHA);
+
+            SetupOperation(ref arrayReturnRequestBuffer, ref arrayReturnRequestBufferPointer, ARRAY_RETURN);
 
             // Setup small script
             var loadSmallScript = $"*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n${SmallScriptText.Length}\r\n{SmallScriptText}\r\n";
@@ -270,6 +276,12 @@ return returnValue
         public void LargeScript()
         {
             _ = session.TryConsumeMessages(evalShaLargeScriptBufferPointer, evalShaLargeScriptBuffer.Length);
+        }
+
+        [Benchmark]
+        public void ArrayReturn()
+        {
+            _ = session.TryConsumeMessages(arrayReturnRequestBufferPointer, arrayReturnRequestBuffer.Length);
         }
     }
 }
