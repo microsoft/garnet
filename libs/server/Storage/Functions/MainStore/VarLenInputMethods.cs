@@ -119,9 +119,9 @@ namespace Garnet.server
                     return sizeof(int) + ndigits;
 
                 default:
-                    if ((ushort)cmd >= CustomCommandManager.StartOffset)
+                    if (cmd > RespCommandExtensions.LastValidCommand)
                     {
-                        var functions = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions;
+                        var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
                         // Compute metadata size for result
                         int metadataSize = input.arg1 switch
                         {
@@ -236,9 +236,9 @@ namespace Garnet.server
                         return sizeof(int) + t.Length + valueLength;
 
                     default:
-                        if ((ushort)cmd >= CustomCommandManager.StartOffset)
+                        if (cmd > RespCommandExtensions.LastValidCommand)
                         {
-                            var functions = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions;
+                            var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
                             // compute metadata for result
                             var metadataSize = input.arg1 switch
                             {

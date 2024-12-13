@@ -51,7 +51,8 @@ namespace BDN.benchmark.Operations
         {
             var opts = new GarnetServerOptions
             {
-                QuietMode = true
+                QuietMode = true,
+                EnableLua = true,
             };
             if (Params.useAof)
             {

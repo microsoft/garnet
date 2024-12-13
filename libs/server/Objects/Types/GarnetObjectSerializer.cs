@@ -13,14 +13,14 @@ namespace Garnet.server
     /// </summary>
     public sealed class GarnetObjectSerializer : BinaryObjectSerializer<IGarnetObject>
     {
-        readonly CustomObjectCommandWrapper[] customCommands;
+        readonly CustomCommandManager customCommandManager;
 
         /// <summary>
         /// Constructor
         /// </summary>
         public GarnetObjectSerializer(CustomCommandManager customCommandManager)
         {
-            this.customCommands = customCommandManager.objectCommandMap;
+            this.customCommandManager = customCommandManager;
         }
 
         /// <inheritdoc />
@@ -58,8 +58,9 @@ namespace Garnet.server
 
         private IGarnetObject CustomDeserialize(byte type, BinaryReader binaryReader)
         {
-            if (type < CustomCommandManager.TypeIdStartOffset) return null;
-            return customCommands[type - CustomCommandManager.TypeIdStartOffset].factory.Deserialize(type, binaryReader);
+            if (type < CustomCommandManager.TypeIdStartOffset ||
+                !customCommandManager.TryGetCustomObjectCommand(type, out var cmd)) return null;
+            return cmd.factory.Deserialize(type, binaryReader);
         }
 
         /// <inheritdoc />
