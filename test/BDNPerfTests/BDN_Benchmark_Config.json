@@ -11,14 +11,16 @@
     "expected_ZAddRem_ACL": 17.97,
     "expected_LPushPop_ACL": 14.06,
     "expected_SAddRem_ACL": 12.5,
-    "expected_HSetDel_ACL": 42.19,
     "expected_ZAddRem_AOF": 17.97,
     "expected_LPushPop_AOF": 14.06,
     "expected_SAddRem_AOF": 12.5,
-    "expected_HSetDel_AOF": 42.19,
     "expected_ZAddRem_None": 17.97,
     "expected_LPushPop_None": 14.06,
-    "expected_SAddRem_None": 12.5,
+    "expected_SAddRem_None": 12.5
+  },
+  "BDN.benchmark.Operations.HashObjectOperations.*": {
+    "expected_HSetDel_ACL": 42.19,
+    "expected_HSetDel_AOF": 42.19,
     "expected_HSetDel_None": 42.19
   },
   "BDN.benchmark.Cluster.ClusterOperations.*": {
