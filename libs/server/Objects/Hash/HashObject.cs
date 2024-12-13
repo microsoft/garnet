@@ -87,11 +87,10 @@ namespace Garnet.server
                     if (!isExpired)
                     {
                         hash.Add(item, value);
-                        expirationTimes ??= new Dictionary<byte[], long>(ByteArrayComparer.Instance);
-                        expirationQueue ??= new PriorityQueue<byte[], long>();
+                        InitializeExpirationStructures();
                         expirationTimes.Add(item, expiration);
                         expirationQueue.Enqueue(item, expiration);
-                        // TODO: Update size
+                        UpdateExpirationSize(item, true);
                     }
                 }
                 else
@@ -460,6 +459,7 @@ namespace Garnet.server
             return result;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Add(byte[] key, byte[] value)
         {
             DeleteExpiredItems();
@@ -474,7 +474,14 @@ namespace Garnet.server
             // Skip overhead as existing item is getting replaced.
             this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
                          Utility.RoundUp(value.Length, IntPtr.Size);
-            Persist(key);
+
+            // To persist the key, if it has an expiration
+            if (expirationTimes is not null && expirationTimes.TryGetValue(key, out var currentExpiration))
+            {
+                expirationTimes.Remove(key);
+                this.Size -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
+                CleanupExpirationStructures();
+            }
         }
 
         private void SetWithoutPersist(byte[] key, byte[] value)
