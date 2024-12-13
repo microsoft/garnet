@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Columns;
 using Embedded.perftest;
 using Garnet.server;
 
@@ -12,7 +11,6 @@ namespace BDN.benchmark.Lua
     /// Benchmark for non-script running operations in LuaRunner
     /// </summary>
     [MemoryDiagnoser]
-    [HideColumns(Column.Gen0)]
     public unsafe class LuaRunnerOperations
     {
         private const string SmallScript = "return nil";

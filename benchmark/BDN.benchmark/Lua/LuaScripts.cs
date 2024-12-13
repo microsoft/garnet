@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Columns;
 using Garnet.server;
 
 namespace BDN.benchmark.Lua
@@ -11,7 +10,6 @@ namespace BDN.benchmark.Lua
     /// Benchmark for Lua
     /// </summary>
     [MemoryDiagnoser]
-    [HideColumns(Column.Gen0)]
     public unsafe class LuaScripts
     {
         /// <summary>

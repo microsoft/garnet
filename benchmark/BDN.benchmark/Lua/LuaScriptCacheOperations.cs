@@ -6,7 +6,6 @@ using Embedded.perftest;
 using Garnet.common;
 using Garnet.server;
 using Garnet.server.Auth;
-using Tsavorite.core;
 
 namespace BDN.benchmark.Lua
 {

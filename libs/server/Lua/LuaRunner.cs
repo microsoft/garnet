@@ -940,6 +940,7 @@ end
 
                         if (length >= 5 && new ReadOnlySpan<byte>(cur + 1, 4).SequenceEqual("-1\r\n"u8))
                         {
+                            cur += 5;
                             return null;
                         }
 
