@@ -259,7 +259,7 @@ Please check the syntax of your command. For detailed usage information run with
         {
             var assembly = fileLocationType == FileLocationType.EmbeddedResource ? Assembly.GetExecutingAssembly() : null;
 
-            var streamProvider = StreamProviderFactory.GetStreamProvider(fileLocationType, connString, assembly);
+            var streamProvider = StreamProviderFactory.GetStreamProvider(fileLocationType, connString, assembly, readOnly: true);
             var configProvider = ConfigProviderFactory.GetConfigProvider(configFileType);
 
             using var stream = streamProvider.Read(path);
