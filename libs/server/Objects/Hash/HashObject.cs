@@ -460,31 +460,6 @@ namespace Garnet.server
             return result;
         }
 
-        private IEnumerable<KeyValuePair<byte[], byte[]>> AsEnumerable()
-        {
-            if (HasExpirableItems())
-            {
-                return GetNonExpiredItems();
-            }
-
-            return hash.AsEnumerable();
-        }
-
-        /// <summary>
-        /// Use `AsEnumerable` instead of this method to avoid checking for expired items if there is no expiring item
-        /// </summary>
-        /// <returns></returns>
-        private IEnumerable<KeyValuePair<byte[], byte[]>> GetNonExpiredItems()
-        {
-            foreach (var item in hash)
-            {
-                if (!IsExpired(item.Key))
-                {
-                    yield return item;
-                }
-            }
-        }
-
         private void Add(byte[] key, byte[] value)
         {
             DeleteExpiredItems();
@@ -606,9 +581,14 @@ namespace Garnet.server
             if (HasExpirableItems())
             {
                 var currIndex = 0;
-                foreach (var item in AsEnumerable())
+                foreach (var item in hash)
                 {
-                    if (currIndex == index)
+                    if (IsExpired(item.Key))
+                    {
+                        continue;
+                    }
+
+                    if (currIndex++ == index)
                     {
                         return item;
                     }

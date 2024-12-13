@@ -124,12 +124,30 @@ namespace Garnet.server
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
 
-                foreach (var item in AsEnumerable())
+                if (HasExpirableItems())
                 {
-                    while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    foreach (var item in hash)
+                    {
+                        if (IsExpired(item.Key))
+                        {
+                            continue;
+                        }
+
+                        while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    }
+                }
+                else
+                {
+                    foreach (var item in hash)
+                    {
+                        while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    }
                 }
             }
             finally
@@ -320,19 +338,44 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                foreach (var item in AsEnumerable())
+                if (HasExpirableItems())
                 {
-                    if (HashOperation.HKEYS == op)
+                    foreach (var item in hash)
                     {
-                        while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        if (IsExpired(item.Key))
+                        {
+                            continue;
+                        }
+
+                        if (HashOperation.HKEYS == op)
+                        {
+                            while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        }
+                        _output.result1++;
                     }
-                    else
+                }
+                else
+                {
+                    foreach (var item in hash)
                     {
-                        while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        if (HashOperation.HKEYS == op)
+                        {
+                            while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        }
+                        _output.result1++;
                     }
-                    _output.result1++;
                 }
             }
             finally
