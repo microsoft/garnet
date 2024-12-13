@@ -217,6 +217,3 @@ test/tmp/
 
 # BenchmarkDotNet Results
 BenchmarkDotNet.Artifacts/
-
-# Helm chart artifacts
-.cr-release-packages/
