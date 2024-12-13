@@ -29,20 +29,27 @@ namespace Garnet.server
             }
 
             ref var digest = ref parseState.GetArgSliceByRef(0);
-            AsciiUtils.ToLowerInPlace(digest.Span);
 
-            var digestAsSpanByteMem = new SpanByteAndMemory(digest.SpanByte);
+            LuaRunner runner = null;
 
-            if (!sessionScriptCache.TryGetFromDigest(digestAsSpanByteMem, out var runner))
+            // Length check is mandatory, as ScriptHashKey assumes correct length
+            if (digest.length == SessionScriptCache.SHA1Len)
             {
-                if (storeWrapper.storeScriptCache.TryGetValue(digestAsSpanByteMem, out var source))
-                {
-                    if (!sessionScriptCache.TryLoad(this, source, digestAsSpanByteMem, out runner, out _, out var error))
-                    {
-                        // TryLoad will have written an error out, it any
+                AsciiUtils.ToLowerInPlace(digest.Span);
 
-                        _ = storeWrapper.storeScriptCache.TryRemove(digestAsSpanByteMem, out _);
-                        return true;
+                var scriptKey = new ScriptHashKey(digest.Span);
+
+                if (!sessionScriptCache.TryGetFromDigest(scriptKey, out runner))
+                {
+                    if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var source))
+                    {
+                        if (!sessionScriptCache.TryLoad(this, source, scriptKey, out runner, out _, out var error))
+                        {
+                            // TryLoad will have written an error out, it any
+
+                            _ = storeWrapper.storeScriptCache.TryRemove(scriptKey, out _);
+                            return true;
+                        }
                     }
                 }
             }
@@ -84,7 +91,7 @@ namespace Garnet.server
             Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
             sessionScriptCache.GetScriptDigest(script.ReadOnlySpan, digest);
 
-            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, new SpanByteAndMemory(SpanByte.FromPinnedSpan(digest)), out var runner, out _, out var error))
+            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, new ScriptHashKey(digest), out var runner, out _, out var error))
             {
                 // TryLoad will have written any errors out
                 return true;
@@ -118,7 +125,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("script|exists");
             }
 
-            // returns an array where each element is a 0 if the script does not exist, and a 1 if it does
+            // Returns an array where each element is a 0 if the script does not exist, and a 1 if it does
 
             while (!RespWriteUtils.WriteArrayLength(parseState.Count, ref dcurr, dend))
                 SendAndReset();
@@ -126,11 +133,17 @@ namespace Garnet.server
             for (var shaIx = 0; shaIx < parseState.Count; shaIx++)
             {
                 ref var sha1 = ref parseState.GetArgSliceByRef(shaIx);
-                AsciiUtils.ToLowerInPlace(sha1.Span);
+                var exists = 0;
 
-                var sha1Arg = new SpanByteAndMemory(sha1.SpanByte);
+                // Length check is required, as ScriptHashKey makes a hard assumption
+                if (sha1.length == SessionScriptCache.SHA1Len)
+                {
+                    AsciiUtils.ToLowerInPlace(sha1.Span);
 
-                var exists = storeWrapper.storeScriptCache.ContainsKey(sha1Arg) ? 1 : 0;
+                    var sha1Arg = new ScriptHashKey(sha1.Span);
+
+                    exists = storeWrapper.storeScriptCache.ContainsKey(sha1Arg) ? 1 : 0;
+                }
 
                 while (!RespWriteUtils.WriteArrayItem(exists, ref dcurr, dend))
                     SendAndReset();
@@ -200,22 +213,21 @@ namespace Garnet.server
             Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
             sessionScriptCache.GetScriptDigest(source.Span, digest);
 
-            if (sessionScriptCache.TryLoad(this, source.ReadOnlySpan, SpanByteAndMemory.FromPinnedSpan(digest), out _, out var digestOnHeap, out var error))
+            if (sessionScriptCache.TryLoad(this, source.ReadOnlySpan, new(digest), out _, out var digestOnHeap, out var error))
             {
                 // TryLoad will write any errors out
 
                 // Add script to the store dictionary
                 if (digestOnHeap == null)
                 {
-                    var newAlloc = new SpanByteAndMemory(new ScriptHashOwner(digest.ToArray()));
-                    _ = storeWrapper.storeScriptCache.TryAdd(newAlloc, source.ToArray());
+                    var newAlloc = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
+                    digest.CopyTo(newAlloc);
+                    _ = storeWrapper.storeScriptCache.TryAdd(new(newAlloc), source.ToArray());
                 }
                 else
                 {
                     _ = storeWrapper.storeScriptCache.TryAdd(digestOnHeap.Value, source.ToArray());
                 }
-
-
 
                 while (!RespWriteUtils.WriteBulkString(digest, ref dcurr, dend))
                     SendAndReset();
