@@ -1040,6 +1040,7 @@ namespace Tsavorite.test.recovery
                 _ = bc1.CompletePending(true);
             }
 
+            // First create the new store, we will insert into this store as part of the iterator functions on the old store
             using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
@@ -1053,10 +1054,9 @@ namespace Tsavorite.test.recovery
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
+            // Take a streaming snapshot checkpoint of the old store
             var iterator = new SnapshotIterator(store2, 1000);
             var task = store1.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: iterator);
-
-
             if (isAsync)
             {
                 var (status, token) = await task;
@@ -1066,6 +1066,7 @@ namespace Tsavorite.test.recovery
                 var (status, token) = task.AsTask().GetAwaiter().GetResult();
             }
 
+            // Verify that the new store has all the records
             using var s2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
             var bc2 = s2.BasicContext;
             for (long key = 0; key < 1000; key++)
