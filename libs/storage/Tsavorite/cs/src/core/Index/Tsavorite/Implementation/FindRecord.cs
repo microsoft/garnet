@@ -142,6 +142,7 @@ namespace Tsavorite.core
             return false;
         }
 
+        // Overload with maxAddress to avoid the extra condition - TODO: check that this duplication saves on IL/perf
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TraceBackForKeyMatch(ref TKey key, ref RecordSource<TKey, TValue, TStoreFunctions, TAllocator> recSrc, long minAddress, long maxAddress)
         {
@@ -181,6 +182,7 @@ namespace Tsavorite.core
             return false;
         }
 
+        // Overload with maxAddress to avoid the extra condition - TODO: check that this duplication saves on IL/perf
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TraceBackForKeyMatch(ref TKey key, long fromLogicalAddress, long minAddress, long maxAddress, out long foundLogicalAddress, out long foundPhysicalAddress)
         {
