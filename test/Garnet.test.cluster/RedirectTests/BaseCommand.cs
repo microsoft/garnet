@@ -3,8 +3,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using Garnet.common;
+using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
@@ -90,6 +93,16 @@ namespace Garnet.test.cluster
         /// </summary>
         /// <returns></returns>
         public abstract ArraySegment<string>[] SetupSingleSlotRequest();
+
+        /// <summary>
+        /// Setup before command is run.
+        /// 
+        /// Each segment is run via SE.Redis's <see cref="IServer.Execute(string, object[])"/>.
+        /// 
+        /// Runs once per test.
+        /// </summary>
+        public virtual ArraySegment<string>[] Initialize()
+        => [];
 
         /// <summary>
         /// Generate a list of keys that hash to a single slot
@@ -1655,6 +1668,45 @@ namespace Garnet.test.cluster
         {
             var ssk = GetSingleSlotKeys;
             var setup = new ArraySegment<string>[] { new ArraySegment<string>(["EVAL", "return 'OK'", "3", ssk[1], ssk[2], ssk[3]]) };
+            return setup;
+        }
+    }
+
+    internal class EVALSHA : BaseCommand
+    {
+        private const string SCRIPT = "return KEYS[1]";
+
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(EVALSHA);
+
+        private string hash;
+
+        internal EVALSHA()
+        {
+            var hashBytes = SHA1.HashData(Encoding.UTF8.GetBytes(SCRIPT));
+            hash = string.Join("", hashBytes.Select(static x => x.ToString("X2")));
+        }
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [hash, "3", ssk[0], ssk[1], ssk[2]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [hash, "3", csk[0], csk[1], csk[2]];
+        }
+
+        public override ArraySegment<string>[] Initialize()
+        => [new ArraySegment<string>(["SCRIPT", "LOAD", SCRIPT])];
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[] { new ArraySegment<string>(["EVALSHA", hash, "3", ssk[1], ssk[2], ssk[3]]) };
             return setup;
         }
     }

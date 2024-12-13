@@ -301,7 +301,12 @@ namespace CommandInfoUpdater
             new("ZSCORE", RespCommand.ZSCORE),
             new("EVAL", RespCommand.EVAL),
             new("EVALSHA", RespCommand.EVALSHA),
-            new("SCRIPT", RespCommand.SCRIPT),
+            new("SCRIPT", RespCommand.SCRIPT,
+            [
+                new("SCRIPT|EXISTS", RespCommand.SCRIPT_EXISTS),
+                new("SCRIPT|FLUSH", RespCommand.SCRIPT_FLUSH),
+                new("SCRIPT|LOAD", RespCommand.SCRIPT_LOAD),
+            ])
         ];
 
         static readonly Lazy<IReadOnlyDictionary<string, SupportedCommand>> LazySupportedCommandsMap =
