@@ -379,7 +379,7 @@ namespace Garnet.server
                     SendAndReset();
 
                 if (keys.Count > 0)
-                    WriteOutputForScan(cursor, keys, ref dcurr, dend);
+                    WriteOutputForScan(cursor, keys);
             }
 
             return true;
@@ -415,24 +415,21 @@ namespace Garnet.server
         /// </summary>
         /// <param name="cursorValue">Cursor value to write to the output</param>
         /// <param name="keys">Keys to write to the output</param>
-        /// <param name="curr">Pointer to output buffer</param>
-        /// <param name="end">End of the output buffer</param>
-        private void WriteOutputForScan(long cursorValue, List<byte[]> keys, ref byte* curr, byte* end)
+        private void WriteOutputForScan(long cursorValue, List<byte[]> keys)
         {
             // The output is an array of two elements: cursor value and an array of keys
             // Note the cursor value should be formatted as bulk string ('$')
-            while (!RespWriteUtils.WriteIntegerAsBulkString(cursorValue, ref curr, end, out _))
+            while (!RespWriteUtils.WriteIntegerAsBulkString(cursorValue, ref dcurr, dend, out _))
                 SendAndReset();
 
             // Write size of the array
-            while (!RespWriteUtils.WriteArrayLength(keys.Count, ref curr, end))
+            while (!RespWriteUtils.WriteArrayLength(keys.Count, ref dcurr, dend))
                 SendAndReset();
 
             // Write the keys matching the pattern
             for (int i = 0; i < keys.Count; i++)
             {
-                while (!RespWriteUtils.WriteBulkString(keys[i], ref curr, end))
-                    SendAndReset();
+                WriteDirectLargeRespString(keys[i]);
             }
         }
 
