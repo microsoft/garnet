@@ -215,7 +215,7 @@ return returnValue
             for (var i = 0; i < batchSize; i++)
             {
                 var evalShaLargeScript = $"*7\r\n$7\r\nEVALSHA\r\n$40\r\n{largeScriptHash}\r\n$1\r\n1\r\n$5\r\nhello\r\n";
-                
+
                 var id = Guid.NewGuid().ToString();
                 evalShaLargeScript += $"${id.Length}\r\n";
                 evalShaLargeScript += $"{id}\r\n";

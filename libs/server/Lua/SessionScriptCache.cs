@@ -60,14 +60,7 @@ namespace Garnet.server
         /// 
         /// If necessary, <paramref name="digestOnHeap"/> will be set so the allocation can be reused.
         /// </summary>
-        internal bool TryLoad(
-            RespServerSession session, 
-            ReadOnlySpan<byte> source, 
-            ScriptHashKey digest, 
-            out LuaRunner runner, 
-            out ScriptHashKey? digestOnHeap,
-            out string error
-        )
+        internal bool TryLoad(RespServerSession session, ReadOnlySpan<byte> source, ScriptHashKey digest, out LuaRunner runner, out ScriptHashKey? digestOnHeap, out string error)
         {
             error = null;
 
@@ -94,7 +87,7 @@ namespace Garnet.server
 
                 ScriptHashKey storeKeyDigest = new(into);
                 digestOnHeap = storeKeyDigest;
-                
+
                 _ = scriptCache.TryAdd(storeKeyDigest, runner);
             }
             catch (Exception ex)

@@ -273,7 +273,7 @@ end
 
             // TODO: custom allocator?
             state = new LuaStateWrapper(new Lua());
-            
+
             if (txnMode)
             {
                 txnKeyEntries = new TxnKeyEntries(16, respServerSession.storageSession.lockableContext, respServerSession.storageSession.objectStoreLockableContext);
@@ -1315,7 +1315,5 @@ end
                 runner.state.Pop(1);
             }
         }
-
-        
     }
 }

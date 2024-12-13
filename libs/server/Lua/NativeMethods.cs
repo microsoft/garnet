@@ -19,8 +19,6 @@ namespace Garnet.server
     /// </summary>
     internal static partial class NativeMethods
     {
-        // TODO: Suppress GC transition (requires Lua audit)
-
         private const string LuaLibraryName = "lua54";
 
         /// <summary>
