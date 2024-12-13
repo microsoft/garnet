@@ -184,9 +184,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private CustomObjectFunctions GetCustomObjectCommand(ref ObjectInput input, GarnetObjectType type)
         {
-            var objectId = (byte)((byte)type - CustomCommandManager.TypeIdStartOffset);
             var cmdId = input.header.SubId;
-            var customObjectCommand = functionsState.customObjectCommands[objectId].commandMap[cmdId].functions;
+            var customObjectCommand = functionsState.GetCustomObjectSubCommandFunctions((byte)type, cmdId);
             return customObjectCommand;
         }
 

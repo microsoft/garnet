@@ -55,8 +55,7 @@ namespace Garnet.server
                 Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.PExpire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
 
                 var customObjectCommand = GetCustomObjectCommand(ref input, type);
-                var objectId = (byte)((byte)type - CustomCommandManager.TypeIdStartOffset);
-                value = functionsState.customObjectCommands[objectId].factory.Create((byte)type);
+                value = functionsState.GetCustomObjectFactory((byte)type).Create((byte)type);
 
                 (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
                 var result = customObjectCommand.InitialUpdater(key, ref input, value, ref outp, ref rmwInfo);
