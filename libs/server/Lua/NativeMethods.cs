@@ -5,7 +5,6 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using KeraLua;
-using static System.Net.WebRequestMethods;
 using charptr_t = System.IntPtr;
 using lua_State = System.IntPtr;
 using size_t = System.UIntPtr;
@@ -18,9 +17,8 @@ namespace Garnet.server
     /// Long term we'll want to try and push these upstreams and move to just using KeraLua, 
     /// but for now we're just defining them ourselves.
     /// </summary>
-    internal static class NativeMethods
+    internal static partial class NativeMethods
     {
-        // TODO: LibraryImport?
         // TODO: Suppress GC transition (requires Lua audit)
 
         private const string LuaLibraryName = "lua54";
@@ -28,26 +26,30 @@ namespace Garnet.server
         /// <summary>
         /// see: https://www.lua.org/manual/5.3/manual.html#lua_tolstring
         /// </summary>
-        [DllImport(LuaLibraryName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern charptr_t lua_tolstring(lua_State L, int index, out size_t len);
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+        private static partial charptr_t lua_tolstring(lua_State L, int index, out size_t len);
 
         /// <summary>
         /// see: https://www.lua.org/manual/5.3/manual.html#lua_type
         /// </summary>
-        [DllImport(LuaLibraryName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern LuaType lua_type(lua_State L, int index);
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+        private static partial LuaType lua_type(lua_State L, int index);
 
         /// <summary>
         /// see: https://www.lua.org/manual/5.3/manual.html#lua_pushlstring
         /// </summary>
-        [DllImport(LuaLibraryName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern charptr_t lua_pushlstring(lua_State L, charptr_t s, size_t len);
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+        private static partial charptr_t lua_pushlstring(lua_State L, charptr_t s, size_t len);
 
         /// <summary>
         /// see: https://www.lua.org/manual/5.3/manual.html#luaL_loadbufferx
         /// </summary>
-        [DllImport(LuaLibraryName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern LuaStatus luaL_loadbufferx(lua_State luaState, charptr_t buff, size_t sz, charptr_t name, charptr_t mode);
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+        private static partial LuaStatus luaL_loadbufferx(lua_State luaState, charptr_t buff, size_t sz, charptr_t name, charptr_t mode);
 
         /// <summary>
         /// Returns true if the given index on the stack holds a string or a number.
