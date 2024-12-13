@@ -1254,7 +1254,6 @@ end
                 // See: https://www.lua.org/manual/5.3/manual.html#3.4.7
                 var maxLen = runner.state.Length(runner.state.StackTop);
 
-                // TODO: is it faster to punch a function in for this?
                 // Find the TRUE length by scanning for nils
                 var trueLen = 0;
                 for (trueLen = 0; trueLen < maxLen; trueLen++)
