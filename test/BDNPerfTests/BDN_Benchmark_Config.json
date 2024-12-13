@@ -90,5 +90,24 @@
     "expected_Decrement_None": 0,
     "expected_IncrementBy_None": 0,
     "expected_DecrementBy_None": 0
+  },
+  "BDN.benchmark.Operations.ScriptOperations.*": {
+    "expected_ScriptLoad_ACL": 0,
+    "expected_ScriptExistsTrue_ACL": 0,
+    "expected_ScriptExistsFalse_ACL": 0,
+    "expected_Eval_ACL": 0,
+    "expected_EvalSha_ACL": 0,
+
+    "expected_ScriptLoad_AOF": 16000,
+    "expected_ScriptExistsTrue_AOF": 0,
+    "expected_ScriptExistsFalse_AOF": 0,
+    "expected_Eval_AOF": 16000,
+    "expected_EvalSha_AOF": 12000,
+
+    "expected_ScriptLoad_None": 16000,
+    "expected_ScriptExistsTrue_None": 0,
+    "expected_ScriptExistsFalse_None": 0,
+    "expected_Eval_None": 16000,
+    "expected_EvalSha_None": 12000
   }
 }
