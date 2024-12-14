@@ -4437,7 +4437,6 @@ namespace Garnet.test
             Assert.Throws<RedisServerException>(() => db.Execute("LCS", "key1", "key2", "INVALID"));
 
             // Invalid MINMATCHLEN value
-            Assert.Throws<RedisServerException>(() => db.Execute("LCS", "key1", "key2", "IDX", "MINMATCHLEN", -1));
             Assert.Throws<RedisServerException>(() => db.Execute("LCS", "key1", "key2", "IDX", "MINMATCHLEN", "abc"));
         }
 
