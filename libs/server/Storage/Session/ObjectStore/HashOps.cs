@@ -15,6 +15,8 @@ namespace Garnet.server
     /// </summary>
     sealed partial class StorageSession : IDisposable
     {
+        private SingleWriterMultiReaderLock _hcollectTaskLock;
+
         /// <summary>
         /// HashSet: Sets the specified fields to their respective values in the hash stored at key.
         /// Values of specified fields that exist in the hash are overwritten.
@@ -601,35 +603,64 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
             => RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
 
-        public GarnetStatus HashCollect<TObjectContext>(ArgSlice key, ref ObjectInput input, ref TObjectContext objectContext)
+        /// <summary>
+        /// Collects hash keys and performs a specified operation on them.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="keys">The keys to collect.</param>
+        /// <param name="input">The input object containing the operation details.</param>
+        /// <param name="objectContext">The object context for the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        /// <remarks>
+        /// If the first key is "*", all hash keys are scanned in batches and the operation is performed on each key.
+        /// Otherwise, the operation is performed on the specified keys.
+        /// </remarks>
+        public GarnetStatus HashCollect<TObjectContext>(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            if (key.ReadOnlySpan.SequenceEqual("*"u8))
+            if (!_hcollectTaskLock.TryWriteLock())
             {
-                long cursor = 0;
-                long storeCursor = 0;
+                return GarnetStatus.NOTFOUND;
+            }
 
-                // Scan all hash keys in batches
-                do
+            try
+            {
+                if (keys[0].ReadOnlySpan.SequenceEqual("*"u8))
                 {
-                    if (!DbScan(key, true, cursor, out storeCursor, out var hashKeys, 100, CmdStrings.HASH))
-                    {
-                        return GarnetStatus.NOTFOUND;
-                    }
+                    long cursor = 0;
+                    long storeCursor = 0;
 
-                    // Process each hash key
-                    foreach (var hashKey in hashKeys)
+                    // Scan all hash keys in batches
+                    do
                     {
-                        RMWObjectStoreOperation(hashKey, ref input, out _, ref objectContext);
-                    }
+                        if (!DbScan(keys[0], true, cursor, out storeCursor, out var hashKeys, 100, CmdStrings.HASH))
+                        {
+                            return GarnetStatus.OK;
+                        }
 
-                    cursor = storeCursor;
-                } while (storeCursor != 0);
+                        // Process each hash key
+                        foreach (var hashKey in hashKeys)
+                        {
+                            RMWObjectStoreOperation(hashKey, ref input, out _, ref objectContext);
+                        }
+
+                        cursor = storeCursor;
+                    } while (storeCursor != 0);
+
+                    return GarnetStatus.OK;
+                }
+
+                foreach (var key in keys)
+                {
+                    RMWObjectStoreOperation(key.ToArray(), ref input, out _, ref objectContext);
+                }
 
                 return GarnetStatus.OK;
             }
-
-            return RMWObjectStoreOperation(key.ToArray(), ref input, out _, ref objectContext);
+            finally
+            {
+                _hcollectTaskLock.WriteUnlock();
+            }
         }
     }
 }

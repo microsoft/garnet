@@ -996,9 +996,9 @@ namespace Garnet.server
         /// <summary>
         /// Delete already expired fields from the hash.
         /// </summary>
-        /// <param name="key">The key of the hash.</param>
+        /// <param name="keys">The keys of the hash.</param>
         /// <returns>The status of the operation.</returns>
-        GarnetStatus HashCollect(ArgSlice key, ref ObjectInput input);
+        GarnetStatus HashCollect(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input);
 
         #endregion
 

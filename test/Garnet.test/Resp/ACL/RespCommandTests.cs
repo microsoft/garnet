@@ -3340,7 +3340,7 @@ namespace Garnet.test.Resp.ACL
             static async Task DoHCollectAsync(GarnetClient client)
             {
                 var val = await client.ExecuteForStringResultAsync("HCOLLECT", ["foo"]);
-                ClassicAssert.IsNull(val);
+                ClassicAssert.AreEqual("OK", val);
             }
         }
 

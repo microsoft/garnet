@@ -366,16 +366,10 @@ namespace Garnet.server
             if (expirationTimes is null)
                 return;
 
-            var hasValue = expirationQueue.TryPeek(out var key, out var expiration);
-
-            if (!hasValue)
+            while (expirationQueue.TryPeek(out var key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks)
             {
-                CleanupExpirationStructures();
-                return;
-            }
-
-            while (expiration < DateTimeOffset.UtcNow.Ticks)
-            {
+                // expirationTimes and expirationQueue will be out of sync when user is updating the expire time of key which already has some TTL.
+                // PriorityQueue Doesn't have update option, so we will just enqueue the new expiration and already treat expirationTimes as the source of truth
                 if (expirationTimes.TryGetValue(key, out var actualExpiration) && actualExpiration == expiration)
                 {
                     expirationTimes.Remove(key);
@@ -392,14 +386,9 @@ namespace Garnet.server
                     expirationQueue.Dequeue();
                     this.Size -= MemoryUtils.PriorityQueueEntryOverhead + IntPtr.Size + sizeof(long);
                 }
-
-                hasValue = expirationQueue.TryPeek(out key, out expiration);
-                if (!hasValue)
-                {
-                    CleanupExpirationStructures();
-                    break;
-                }
             }
+
+            CleanupExpirationStructures();
         }
 
         private bool TryGetValue(byte[] key, out byte[] value)

@@ -439,7 +439,7 @@ Array reply: For each field, returns:
 #### Syntax
 
 ```bash
-    HCOLLECT key
+    HCOLLECT key [key ...]
 ```
 
 Manualy trigger cleanup of expired field from memory for a given Hash set key.
@@ -449,6 +449,7 @@ Use `*` as the key to collect it from all hash keys.
 #### Resp Reply
 
 Simple reply: OK response
+Error reply: ERR HCOLLECT scan already in progress
 
 ---
 

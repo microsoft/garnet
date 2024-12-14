@@ -571,17 +571,17 @@ namespace Garnet.server
         private bool NetworkHCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.Count != 1)
+            if (parseState.Count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.HCOLLECT));
             }
 
-            var key = parseState.GetArgSliceByRef(0);
+            var keys = parseState.Parameters;
 
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
             var input = new ObjectInput(header);
 
-            var status = storageApi.HashCollect(key, ref input);
+            var status = storageApi.HashCollect(keys, ref input);
 
             switch (status)
             {
@@ -590,7 +590,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS, ref dcurr, dend))
                         SendAndReset();
                     break;
             }

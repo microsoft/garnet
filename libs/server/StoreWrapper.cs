@@ -421,7 +421,6 @@ namespace Garnet.server
             {
                 var scratchBufferManager = new ScratchBufferManager();
                 using var storageSession = new StorageSession(this, scratchBufferManager, null, null, logger);
-                var key = ArgSlice.FromPinnedSpan("*"u8);
 
                 while (true)
                 {
@@ -433,13 +432,9 @@ namespace Garnet.server
                         return;
                     }
 
-                    var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
-                    var input = new ObjectInput(header);
+                    ExecuteHashCollect(scratchBufferManager, storageSession);
 
-                    storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
-                    scratchBufferManager.Reset();
-
-                    await Task.Delay(hashCollectFrequencySecs * 1000, token);
+                    await Task.Delay(TimeSpan.FromSeconds(hashCollectFrequencySecs), token);
                 }
             }
             catch (TaskCanceledException ex) when (token.IsCancellationRequested)
@@ -449,6 +444,16 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogCritical(ex, "Unknown exception received for background hash collect task. Hash collect task won't be resumed.");
+            }
+
+            static void ExecuteHashCollect(ScratchBufferManager scratchBufferManager, StorageSession storageSession)
+            {
+                var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
+                var input = new ObjectInput(header);
+
+                ReadOnlySpan<ArgSlice> key = [ArgSlice.FromPinnedSpan("*"u8)];
+                storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
+                scratchBufferManager.Reset();
             }
         }
 
