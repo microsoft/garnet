@@ -1103,7 +1103,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    pairs = new Dictionary<byte[], double>(new ByteArrayComparer());
+                    pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
                     foreach (var (key, score) in firstSortedSet.Dictionary)
                     {
                         pairs[key] = weights[0] * score;
