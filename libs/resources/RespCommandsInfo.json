@@ -306,6 +306,28 @@
     ]
   },
   {
+    "Command": "BLMPOP",
+    "Name": "BLMPOP",
+    "Arity": -5,
+    "Flags": "Blocking, MovableKeys, Write",
+    "AclCategories": "Blocking, List, Slow, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysKeyNum",
+          "KeyNumIdx": 0,
+          "FirstKey": 1,
+          "KeyStep": 1
+        },
+        "Flags": "RW, Access, Delete"
+      }
+    ]
+  },
+  {
     "Command": "BLPOP",
     "Name": "BLPOP",
     "Arity": -3,
@@ -1124,14 +1146,12 @@
   {
     "Command": "EXPIREAT",
     "Name": "EXPIREAT",
-    "IsInternal": false,
     "Arity": -3,
     "Flags": "Fast, Write",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "Fast, KeySpace, Write",
-    "Tips": null,
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -1144,23 +1164,19 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Notes": null,
         "Flags": "RW, Update"
       }
-    ],
-    "SubCommands": null
+    ]
   },
   {
     "Command": "EXPIRETIME",
     "Name": "EXPIRETIME",
-    "IsInternal": false,
     "Arity": 2,
     "Flags": "Fast, ReadOnly",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "Fast, KeySpace, Read",
-    "Tips": null,
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -1173,11 +1189,9 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Notes": null,
         "Flags": "RO, Access"
       }
-    ],
-    "SubCommands": null
+    ]
   },
   {
     "Command": "FAILOVER",
@@ -1459,14 +1473,12 @@
   {
     "Command": "GETEX",
     "Name": "GETEX",
-    "IsInternal": false,
     "Arity": -2,
     "Flags": "Fast, Write",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "Fast, String, Write",
-    "Tips": null,
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -1482,8 +1494,7 @@
         "Notes": "RW and UPDATE because it changes the TTL",
         "Flags": "RW, Access, Update"
       }
-    ],
-    "SubCommands": null
+    ]
   },
   {
     "Command": "GETRANGE",
@@ -1513,14 +1524,12 @@
   {
     "Command": "GETSET",
     "Name": "GETSET",
-    "IsInternal": false,
     "Arity": 3,
     "Flags": "DenyOom, Fast, Write",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "Fast, String, Write",
-    "Tips": null,
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -1533,11 +1542,9 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Notes": null,
         "Flags": "RW, Access, Update"
       }
-    ],
-    "SubCommands": null
+    ]
   },
   {
     "Command": "HDEL",
@@ -2014,14 +2021,12 @@
   {
     "Command": "INCRBYFLOAT",
     "Name": "INCRBYFLOAT",
-    "IsInternal": false,
     "Arity": 3,
     "Flags": "DenyOom, Fast, Write",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "Fast, String, Write",
-    "Tips": null,
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -2034,11 +2039,9 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Notes": null,
         "Flags": "RW, Access, Update"
       }
-    ],
-    "SubCommands": null
+    ]
   },
   {
     "Command": "INFO",
@@ -2298,14 +2301,12 @@
   {
     "Command": "LPOS",
     "Name": "LPOS",
-    "IsInternal": false,
     "Arity": -3,
     "Flags": "ReadOnly",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "List, Read, Slow",
-    "Tips": null,
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -2318,11 +2319,9 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Notes": null,
         "Flags": "RO, Access"
       }
-    ],
-    "SubCommands": null
+    ]
   },
   {
     "Command": "LPUSH",
@@ -2713,14 +2712,12 @@
   {
     "Command": "PEXPIREAT",
     "Name": "PEXPIREAT",
-    "IsInternal": false,
     "Arity": -3,
     "Flags": "Fast, Write",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "Fast, KeySpace, Write",
-    "Tips": null,
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -2733,23 +2730,19 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Notes": null,
         "Flags": "RW, Update"
       }
-    ],
-    "SubCommands": null
+    ]
   },
   {
     "Command": "PEXPIRETIME",
     "Name": "PEXPIRETIME",
-    "IsInternal": false,
     "Arity": 2,
     "Flags": "Fast, ReadOnly",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "Fast, KeySpace, Read",
-    "Tips": null,
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -2762,11 +2755,9 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Notes": null,
         "Flags": "RO, Access"
       }
-    ],
-    "SubCommands": null
+    ]
   },
   {
     "Command": "PFADD",
@@ -2974,16 +2965,12 @@
   {
     "Command": "PURGEBP",
     "Name": "PURGEBP",
-    "IsInternal": false,
     "Arity": 2,
     "Flags": "Admin, NoMulti, NoScript, ReadOnly",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Admin, Garnet",
-    "Tips": null,
-    "KeySpecifications": null,
-    "SubCommands": null
+    "AclCategories": "Admin, Garnet"
   },
   {
     "Command": "QUIT",
@@ -3057,14 +3044,12 @@
   {
     "Command": "RENAMENX",
     "Name": "RENAMENX",
-    "IsInternal": false,
     "Arity": 3,
     "Flags": "Fast, Write",
     "FirstKey": 1,
     "LastKey": 2,
     "Step": 1,
     "AclCategories": "Fast, KeySpace, Write",
-    "Tips": null,
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -3077,7 +3062,6 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Notes": null,
         "Flags": "RW, Access, Delete"
       },
       {
@@ -3091,11 +3075,9 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Notes": null,
         "Flags": "OW, Insert"
       }
-    ],
-    "SubCommands": null
+    ]
   },
   {
     "Command": "REPLICAOF",
@@ -3300,7 +3282,42 @@
     "Command": "SCRIPT",
     "Name": "SCRIPT",
     "Arity": -2,
-    "AclCategories": "Slow"
+    "AclCategories": "Slow",
+    "SubCommands": [
+      {
+        "Command": "SCRIPT_EXISTS",
+        "Name": "SCRIPT|EXISTS",
+        "Arity": -3,
+        "Flags": "NoScript",
+        "AclCategories": "Scripting, Slow",
+        "Tips": [
+          "request_policy:all_shards",
+          "response_policy:agg_logical_and"
+        ]
+      },
+      {
+        "Command": "SCRIPT_FLUSH",
+        "Name": "SCRIPT|FLUSH",
+        "Arity": -2,
+        "Flags": "NoScript",
+        "AclCategories": "Scripting, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ]
+      },
+      {
+        "Command": "SCRIPT_LOAD",
+        "Name": "SCRIPT|LOAD",
+        "Arity": 3,
+        "Flags": "NoScript, Stale",
+        "AclCategories": "Scripting, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ]
+      }
+    ]
   },
   {
     "Command": "SDIFF",
@@ -3461,14 +3478,12 @@
   {
     "Command": "SETNX",
     "Name": "SETNX",
-    "IsInternal": false,
     "Arity": 3,
     "Flags": "DenyOom, Fast, Write",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "Fast, String, Write",
-    "Tips": null,
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -3481,11 +3496,9 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Notes": null,
         "Flags": "OW, Insert"
       }
-    ],
-    "SubCommands": null
+    ]
   },
   {
     "Command": "SETRANGE",
@@ -3867,14 +3880,12 @@
   {
     "Command": "SUBSTR",
     "Name": "SUBSTR",
-    "IsInternal": false,
     "Arity": 4,
     "Flags": "ReadOnly",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "Read, Slow, String",
-    "Tips": null,
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -3887,11 +3898,9 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Notes": null,
         "Flags": "RO, Access"
       }
-    ],
-    "SubCommands": null
+    ]
   },
   {
     "Command": "SUNION",
@@ -4322,6 +4331,28 @@
           "Limit": 0
         },
         "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "ZMPOP",
+    "Name": "ZMPOP",
+    "Arity": -4,
+    "Flags": "MovableKeys, Write",
+    "AclCategories": "SortedSet, Slow, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysKeyNum",
+          "KeyNumIdx": 0,
+          "FirstKey": 1,
+          "KeyStep": 1
+        },
+        "Flags": "RW, Access, Delete"
       }
     ]
   },

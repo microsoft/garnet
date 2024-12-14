@@ -51,6 +51,14 @@ public static class AsciiUtils
         Ascii.ToUpperInPlace(command, out _);
     }
 
+    /// <summary>
+    /// Convert ASCII Span to lower case
+    /// </summary>
+    public static void ToLowerInPlace(Span<byte> command)
+    {
+        Ascii.ToLowerInPlace(command, out _);
+    }
+
     /// <inheritdoc cref="EqualsUpperCaseSpanIgnoringCase(ReadOnlySpan{byte}, ReadOnlySpan{byte})"/>
     public static bool EqualsUpperCaseSpanIgnoringCase(this Span<byte> left, ReadOnlySpan<byte> right)
         => EqualsUpperCaseSpanIgnoringCase((ReadOnlySpan<byte>)left, right);

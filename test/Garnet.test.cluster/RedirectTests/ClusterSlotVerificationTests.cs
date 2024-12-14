@@ -67,9 +67,11 @@ namespace Garnet.test.cluster
                 new SINTER(),
                 new LMOVE(),
                 new EVAL(),
+                new EVALSHA(),
                 new LPUSH(),
                 new LPOP(),
                 new LMPOP(),
+                new ZMPOP(),
                 new BLPOP(),
                 new BLMOVE(),
                 new BRPOPLPUSH(),
@@ -254,6 +256,7 @@ namespace Garnet.test.cluster
         [TestCase("LPUSH")]
         [TestCase("LPOP")]
         [TestCase("LMPOP")]
+        [TestCase("ZMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
         [TestCase("BRPOPLPUSH")]
@@ -310,12 +313,15 @@ namespace Garnet.test.cluster
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
         [TestCase("SINTERCARD")]
+        [TestCase("EVALSHA")]
         [TestCase("LCS")]
         public void ClusterCLUSTERDOWNTest(string commandName)
         {
             var requestNodeIndex = otherIndex;
             var dummyCommand = new DummyCommand(commandName);
             ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
+
+            Initialize(command);
 
             for (var i = 0; i < iterations; i++)
                 SERedisClusterDown(command);
@@ -395,9 +401,11 @@ namespace Garnet.test.cluster
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
         [TestCase("EVAL")]
+        [TestCase("EVALSHA")]
         [TestCase("LPUSH")]
         [TestCase("LPOP")]
         [TestCase("LMPOP")]
+        [TestCase("ZMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
         [TestCase("BRPOPLPUSH")]
@@ -459,6 +467,8 @@ namespace Garnet.test.cluster
             var requestNodeIndex = sourceIndex;
             var dummyCommand = new DummyCommand(commandName);
             ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
+
+            Initialize(command);
 
             for (var i = 0; i < iterations; i++)
                 SERedisOKTest(command);
@@ -549,9 +559,11 @@ namespace Garnet.test.cluster
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
         [TestCase("EVAL")]
+        [TestCase("EVALSHA")]
         [TestCase("LPUSH")]
         [TestCase("LPOP")]
         [TestCase("LMPOP")]
+        [TestCase("ZMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
         [TestCase("BRPOPLPUSH")]
@@ -613,6 +625,8 @@ namespace Garnet.test.cluster
             var requestNodeIndex = sourceIndex;
             var dummyCommand = new DummyCommand(commandName);
             ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
+
+            Initialize(command);
 
             for (var i = 0; i < iterations; i++)
                 SERedisCrossslotTest(command);
@@ -698,6 +712,7 @@ namespace Garnet.test.cluster
         [TestCase("LPUSH")]
         [TestCase("LPOP")]
         [TestCase("LMPOP")]
+        [TestCase("ZMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
         [TestCase("BRPOPLPUSH")]
@@ -753,6 +768,7 @@ namespace Garnet.test.cluster
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
         [TestCase("SINTERCARD")]
+        [TestCase("EVALSHA")]
         [TestCase("LCS")]
         public void ClusterMOVEDTest(string commandName)
         {
@@ -761,6 +777,8 @@ namespace Garnet.test.cluster
             var port = context.clusterTestUtils.GetPortFromNodeIndex(sourceIndex);
             var dummyCommand = new DummyCommand(commandName);
             ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
+
+            Initialize(command);
 
             for (var i = 0; i < iterations; i++)
                 SERedisMOVEDTest(command);
@@ -851,6 +869,7 @@ namespace Garnet.test.cluster
         [TestCase("LPUSH")]
         [TestCase("LPOP")]
         [TestCase("LMPOP")]
+        [TestCase("ZMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
         [TestCase("BRPOPLPUSH")]
@@ -906,6 +925,7 @@ namespace Garnet.test.cluster
         [TestCase("WATCHMS")]
         [TestCase("WATCHOS")]
         [TestCase("SINTERCARD")]
+        [TestCase("EVALSHA")]
         [TestCase("LCS")]
         public void ClusterASKTest(string commandName)
         {
@@ -914,6 +934,9 @@ namespace Garnet.test.cluster
             var port = context.clusterTestUtils.GetPortFromNodeIndex(targetIndex);
             var dummyCommand = new DummyCommand(commandName);
             ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
+
+            Initialize(command);
+
             ConfigureSlotForMigration();
 
             try
@@ -1021,6 +1044,7 @@ namespace Garnet.test.cluster
         [TestCase("LPUSH")]
         [TestCase("LPOP")]
         [TestCase("LMPOP")]
+        [TestCase("ZMPOP")]
         [TestCase("BLPOP")]
         [TestCase("BLMOVE")]
         [TestCase("BRPOPLPUSH")]
@@ -1082,6 +1106,9 @@ namespace Garnet.test.cluster
             var requestNodeIndex = sourceIndex;
             var dummyCommand = new DummyCommand(commandName);
             ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
+
+            Initialize(command);
+
             for (var i = 0; i < iterations; i++)
                 SERedisTRYAGAINTest(command);
 
@@ -1129,6 +1156,19 @@ namespace Garnet.test.cluster
                 }
 
                 Assert.Fail($"Should not reach here. Command: {command.Command}");
+            }
+        }
+
+        private void Initialize(BaseCommand cmd)
+        {
+            var server = context.clusterTestUtils.GetServer(sourceIndex);
+
+            foreach (var initCmd in cmd.Initialize())
+            {
+                var c = initCmd.Array[initCmd.Offset];
+                var rest = initCmd.Array.AsSpan().Slice(initCmd.Offset + 1, initCmd.Count - 1).ToArray();
+
+                _ = server.Execute(c, rest);
             }
         }
     }

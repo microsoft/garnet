@@ -120,8 +120,9 @@ namespace Garnet.common
         /// <param name="locationType">Type of location of files the stream provider reads from / writes to</param>
         /// <param name="connectionString">Connection string to Azure Storage, if applicable</param>
         /// <param name="resourceAssembly">Assembly from which to load the embedded resource, if applicable.</param>
+        /// <param name="readOnly">Open file in read only mode</param>
         /// <returns>StreamProvider instance</returns>
-        public static IStreamProvider GetStreamProvider(FileLocationType locationType, string connectionString = null, Assembly resourceAssembly = null)
+        public static IStreamProvider GetStreamProvider(FileLocationType locationType, string connectionString = null, Assembly resourceAssembly = null, bool readOnly = false)
         {
             switch (locationType)
             {
@@ -130,7 +131,7 @@ namespace Garnet.common
                         throw new ArgumentException("Azure Storage connection string is required to read/write to Azure Storage", nameof(connectionString));
                     return new AzureStreamProvider(connectionString);
                 case FileLocationType.Local:
-                    return new LocalFileStreamProvider();
+                    return new LocalFileStreamProvider(readOnly);
                 case FileLocationType.EmbeddedResource:
                     if (resourceAssembly == null)
                         throw new ArgumentException(
@@ -181,11 +182,18 @@ namespace Garnet.common
     /// </summary>
     internal class LocalFileStreamProvider : StreamProviderBase
     {
+        private readonly bool readOnly;
+
+        public LocalFileStreamProvider(bool readOnly = false)
+        {
+            this.readOnly = readOnly;
+        }
+
         protected override IDevice GetDevice(string path)
         {
             var fileInfo = new FileInfo(path);
 
-            INamedDeviceFactory settingsDeviceFactoryCreator = new LocalStorageNamedDeviceFactory(disableFileBuffering: false);
+            INamedDeviceFactory settingsDeviceFactoryCreator = new LocalStorageNamedDeviceFactory(disableFileBuffering: false, readOnly: readOnly);
             settingsDeviceFactoryCreator.Initialize("");
             var settingsDevice = settingsDeviceFactoryCreator.Get(new FileDescriptor(fileInfo.DirectoryName, fileInfo.Name));
             settingsDevice.Initialize(-1, epoch: null, omitSegmentIdFromFilename: true);
