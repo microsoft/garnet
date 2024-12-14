@@ -75,6 +75,10 @@ namespace Garnet.server
             => storageSession.SortedSetPop(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
+        public GarnetStatus SortedSetMPop(ReadOnlySpan<ArgSlice> keys, int count, bool lowScoresFirst, out ArgSlice poppedKey, out (ArgSlice member, ArgSlice score)[] pairs)
+            => storageSession.SortedSetMPop(keys, count, lowScoresFirst, out poppedKey, out pairs);
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetPop(ArgSlice key, out (ArgSlice member, ArgSlice score)[] pairs, int count = 1, bool lowScoresFirst = true)
             => storageSession.SortedSetPop(key, count, lowScoresFirst, out pairs, ref objectContext);
 

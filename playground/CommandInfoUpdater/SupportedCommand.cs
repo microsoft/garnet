@@ -37,6 +37,7 @@ namespace CommandInfoUpdater
             new("BRPOP", RespCommand.BRPOP),
             new("BLMOVE", RespCommand.BLMOVE),
             new("BRPOPLPUSH", RespCommand.BRPOPLPUSH),
+            new("BLMPOP", RespCommand.BLMPOP),
             new("CLIENT", RespCommand.CLIENT,
             [
                 new("CLIENT|ID", RespCommand.CLIENT_ID),
@@ -273,6 +274,7 @@ namespace CommandInfoUpdater
             new("ZINTERSTORE", RespCommand.ZINTERSTORE),
             new("ZLEXCOUNT", RespCommand.ZLEXCOUNT),
             new("ZMSCORE", RespCommand.ZMSCORE),
+            new("ZMPOP", RespCommand.ZMPOP),
             new("ZPOPMAX", RespCommand.ZPOPMAX),
             new("ZPOPMIN", RespCommand.ZPOPMIN),
             new("ZRANDMEMBER", RespCommand.ZRANDMEMBER),
@@ -292,7 +294,12 @@ namespace CommandInfoUpdater
             new("ZSCORE", RespCommand.ZSCORE),
             new("EVAL", RespCommand.EVAL),
             new("EVALSHA", RespCommand.EVALSHA),
-            new("SCRIPT", RespCommand.SCRIPT),
+            new("SCRIPT", RespCommand.SCRIPT,
+            [
+                new("SCRIPT|EXISTS", RespCommand.SCRIPT_EXISTS),
+                new("SCRIPT|FLUSH", RespCommand.SCRIPT_FLUSH),
+                new("SCRIPT|LOAD", RespCommand.SCRIPT_LOAD),
+            ])
         ];
 
         static readonly Lazy<IReadOnlyDictionary<string, SupportedCommand>> LazySupportedCommandsMap =

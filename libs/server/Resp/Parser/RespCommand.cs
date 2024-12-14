@@ -127,6 +127,7 @@ namespace Garnet.server
         BRPOP,
         BLMOVE,
         BRPOPLPUSH,
+        BLMPOP,
         MIGRATE,
         MSET,
         MSETNX,
@@ -162,6 +163,7 @@ namespace Garnet.server
         ZADD,
         ZDIFFSTORE,
         ZINCRBY,
+        ZMPOP,
         ZINTERSTORE,
         ZPOPMAX,
         ZPOPMIN,
@@ -244,6 +246,9 @@ namespace Garnet.server
 
         // Script commands
         SCRIPT,
+        SCRIPT_EXISTS,
+        SCRIPT_FLUSH,
+        SCRIPT_LOAD,
 
         ACL,
         ACL_CAT,
@@ -1047,6 +1052,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.ZSCAN;
                                         }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZMPOP\r\n"u8))
+                                        {
+                                            return RespCommand.ZMPOP;
+                                        }
                                         break;
                                 }
                                 break;
@@ -1058,6 +1067,10 @@ namespace Garnet.server
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BLMOVE\r\n"u8))
                                         {
                                             return RespCommand.BLMOVE;
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BLMPOP\r\n"u8))
+                                        {
+                                            return RespCommand.BLMPOP;
                                         }
                                         break;
                                     case 'D':
@@ -1154,7 +1167,39 @@ namespace Garnet.server
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SCRIPT\r\n"u8))
                                         {
-                                            return RespCommand.SCRIPT;
+                                            // SCRIPT EXISTS => "$6\r\nEXISTS\r\n".Length == 12
+                                            // SCRIPT FLUSH  => "$5\r\nFLUSH\r\n".Length  == 11
+                                            // SCRIPT LOAD   => "$4\r\nLOAD\r\n".Length   == 10
+
+                                            if (remainingBytes >= length + 10)
+                                            {
+                                                if (*(ulong*)(ptr + 4 + 8) == MemoryMarshal.Read<ulong>("$4\r\nLOAD"u8) && *(ulong*)(ptr + 4 + 8 + 2) == MemoryMarshal.Read<ulong>("\r\nLOAD\r\n"u8))
+                                                {
+                                                    count--;
+                                                    readHead += 10;
+                                                    return RespCommand.SCRIPT_LOAD;
+                                                }
+
+                                                if (remainingBytes >= length + 11)
+                                                {
+                                                    if (*(ulong*)(ptr + 4 + 8) == MemoryMarshal.Read<ulong>("$5\r\nFLUS"u8) && *(ulong*)(ptr + 4 + 8 + 3) == MemoryMarshal.Read<ulong>("\nFLUSH\r\n"u8))
+                                                    {
+                                                        count--;
+                                                        readHead += 11;
+                                                        return RespCommand.SCRIPT_FLUSH;
+                                                    }
+
+                                                    if (remainingBytes >= length + 12)
+                                                    {
+                                                        if (*(ulong*)(ptr + 4 + 8) == MemoryMarshal.Read<ulong>("$6\r\nEXIS"u8) && *(ulong*)(ptr + 4 + 8 + 4) == MemoryMarshal.Read<ulong>("EXISTS\r\n"u8))
+                                                        {
+                                                            count--;
+                                                            readHead += 12;
+                                                            return RespCommand.SCRIPT_EXISTS;
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                         break;
 

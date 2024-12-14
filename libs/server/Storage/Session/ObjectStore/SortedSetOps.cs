@@ -1034,6 +1034,62 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Removes and returns up to count members and their scores from the first sorted set that contains a member.
+        /// </summary>
+        public unsafe GarnetStatus SortedSetMPop(ReadOnlySpan<ArgSlice> keys, int count, bool lowScoresFirst, out ArgSlice poppedKey, out (ArgSlice member, ArgSlice score)[] pairs)
+        {
+            if (txnManager.ObjectStoreLockableContext.Session is null)
+                ThrowObjectStoreUninitializedException();
+
+            pairs = default;
+            poppedKey = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                foreach (var key in keys)
+                    txnManager.SaveKeyEntryToLock(key, true, LockType.Exclusive);
+                txnManager.Run(true);
+            }
+
+            var storeLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                // Try popping from each key until we find one with members
+                foreach (var key in keys)
+                {
+                    if (key.Length == 0) continue;
+
+                    var status = SortedSetPop(key, count, lowScoresFirst, out pairs, ref storeLockableContext);
+                    if (status == GarnetStatus.OK && pairs != null && pairs.Length > 0)
+                    {
+                        poppedKey = key;
+                        return status;
+                    }
+
+                    if (status != GarnetStatus.OK && status != GarnetStatus.NOTFOUND)
+                    {
+                        return status;
+                    }
+                }
+
+                return GarnetStatus.OK;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
+
+        /// <summary>
         /// Computes the cardinality of the intersection of multiple sorted sets.
         /// </summary>
         public GarnetStatus SortedSetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
