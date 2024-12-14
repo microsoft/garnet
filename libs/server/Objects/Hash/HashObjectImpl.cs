@@ -133,20 +133,14 @@ namespace Garnet.server
                             continue;
                         }
 
-                        while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        WriteHashItem(ref output, ref isMemory, ref ptrHandle, ref ptr, ref curr, ref end, item);
                     }
                 }
                 else
                 {
                     foreach (var item in hash)
                     {
-                        while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        WriteHashItem(ref output, ref isMemory, ref ptrHandle, ref ptr, ref curr, ref end, item);
                     }
                 }
             }
@@ -157,6 +151,14 @@ namespace Garnet.server
 
                 if (isMemory) ptrHandle.Dispose();
                 output.Length = (int)(curr - ptr);
+            }
+
+            static void WriteHashItem(ref SpanByteAndMemory output, ref bool isMemory, ref MemoryHandle ptrHandle, ref byte* ptr, ref byte* curr, ref byte* end, System.Collections.Generic.KeyValuePair<byte[], byte[]> item)
+            {
+                while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
             }
         }
 
@@ -347,34 +349,14 @@ namespace Garnet.server
                             continue;
                         }
 
-                        if (HashOperation.HKEYS == op)
-                        {
-                            while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                        _output.result1++;
+                        WriteHashEntry(ref output, op, ref isMemory, ref ptrHandle, ref ptr, ref curr, ref end, ref _output, item);
                     }
                 }
                 else
                 {
                     foreach (var item in hash)
                     {
-                        if (HashOperation.HKEYS == op)
-                        {
-                            while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                        _output.result1++;
+                        WriteHashEntry(ref output, op, ref isMemory, ref ptrHandle, ref ptr, ref curr, ref end, ref _output, item);
                     }
                 }
             }
@@ -385,6 +367,21 @@ namespace Garnet.server
 
                 if (isMemory) ptrHandle.Dispose();
                 output.Length = (int)(curr - ptr);
+            }
+
+            static void WriteHashEntry(ref SpanByteAndMemory output, HashOperation op, ref bool isMemory, ref MemoryHandle ptrHandle, ref byte* ptr, ref byte* curr, ref byte* end, ref ObjectOutputHeader _output, System.Collections.Generic.KeyValuePair<byte[], byte[]> item)
+            {
+                if (HashOperation.HKEYS == op)
+                {
+                    while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+                _output.result1++;
             }
         }
 
