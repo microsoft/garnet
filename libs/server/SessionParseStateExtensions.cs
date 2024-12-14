@@ -214,6 +214,13 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Parse sorted set aggregate type from parse state at specified index
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The argument index</param>
+        /// <param name="value">Parsed value</param>
+        /// <returns>True if value parsed successfully</returns>
         internal static bool TryGetSortedSetAggregateType(this SessionParseState parseState, int idx, out SortedSetAggregateType value)
         {
             value = default;

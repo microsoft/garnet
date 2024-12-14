@@ -1051,7 +1051,7 @@ namespace Garnet.server
 
             if (nKeys < 1)
             {
-                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, "zinter")));
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZINTER))));
             }
 
             if (parseState.Count < nKeys + 1)
@@ -1097,17 +1097,10 @@ namespace Garnet.server
                 }
                 else if (arg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.AGGREGATE))
                 {
-                    currentArg++;
-                    if (currentArg >= parseState.Count)
+                    if (++currentArg >= parseState.Count || !parseState.TryGetSortedSetAggregateType(currentArg++, out aggregateType))
                     {
                         return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                     }
-
-                    if (!parseState.TryGetSortedSetAggregateType(currentArg, out aggregateType))
-                    {
-                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
-                    }
-                    currentArg++;
                 }
                 else
                 {
@@ -1173,7 +1166,7 @@ namespace Garnet.server
 
             if (nKeys < 1)
             {
-                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, "zintercard")));
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZINTERCARD))));
             }
 
             if (parseState.Count < nKeys + 1)
@@ -1269,7 +1262,7 @@ namespace Garnet.server
                     {
                         if (!parseState.TryGetDouble(currentArg + i, out weights[i]))
                         {
-                            return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrNotAFloat, "weight"))); ;
+                            return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrNotAFloat, "weight")));
                         }
                     }
                     currentArg += nKeys;
