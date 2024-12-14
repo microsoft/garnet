@@ -485,10 +485,16 @@ namespace Garnet.server
                         return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                     }
 
-                    if (!parseState.TryGetInt(tokenIdx++, out var minLen) || minLen < 0)
+                    if (!parseState.TryGetInt(tokenIdx++, out var minLen))
                     {
                         return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                     }
+
+                    if (minLen < 0)
+                    {
+                        minLen = 0;
+                    }
+
                     minMatchLen = minLen;
                 }
                 else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMATCHLEN))
