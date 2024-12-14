@@ -1051,7 +1051,7 @@ namespace Garnet.server
 
             if (nKeys < 1)
             {
-                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, "zunion")));
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZUNION))));
             }
 
             if (parseState.Count < nKeys + 1)
@@ -1134,18 +1134,15 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteArrayLength(includeWithScores ? result.Count * 2 : result.Count, ref dcurr, dend))
                         SendAndReset();
 
-                    if (result != null)
+                    foreach (var (element, score) in result)
                     {
-                        foreach (var (element, score) in result)
-                        {
-                            while (!RespWriteUtils.WriteBulkString(element, ref dcurr, dend))
-                                SendAndReset();
+                        while (!RespWriteUtils.WriteBulkString(element, ref dcurr, dend))
+                            SendAndReset();
 
-                            if (includeWithScores)
-                            {
-                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
-                                    SendAndReset();
-                            }
+                        if (includeWithScores)
+                        {
+                            while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
+                                SendAndReset();
                         }
                     }
                     break;
@@ -1178,7 +1175,7 @@ namespace Garnet.server
 
             if (nKeys < 1)
             {
-                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, "zunionstore")));
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZUNIONSTORE))));
             }
 
             if (parseState.Count < nKeys + 2)
