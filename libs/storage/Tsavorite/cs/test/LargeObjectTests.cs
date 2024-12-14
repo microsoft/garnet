@@ -25,7 +25,9 @@ namespace Tsavorite.test.largeobjects
 
         [Test]
         [Category("TsavoriteKV")]
-        public async ValueTask LargeObjectTest([Values] CheckpointType checkpointType)
+        public async ValueTask LargeObjectTest(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType
+            )
         {
             int maxSize = 100;
             int numOps = 5000;

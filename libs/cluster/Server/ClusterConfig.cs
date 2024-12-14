@@ -976,7 +976,7 @@ namespace Garnet.cluster
                 }
 
                 // Process this slot information when config epoch of original owner is greater than config epoch of sender
-                if (workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
+                if (senderConfig.LocalNodeConfigEpoch != 0 && workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
                     continue;
 
                 // Update ownership of node

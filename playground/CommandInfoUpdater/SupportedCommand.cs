@@ -37,6 +37,7 @@ namespace CommandInfoUpdater
             new("BRPOP", RespCommand.BRPOP),
             new("BLMOVE", RespCommand.BLMOVE),
             new("BRPOPLPUSH", RespCommand.BRPOPLPUSH),
+            new("BLMPOP", RespCommand.BLMPOP),
             new("CLIENT", RespCommand.CLIENT,
             [
                 new("CLIENT|ID", RespCommand.CLIENT_ID),
@@ -251,6 +252,7 @@ namespace CommandInfoUpdater
             new("SUNION", RespCommand.SUNION),
             new("SUNIONSTORE", RespCommand.SUNIONSTORE),
             new("SINTER", RespCommand.SINTER),
+            new("SINTERCARD", RespCommand.SINTERCARD),
             new("SINTERSTORE", RespCommand.SINTERSTORE),
             new("TIME", RespCommand.TIME),
             new("TTL", RespCommand.TTL),
@@ -269,11 +271,13 @@ namespace CommandInfoUpdater
             new("ZINCRBY", RespCommand.ZINCRBY),
             new("ZLEXCOUNT", RespCommand.ZLEXCOUNT),
             new("ZMSCORE", RespCommand.ZMSCORE),
+            new("ZMPOP", RespCommand.ZMPOP),
             new("ZPOPMAX", RespCommand.ZPOPMAX),
             new("ZPOPMIN", RespCommand.ZPOPMIN),
             new("ZRANDMEMBER", RespCommand.ZRANDMEMBER),
             new("ZRANGE", RespCommand.ZRANGE),
             new("ZRANGEBYSCORE", RespCommand.ZRANGEBYSCORE),
+            new("ZRANGESTORE", RespCommand.ZRANGESTORE),
             new("ZRANK", RespCommand.ZRANK),
             new("ZREM", RespCommand.ZREM),
             new("ZREMRANGEBYLEX", RespCommand.ZREMRANGEBYLEX),
@@ -289,7 +293,12 @@ namespace CommandInfoUpdater
             new("ZUNIONSTORE", RespCommand.ZUNIONSTORE),
             new("EVAL", RespCommand.EVAL),
             new("EVALSHA", RespCommand.EVALSHA),
-            new("SCRIPT", RespCommand.SCRIPT),
+            new("SCRIPT", RespCommand.SCRIPT,
+            [
+                new("SCRIPT|EXISTS", RespCommand.SCRIPT_EXISTS),
+                new("SCRIPT|FLUSH", RespCommand.SCRIPT_FLUSH),
+                new("SCRIPT|LOAD", RespCommand.SCRIPT_LOAD),
+            ])
         ];
 
         static readonly Lazy<IReadOnlyDictionary<string, SupportedCommand>> LazySupportedCommandsMap =

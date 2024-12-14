@@ -105,7 +105,11 @@ Please check the syntax of your command. For detailed usage information run with
                     cmdLineOptions.AzureStorageConnectionString);
 
                 if (!importSuccessful)
+                {
+                    exitGracefully = false;
+                    logger?.LogWarning(@"Config Import of options from: {ConfigImportPath} was not successful.", cmdLineOptions.ConfigImportPath);
                     return false;
+                }
             }
             else
             {
@@ -255,7 +259,7 @@ Please check the syntax of your command. For detailed usage information run with
         {
             var assembly = fileLocationType == FileLocationType.EmbeddedResource ? Assembly.GetExecutingAssembly() : null;
 
-            var streamProvider = StreamProviderFactory.GetStreamProvider(fileLocationType, connString, assembly);
+            var streamProvider = StreamProviderFactory.GetStreamProvider(fileLocationType, connString, assembly, readOnly: true);
             var configProvider = ConfigProviderFactory.GetConfigProvider(configFileType);
 
             using var stream = streamProvider.Read(path);

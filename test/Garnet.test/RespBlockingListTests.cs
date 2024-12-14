@@ -303,5 +303,100 @@ namespace Garnet.test
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
+
+        [Test]
+        [TestCase(OperationDirection.Left, "value1", Description = "Pop from left")]
+        [TestCase(OperationDirection.Right, "value3", Description = "Pop from right")]
+        public void BasicBlmpopTest(OperationDirection direction, string expectedValue)
+        {
+            var key = "mykey";
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommand($"RPUSH {key} value1 value2 value3");
+            var response = lightClientRequest.SendCommand($"BLMPOP 1 1 {key} {direction}");
+            var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*1\r\n${expectedValue.Length}\r\n{expectedValue}\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        [TestCase(1, "key1", "value1", Description = "First key has value")]
+        [TestCase(2, "key2", "value2", Description = "Second key has value")]
+        public void BlmpopMultipleKeysTest(int valueKeyIndex, string expectedKey, string expectedValue)
+        {
+            var keys = new[] { "key1", "key2", "key3" };
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommand($"RPUSH {keys[valueKeyIndex - 1]} {expectedValue}");
+            var response = lightClientRequest.SendCommand($"BLMPOP 1 {keys.Length} {string.Join(" ", keys)} LEFT");
+            var expectedResponse = $"*2\r\n${expectedKey.Length}\r\n{expectedKey}\r\n*1\r\n${expectedValue.Length}\r\n{expectedValue}\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void BlmpopTimeoutTest()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("BLMPOP 1 1 nonexistentkey LEFT");
+            var expectedResponse = "$-1\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void BlmpopBlockingBehaviorTest()
+        {
+            var key = "blockingkey";
+            var value = "testvalue";
+
+            var blockingTask = taskFactory.StartNew(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                var response = lcr.SendCommand($"BLMPOP 30 1 {key} LEFT");
+                var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*1\r\n${value.Length}\r\n{value}\r\n";
+                var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+                ClassicAssert.AreEqual(expectedResponse, actualValue);
+            });
+
+            var pushingTask = taskFactory.StartNew(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                Task.Delay(TimeSpan.FromSeconds(2)).Wait();
+                return lcr.SendCommand($"LPUSH {key} {value}");
+            });
+
+            Task.WaitAll([blockingTask, pushingTask], TimeSpan.FromSeconds(5));
+            ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(pushingTask.IsCompletedSuccessfully);
+        }
+
+        [Test]
+        public void BlmpopBlockingWithCountTest()
+        {
+            var key = "countkey";
+            var values = new[] { "value1", "value2", "value3", "value4" };
+
+            var blockingTask = taskFactory.StartNew(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                var response = lcr.SendCommand($"BLMPOP 30 1 {key} LEFT COUNT 3");
+                var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*3\r\n$6\r\nvalue1\r\n$6\r\nvalue2\r\n$6\r\nvalue3\r\n";
+                var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+                ClassicAssert.AreEqual(expectedResponse, actualValue);
+            });
+
+            var pushingTask = taskFactory.StartNew(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                Task.Delay(TimeSpan.FromSeconds(2)).Wait();
+                return lcr.SendCommand($"RPUSH {key} {string.Join(" ", values)}");
+            });
+
+            Task.WaitAll([blockingTask, pushingTask], TimeSpan.FromSeconds(5));
+            ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(pushingTask.IsCompletedSuccessfully);
+        }
+
     }
 }

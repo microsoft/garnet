@@ -39,6 +39,7 @@ namespace Tsavorite.core
         private readonly ConcurrentQueue<SimpleAsyncResult> results;
         private static uint sectorSize = 0;
         private bool _disposed;
+        readonly bool readOnly;
 
         /// <summary>
         /// Number of pending reads on device
@@ -62,8 +63,10 @@ namespace Tsavorite.core
                                   bool deleteOnClose = false,
                                   bool disableFileBuffering = true,
                                   long capacity = Devices.CAPACITY_UNSPECIFIED,
-                                  bool recoverDevice = false, bool useIoCompletionPort = false)
-            : this(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, null, useIoCompletionPort)
+                                  bool recoverDevice = false,
+                                  bool useIoCompletionPort = false,
+                                  bool readOnly = false)
+            : this(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, null, useIoCompletionPort, readOnly: readOnly)
         {
         }
 
@@ -96,7 +99,8 @@ namespace Tsavorite.core
                                       long capacity = Devices.CAPACITY_UNSPECIFIED,
                                       bool recoverDevice = false,
                                       IEnumerable<KeyValuePair<int, SafeFileHandle>> initialLogFileHandles = null,
-                                      bool useIoCompletionPort = true)
+                                      bool useIoCompletionPort = true,
+                                      bool readOnly = false)
                 : base(filename, GetSectorSize(filename), capacity)
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -134,6 +138,7 @@ namespace Tsavorite.core
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
+            this.readOnly = readOnly;
             results = new ConcurrentQueue<SimpleAsyncResult>();
 
             logHandles = initialLogFileHandles != null
@@ -388,14 +393,14 @@ namespace Tsavorite.core
         }
 
         private SafeFileHandle CreateHandle(int segmentId, bool disableFileBuffering, bool deleteOnClose, bool preallocateFile, long segmentSize, string fileName, IntPtr ioCompletionPort)
-            => CreateHandle(segmentId, disableFileBuffering, deleteOnClose, preallocateFile, segmentSize, fileName, ioCompletionPort, OmitSegmentIdFromFileName);
+            => CreateHandle(segmentId, disableFileBuffering, deleteOnClose, preallocateFile, segmentSize, fileName, ioCompletionPort, OmitSegmentIdFromFileName, readOnly);
 
         /// <summary>
         /// Creates a SafeFileHandle for the specified segment. This can be used by derived classes to prepopulate logHandles in the constructor.
         /// </summary>
-        protected internal static SafeFileHandle CreateHandle(int segmentId, bool disableFileBuffering, bool deleteOnClose, bool preallocateFile, long segmentSize, string fileName, IntPtr ioCompletionPort, bool omitSegmentId = false)
+        protected internal static SafeFileHandle CreateHandle(int segmentId, bool disableFileBuffering, bool deleteOnClose, bool preallocateFile, long segmentSize, string fileName, IntPtr ioCompletionPort, bool omitSegmentId = false, bool readOnly = false)
         {
-            uint fileAccess = Native32.GENERIC_READ | Native32.GENERIC_WRITE;
+            uint fileAccess = readOnly ? Native32.GENERIC_READ : Native32.GENERIC_READ | Native32.GENERIC_WRITE;
             uint fileShare = unchecked(((uint)FileShare.ReadWrite & ~(uint)FileShare.Inheritable));
             uint fileCreation = unchecked((uint)FileMode.OpenOrCreate);
             uint fileFlags = Native32.FILE_FLAG_OVERLAPPED;

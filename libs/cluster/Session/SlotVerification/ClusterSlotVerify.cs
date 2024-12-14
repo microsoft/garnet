@@ -153,9 +153,9 @@ namespace Garnet.cluster
             ref var key = ref parseState.GetArgSliceByRef(csvi.firstKey);
             var slot = ArgSliceUtils.HashSlot(ref key);
             var verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, slot);
-            var stride = csvi.firstKey + csvi.step;
+            var secondKey = csvi.firstKey + csvi.step;
 
-            for (var i = stride; i < csvi.lastKey; i += stride)
+            for (var i = secondKey; i < csvi.lastKey; i += csvi.step)
             {
                 if (csvi.keyNumOffset == i)
                     continue;
