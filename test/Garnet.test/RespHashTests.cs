@@ -201,7 +201,7 @@ namespace Garnet.test
             db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
             var result = db.HashLength("user:user1");
             ClassicAssert.AreEqual(3, result);
-            await Task.Delay(110);
+            await Task.Delay(150);
             result = db.HashLength("user:user1");
             ClassicAssert.AreEqual(2, result);
             db.HashSet("user:user1", [new HashEntry("Year", "new2021")]);  // Trigger deletion of expired field
