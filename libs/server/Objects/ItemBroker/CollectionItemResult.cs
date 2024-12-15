@@ -20,6 +20,12 @@ namespace Garnet.server
             Items = items;
         }
 
+        public CollectionItemResult(byte[] key, (double Score, byte[] Element)[] scoredItems)
+        {
+            Key = key;
+            ScoredItems = scoredItems;
+        }
+
         /// <summary>
         /// True if item was found
         /// </summary>
@@ -39,6 +45,11 @@ namespace Garnet.server
         /// Item retrieved from collection
         /// </summary>
         internal byte[][] Items { get; }
+
+        /// <summary>
+        /// Scored items retrieved from collection, where each item has an associated score.
+        /// </summary>
+        internal (double Score, byte[] Element)[] ScoredItems { get; }
 
         /// <summary>
         /// Instance of empty result

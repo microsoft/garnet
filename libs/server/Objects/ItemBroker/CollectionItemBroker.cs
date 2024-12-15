@@ -383,37 +383,44 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Try to get next available item from sorted set object
+        /// Try to get next available item from sorted set object based on command type
+        /// BZPOPMIN and BZPOPMAX share same implementation since Dictionary.First() and Last() 
+        /// handle the ordering automatically based on sorted set scores
         /// </summary>
-        /// <param name="sortedSetObj">Sorted set object</param>
-        /// <param name="command">RESP command</param>
-        /// <param name="nextItem">Item retrieved</param>
-        /// <returns>True if found available item</returns>
-        private static bool TryGetNextSetObject(SortedSetObject sortedSetObj, RespCommand command, out byte[] nextItem)
+        private static unsafe bool TryGetNextSetObjects(byte[] key, SortedSetObject sortedSetObj, RespCommand command, ArgSlice[] cmdArgs, out CollectionItemResult result)
         {
-            nextItem = default;
-
-            // If object has no items, return
+            result = default;
+            
             if (sortedSetObj.Dictionary.Count == 0) return false;
 
-            // Get the next object according to operation type
             switch (command)
             {
+                case RespCommand.BZPOPMIN:
+                case RespCommand.BZPOPMAX:
+                    var element = sortedSetObj.Pop(command == RespCommand.BZPOPMAX);
+                    result = new CollectionItemResult(key, [element]);
+                    return true;
+
+                case RespCommand.BZMPOP:
+                    var lowScoresFirst = *(bool*)cmdArgs[0].ptr;
+                    var popCount = *(int*)cmdArgs[1].ptr;
+                    popCount = Math.Min(popCount, sortedSetObj.Dictionary.Count);
+
+                    var scoredItems = new (double Score, byte[] Element)[popCount];
+
+                    for (int i = 0; i < popCount; i++)
+                    {
+                        scoredItems[i] = sortedSetObj.Pop(!lowScoresFirst);
+                    }
+
+                    result = new CollectionItemResult(key, scoredItems);
+                    return true;
+
                 default:
                     return false;
             }
         }
 
-        /// <summary>
-        /// Try to get next available item from object
-        /// </summary>
-        /// <param name="key">Key of object</param>
-        /// <param name="storageSession">Current storage session</param>
-        /// <param name="command">RESP command</param>
-        /// <param name="cmdArgs">Additional command arguments</param>
-        /// <param name="currCount">Collection size</param>
-        /// <param name="result">Result of command</param>
-        /// <returns>True if found available item</returns>
         private unsafe bool TryGetResult(byte[] key, StorageSession storageSession, RespCommand command, ArgSlice[] cmdArgs, out int currCount, out CollectionItemResult result)
         {
             currCount = default;
@@ -423,6 +430,7 @@ namespace Garnet.server
             var objectType = command switch
             {
                 RespCommand.BLPOP or RespCommand.BRPOP or RespCommand.BLMOVE or RespCommand.BLMPOP => GarnetObjectType.List,
+                RespCommand.BZPOPMIN or RespCommand.BZPOPMAX or RespCommand.BZMPOP => GarnetObjectType.SortedSet,
                 _ => throw new NotSupportedException()
             };
 
@@ -524,11 +532,13 @@ namespace Garnet.server
                         }
                     case SortedSetObject setObj:
                         currCount = setObj.Dictionary.Count;
-                        if (objectType != GarnetObjectType.SortedSet) return false;
+                        if (objectType != GarnetObjectType.SortedSet)
+                            return false;
+                        if (currCount == 0)
+                            return false;
 
-                        var hasValue = TryGetNextSetObject(setObj, command, out var sortedSetNextItem);
-                        result = new CollectionItemResult(key, sortedSetNextItem);
-                        return hasValue;
+                        return TryGetNextSetObjects(key, setObj, command, cmdArgs, out result);
+
                     default:
                         return false;
                 }

@@ -91,6 +91,9 @@ namespace Garnet.server
         // Write commands
         APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
         BITFIELD,
+        BZMPOP,
+        BZPOPMAX,
+        BZPOPMIN,
         DECR,
         DECRBY,
         DEL,
@@ -1069,6 +1072,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.BLMPOP;
                                         }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZMPOP\r\n"u8))
+                                        {
+                                            return RespCommand.BZMPOP;
+                                        }
                                         break;
                                     case 'D':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("DBSIZE\r\n"u8))
@@ -1337,6 +1344,14 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("EXPIREAT"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
                                 {
                                     return RespCommand.EXPIREAT;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMAX"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.BZPOPMAX;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMIN"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.BZPOPMIN;
                                 }
                                 break;
                             case 9:

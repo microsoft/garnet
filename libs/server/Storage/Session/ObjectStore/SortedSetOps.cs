@@ -43,7 +43,9 @@ namespace Garnet.server
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+            var keyBytes = key.ToArray();
+            var status = RMWObjectStoreOperationWithOutput(keyBytes, ref input, ref objectStoreContext, ref outputFooter);
+            itemBroker.HandleCollectionUpdate(keyBytes);
 
             if (status == GarnetStatus.OK)
             {
@@ -84,7 +86,9 @@ namespace Garnet.server
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+            var keyBytes = key.ToArray();
+            var status = RMWObjectStoreOperationWithOutput(keyBytes, ref input, ref objectStoreContext, ref outputFooter);
+            itemBroker.HandleCollectionUpdate(keyBytes);
 
             if (status == GarnetStatus.OK)
             {
@@ -608,7 +612,7 @@ namespace Garnet.server
                 }
 
                 count = pairs?.Count ?? 0;
-
+                var destinationKeyBty = destinationKey.ToArray();
                 if (count > 0)
                 {
                     SortedSetObject newSetObject = new();
@@ -616,13 +620,15 @@ namespace Garnet.server
                     {
                         newSetObject.Add(element, score);
                     }
-                    _ = SET(destinationKey.ToArray(), newSetObject, ref objectContext);
+                    _ = SET(destinationKeyBty, newSetObject, ref objectContext);
                 }
                 else
                 {
                     _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
                         ref lockableContext, ref objectContext);
                 }
+
+                itemBroker.HandleCollectionUpdate(destinationKeyBty);
 
                 return status;
             }
@@ -690,7 +696,11 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SortedSetAdd<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        => RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref output);
+        {
+            var status = RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref output);
+            itemBroker.HandleCollectionUpdate(key);
+            return status;
+        }
 
         /// <summary>
         /// ZRANGESTORE - Stores a range of sorted set elements into a destination key.
@@ -782,6 +792,7 @@ namespace Garnet.server
 
                         var zAddOutput = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
                         RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
+                        itemBroker.HandleCollectionUpdate(destinationKey);
                     }
                 }
                 finally

@@ -37,6 +37,9 @@ namespace CommandInfoUpdater
             new("BRPOP", RespCommand.BRPOP),
             new("BLMOVE", RespCommand.BLMOVE),
             new("BRPOPLPUSH", RespCommand.BRPOPLPUSH),
+            new("BZMPOP", RespCommand.BZMPOP),
+            new("BZPOPMAX", RespCommand.BZPOPMAX),
+            new("BZPOPMIN", RespCommand.BZPOPMIN),
             new("BLMPOP", RespCommand.BLMPOP),
             new("CLIENT", RespCommand.CLIENT,
             [

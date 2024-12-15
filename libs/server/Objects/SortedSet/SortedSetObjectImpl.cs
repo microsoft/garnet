@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.Intrinsics.X86;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -884,6 +885,19 @@ namespace Garnet.server
 
                 output.Length = (int)(curr - ptr);
             }
+        }
+
+        public (double Score, byte[] Element) Pop(bool popMaxScoreElement = false)
+        {
+            if (sortedSet.Count == 0)
+                return default;
+
+            var element = popMaxScoreElement ? sortedSet.Max : sortedSet.Min;
+            sortedSet.Remove(element);
+            sortedSetDict.Remove(element.Element);
+            this.UpdateSize(element.Element, false);
+
+            return element;
         }
 
         /// <summary>
