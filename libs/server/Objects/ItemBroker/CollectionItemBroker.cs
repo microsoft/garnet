@@ -390,7 +390,7 @@ namespace Garnet.server
         private static unsafe bool TryGetNextSetObjects(byte[] key, SortedSetObject sortedSetObj, RespCommand command, ArgSlice[] cmdArgs, out CollectionItemResult result)
         {
             result = default;
-            
+
             if (sortedSetObj.Dictionary.Count == 0) return false;
 
             switch (command)
