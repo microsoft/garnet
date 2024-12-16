@@ -134,7 +134,7 @@ namespace Garnet.common
             e.Dispose();
         }
 
-        internal void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
+        void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
         {
             try
             {
