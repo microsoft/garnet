@@ -1,7 +1,10 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
+using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics.X86;
 
 namespace Garnet.server
@@ -94,7 +97,9 @@ namespace Garnet.server
                     return -1;
 
                 endOffset = endOffset >= valLen ? valLen : endOffset;
-                return BitPosByte(value, setVal, startOffset, endOffset);
+                long pos = BitPosByte(value, setVal, startOffset, endOffset);
+                // check if position is exceeding the last byte in acceptable range
+                return pos >= ((endOffset + 1) * 8) ? -1 : pos;
             }
 
             startOffset = startOffset < 0 ? ProcessNegativeOffset(startOffset, valLen * 8) : startOffset;
@@ -119,7 +124,8 @@ namespace Garnet.server
             var _startOffset = (startOffset / 8) + 1;
             var _endOffset = (endOffset / 8) - 1;
             var _bpos = BitPosByte(value, setVal, _startOffset, _endOffset);
-            if (_bpos != -1) return _bpos;
+
+            if (_bpos != -1 && _bpos < (_endOffset + 1) * 8) return _bpos;
 
             // Search suffix
             var _spos = BitPosIndexBitSearch(value, setVal, endOffset);
@@ -171,14 +177,10 @@ namespace Garnet.server
             // Transform to count leading zeros
             payload = (bSetVal == 0) ? ~payload : payload;
 
-            pos += (long)Lzcnt.X64.LeadingZeroCount((ulong)payload);
-
-            // if we are exceeding it, return -1
-            if (pos >= len * 8)
-                return -1;
-
             if (payload == mask)
                 return pos + 0;
+
+            pos += (long)BitOperations.LeadingZeroCount((ulong)payload);
 
             return pos;
         }

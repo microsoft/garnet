@@ -165,7 +165,6 @@ namespace Garnet.test
         public void BitmapSetGetBitTest_LTM(bool preSet)
         {
             int bitmapBytes = 512;
-            server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -2291,6 +2290,9 @@ namespace Garnet.test
 
             pos = db.StringBitPosition(key, true, 10, 12, StringIndexType.Bit);
             ClassicAssert.AreEqual(10, pos);
+
+            pos = db.StringBitPosition(key, true, 20, 25, StringIndexType.Bit);
+            ClassicAssert.AreEqual(-1, pos);
 
             key = "mykey2";
             db.StringSetBit(key, 63, false);
