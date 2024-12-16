@@ -46,6 +46,11 @@ namespace Garnet.server
         private bool disposed = false;
         private bool isStarted = false;
 
+        internal bool TryGetObserver(int sessionId, out CollectionItemObserver observer)
+        {
+            return SessionIdToObserver.TryGetValue(sessionId, out observer);
+        }
+
         /// <summary>
         /// Asynchronously wait for item from collection object
         /// </summary>
@@ -118,13 +123,15 @@ namespace Garnet.server
                 ? TimeSpan.FromMilliseconds(-1)
                 : TimeSpan.FromSeconds(timeoutInSeconds);
 
+            var isError = false;
             try
             {
                 // Wait for either the result found notification or the timeout to expire
                 await observer.ResultFoundSemaphore.WaitAsync(timeout, observer.CancellationTokenSource.Token);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (observer.CancellationTokenSource.IsCancellationRequested)
             {
+                isError = true;
             }
 
             SessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
@@ -134,6 +141,11 @@ namespace Garnet.server
             {
                 // Try to set the observer result to an empty one
                 observer.HandleSetResult(CollectionItemResult.Empty);
+            }
+
+            if (isError)
+            {
+                return CollectionItemResult.Error;
             }
 
             return observer.Result;

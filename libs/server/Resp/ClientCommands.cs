@@ -568,5 +568,77 @@ namespace Garnet.server
 
             return true;
         }
+
+        /// <summary>
+        /// CLIENT UNBLOCK
+        /// </summary>
+        private bool NetworkCLIENTUNBLOCK()
+        {
+            if (parseState.Count is not (1 or 2))
+            {
+                return AbortWithWrongNumberOfArguments("client|unblock");
+            }
+
+            if (!parseState.TryGetLong(0, out var clientId))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            }
+
+            var toThrowError = false;
+            if (parseState.Count == 2)
+            {
+                var option = parseState.GetArgSliceByRef(1);
+                if (option.Span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.TIMEOUT))
+                {
+                    toThrowError = false;
+                }
+                else if (option.Span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ERROR))
+                {
+                    toThrowError = true;
+                }
+                else
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_CLIENT_UNBLOCK_REASON);
+                }
+            }
+
+            if (Server is GarnetServerBase garnetServer)
+            {
+                var session = garnetServer.ActiveConsumers().OfType<RespServerSession>().FirstOrDefault(x => x.Id == clientId);
+
+                if (session is null)
+                {
+                    while (!RespWriteUtils.WriteInteger(0, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (session.storeWrapper?.itemBroker is not null)
+                {
+                    var isBlocked = session.storeWrapper.itemBroker.TryGetObserver(session.ObjectStoreSessionID, out var observer);
+
+                    if (!isBlocked)
+                    {
+                        while (!RespWriteUtils.WriteInteger(0, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
+
+                    if (toThrowError)
+                    {
+                        observer.CancellationTokenSource.Cancel();
+                    }
+                    else
+                    {
+                        observer.ResultFoundSemaphore.Release();
+                    }
+                }
+
+                while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
     }
 }

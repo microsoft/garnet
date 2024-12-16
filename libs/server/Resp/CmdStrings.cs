@@ -122,6 +122,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LIMIT => "LIMIT"u8;
         public static ReadOnlySpan<byte> MIN => "MIN"u8;
         public static ReadOnlySpan<byte> MAX => "MAX"u8;
+        public static ReadOnlySpan<byte> TIMEOUT => "TIMEOUT"u8;
+        public static ReadOnlySpan<byte> ERROR => "ERROR"u8;
 
         /// <summary>
         /// Response strings
@@ -212,6 +214,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR => "ERR INCR option supports a single increment-element pair"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_BITFIELD_TYPE => "ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is"u8;
         public static ReadOnlySpan<byte> RESP_ERR_SCRIPT_FLUSH_OPTIONS => "ERR SCRIPT FLUSH only support SYNC|ASYNC option"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_UNBLOCK_REASON => "ERR CLIENT UNBLOCK reason should be TIMEOUT or ERROR"u8;
+        public static ReadOnlySpan<byte> RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK => "UNBLOCKED client unblocked via CLIENT UNBLOCK"u8;
 
         /// <summary>
         /// Response string templates
@@ -304,6 +308,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> KILL => "KILL"u8;
         public static ReadOnlySpan<byte> GETNAME => "GETNAME"u8;
         public static ReadOnlySpan<byte> SETINFO => "SETINFO"u8;
+        public static ReadOnlySpan<byte> UNBLOCK => "UNBLOCK"u8;
         public static ReadOnlySpan<byte> USER => "USER"u8;
         public static ReadOnlySpan<byte> ADDR => "ADDR"u8;
         public static ReadOnlySpan<byte> LADDR => "LADDR"u8;

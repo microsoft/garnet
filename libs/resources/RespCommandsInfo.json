@@ -483,6 +483,13 @@
           "request_policy:all_nodes",
           "response_policy:all_succeeded"
         ]
+      },
+      {
+        "Command": "CLIENT_UNBLOCK",
+        "Name": "CLIENT|UNBLOCK",
+        "Arity": -3,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "AclCategories": "Admin, Connection, Dangerous, Slow"
       }
     ]
   },
