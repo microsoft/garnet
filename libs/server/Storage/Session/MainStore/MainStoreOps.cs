@@ -672,7 +672,7 @@ namespace Garnet.server
                                     // we need to check if old key exists, and if it exists does it have an etag
                                     input.header.cmd = RespCommand.GETWITHETAG;
                                     var getNewKeyWithEtagOutput = new SpanByteAndMemory();
-                                    GarnetStatus getNewKeyWithEtagStatus = GET(ref oldKey, ref input, ref getNewKeyWithEtagOutput, ref context);
+                                    GarnetStatus getNewKeyWithEtagStatus = GET(ref newKey, ref input, ref getNewKeyWithEtagOutput, ref context);
 
                                     // if it exists and the command is for isNX we need to early exit
                                     if (isNX && getNewKeyWithEtagStatus == GarnetStatus.OK)
@@ -687,18 +687,22 @@ namespace Garnet.server
                                     if (getNewKeyWithEtagStatus == GarnetStatus.OK)
                                     {
                                         // if the new key has an etag we want to retain it
-                                        using MemoryHandle getWithNewKeyWithEtagMemoryHandle = getNewKeyWithEtagOutput.Memory.Memory.Pin();
-                                        byte* getWithNewKeyWithEtagPtr = (byte*)getWithNewKeyWithEtagMemoryHandle.Pointer;
-                                        byte* endOfOutputBuffer = getWithNewKeyWithEtagPtr + getNewKeyWithEtagOutput.Length;
-
-                                        // skip past the array metadata
-                                        RespReadUtils.ReadSignedArrayLength(out int numItemsInNewKeyArr, ref getWithNewKeyWithEtagPtr, endOfOutputBuffer);
-
-                                        // the next item is meant to be etag, if it is not nil we know we need to retain the etag on it in our next set
-                                        if (!RespReadUtils.ReadNil(ref getWithNewKeyWithEtagPtr, endOfOutputBuffer, out var _))
+                                        using (MemoryHandle getWithNewKeyWithEtagMemoryHandle = getNewKeyWithEtagOutput.Memory.Memory.Pin())
                                         {
-                                            input.header.SetRetainEtagFlag();
+                                            byte* getWithNewKeyWithEtagPtr = (byte*)getWithNewKeyWithEtagMemoryHandle.Pointer;
+                                            byte* endOfOutputBuffer = getWithNewKeyWithEtagPtr + getNewKeyWithEtagOutput.Length;
+
+                                            // skip past the array metadata
+                                            RespReadUtils.ReadSignedArrayLength(out int numItemsInNewKeyArr, ref getWithNewKeyWithEtagPtr, endOfOutputBuffer);
+
+                                            // the next item is meant to be etag, if it is not nil we know we need to retain the etag on it in our next set
+                                            if (!RespReadUtils.ReadNil(ref getWithNewKeyWithEtagPtr, endOfOutputBuffer, out var _))
+                                            {
+                                                input.header.SetRetainEtagFlag();
+                                            }
                                         }
+
+                                        getNewKeyWithEtagOutput.Memory.Dispose();
                                     }
 
                                     // SETWITHETAG newkey valueFromOldkey with expiration
@@ -708,9 +712,11 @@ namespace Garnet.server
                                     input.parseState = parseState;
                                     input.arg1 = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
 
-                                    returnStatus = SET_Conditional(ref newKey, ref input, ref context);
+                                    var tempOutput = new SpanByteAndMemory();
+                                    SET_Conditional(ref newKey, ref input, ref tempOutput, ref context, RespCommand.SETWITHETAG);
+                                    returnStatus = GarnetStatus.OK;
+
                                     result = isNX ? 1 : 0;
-                                    getNewKeyWithEtagOutput.Memory.Dispose();
                                 }
                             }
                             else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
@@ -739,7 +745,7 @@ namespace Garnet.server
                                     // we need to check if old key exists, and if it doesnt exist we can proceed with setting new key and expiry
                                     input.header.cmd = RespCommand.GETWITHETAG;
                                     var getNewKeyWithEtagOutput = new SpanByteAndMemory();
-                                    GarnetStatus getNewKeyWithEtagStatus = GET(ref oldKey, ref input, ref getNewKeyWithEtagOutput, ref context);
+                                    GarnetStatus getNewKeyWithEtagStatus = GET(ref newKey, ref input, ref getNewKeyWithEtagOutput, ref context);
 
                                     // if it exists and the command is for isNX we need to early exit
                                     if (isNX && getNewKeyWithEtagStatus == GarnetStatus.OK)
@@ -753,18 +759,22 @@ namespace Garnet.server
                                     if (getNewKeyWithEtagStatus == GarnetStatus.OK)
                                     {
                                         // if the new key has an etag we want to retain it
-                                        using MemoryHandle getWithNewKeyWithEtagMemoryHandle = getNewKeyWithEtagOutput.Memory.Memory.Pin();
-                                        byte* getWithNewKeyWithEtagPtr = (byte*)getWithNewKeyWithEtagMemoryHandle.Pointer;
-                                        byte* endOfOutputBuffer = getWithNewKeyWithEtagPtr + getNewKeyWithEtagOutput.Length;
-
-                                        // skip past the array metadata
-                                        RespReadUtils.ReadSignedArrayLength(out int numItemsInNewKeyArr, ref getWithNewKeyWithEtagPtr, endOfOutputBuffer);
-
-                                        // the next item is meant to be etag, if it is not nil we know we need to retain the etag on it in our next set
-                                        if (!RespReadUtils.ReadNil(ref getWithNewKeyWithEtagPtr, endOfOutputBuffer, out var _))
+                                        using (MemoryHandle getWithNewKeyWithEtagMemoryHandle = getNewKeyWithEtagOutput.Memory.Memory.Pin())
                                         {
-                                            input.header.SetRetainEtagFlag();
+                                            byte* getWithNewKeyWithEtagPtr = (byte*)getWithNewKeyWithEtagMemoryHandle.Pointer;
+                                            byte* endOfOutputBuffer = getWithNewKeyWithEtagPtr + getNewKeyWithEtagOutput.Length;
+
+                                            // skip past the array metadata
+                                            RespReadUtils.ReadSignedArrayLength(out int numItemsInNewKeyArr, ref getWithNewKeyWithEtagPtr, endOfOutputBuffer);
+
+                                            // the next item is meant to be etag, if it is not nil we know we need to retain the etag on it in our next set
+                                            if (!RespReadUtils.ReadNil(ref getWithNewKeyWithEtagPtr, endOfOutputBuffer, out var _))
+                                            {
+                                                input.header.SetRetainEtagFlag();
+                                            }
                                         }
+
+                                        getNewKeyWithEtagOutput.Memory.Dispose();
                                     }
 
                                     // SETWITHETAG  newkey valueFromOldkey with expiration
@@ -773,7 +783,10 @@ namespace Garnet.server
                                     input.header.cmd = RespCommand.SETWITHETAG;
                                     input.parseState = parseState;
 
-                                    returnStatus = SET_Conditional(ref newKey, ref input, ref context);
+                                    var tempOutput = new SpanByteAndMemory();
+                                    SET_Conditional(ref newKey, ref input, ref tempOutput, ref context, RespCommand.SETWITHETAG);
+                                    returnStatus = GarnetStatus.OK;
+
                                     result = isNX ? 1 : 0;
                                 }
                             }
