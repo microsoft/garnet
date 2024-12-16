@@ -10,6 +10,7 @@ using System.Text;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Garnet.server
 {
@@ -18,6 +19,10 @@ namespace Garnet.server
     /// </summary>
     internal sealed class LuaRunner : IDisposable
     {
+        // TODO: The various trampolines should be moved out
+        // TODO: Native caller attributes should be used for thunks
+        // TODO: Function pointers instead of delegates?
+
         /// <summary>
         /// Adapter to allow us to write directly to the network
         /// when in Garnet and still keep script runner work.
@@ -237,7 +242,6 @@ end
         readonly int errNoAuthConstStringRegistryIndex;
         readonly int errUnknownConstStringRegistryIndex;
         readonly int errBadArgConstStringRegistryIndex;
-        int functionRegistryIndex;
 
         readonly ReadOnlyMemory<byte> source;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
@@ -248,8 +252,27 @@ end
         readonly TxnKeyEntries txnKeyEntries;
         readonly bool txnMode;
 
+        readonly LuaFunction compileTrampoline;
+        readonly LuaFunction preambleTrampoline;
+
+        // The Lua registry index under which the user supplied function is stored post-compilation
+        int functionRegistryIndex;
+
         // This cannot be readonly, as it is a mutable struct
         LuaStateWrapper state;
+
+        // We need to temporarily store these for P/Invoke reasons
+        // You shouldn't be touching them outside of the Compile and Run methods
+
+        // TODO: Enum for adapter mode
+        byte adapterMode;
+        RunnerAdapter runnerAdapter;
+        RespResponseAdapter sessionAdapter;
+        RespServerSession preambleOuterSession;
+        int preambleKeyAndArgvCount;
+        int preambleNKeys;
+        string[] preambleKeys;
+        string[] preambleArgv;
 
         int keyLength, argvLength;
 
@@ -271,8 +294,12 @@ end
             loadSandboxedRegistryIndex = -1;
             functionRegistryIndex = -1;
 
+            adapterMode = byte.MaxValue;
+            compileTrampoline = CompileTrampoline;
+            preambleTrampoline = RunPreambleTrampoline;
+
             // TODO: custom allocator?
-            state = new LuaStateWrapper(new Lua());
+            state = new LuaStateWrapper(this.logger, true);
 
             if (txnMode)
             {
@@ -294,7 +321,24 @@ end
             var sandboxRes = state.PCall(0, -1);
             if (sandboxRes != LuaStatus.OK)
             {
-                throw new GarnetException("Could not initialize Lua sandbox state");
+                string errMsg;
+                try
+                {
+                    if (state.StackTop >= 1 && state.CheckBuffer(1, out var errSpan))
+                    {
+                        errMsg = Encoding.UTF8.GetString(errSpan);
+                    }
+                    else
+                    {
+                        errMsg = "No error provided";
+                    }
+                }
+                catch
+                {
+                    errMsg = "Error when fetching pcall error";
+                }
+
+                throw new GarnetException($"Could not initialize Lua sandbox state: {errMsg}");
             }
 
             // Register garnet_call in global namespace
@@ -347,22 +391,60 @@ end
         }
 
         /// <summary>
+        /// Invoked by Lua so errors are captured during compilation.
+        /// </summary>
+        int CompileTrampoline(nint lua)
+        {
+            state.CallFromLuaEntered(lua);
+
+            switch (adapterMode)
+            {
+                case 0: CompileCommon(ref sessionAdapter); break;
+                case 1: CompileCommon(ref runnerAdapter); break;
+                default:
+                    logger?.LogCritical("Unexpected adapter mode {adapterMode}", adapterMode);
+                    _ = state.RaiseError("Unexpected adapter mode {adapterMode}");
+                    break;
+            }
+
+            return 0;
+        }
+
+        /// <summary>
         /// Compile script for running in a .NET host.
         /// 
         /// Errors are raised as exceptions.
         /// </summary>
         public unsafe void CompileForRunner()
         {
-            var adapter = new RunnerAdapter(scratchBufferManager);
-            CompileCommon(ref adapter);
-
-            var resp = adapter.Response;
-            var respStart = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(resp));
-            var respEnd = respStart + resp.Length;
-            if (RespReadUtils.TryReadErrorAsSpan(out var errSpan, ref respStart, respEnd))
+            adapterMode = 1;
+            runnerAdapter = new RunnerAdapter(scratchBufferManager);
+            try
             {
-                var errStr = Encoding.UTF8.GetString(errSpan);
-                throw new GarnetException(errStr);
+
+                state.PushCFunction(compileTrampoline);
+                var res = state.PCall(0, 0);
+                if (res == LuaStatus.OK)
+                {
+
+                    var resp = runnerAdapter.Response;
+                    var respStart = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(resp));
+                    var respEnd = respStart + resp.Length;
+                    if (RespReadUtils.TryReadErrorAsSpan(out var errSpan, ref respStart, respEnd))
+                    {
+                        var errStr = Encoding.UTF8.GetString(errSpan);
+                        throw new GarnetException(errStr);
+                    }
+                }
+                else
+                {
+                    throw new GarnetException($"Internal Lua Error: {res}");
+                }
+            }
+            finally
+            {
+                adapterMode = byte.MaxValue;
+                runnerAdapter = default;
             }
         }
 
@@ -371,10 +453,30 @@ end
         /// 
         /// Any errors encountered are written out as Resp errors.
         /// </summary>
-        public void CompileForSession(RespServerSession session)
+        public unsafe bool CompileForSession(RespServerSession session)
         {
-            var adapter = new RespResponseAdapter(session);
-            CompileCommon(ref adapter);
+            adapterMode = 0;
+            sessionAdapter = new RespResponseAdapter(session);
+
+            try
+            {
+                state.PushCFunction(compileTrampoline);
+                var res = state.PCall(0, 0);
+                if (res != LuaStatus.OK)
+                {
+                    while (!RespWriteUtils.WriteError("Internal Lua Error"u8, ref session.dcurr, session.dend))
+                        session.SendAndReset();
+
+                    return false;
+                }
+
+                return true;
+            }
+            finally
+            {
+                adapterMode = byte.MaxValue;
+                sessionAdapter = default;
+            }
         }
 
         /// <summary>
@@ -405,62 +507,77 @@ end
             {
                 state.ForceMinimumStackCapacity(NeededStackSpace);
 
-                state.PushInteger(loadSandboxedRegistryIndex);
-                _ = state.RawGet(LuaType.Function, (int)LuaRegistry.Index);
+                _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, loadSandboxedRegistryIndex);
 
                 state.PushBuffer(source.Span);
-                state.Call(1, -1); // Multiple returns allowed
+                var callRes = state.PCall(1, -1); // Multiple returns allowed
 
-                var numRets = state.StackTop;
-
-                if (numRets == 0)
+                if (callRes == LuaStatus.OK)
                 {
-                    while (!RespWriteUtils.WriteError("Shouldn't happen, no returns from load_sandboxed"u8, ref resp.BufferCur, resp.BufferEnd))
-                        resp.SendAndReset();
+                    var numRets = state.StackTop;
 
-                    return;
-                }
-                else if (numRets == 1)
-                {
-                    var returnType = state.Type(1);
-                    if (returnType != LuaType.Function)
+                    if (numRets == 0)
                     {
-                        var errStr = $"Could not compile function, got back a {returnType}";
+                        while (!RespWriteUtils.WriteError("Shouldn't happen, no returns from load_sandboxed"u8, ref resp.BufferCur, resp.BufferEnd))
+                            resp.SendAndReset();
+                    }
+                    else if (numRets == 1)
+                    {
+                        var returnType = state.Type(1);
+                        if (returnType != LuaType.Function)
+                        {
+                            state.Pop(1);
+
+                            var errStr = $"Could not compile function, got back a {returnType}";
+                            while (!RespWriteUtils.WriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
+                                resp.SendAndReset();
+                        }
+                        else
+                        {
+                            functionRegistryIndex = state.Ref();
+                        }
+                    }
+                    else if (numRets == 2)
+                    {
+                        _ = state.CheckBuffer(2, out var errorBuf);
+
+                        var errStr = $"Compilation error: {Encoding.UTF8.GetString(errorBuf)}";
                         while (!RespWriteUtils.WriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
                             resp.SendAndReset();
 
-                        return;
+                        state.Pop(2);
                     }
+                    else
+                    {
+                        state.Pop(numRets);
 
-                    functionRegistryIndex = state.Ref();
-                }
-                else if (numRets == 2)
-                {
-                    state.CheckBuffer(2, out var errorBuf);
+                        logger?.LogCritical("Unexpected error compiling, got too many replies back: reply count = {numRets}", numRets);
 
-                    var errStr = $"Compilation error: {Encoding.UTF8.GetString(errorBuf)}";
-                    while (!RespWriteUtils.WriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
-                        resp.SendAndReset();
-
-                    state.Pop(2);
-
-                    return;
+                        while (!RespWriteUtils.WriteError("Internal Lua Error"u8, ref resp.BufferCur, resp.BufferEnd))
+                            resp.SendAndReset();
+                    }
                 }
                 else
                 {
-                    state.Pop(numRets);
+                    // Memory or Runtime error
 
-                    throw new GarnetException($"Unexpected error compiling, got too many replies back: reply count = {numRets}");
+                    var errStr = $"Lua Call error: {callRes}";
+                    while (!RespWriteUtils.WriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
+                        resp.SendAndReset();
+
+                    state.Pop(state.StackTop);
                 }
+
+                // In normal operations, we come all the way down here and the stack should be balanced
+                //
+                // It is possible for a lower LuaError to happen, and then we can't know anything about the stack.
+                // The higher caller has to deal with that.
+                state.ExpectLuaStackEmpty();
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "CreateFunction threw an exception");
                 throw;
-            }
-            finally
-            {
-                state.ExpectLuaStackEmpty();
             }
         }
 
@@ -769,82 +886,139 @@ end
             }
         }
 
+        int RunPreambleTrampoline(nint lua)
+        {
+            const int NeededStackSize = 3;
+
+            state.CallFromLuaEntered(lua);
+
+            state.ForceMinimumStackCapacity(NeededStackSize);
+
+            switch (adapterMode)
+            {
+                case 0: SessionPreamble(this); break;
+                case 1: RunnerPreamble(this); break;
+                default:
+                    logger?.LogCritical("Unexpected adapter mode {adapterMode}", adapterMode);
+                    _ = state.RaiseError("Unexpected adapter mode {adapterMode}");
+                    break;
+            }
+
+            return 0;
+
+            static void RunnerPreamble(LuaRunner runner)
+            {
+                runner.scratchBufferManager?.Reset();
+                runner.LoadParametersForRunner(runner.preambleKeys, runner.preambleArgv);
+            }
+
+            static void SessionPreamble(LuaRunner runner)
+            {
+                var state = runner.state;
+                var scratchBufferManager = runner.scratchBufferManager;
+                var outerSession = runner.preambleOuterSession;
+                var count = runner.preambleKeyAndArgvCount;
+
+                scratchBufferManager.Reset();
+
+                var parseState = outerSession.parseState;
+
+                var offset = 1;
+                var nKeys = runner.preambleNKeys = parseState.GetInt(offset++);
+                count--;
+                runner.ResetParameters(nKeys, count - nKeys);
+
+                if (nKeys > 0)
+                {
+                    // Get KEYS on the stack
+                    state.PushInteger(runner.keysTableRegistryIndex);
+                    _ = state.RawGet(LuaType.Table, (int)LuaRegistry.Index);
+
+                    for (var i = 0; i < nKeys; i++)
+                    {
+                        ref var key = ref parseState.GetArgSliceByRef(offset);
+
+                        if (runner.txnMode)
+                        {
+                            runner.txnKeyEntries.AddKey(key, false, Tsavorite.core.LockType.Exclusive);
+                            if (!runner.respServerSession.storageSession.objectStoreLockableContext.IsNull)
+                                runner.txnKeyEntries.AddKey(key, true, Tsavorite.core.LockType.Exclusive);
+                        }
+
+                        // Equivalent to KEYS[i+1] = key
+                        state.PushInteger(i + 1);
+                        state.PushBuffer(key.ReadOnlySpan);
+                        state.RawSet(1);
+
+                        offset++;
+                    }
+
+                    // Remove KEYS from the stack
+                    state.Pop(1);
+
+                    count -= nKeys;
+                }
+
+                if (count > 0)
+                {
+                    // Get ARGV on the stack
+                    state.PushInteger(runner.argvTableRegistryIndex);
+                    _ = state.RawGet(LuaType.Table, (int)LuaRegistry.Index);
+
+                    for (var i = 0; i < count; i++)
+                    {
+                        ref var argv = ref parseState.GetArgSliceByRef(offset);
+
+                        // Equivalent to ARGV[i+1] = argv
+                        state.PushInteger(i + 1);
+                        state.PushBuffer(argv.ReadOnlySpan);
+                        state.RawSet(1);
+
+                        offset++;
+                    }
+
+                    // Remove ARGV from the stack
+                    state.Pop(1);
+                }
+            }
+        }
+
         /// <summary>
         /// Runs the precompiled Lua function with the given outer session.
         /// 
         /// Response is written directly into the <see cref="RespServerSession"/>.
         /// </summary>
-        public void RunForSession(int count, RespServerSession outerSession)
+        public unsafe void RunForSession(int count, RespServerSession outerSession)
         {
-            const int NeededStackSize = 3;
+            const int NeededStackSize = 1;
 
             state.ForceMinimumStackCapacity(NeededStackSize);
 
-            scratchBufferManager.Reset();
-
-            var parseState = outerSession.parseState;
-
-            var offset = 1;
-            var nKeys = parseState.GetInt(offset++);
-            count--;
-            ResetParameters(nKeys, count - nKeys);
-
-            if (nKeys > 0)
+            adapterMode = 0;
+            preambleOuterSession = outerSession;
+            preambleKeyAndArgvCount = count;
+            try
             {
-                // Get KEYS on the stack
-                state.PushInteger(keysTableRegistryIndex);
-                state.RawGet(LuaType.Table, (int)LuaRegistry.Index);
 
-                for (var i = 0; i < nKeys; i++)
+                state.PushCFunction(preambleTrampoline);
+                var callRes = state.PCall(0, 0);
+                if (callRes != LuaStatus.OK)
                 {
-                    ref var key = ref parseState.GetArgSliceByRef(offset);
+                    while (!RespWriteUtils.WriteError("Internal Lua Error"u8, ref outerSession.dcurr, outerSession.dend))
+                        outerSession.SendAndReset();
 
-                    if (txnMode)
-                    {
-                        txnKeyEntries.AddKey(key, false, Tsavorite.core.LockType.Exclusive);
-                        if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                            txnKeyEntries.AddKey(key, true, Tsavorite.core.LockType.Exclusive);
-                    }
-
-                    // Equivalent to KEYS[i+1] = key
-                    state.PushInteger(i + 1);
-                    state.PushBuffer(key.ReadOnlySpan);
-                    state.RawSet(1);
-
-                    offset++;
+                    return;
                 }
-
-                // Remove KEYS from the stack
-                state.Pop(1);
-
-                count -= nKeys;
             }
-
-            if (count > 0)
+            finally
             {
-                // Get ARGV on the stack
-                state.PushInteger(argvTableRegistryIndex);
-                state.RawGet(LuaType.Table, (int)LuaRegistry.Index);
-
-                for (var i = 0; i < count; i++)
-                {
-                    ref var argv = ref parseState.GetArgSliceByRef(offset);
-
-                    // Equivalent to ARGV[i+1] = argv
-                    state.PushInteger(i + 1);
-                    state.PushBuffer(argv.ReadOnlySpan);
-                    state.RawSet(1);
-
-                    offset++;
-                }
-
-                // Remove ARGV from the stack
-                state.Pop(1);
+                adapterMode = byte.MaxValue;
+                preambleOuterSession = null;
             }
 
             var adapter = new RespResponseAdapter(outerSession);
 
-            if (txnMode && nKeys > 0)
+            if (txnMode && preambleNKeys > 0)
             {
                 RunInTransaction(ref adapter);
             }
@@ -861,11 +1035,30 @@ end
         /// </summary>
         public unsafe object RunForRunner(string[] keys = null, string[] argv = null)
         {
-            scratchBufferManager?.Reset();
-            LoadParametersForRunner(keys, argv);
+            const int NeededStackSize = 1;
 
-            var adapter = new RunnerAdapter(scratchBufferManager);
+            state.ForceMinimumStackCapacity(NeededStackSize);
 
+            try
+            {
+                adapterMode = 1;
+                preambleKeys = keys;
+                preambleArgv = argv;
+
+                state.PushCFunction(preambleTrampoline);
+                var callRes = state.PCall(0, 0);
+                if (callRes != LuaStatus.OK)
+                {
+                    throw new GarnetException("Internal Lua Error");
+                }
+            }
+            finally
+            {
+                adapterMode = byte.MaxValue;
+                preambleKeys = preambleArgv = null;
+            }
+
+            RunnerAdapter adapter;
             if (txnMode && keys?.Length > 0)
             {
                 // Add keys to the transaction
@@ -877,10 +1070,12 @@ end
                         txnKeyEntries.AddKey(_key, true, Tsavorite.core.LockType.Exclusive);
                 }
 
+                adapter = new(scratchBufferManager);
                 RunInTransaction(ref adapter);
             }
             else
             {
+                adapter = new(scratchBufferManager);
                 RunCommon(ref adapter);
             }
 

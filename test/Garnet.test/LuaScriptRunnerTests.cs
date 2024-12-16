@@ -1,6 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -128,6 +133,364 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("012", (string)obj3[0]);
                 ClassicAssert.AreEqual("678", (string)obj3[1]);
                 ClassicAssert.AreEqual("345", (string)obj3[2]);
+            }
+        }
+
+        [Test]
+        public unsafe void LuaAllocMapperFunctions()
+        {
+            const int Iters = 20;
+            const int TotalAllocSizeBytes = 1_024 * 1_024;
+
+            var rand = new Random(2024_12_16);  // Repeatable, but random
+
+            // Special cases
+            {
+                var luaAlloc = new LuaAllocMapper(TotalAllocSizeBytes);
+                luaAlloc.AssertCheckCorrectness();
+
+                // 0 sized should work, and return the same thing each time
+                ref var zero0 = ref luaAlloc.AllocateNew(0, out var failed0);
+                ClassicAssert.IsFalse(failed0);
+                ClassicAssert.IsFalse(Unsafe.IsNullRef(ref zero0));
+                ref var zero1 = ref luaAlloc.AllocateNew(0, out var failed1);
+                ClassicAssert.IsFalse(failed1);
+                ClassicAssert.IsFalse(Unsafe.IsNullRef(ref zero1));
+
+                ClassicAssert.IsTrue(Unsafe.AreSame(ref zero0, ref zero1));
+
+                luaAlloc.Free(ref zero0, 0);
+                luaAlloc.Free(ref zero1, 0);
+
+                // Impossibly large fails
+                ref var failedRef = ref luaAlloc.AllocateNew(TotalAllocSizeBytes * 2, out var failedLarge);
+                ClassicAssert.IsTrue(failedLarge);
+                ClassicAssert.IsTrue(Unsafe.IsNullRef(ref failedRef));
+
+                luaAlloc.AssertCheckCorrectness();
+            }
+
+            // Fill whole allocation
+            {
+                var luaAlloc = new LuaAllocMapper(TotalAllocSizeBytes);
+                var freeSpace = luaAlloc.FirstBlockSizeBytes;
+
+                for (var i = 0; i < Iters; i++)
+                {
+                    for (var size = 1; size <= 64; size *= 2)
+                    {
+                        var lastSize = 0L;
+                        var toFree = new List<nint>();
+                        while (true)
+                        {
+                            ref var newData = ref luaAlloc.AllocateNew(size, out var failed);
+                            if (failed)
+                            {
+                                break;
+                            }
+                            ClassicAssert.IsTrue(luaAlloc.AllocatedBytes > lastSize);
+                            lastSize = luaAlloc.AllocatedBytes;
+
+                            var into = new Span<byte>(Unsafe.AsPointer(ref newData), size);
+                            into.Fill((byte)toFree.Count);
+
+                            toFree.Add((nint)Unsafe.AsPointer(ref newData));
+                        }
+                        luaAlloc.AssertCheckCorrectness();
+
+                        for (var j = 0; j < toFree.Count; j++)
+                        {
+                            var ptr = toFree[j];
+
+                            var into = new Span<byte>((void*)ptr, size);
+                            ClassicAssert.IsFalse(into.ContainsAnyExcept((byte)j));
+
+                            luaAlloc.Free(ref Unsafe.AsRef<byte>((void*)ptr), size);
+                        }
+                        luaAlloc.AssertCheckCorrectness();
+
+                        ClassicAssert.AreEqual(0, luaAlloc.AllocatedBytes);
+
+                        _ = luaAlloc.TryCoalesceAllFreeBlocks();
+                        luaAlloc.AssertCheckCorrectness();
+
+                        ClassicAssert.AreEqual(freeSpace, luaAlloc.FirstBlockSizeBytes);
+                    }
+                }
+            }
+
+            // Repeated realloc preserves data and doesn't move.
+            {
+                var luaAlloc = new LuaAllocMapper(TotalAllocSizeBytes);
+                var freeSpace = luaAlloc.FirstBlockSizeBytes;
+
+                for (var i = 0; i < Iters; i++)
+                {
+                    for (var initialSize = 1; initialSize <= 64; initialSize *= 2)
+                    {
+                        ref var initialData = ref luaAlloc.AllocateNew(initialSize, out var failed);
+                        ClassicAssert.IsFalse(failed);
+
+                        var size = initialSize;
+                        var val = 1;
+
+                        ref var curData = ref initialData;
+
+                        MemoryMarshal.CreateSpan(ref curData, initialSize).Fill((byte)val);
+
+                        while (true)
+                        {
+                            var newSize = size + rand.Next(4 * 1024) + 1;
+                            ref var newData = ref luaAlloc.ResizeAllocation(ref curData, size, newSize, out failed);
+                            if (failed)
+                            {
+                                ClassicAssert.IsTrue(Unsafe.IsNullRef(ref newData));
+                                break;
+                            }
+
+                            // Byte totals are believable
+                            ClassicAssert.IsTrue(luaAlloc.AllocatedBytes >= newSize);
+
+                            // Shouldn't have moved
+                            ClassicAssert.IsTrue(Unsafe.AreSame(ref initialData, ref newData));
+
+                            // Data preserved
+                            var oldData = MemoryMarshal.CreateReadOnlySpan(ref newData, size);
+                            ClassicAssert.IsFalse(oldData.ContainsAnyExcept((byte)val));
+
+                            // Mutate to check for faults
+                            val++;
+                            MemoryMarshal.CreateSpan(ref newData, newSize).Fill((byte)val);
+
+                            // Continue
+                            size = newSize;
+                            curData = ref newData;
+                        }
+                        luaAlloc.AssertCheckCorrectness();
+
+                        // Check final correctness
+                        var finalData = MemoryMarshal.CreateReadOnlySpan(ref curData, size);
+                        ClassicAssert.IsFalse(finalData.ContainsAnyExcept((byte)val));
+
+                        // Hand the one block back, which should fully free everything
+                        luaAlloc.Free(ref curData, size);
+
+                        ClassicAssert.AreEqual(0, luaAlloc.AllocatedBytes);
+                        ClassicAssert.AreEqual(freeSpace, luaAlloc.FirstBlockSizeBytes);
+
+                        luaAlloc.AssertCheckCorrectness();
+                    }
+                }
+            }
+
+            // Basic fixed sized allocs
+            {
+                const int AllocSize = 16;
+
+                var luaAlloc = new LuaAllocMapper(TotalAllocSizeBytes);
+                var freeSpace = luaAlloc.FirstBlockSizeBytes;
+
+                for (var i = 0; i < Iters; i++)
+                {
+                    ClassicAssert.AreEqual(0, luaAlloc.AllocatedBytes);
+                    ClassicAssert.AreEqual(1, luaAlloc.FreeBlockCount);
+
+                    var numOps = rand.Next(50) + 1;
+
+                    var toFree = new List<nint>();
+
+                    // Do a bunch of allocs, all should succeed
+                    for (var j = 0; j < numOps; j++)
+                    {
+                        ref var newData = ref luaAlloc.AllocateNew(AllocSize, out var failed);
+                        ClassicAssert.False(failed);
+                        ClassicAssert.False(Unsafe.IsNullRef(ref newData));
+
+                        var into = new Span<byte>(Unsafe.AsPointer(ref newData), AllocSize);
+                        into.Fill((byte)j);
+
+                        toFree.Add((nint)Unsafe.AsPointer(ref newData));
+                    }
+                    luaAlloc.AssertCheckCorrectness();
+
+                    // Each block should be served out of a split, so free list should stay at 1
+                    ClassicAssert.AreEqual(1, luaAlloc.FreeBlockCount);
+
+                    // Check that data wasn't corrupted
+                    for (var j = 0; j < toFree.Count; j++)
+                    {
+                        var ptr = toFree[j];
+                        var data = new Span<byte>((void*)ptr, AllocSize);
+                        var expected = (byte)j;
+
+                        ClassicAssert.IsFalse(data.ContainsAnyExcept(expected));
+                    }
+
+                    // Free in a random order
+                    toFree = toFree.Select(p => (Pointer: p, Order: rand.Next())).OrderBy(t => t.Order).Select(t => t.Pointer).ToList();
+                    foreach (var ptr in toFree)
+                    {
+                        ref var asData = ref Unsafe.AsRef<byte>((void*)ptr);
+
+                        luaAlloc.Free(ref asData, AllocSize);
+                    }
+                    luaAlloc.AssertCheckCorrectness();
+
+                    // Check that all free's didn't corrupt anything
+                    ClassicAssert.AreEqual(0, luaAlloc.AllocatedBytes);
+
+                    // Check that all memory is reclaimable
+                    _ = luaAlloc.TryCoalesceAllFreeBlocks();
+                    ClassicAssert.AreEqual(freeSpace, luaAlloc.FirstBlockSizeBytes);
+                    luaAlloc.AssertCheckCorrectness();
+                }
+            }
+
+            // Random operations with variable sized allocs
+            {
+                var luaAlloc = new LuaAllocMapper(TotalAllocSizeBytes);
+                var freeSpace = luaAlloc.FirstBlockSizeBytes;
+
+                for (var i = 0; i < Iters; i++)
+                {
+                    ClassicAssert.AreEqual(0, luaAlloc.AllocatedBytes);
+                    ClassicAssert.AreEqual(1, luaAlloc.FreeBlockCount);
+
+                    var toFree = new List<(nint Pointer, byte Expected, int AllocSize)>();
+                    for (var j = 0; j < 1_000; j++)
+                    {
+                        var op = rand.Next(4);
+                        switch (op)
+                        {
+                            // Allocate
+                            case 0:
+                                {
+                                    var allocSize = rand.Next(4 * 1024) + 1;
+
+                                    ref var newData = ref luaAlloc.AllocateNew(allocSize, out var failed);
+                                    ClassicAssert.IsFalse(failed);
+                                    ClassicAssert.IsFalse(Unsafe.IsNullRef(ref newData));
+
+                                    var into = new Span<byte>(Unsafe.AsPointer(ref newData), allocSize);
+                                    into.Fill((byte)j);
+
+                                    toFree.Add(((nint)Unsafe.AsPointer(ref newData), (byte)j, allocSize));
+                                }
+
+                                break;
+
+                            // Reallocate
+                            case 1:
+                                {
+                                    if (toFree.Count == 0)
+                                    {
+                                        goto case 0;
+                                    }
+
+                                    var reallocIx = rand.Next(toFree.Count);
+                                    var (ptr, expected, size) = toFree[reallocIx];
+
+                                    ref var reallocRef = ref Unsafe.AsRef<byte>((void*)ptr);
+
+                                    int newSizeBytes;
+                                    if (rand.Next(2) == 0)
+                                    {
+                                        newSizeBytes = size + rand.Next(32) + 1;
+                                    }
+                                    else
+                                    {
+                                        newSizeBytes = size - rand.Next(size);
+                                        if (newSizeBytes == 0)
+                                        {
+                                            goto case 0;
+                                        }
+                                    }
+
+                                    ref var updatedRef = ref luaAlloc.ResizeAllocation(ref reallocRef, size, newSizeBytes, out var failed);
+                                    ClassicAssert.IsFalse(failed);
+
+                                    if (newSizeBytes <= size)
+                                    {
+                                        // Shrink should always leave in place
+                                        ClassicAssert.IsTrue(Unsafe.AreSame(ref updatedRef, ref reallocRef));
+                                    }
+
+                                    var toCheck = MemoryMarshal.CreateReadOnlySpan(ref updatedRef, Math.Min(size, newSizeBytes));
+                                    ClassicAssert.IsFalse(toCheck.ContainsAnyExcept(expected));
+
+                                    toFree.RemoveAt(reallocIx);
+
+                                    var toFill = MemoryMarshal.CreateSpan(ref updatedRef, newSizeBytes);
+                                    toFill.Fill((byte)j);
+
+                                    toFree.Add(((nint)Unsafe.AsPointer(ref updatedRef), (byte)j, newSizeBytes));
+                                }
+
+                                break;
+
+                            // Free
+                            case 2:
+                                {
+                                    if (toFree.Count == 0)
+                                    {
+                                        goto case 0;
+                                    }
+
+                                    var freeIx = rand.Next(toFree.Count);
+                                    var (ptr, expected, size) = toFree[freeIx];
+
+                                    toFree.RemoveAt(freeIx);
+                                    luaAlloc.Free(ref Unsafe.AsRef<byte>((void*)ptr), size);
+                                }
+
+                                break;
+
+                            // Validate
+                            case 3:
+                                {
+                                    if (toFree.Count == 0)
+                                    {
+                                        goto case 0;
+                                    }
+
+                                    foreach (var (ptr, expected, size) in toFree)
+                                    {
+                                        var data = new Span<byte>((void*)ptr, size);
+                                        ClassicAssert.IsFalse(data.ContainsAnyExcept(expected));
+                                    }
+                                }
+
+                                break;
+
+                            default:
+                                ClassicAssert.Fail("Unexpected operation");
+                                break;
+                        }
+                        luaAlloc.AssertCheckCorrectness();
+                    }
+                    luaAlloc.AssertCheckCorrectness();
+
+                    // Validate and free everything that's left
+                    foreach (var (ptr, expected, size) in toFree)
+                    {
+                        ref var asData = ref Unsafe.AsRef<byte>((void*)ptr);
+
+                        var data = new Span<byte>((void*)ptr, size);
+                        ClassicAssert.IsFalse(data.ContainsAnyExcept(expected));
+
+                        luaAlloc.Free(ref asData, size);
+                    }
+                    luaAlloc.AssertCheckCorrectness();
+
+                    // Check that all free's didn't corrupt anything
+                    ClassicAssert.AreEqual(0, luaAlloc.AllocatedBytes);
+
+                    // Full coalesce gets contiguous blocks back
+                    _ = luaAlloc.TryCoalesceAllFreeBlocks();
+                    ClassicAssert.AreEqual(freeSpace, luaAlloc.FirstBlockSizeBytes);
+
+                    luaAlloc.AssertCheckCorrectness();
+                }
             }
         }
     }

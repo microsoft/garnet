@@ -5,11 +5,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Security.Cryptography;
-using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -75,20 +73,30 @@ namespace Garnet.server
                 var sourceOnHeap = source.ToArray();
 
                 runner = new LuaRunner(sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
-                runner.CompileForSession(session);
 
-                // Need to make sure the key is on the heap, so move it over
-                //
-                // There's an implicit assumption that all callers are using unmanaged memory.
-                // If that becomes untrue, there's an optimization opportunity to re-use the 
-                // managed memory here.
-                var into = GC.AllocateUninitializedArray<byte>(SHA1Len, pinned: true);
-                digest.CopyTo(into);
+                // If compilation fails, an error is written out
+                if (runner.CompileForSession(session))
+                {
+                    // Need to make sure the key is on the heap, so move it over
+                    //
+                    // There's an implicit assumption that all callers are using unmanaged memory.
+                    // If that becomes untrue, there's an optimization opportunity to re-use the 
+                    // managed memory here.
+                    var into = GC.AllocateUninitializedArray<byte>(SHA1Len, pinned: true);
+                    digest.CopyTo(into);
 
-                ScriptHashKey storeKeyDigest = new(into);
-                digestOnHeap = storeKeyDigest;
+                    ScriptHashKey storeKeyDigest = new(into);
+                    digestOnHeap = storeKeyDigest;
 
-                _ = scriptCache.TryAdd(storeKeyDigest, runner);
+                    _ = scriptCache.TryAdd(storeKeyDigest, runner);
+                }
+                else
+                {
+                    runner.Dispose();
+
+                    digestOnHeap = null;
+                    return false;
+                }
             }
             catch (Exception ex)
             {

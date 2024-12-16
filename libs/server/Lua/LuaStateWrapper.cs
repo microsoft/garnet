@@ -2,11 +2,15 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 using KeraLua;
+using Microsoft.Extensions.Logging;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Garnet.server
 {
@@ -20,13 +24,44 @@ namespace Garnet.server
     {
         private const int LUA_MINSTACK = 20;
 
+        private readonly LuaAlloc allocFunc;
+        private readonly LuaFunction panicFunc;
+        private readonly ILogger logger;
+
         private readonly Lua state;
 
         private int curStackSize;
 
-        internal LuaStateWrapper(Lua state)
+        private LuaAllocMapper allocMapper;
+        private bool lastAllocFailed;
+        private bool abortOOM;
+        private List<byte[]> oomAllocations;
+
+        internal LuaStateWrapper(ILogger logger, bool useCustomAllocator)
         {
-            this.state = state;
+            this.logger = logger;
+
+            if (useCustomAllocator)
+            {
+                allocMapper = new LuaAllocMapper(1024 * 1024);
+
+                unsafe
+                {
+                    Debug.WriteLine($"allocMapper start = {(nint)Unsafe.AsPointer(ref allocMapper.AllocateNew(0, out _)):X}");
+                }
+
+                allocFunc = LuaAllocateBytes;
+                state = new Lua(allocFunc, 0);
+            }
+            else
+            {
+                state = new Lua(openLibs: false);
+            }
+
+            state.OpenLibs();
+
+            panicFunc = LuaAtPanic;
+            _ = state.AtPanic(panicFunc);
 
             curStackSize = LUA_MINSTACK;
             StackTop = 0;
@@ -46,6 +81,114 @@ namespace Garnet.server
         /// 0 implies the stack is empty.
         /// </summary>
         internal int StackTop { get; private set; }
+
+        /// <summary>
+        /// Called when Lua encounters an unrecoverable error.
+        /// 
+        /// When this returns, Lua is going to terminate the process, so plan accordingly.
+        /// </summary>
+        private int LuaAtPanic(nint luaState)
+        {
+            // See: https://www.lua.org/manual/5.4/manual.html#4.4
+
+            Debug.Assert(state.Handle == luaState, "Unexpected Lua instance");
+
+            string errorMsg;
+
+            var errorMsgIx = StackTop = state.GetTop();
+            if (errorMsgIx >= 1)
+            {
+                if (NativeMethods.CheckBuffer(state.Handle, errorMsgIx, out var msgBuf))
+                {
+                    errorMsg = Encoding.UTF8.GetString(msgBuf);
+                }
+                else
+                {
+                    errorMsg = $"Unexpected error type: {state.Type(errorMsgIx)}";
+                }
+            }
+            else
+            {
+                errorMsg = "No error on stack";
+            }
+
+            logger?.LogCritical("Lua Panic '{errorMsg}', stack size {StackTop}", errorMsg, StackTop);
+
+            return 0;
+        }
+
+        private int memOp = 0;
+
+        /// <summary>
+        /// Provides data for Lua allocations.
+        /// 
+        /// All returns data must be PINNED or unmanaged, Lua does not allow it to move.
+        /// 
+        /// If allocation cannot be performed, null is returned.
+        /// </summary>
+        /// <param name="udPtr">Pointer to user data provided during <see cref="Lua.SetAllocFunction"/></param>
+        /// <param name="ptr">Either null (if new alloc) or pointer to existing allocation being resized or freed.</param>
+        /// <param name="osize">If <paramref name="ptr"/> is not null, the <paramref name="nsize"/> value passed when allocation was obtained or resized.</param>
+        /// <param name="nsize">The desired size of the allocation, in bytes.</param>
+        private unsafe nint LuaAllocateBytes(nint udPtr, nint ptr, nuint osize, nuint nsize)
+        {
+            // See: https://www.lua.org/manual/5.4/manual.html#lua_Alloc
+
+            memOp++;
+
+            try
+            {
+                if (ptr != IntPtr.Zero)
+                {
+                    // Now osize is the size used to (re)allocate ptr last
+
+                    ref var dataRef = ref Unsafe.AsRef<byte>((void*)ptr);
+
+                    if (nsize == 0)
+                    {
+                        //Debug.WriteLine($"[{memOp:000000}] [Free, Success] ({udPtr:x}, {ptr:x}, {(int)osize}, {(int)nsize})");
+
+                        allocMapper.Free(ref dataRef, (int)osize);
+
+                        return 0;
+                    }
+                    else
+                    {
+                        ref var ret = ref allocMapper.ResizeAllocation(ref dataRef, (int)osize, (int)nsize, out var failed);
+                        if (failed)
+                        {
+                            return 0;
+                        }
+
+                        var retPtr = (nint)Unsafe.AsPointer(ref ret);
+
+                        //Debug.WriteLine($"[{memOp:000000}] [ReAlloc, Success] ({udPtr:x}, {ptr:x}, {(int)osize}, {(int)nsize}) => {retPtr:x}");
+
+                        return retPtr;
+                    }
+                }
+                else
+                {
+                    // Now osize is the size of the object being allocated, but nsize is the desired size
+
+                    ref var ret = ref allocMapper.AllocateNew((int)nsize, out var failed);
+                    if (failed)
+                    {
+                        return 0;
+                    }
+
+                    var retPtr = (nint)Unsafe.AsPointer(ref ret);
+
+                    //Debug.WriteLine($"[{memOp:000000}] [Alloc, Success] ({udPtr:x}, {ptr:x}, {(int)osize}, {(int)nsize}) => {retPtr:x}");
+
+                    return retPtr;
+                }
+            }
+            finally
+            {
+                allocMapper.AssertCheckCorrectness();
+            }
+        }
 
         /// <summary>
         /// Call when ambient state indicates that the Lua stack is in fact empty.
@@ -131,7 +274,7 @@ namespace Garnet.server
         {
             AssertLuaStackNotFull();
 
-            NativeMethods.PushBuffer(state.Handle, buffer);
+            _ = ref NativeMethods.PushBuffer(state.Handle, buffer);
             UpdateStackTop(1);
         }
 
@@ -218,8 +361,9 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LuaStatus PCall(int args, int rets)
         {
-            // We have to copy this off, as once we Call curStackTop could be modified
+            // We have to copy this off, as once we PCall curStackTop could be modified
             var oldStackTop = StackTop;
+
             var res = state.PCall(args, rets, 0);
 
             if (res != LuaStatus.OK || rets < 0)
@@ -425,6 +569,16 @@ namespace Garnet.server
             AssertLuaStackIndexInBounds(stackIndex);
 
             return state.RawLen(stackIndex);
+        }
+
+        /// <summary>
+        /// This should be used for all PushCFunctions into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void PushCFunction(LuaFunction function)
+        {
+            state.PushCFunction(function);
+            UpdateStackTop(1);
         }
 
         /// <summary>

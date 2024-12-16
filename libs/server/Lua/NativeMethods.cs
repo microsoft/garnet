@@ -168,12 +168,15 @@ namespace Garnet.server
         /// 
         /// Provided data is copied, and can be reused once this call returns.
         /// </summary>
-        internal static unsafe void PushBuffer(lua_State luaState, ReadOnlySpan<byte> str)
+        internal static unsafe ref byte PushBuffer(lua_State luaState, ReadOnlySpan<byte> str)
         {
+            nint inLuaPtr;
             fixed (byte* ptr = str)
             {
-                _ = lua_pushlstring(luaState, (charptr_t)ptr, (size_t)str.Length);
+                inLuaPtr = lua_pushlstring(luaState, (charptr_t)ptr, (size_t)str.Length);
             }
+
+            return ref Unsafe.AsRef<byte>((void*)inLuaPtr);
         }
 
         /// <summary>
