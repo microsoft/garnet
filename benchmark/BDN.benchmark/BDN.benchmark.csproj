@@ -12,7 +12,11 @@
     <PackageReference Include="BenchmarkDotNet" />
 		<PackageReference Include="NLua" />
 	</ItemGroup>
-
+<ItemGroup>
+  <None Include="../../test/testcerts/testcert.pfx">
+    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+  </None>
+</ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\libs\cluster\Garnet.cluster.csproj" />
     <ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
