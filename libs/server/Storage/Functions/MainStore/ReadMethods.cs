@@ -25,7 +25,7 @@ namespace Garnet.server
             if (isEtagCmd && cmd == RespCommand.GETIFNOTMATCH)
             {
                 var existingEtag = *(long*)value.ToPointer();
-                var etagToMatchAgainst = input.parseState.GetLong(2);
+                var etagToMatchAgainst = input.parseState.GetLong(0);
                 if (existingEtag == etagToMatchAgainst)
                 {
                     // write the value not changed message to dst, and early return
@@ -33,11 +33,11 @@ namespace Garnet.server
                     return true;
                 }
             }
-            else if ((ushort)cmd >= CustomCommandManager.StartOffset)
+            else if (cmd > RespCommandExtensions.LastValidCommand)
             {
                 var valueLength = value.LengthWithoutMetadata;
                 (IMemoryOwner<byte> Memory, int Length) output = (dst.Memory, 0);
-                var ret = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions
+                var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
                     .Reader(key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref output, ref readInfo);
                 Debug.Assert(valueLength <= value.LengthWithoutMetadata);
                 dst.Memory = output.Memory;
@@ -87,11 +87,11 @@ namespace Garnet.server
                     return true;
                 }
             }
-            else if ((ushort)cmd >= CustomCommandManager.StartOffset)
+            else if (cmd > RespCommandExtensions.LastValidCommand)
             {
                 var valueLength = value.LengthWithoutMetadata;
                 (IMemoryOwner<byte> Memory, int Length) output = (dst.Memory, 0);
-                var ret = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions
+                var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
                     .Reader(key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref output, ref readInfo);
                 Debug.Assert(valueLength <= value.LengthWithoutMetadata);
                 dst.Memory = output.Memory;

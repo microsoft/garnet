@@ -21,6 +21,7 @@ namespace Tsavorite.core
         readonly bool preallocateFile;
         readonly bool disableFileBuffering;
         readonly bool useNativeDeviceLinux;
+        readonly bool readOnly;
         readonly ILogger logger;
 
         /// <summary>
@@ -32,13 +33,14 @@ namespace Tsavorite.core
         /// <param name="throttleLimit">Throttle limit (max number of pending I/Os) for this device instance</param>
         /// <param name="useNativeDeviceLinux">Use native device on Linux</param>
         /// <param name="logger"></param>
-        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, bool useNativeDeviceLinux = false, ILogger logger = null)
+        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, bool useNativeDeviceLinux = false, bool readOnly = false, ILogger logger = null)
         {
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             this.throttleLimit = throttleLimit;
             this.useNativeDeviceLinux = useNativeDeviceLinux;
+            this.readOnly = readOnly;
             this.logger = logger;
         }
 
@@ -51,14 +53,20 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public IDevice Get(FileDescriptor fileInfo)
         {
-            var device = Devices.CreateLogDevice(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName), preallocateFile: preallocateFile, deleteOnClose: deleteOnClose, disableFileBuffering: disableFileBuffering, useNativeDeviceLinux: useNativeDeviceLinux, logger: logger);
+            var device = Devices.CreateLogDevice(
+                Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName),
+                preallocateFile: preallocateFile,
+                deleteOnClose: deleteOnClose,
+                disableFileBuffering: disableFileBuffering,
+                useNativeDeviceLinux: useNativeDeviceLinux,
+                readOnly: readOnly,
+                logger: logger);
             if (throttleLimit.HasValue)
             {
                 device.ThrottleLimit = throttleLimit.Value;
             }
             return device;
         }
-
 
         /// <inheritdoc />
         public IEnumerable<FileDescriptor> ListContents(string path)
