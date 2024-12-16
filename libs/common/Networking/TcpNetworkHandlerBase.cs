@@ -135,7 +135,7 @@ namespace Garnet.common
             e.Dispose();
         }
 
-        internal void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
+        void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
         {
             if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success || serverHook.Disposed)
             {
