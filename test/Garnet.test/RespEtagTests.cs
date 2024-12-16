@@ -894,7 +894,7 @@ namespace Garnet.test
 
             Assert.That(actualResult, Is.EqualTo(expectedResult).Within(1.0 / Math.Pow(10, 15)));
             Assert.That(actualResult, Is.EqualTo(actualResultRaw).Within(1.0 / Math.Pow(10, 15)));
-        
+
             RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", key);
             long etag = (long)res[0];
             double value = double.Parse(res[1].ToString(), CultureInfo.InvariantCulture);
@@ -2049,9 +2049,11 @@ namespace Garnet.test
             db.Execute("SETWITHETAG", [key, Encoding.UTF8.GetString(new byte[1])]); // Initialize key with an empty byte
 
             // Act - Set initial value to 250 and try to increment by 10 with saturate overflow
-            db.Execute("BITFIELD", key, "SET", "u8", "0", "250");
+            var bitfieldRes = db.Execute("BITFIELD", key, "SET", "u8", "0", "250");
+            ClassicAssert.AreEqual(0, (long)bitfieldRes);
 
-            long etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [key]))[0].ToString());
+            var result = (RedisResult[])db.Execute("GETWITHETAG", [key]);
+            long etagToCheck = long.Parse(result[0].ToString());
             ClassicAssert.AreEqual(1, etagToCheck);
 
             var incrResult = db.Execute("BITFIELD", key, "OVERFLOW", "SAT", "INCRBY", "u8", "0", "10");

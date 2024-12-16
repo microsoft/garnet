@@ -245,33 +245,23 @@ namespace Garnet.server
                     CopyRespTo(ref value, ref dst, start + payloadEtagAccountedEndOffset, end + payloadEtagAccountedEndOffset);
                     return;
                 case RespCommand.SETIFMATCH:
-                    // extract ETAG, write as long into dst, and then value
-                    long etag = *(long*)value.ToPointer();
-                    // remove the length of the ETAG
-                    int valueLength = value.LengthWithoutMetadata - sizeof(long);
-                    // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
-                    ReadOnlySpan<byte> etagTruncatedVal = value.AsReadOnlySpan(sizeof(long));
-                    // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
-                    int desiredLength = 4 + 1 + NumUtils.NumDigitsInLong(etag) + 2 + 1 + NumUtils.NumDigits(valueLength) + 2 + valueLength + 2;
-                    WriteValAndEtagToDst(desiredLength, ref etagTruncatedVal, etag, ref dst);
-                    return;
-
                 case RespCommand.GETIFNOTMATCH:
                 case RespCommand.GETWITHETAG:
                     // If this has an etag then we want to use it other wise null
                     // we know somethgin doesnt have an etag if
-                    etag = -1;
-                    valueLength = value.LengthWithoutMetadata;
-
+                    long etag = -1;
+                    int valueLength = value.LengthWithoutMetadata;
+                    int desiredLength;
+                    ReadOnlySpan<byte> etagTruncatedVal;
                     if (hasEtagInVal)
                     {
                         // Get value without RESP header; exclude expiration
                         // extract ETAG, write as long into dst, and then value
                         etag = *(long*)value.ToPointer();
                         // remove the length of the ETAG
-                        valueLength -= sizeof(long);
+                        valueLength -= Constants.EtagSize;
                         // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
-                        etagTruncatedVal = value.AsReadOnlySpan(sizeof(long));
+                        etagTruncatedVal = value.AsReadOnlySpan(Constants.EtagSize);
                         // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
                         desiredLength = 4 + 1 + NumUtils.NumDigitsInLong(etag) + 2 + 1 + NumUtils.NumDigits(valueLength) + 2 + valueLength + 2;
                     }
@@ -337,7 +327,7 @@ namespace Garnet.server
             RespWriteUtils.WriteBulkString(value, ref curr, end);
         }
 
-        bool EvaluateExpireInPlace(ExpireOption optionType, bool expiryExists, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output)
+        bool EvaluateExpireInPlace(ExpireOption optionType, bool expiryExists, long newExpiry, ref SpanByte value, ref SpanByteAndMemory output)
         {
             ObjectOutputHeader* o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
             if (expiryExists)

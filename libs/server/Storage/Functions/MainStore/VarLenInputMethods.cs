@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -69,7 +68,9 @@ namespace Garnet.server
         /// <inheritdoc/>
         public int GetRMWInitialValueLength(ref RawStringInput input)
         {
+            var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
             var cmd = input.header.cmd;
+
             switch (cmd)
             {
                 case RespCommand.SETBIT:
@@ -111,7 +112,8 @@ namespace Garnet.server
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
                 case RespCommand.SETWITHETAG:
                     // same space as SET but with 8 additional bytes for etag at the front of the payload
-                    return sizeof(int) + input.Length - RespInputHeader.Size + Constants.EtagSize;
+                    newValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                    return sizeof(int) + newValue.Length + Constants.EtagSize + metadataSize;
                 case RespCommand.INCRBYFLOAT:
                     if (!input.parseState.TryGetDouble(0, out var incrByFloat))
                         return sizeof(int);
@@ -125,7 +127,7 @@ namespace Garnet.server
                     {
                         var functions = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions;
                         // Compute metadata size for result
-                        int metadataSize = input.arg1 switch
+                        metadataSize = input.arg1 switch
                         {
                             -1 => 0,
                             0 => 0,
@@ -134,8 +136,7 @@ namespace Garnet.server
                         return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
                     }
 
-                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length +
-                        (input.arg1 == 0 ? 0 : sizeof(long));
+                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + metadataSize;
             }
         }
 
@@ -146,7 +147,7 @@ namespace Garnet.server
             {
                 var cmd = input.header.cmd;
                 int etagOffset = hasEtag ? Constants.EtagSize : 0;
-                bool retainEtag = ((RespInputHeader*)inputPtr)->CheckRetainEtagFlag();
+                bool retainEtag = input.header.CheckRetainEtagFlag();
 
                 switch (cmd)
                 {
@@ -215,13 +216,13 @@ namespace Garnet.server
                     case RespCommand.SETEXXX:
                         if (!retainEtag)
                             etagOffset = 0;
-                        return sizeof(int) + input.Length - RespInputHeader.Size + etagOffset;
-                    case RespCommand.SETIFMATCH:
+                       return sizeof(int) + input.parseState.GetArgSliceByRef(0).Length + (input.arg1 == 0 ? 0 : sizeof(long)) + etagOffset; 
                     case RespCommand.PERSIST:
                         return sizeof(int) + t.LengthWithoutMetadata;
                     case RespCommand.SETWITHETAG:
-                        // same space as SET but with 8 additional bytes for etag at the front of the payload
-                        return sizeof(int) + input.Length - RespInputHeader.Size + Constants.EtagSize;
+                    case RespCommand.SETIFMATCH:
+                        var newValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                        return sizeof(int) + newValue.Length + Constants.EtagSize + t.MetadataSize + (input.arg1 == 0 ? 0 : sizeof(long));
                     case RespCommand.EXPIRE:
                     case RespCommand.PEXPIRE:
                     case RespCommand.EXPIREAT:
@@ -230,7 +231,7 @@ namespace Garnet.server
 
                     case RespCommand.SETRANGE:
                         var offset = input.parseState.GetInt(0);
-                        var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                        newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
                         if (newValue.Length + offset > t.LengthWithoutMetadata - etagOffset)
                             return sizeof(int) + newValue.Length + offset + t.MetadataSize + etagOffset;

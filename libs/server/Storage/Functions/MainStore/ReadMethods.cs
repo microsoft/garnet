@@ -79,7 +79,7 @@ namespace Garnet.server
             if (isEtagCmd && cmd == RespCommand.GETIFNOTMATCH)
             {
                 var existingEtag = *(long*)value.ToPointer();
-                var etagToMatchAgainst = input.parseState.GetLong(2);
+                var etagToMatchAgainst = input.parseState.GetLong(0);
                 if (existingEtag == etagToMatchAgainst)
                 {
                     // write the value not changed message to dst, and early return
