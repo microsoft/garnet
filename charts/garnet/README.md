@@ -1,8 +1,8 @@
 # garnet
 
-![Version: 0.1.2](https://img.shields.io/badge/Version-0.1.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.46](https://img.shields.io/badge/AppVersion-1.0.46-informational?style=flat-square)
+![Version: 0.1.3](https://img.shields.io/badge/Version-0.1.3-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.46](https://img.shields.io/badge/AppVersion-1.0.46-informational?style=flat-square)
 
-A Helm chart for Microsoft garnet
+A Helm chart for Microsoft Garnet
 
 **Homepage:** <https://github.com/microsoft/garnet>
 
@@ -15,7 +15,7 @@ A Helm chart for Microsoft garnet
 [Helm](https://helm.sh) must be installed to use the charts. Please refer to
 Helm's [documentation](https://helm.sh/docs) to get started.
 
-To install the garnet chart (using an OCI-based registry):
+To install the Garnet chart (using an OCI-based registry):
 
 ```sh
 helm upgrade --install garnet oci://ghcr.io/microsoft/helm-charts/garnet

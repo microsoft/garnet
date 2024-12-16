@@ -110,7 +110,7 @@ namespace Garnet.cluster
                 clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShift = CheckpointVersionShift;
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary
-            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && !StartRecovery())
+            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !StartRecovery())
                 throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
@@ -277,7 +277,7 @@ namespace Garnet.cluster
 
             var localNodeRole = current.LocalNodeRole;
             var replicaOfNodeId = current.LocalNodePrimaryId;
-            if (localNodeRole == NodeRole.REPLICA && replicaOfNodeId != null)
+            if (localNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && replicaOfNodeId != null)
             {
                 // At initialization of ReplicationManager, this node has been put into recovery mode
                 if (!TryReplicateFromPrimary(out var errorMessage))

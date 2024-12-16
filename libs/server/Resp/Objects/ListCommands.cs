@@ -324,21 +324,60 @@ namespace Garnet.server
             return true;
         }
 
-        private unsafe bool ListBlockingMove(RespCommand command)
+        private unsafe bool ListBlockingMove()
         {
             if (parseState.Count != 5)
             {
-                return AbortWithWrongNumberOfArguments(command.ToString());
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BLMOVE));
             }
 
-            var cmdArgs = new ArgSlice[] { default, default, default };
-
             var srcKey = parseState.GetArgSliceByRef(0);
-
-            // Read destination key
-            cmdArgs[0] = parseState.GetArgSliceByRef(1);
+            var dstKey = parseState.GetArgSliceByRef(1);
             var srcDir = parseState.GetArgSliceByRef(2);
             var dstDir = parseState.GetArgSliceByRef(3);
+
+            if (!parseState.TryGetDouble(4, out var timeout))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            return ListBlockingMove(srcKey, dstKey, srcDir, dstDir, timeout);
+        }
+
+        /// <summary>
+        /// BRPOPLPUSH
+        /// </summary>
+        /// <returns></returns>
+        private bool ListBlockingPopPush()
+        {
+            if (parseState.Count != 3)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BRPOPLPUSH));
+            }
+
+            var srcKey = parseState.GetArgSliceByRef(0);
+            var dstKey = parseState.GetArgSliceByRef(1);
+            var rightOption = ArgSlice.FromPinnedSpan(CmdStrings.RIGHT);
+            var leftOption = ArgSlice.FromPinnedSpan(CmdStrings.LEFT);
+
+            if (!parseState.TryGetDouble(2, out var timeout))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            return ListBlockingMove(srcKey, dstKey, rightOption, leftOption, timeout);
+        }
+
+        private bool ListBlockingMove(ArgSlice srcKey, ArgSlice dstKey, ArgSlice srcDir, ArgSlice dstDir, double timeout)
+        {
+            var cmdArgs = new ArgSlice[] { default, default, default };
+
+            // Read destination key
+            cmdArgs[0] = dstKey;
 
             var sourceDirection = GetOperationDirection(srcDir);
             var destinationDirection = GetOperationDirection(dstDir);
@@ -353,17 +392,10 @@ namespace Garnet.server
             cmdArgs[1] = new ArgSlice(pSrcDir, 1);
             cmdArgs[2] = new ArgSlice(pDstDir, 1);
 
-            if (!parseState.TryGetDouble(4, out var timeout))
-            {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
             if (storeWrapper.itemBroker == null)
                 throw new GarnetException("Object store is disabled");
 
-            var result = storeWrapper.itemBroker.MoveCollectionItemAsync(command, srcKey.ToArray(), this, timeout,
+            var result = storeWrapper.itemBroker.MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey.ToArray(), this, timeout,
                 cmdArgs).Result;
 
             if (!result.Found)

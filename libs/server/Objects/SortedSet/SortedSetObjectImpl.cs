@@ -435,6 +435,9 @@ namespace Garnet.server
                 ZRangeOptions options = new();
                 switch (input.header.SortedSetOp)
                 {
+                    case SortedSetOperation.ZRANGESTORE:
+                        options.WithScores = true;
+                        break;
                     case SortedSetOperation.ZRANGEBYSCORE:
                         options.ByScore = true;
                         break;
@@ -443,6 +446,10 @@ namespace Garnet.server
                         break;
                     case SortedSetOperation.ZREVRANGEBYSCORE:
                         options.ByScore = true;
+                        options.Reverse = true;
+                        break;
+                    case SortedSetOperation.ZREVRANGEBYLEX:
+                        options.ByLex = true;
                         options.Reverse = true;
                         break;
                 }

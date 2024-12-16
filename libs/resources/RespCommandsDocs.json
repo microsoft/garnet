@@ -685,6 +685,37 @@
     ]
   },
   {
+    "Command": "BRPOPLPUSH",
+    "Name": "BRPOPLPUSH",
+    "Summary": "Pops an element from a list, pushes it to another list and returns it. Block until an element is available otherwise. Deletes the list if the last element was popped.",
+    "Group": "List",
+    "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060BLMOVE\u0060 with the \u0060RIGHT\u0060 and \u0060LEFT\u0060 arguments",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "SOURCE",
+        "DisplayText": "source",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      }
+    ]
+  },
+  {
     "Command": "CLIENT",
     "Name": "CLIENT",
     "Summary": "A container for client connection commands.",
@@ -692,9 +723,16 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
-        "Command": "CLIENT_INFO",
-        "Name": "CLIENT|INFO",
-        "Summary": "Returns information about the connection.",
+        "Command": "CLIENT_ID",
+        "Name": "CLIENT|ID",
+        "Summary": "Returns the unique client ID of the connection.",
+        "Group": "Connection",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLIENT_GETNAME",
+        "Name": "CLIENT|GETNAME",
+        "Summary": "Returns the name of the connection.",
         "Group": "Connection",
         "Complexity": "O(1)"
       },
@@ -820,6 +858,14 @@
                         "Token": "NO"
                       }
                     ]
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "MAXAGE",
+                    "DisplayText": "maxage",
+                    "Type": "Integer",
+                    "Token": "MAXAGE",
+                    "ArgumentFlags": "Optional"
                   }
                 ]
               }
@@ -828,9 +874,39 @@
         ]
       },
       {
-        "Command": "CLIENT_ID",
-        "Name": "CLIENT|ID",
-        "Summary": "Returns the unique client ID of the connection.",
+        "Command": "CLIENT_SETINFO",
+        "Name": "CLIENT|SETINFO",
+        "Summary": "Sets information specific to the client or connection.",
+        "Group": "Connection",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "ATTR",
+            "Type": "OneOf",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "LIBNAME",
+                "DisplayText": "libname",
+                "Type": "String",
+                "Token": "LIB-NAME"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "LIBVER",
+                "DisplayText": "libver",
+                "Type": "String",
+                "Token": "LIB-VER"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "Command": "CLIENT_INFO",
+        "Name": "CLIENT|INFO",
+        "Summary": "Returns information about the connection.",
         "Group": "Connection",
         "Complexity": "O(1)"
       },
@@ -885,6 +961,21 @@
             "Type": "Integer",
             "Token": "ID",
             "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "CLIENT_SETNAME",
+        "Name": "CLIENT|SETNAME",
+        "Summary": "Sets the connection name.",
+        "Group": "Connection",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CONNECTION-NAME",
+            "DisplayText": "connection-name",
+            "Type": "String"
           }
         ]
       }
@@ -4897,6 +4988,37 @@
     ]
   },
   {
+    "Command": "SINTERCARD",
+    "Name": "SINTERCARD",
+    "Summary": "Returns the number of members of the intersect of multiple sets.",
+    "Group": "Set",
+    "Complexity": "O(N*M) worst case where N is the cardinality of the smallest set and M is the number of sets.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "LIMIT",
+        "DisplayText": "limit",
+        "Type": "Integer",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
     "Command": "SINTERSTORE",
     "Name": "SINTERSTORE",
     "Summary": "Stores the intersect of multiple sets in a key.",
@@ -5666,6 +5788,58 @@
     ]
   },
   {
+    "Command": "ZMPOP",
+    "Name": "ZMPOP",
+    "Summary": "Returns the highest- or lowest-scoring members from one or more sorted sets after removing them. Deletes the sorted set if the last member was popped.",
+    "Group": "SortedSet",
+    "Complexity": "O(K) \u002B O(M*log(N)) where K is the number of provided keys, N being the number of elements in the sorted set, and M being the number of elements popped.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "WHERE",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIN",
+            "DisplayText": "min",
+            "Type": "PureToken",
+            "Token": "MIN"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MAX",
+            "DisplayText": "max",
+            "Type": "PureToken",
+            "Token": "MAX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
     "Command": "ZMSCORE",
     "Name": "ZMSCORE",
     "Summary": "Returns the score of one or more members in a sorted set.",
@@ -5919,6 +6093,92 @@
     ]
   },
   {
+    "Command": "ZRANGESTORE",
+    "Name": "ZRANGESTORE",
+    "Summary": "Stores a range of members from sorted set in a key.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements stored into the destination key.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DST",
+        "DisplayText": "dst",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "SRC",
+        "DisplayText": "src",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN",
+        "DisplayText": "min",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAX",
+        "DisplayText": "max",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "SORTBY",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BYSCORE",
+            "DisplayText": "byscore",
+            "Type": "PureToken",
+            "Token": "BYSCORE"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BYLEX",
+            "DisplayText": "bylex",
+            "Type": "PureToken",
+            "Token": "BYLEX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "REV",
+        "DisplayText": "rev",
+        "Type": "PureToken",
+        "Token": "REV",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "LIMIT",
+        "Type": "Block",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "ZRANK",
     "Name": "ZRANK",
     "Summary": "Returns the index of a member in a sorted set ordered by ascending scores.",
@@ -6090,6 +6350,57 @@
         "Type": "PureToken",
         "Token": "WITHSCORES",
         "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZREVRANGEBYLEX",
+    "Name": "ZREVRANGEBYLEX",
+    "Summary": "Returns members in a sorted set within a lexicographical range in reverse order.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060REV\u0060 and \u0060BYLEX\u0060 arguments",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAX",
+        "DisplayText": "max",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN",
+        "DisplayText": "min",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "LIMIT",
+        "Type": "Block",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
       }
     ]
   },

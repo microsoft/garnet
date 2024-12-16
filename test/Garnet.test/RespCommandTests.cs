@@ -365,6 +365,9 @@ namespace Garnet.test
                 RespCommand.CLIENT_INFO,
                 RespCommand.CLIENT_LIST,
                 RespCommand.CLIENT_KILL,
+                RespCommand.CLIENT_GETNAME,
+                RespCommand.CLIENT_SETNAME,
+                RespCommand.CLIENT_SETINFO,
                 // Command
                 RespCommand.COMMAND,
                 RespCommand.COMMAND_COUNT,

@@ -3869,6 +3869,79 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        [Description("Basic case - Get name with default name")]
+        public void ClientGetNameBasicTest()
+        {
+            var config = TestUtils.GetConfig();
+            using var redis = ConnectionMultiplexer.Connect(config);
+            var db = redis.GetDatabase(0);
+
+            var result = (string)db.Execute("CLIENT", "GETNAME");
+            ClassicAssert.AreEqual(config.ClientName, result);
+        }
+
+        [Test]
+        [Description("Get name after setting a name")]
+        public void ClientGetNameAfterSetNameTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.Execute("CLIENT", "SETNAME", "testname");
+            var result = (string)db.Execute("CLIENT", "GETNAME");
+            ClassicAssert.AreEqual("testname", result);
+        }
+
+        [Test]
+        [TestCase("validname", true, Description = "Set valid name")]
+        [TestCase("", false, Description = "Set empty name")]
+        [TestCase(null, false, Description = "Set null name")]
+        [TestCase("name with spaces", false, Description = "Set name with spaces")]
+        public void ClientSetNameTest(string name, bool shouldSucceed)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            if (shouldSucceed)
+            {
+                var result = (string)db.Execute("CLIENT", "SETNAME", name);
+                ClassicAssert.AreEqual("OK", result);
+
+                var getName = (string)db.Execute("CLIENT", "GETNAME");
+                ClassicAssert.AreEqual(name, getName);
+            }
+            else
+            {
+                Assert.Throws<RedisServerException>(() => db.Execute("CLIENT", "SETNAME", name));
+            }
+        }
+
+        [Test]
+        [TestCase("LIB-NAME", "mylib", Description = "Set only library name")]
+        [TestCase("LIB-VER", "1.0.0", Description = "Set only library version")]
+        public void ClientSetInfoSingleOptionTest(string option, string value)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = (string)db.Execute("CLIENT", "SETINFO", option, value);
+            ClassicAssert.AreEqual("OK", result);
+
+            var actual = ((string)db.Execute("CLIENT", "INFO")).Split(" ").First(x => x.StartsWith(option, StringComparison.OrdinalIgnoreCase)).Substring(option.Length + 1);
+            ClassicAssert.AreEqual(value, actual);
+        }
+
+        [Test]
+        [Description("Test invalid SETINFO options")]
+        public void ClientSetInfoInvalidOptionsTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            Assert.Throws<RedisServerException>(() => db.Execute("CLIENT", "SETINFO", "INVALID-OPTION", "value"));
+        }
+
         /// <summary>
         /// Check that list is non-empty, and has the minimum required fields.
         /// </summary>
@@ -3886,6 +3959,8 @@ namespace Garnet.test
                 AssertField(line, flags, "age");
                 AssertField(line, flags, "flags");
                 AssertField(line, flags, "resp");
+                AssertField(line, flags, "lib-name");
+                AssertField(line, flags, "lib-ver");
             }
 
             // Check that a given flag is set

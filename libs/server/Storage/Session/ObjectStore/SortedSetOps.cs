@@ -693,6 +693,111 @@ namespace Garnet.server
         => RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref output);
 
         /// <summary>
+        /// ZRANGESTORE - Stores a range of sorted set elements into a destination key.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="dstKey">The destination key where the range will be stored.</param>
+        /// <param name="srcKey">The source key from which the range will be taken.</param>
+        /// <param name="input">The input object containing range parameters.</param>
+        /// <param name="result">The result of the operation, indicating the number of elements stored.</param>
+        /// <param name="objectStoreContext">The context of the object store.</param>
+        /// <returns>Returns a GarnetStatus indicating the success or failure of the operation.</returns>
+        public unsafe GarnetStatus SortedSetRangeStore<TObjectContext>(ArgSlice dstKey, ArgSlice srcKey, ref ObjectInput input, out int result, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            if (txnManager.ObjectStoreLockableContext.Session is null)
+                ThrowObjectStoreUninitializedException();
+
+            result = 0;
+
+            if (dstKey.Length == 0 || srcKey.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(dstKey, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(srcKey, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            // SetObject
+            var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                SpanByteAndMemory rangeOutputMem = default;
+                var rangeOutput = new GarnetObjectStoreOutput() { spanByteAndMemory = rangeOutputMem };
+                var status = SortedSetRange(srcKey.ToArray(), ref input, ref rangeOutput, ref objectStoreLockableContext);
+                rangeOutputMem = rangeOutput.spanByteAndMemory;
+
+                if (status == GarnetStatus.WRONGTYPE)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                if (status == GarnetStatus.NOTFOUND)
+                {
+                    // Expire/Delete the destination key if the source key is not found
+                    _ = EXPIRE(dstKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None, ref lockableContext, ref objectStoreLockableContext);
+                    return GarnetStatus.OK;
+                }
+
+                Debug.Assert(!rangeOutputMem.IsSpanByte, "Output should not be in SpanByte format when the status is OK");
+
+                var rangeOutputHandler = rangeOutputMem.Memory.Memory.Pin();
+                try
+                {
+                    var rangeOutPtr = (byte*)rangeOutputHandler.Pointer;
+                    ref var currOutPtr = ref rangeOutPtr;
+                    var endOutPtr = rangeOutPtr + rangeOutputMem.Length;
+
+                    var destinationKey = dstKey.ToArray();
+                    objectStoreLockableContext.Delete(ref destinationKey);
+
+                    RespReadUtils.ReadUnsignedArrayLength(out var arrayLen, ref currOutPtr, endOutPtr);
+                    Debug.Assert(arrayLen % 2 == 0, "Should always contain element and its score");
+                    result = arrayLen / 2;
+
+                    if (result > 0)
+                    {
+                        parseState.Initialize(arrayLen); // 2 elements per pair (result * 2)
+
+                        for (int j = 0; j < result; j++)
+                        {
+                            // Read member/element into parse state
+                            parseState.Read((2 * j) + 1, ref currOutPtr, endOutPtr);
+                            // Read score into parse state
+                            parseState.Read(2 * j, ref currOutPtr, endOutPtr);
+                        }
+
+                        var zAddInput = new ObjectInput(new RespInputHeader
+                        {
+                            type = GarnetObjectType.SortedSet,
+                            SortedSetOp = SortedSetOperation.ZADD,
+                        }, ref parseState);
+
+                        var zAddOutput = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+                        RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
+                    }
+                }
+                finally
+                {
+                    rangeOutputHandler.Dispose();
+                }
+                return status;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
+
+        /// <summary>
         /// Removes the specified members from the sorted set stored at key.
         /// Non existing members are ignored.
         /// </summary>
@@ -926,6 +1031,62 @@ namespace Garnet.server
             }
 
             return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// Removes and returns up to count members and their scores from the first sorted set that contains a member.
+        /// </summary>
+        public unsafe GarnetStatus SortedSetMPop(ReadOnlySpan<ArgSlice> keys, int count, bool lowScoresFirst, out ArgSlice poppedKey, out (ArgSlice member, ArgSlice score)[] pairs)
+        {
+            if (txnManager.ObjectStoreLockableContext.Session is null)
+                ThrowObjectStoreUninitializedException();
+
+            pairs = default;
+            poppedKey = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                foreach (var key in keys)
+                    txnManager.SaveKeyEntryToLock(key, true, LockType.Exclusive);
+                txnManager.Run(true);
+            }
+
+            var storeLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                // Try popping from each key until we find one with members
+                foreach (var key in keys)
+                {
+                    if (key.Length == 0) continue;
+
+                    var status = SortedSetPop(key, count, lowScoresFirst, out pairs, ref storeLockableContext);
+                    if (status == GarnetStatus.OK && pairs != null && pairs.Length > 0)
+                    {
+                        poppedKey = key;
+                        return status;
+                    }
+
+                    if (status != GarnetStatus.OK && status != GarnetStatus.NOTFOUND)
+                    {
+                        return status;
+                    }
+                }
+
+                return GarnetStatus.OK;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
         }
     }
 }

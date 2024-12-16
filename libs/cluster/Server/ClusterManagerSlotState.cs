@@ -383,6 +383,20 @@ namespace Garnet.cluster
                 FlushConfig();
                 return true;
             }
+            else
+            {
+                while (true)
+                {
+                    current = currentConfig;
+                    workerId = current.GetWorkerIdFromNodeId(nodeid);
+                    var newConfig = current.UpdateSlotState(slot, workerId, SlotState.STABLE);
+
+                    if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                        break;
+                }
+                FlushConfig();
+                logger?.LogTrace("[Processed] SetSlot {slot} FORCED TO {nodeId}", slot, nodeid);
+            }
             return true;
         }
 
