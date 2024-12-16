@@ -19,16 +19,16 @@ namespace BDN.benchmark.Network
 
 
         [Benchmark]
-        public void TestNetworkTask()
+        public async Task TestNetworkTask()
         {
             RemoteCertificateValidationCallback certValidation = (a, b, c, d) => { return true; };
             using (var client = new TcpClient())
             {
-                client.ConnectAsync("127.0.0.1", 3280).ConfigureAwait(false).GetAwaiter().GetResult();
+                await client.ConnectAsync("127.0.0.1", 3280);
                 using (var sslStream = new SslStream(client.GetStream(), false, certValidation, null))
                 {
-                    sslStream.AuthenticateAsClientAsync("127.0.0.1").Wait();
-                    sslStream.Write(_networkEchoCommandBuffer);
+                    await sslStream.AuthenticateAsClientAsync("127.0.0.1");
+                    await sslStream.WriteAsync(_networkEchoCommandBuffer);
                     sslStream.Flush();
                 }
             }
