@@ -216,7 +216,7 @@ namespace Garnet.server
                     case RespCommand.SETEXXX:
                         if (!retainEtag)
                             etagOffset = 0;
-                       return sizeof(int) + input.parseState.GetArgSliceByRef(0).Length + (input.arg1 == 0 ? 0 : sizeof(long)) + etagOffset; 
+                        return sizeof(int) + input.parseState.GetArgSliceByRef(0).Length + (input.arg1 == 0 ? 0 : sizeof(long)) + etagOffset;
                     case RespCommand.PERSIST:
                         return sizeof(int) + t.LengthWithoutMetadata;
                     case RespCommand.SETWITHETAG:

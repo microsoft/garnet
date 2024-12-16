@@ -686,7 +686,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.StringSet(key, bitmap));
 
             // first unset bit, should increment
-            for (int i = 0; i < bitmapSize; i ++)
+            for (int i = 0; i < bitmapSize; i++)
             {
                 // first unset bit
                 ClassicAssert.AreEqual(i, db.StringBitPosition(key, false));

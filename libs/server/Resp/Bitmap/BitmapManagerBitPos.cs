@@ -175,7 +175,7 @@ namespace Garnet.server
 
             // if we are exceeding it, return -1
             if (pos >= len * 8)
-             return -1;
+                return -1;
 
             if (payload == mask)
                 return pos + 0;
