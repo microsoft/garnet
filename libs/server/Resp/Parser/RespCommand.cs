@@ -75,6 +75,8 @@ namespace Garnet.server
         ZCARD,
         ZCOUNT,
         ZDIFF,
+        ZINTER,
+        ZINTERCARD,
         ZLEXCOUNT,
         ZMSCORE,
         ZRANDMEMBER,
@@ -163,6 +165,7 @@ namespace Garnet.server
         ZDIFFSTORE,
         ZINCRBY,
         ZMPOP,
+        ZINTERSTORE,
         ZPOPMAX,
         ZPOPMIN,
         ZRANGESTORE,
@@ -1226,6 +1229,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.ZSCORE;
                                         }
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZINTER\r\n"u8))
+                                        {
+                                            return RespCommand.ZINTER;
+                                        }
                                         break;
                                 }
 
@@ -1435,6 +1442,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.BRPOPLPUSH;
                                 }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nZINT"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("ERCARD\r\n"u8))
+                                {
+                                    return RespCommand.ZINTERCARD;
+                                }
                                 break;
 
                             case 11:
@@ -1473,6 +1484,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZRANG"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("ESTORE\r\n"u8))
                                 {
                                     return RespCommand.ZRANGESTORE;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZINTE"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RSTORE\r\n"u8))
+                                {
+                                    return RespCommand.ZINTERSTORE;
                                 }
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZUNIO"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("NSTORE\r\n"u8))
                                 {

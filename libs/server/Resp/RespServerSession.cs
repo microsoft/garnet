@@ -623,6 +623,9 @@ namespace Garnet.server
                 RespCommand.ZREVRANGEBYLEX => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZSCAN => ObjectScan(GarnetObjectType.SortedSet, ref storageApi),
+                RespCommand.ZINTER => SortedSetIntersect(ref storageApi),
+                RespCommand.ZINTERCARD => SortedSetIntersectLength(ref storageApi),
+                RespCommand.ZINTERSTORE => SortedSetIntersectStore(ref storageApi),
                 RespCommand.ZUNION => SortedSetUnion(ref storageApi),
                 RespCommand.ZUNIONSTORE => SortedSetUnionStore(ref storageApi),
                 //SortedSet for Geo Commands
