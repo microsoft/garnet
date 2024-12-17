@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -1147,6 +1148,160 @@ namespace Garnet.server
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Processes COMMAND GETKEYS subcommand.
+        /// </summary>
+        private bool NetworkCOMMAND_GETKEYS()
+        {
+            if (parseState.Count == 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMAND_GETKEYS));
+            }
+
+            var cmdName = parseState.GetString(0).ToUpperInvariant();
+            bool cmdFound = RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
+                          storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo);
+
+            if (!cmdFound)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_INVALID_COMMAND_SPECIFIED);
+            }
+
+            if (cmdInfo.KeySpecifications == null || cmdInfo.KeySpecifications.Length == 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
+            }
+
+            var keyList = new List<byte[]>();
+            foreach (var spec in cmdInfo.KeySpecifications)
+            {
+                ExtractKeys(spec, keyList);
+            }
+
+            while (!RespWriteUtils.WriteArrayLength(keyList.Count, ref dcurr, dend))
+                SendAndReset();
+
+            foreach (var key in keyList)
+            {
+                while (!RespWriteUtils.WriteBulkString(key, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes COMMAND GETKEYSANDFLAGS subcommand.
+        /// </summary>
+        private bool NetworkCOMMAND_GETKEYSANDFLAGS()
+        {
+            if (parseState.Count == 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMAND_GETKEYSANDFLAGS));
+            }
+
+            var cmdName = parseState.GetString(0).ToUpperInvariant();
+            bool cmdFound = RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
+                          storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo);
+
+            if (!cmdFound)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_INVALID_COMMAND_SPECIFIED);
+            }
+
+            if (cmdInfo.KeySpecifications == null || cmdInfo.KeySpecifications.Length == 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
+            }
+
+            var keyList = new List<byte[]>();
+            var flagsList = new List<string[]>();
+
+            foreach (var spec in cmdInfo.KeySpecifications)
+            {
+                var keyCount = keyList.Count;
+                ExtractKeys(spec, keyList);
+                var flags = EnumUtils.GetEnumDescriptions(spec.Flags);
+                for (int i = keyCount; i < keyList.Count; i++)
+                {
+                    flagsList.Add(flags);
+                }
+            }
+
+            while (!RespWriteUtils.WriteArrayLength(keyList.Count, ref dcurr, dend))
+                SendAndReset();
+
+            for (int i = 0; i < keyList.Count; i++)
+            {
+                while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.WriteBulkString(keyList[i], ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.WriteArrayLength(flagsList[i].Length, ref dcurr, dend))
+                    SendAndReset();
+
+                foreach (var flag in flagsList[i])
+                {
+                    while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(flag), ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+
+            return true;
+        }
+
+        private void ExtractKeys(RespCommandKeySpecification spec, List<byte[]> keyList)
+        {
+            int startIndex = 0;
+
+            if (spec.BeginSearch is BeginSearchIndex bsIndex)
+            {
+                startIndex = bsIndex.Index;
+            }
+            else if (spec.BeginSearch is BeginSearchKeyword bsKeyword)
+            {
+                for (int i = bsKeyword.StartFrom; i < parseState.Count; i++)
+                {
+                    if (parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(Encoding.ASCII.GetBytes(bsKeyword.Keyword)))
+                    {
+                        startIndex = i + 1;
+                        break;
+                    }
+                }
+            }
+
+            if (startIndex >= parseState.Count)
+                return;
+
+            if (spec.FindKeys is FindKeysRange range)
+            {
+                var lastKey = range.LastKey == -1 ? parseState.Count - 1 : 
+                            Math.Min(startIndex + range.LastKey, parseState.Count - 1);
+                
+                for (int i = startIndex; i <= lastKey; i += range.KeyStep)
+                {
+                    if (i < parseState.Count)
+                    {
+                        keyList.Add(parseState.GetArgSliceByRef(i).ToArray());
+                    }
+                }
+            }
+            else if (spec.FindKeys is FindKeysKeyNum keyNum)
+            {
+                if (keyNum.KeyNumIdx >= 0 && keyNum.KeyNumIdx < parseState.Count &&
+                    parseState.TryGetInt(startIndex + keyNum.KeyNumIdx, out var count))
+                {
+                    var firstKey = startIndex + keyNum.FirstKey;
+                    for (int i = 0; i < count && firstKey + i * keyNum.KeyStep < parseState.Count; i++)
+                    {
+                        keyList.Add(parseState.GetArgSliceByRef(firstKey + i * keyNum.KeyStep).ToArray());
+                    }
+                }
+            }
         }
 
         private bool NetworkECHO()
