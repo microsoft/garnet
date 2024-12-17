@@ -285,7 +285,6 @@ namespace Garnet.server
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref value, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
-                    // HK TODO: Should this be updating etag?
                     return true;
                 case RespCommand.SETWITHETAG:
                     // SETWITHETAG WILL OVERRIDE the existing value, unless sent with RETAIN ETAG and already has etag

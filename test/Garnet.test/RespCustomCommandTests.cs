@@ -158,7 +158,6 @@ namespace Garnet.test
         }
     }
 
-    // one txn that works with etag data in multiple ways
     public class RandomSubstituteOrExpandValForKeyTxn : CustomTransactionProcedure
     {
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
@@ -221,11 +220,6 @@ namespace Garnet.test
             garnetApi.Increment(keyToIncrment, out long _, 1);
         }
     }
-
-    // HK TODO:
-    // one custom proc that reads and works with etag data
-    // assert that all reads inside of a txn or custom for a previously etag are hiding etag
-    // assert that any writes on the etag set data modified the etag on it
 
     [TestFixture]
     public class RespCustomCommandTests
