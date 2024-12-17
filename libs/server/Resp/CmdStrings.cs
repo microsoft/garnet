@@ -120,9 +120,12 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LEFT => "LEFT"u8;
         public static ReadOnlySpan<byte> BYLEX => "BYLEX"u8;
         public static ReadOnlySpan<byte> REV => "REV"u8;
-        public static ReadOnlySpan<byte> LIMIT => "LIMIT"u8;
+        public static ReadOnlySpan<byte> WEIGHTS => "WEIGHTS"u8;
+        public static ReadOnlySpan<byte> AGGREGATE => "AGGREGATE"u8;
+        public static ReadOnlySpan<byte> SUM => "SUM"u8;
         public static ReadOnlySpan<byte> MIN => "MIN"u8;
         public static ReadOnlySpan<byte> MAX => "MAX"u8;
+        public static ReadOnlySpan<byte> LIMIT => "LIMIT"u8;
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
 
         /// <summary>
@@ -228,7 +231,9 @@ namespace Garnet.server
             "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
         public const string GenericSyntaxErrorOption = "ERR Syntax error in {0} option '{1}'";
         public const string GenericParamShouldBeGreaterThanZero = "ERR Parameter `{0}` should be greater than 0";
+        public const string GenericErrNotAFloat = "ERR {0} value is not a valid float";
         public const string GenericErrCantBeNegative = "ERR {0} can't be negative";
+        public const string GenericErrAtLeastOneKey = "ERR at least 1 input key is needed for '{0}' command";
         public const string GenericErrShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
         public const string GenericErrMandatoryMissing = "Mandatory argument {0} is missing or not at the right position";
         public const string GenericErrMustMatchNoOfArgs = "The `{0}` parameter must match the number of arguments";
