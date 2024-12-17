@@ -37,6 +37,8 @@ namespace BDN.benchmark.Network
         {
             try
             {
+                ThreadPool.SetMinThreads(4, 4);
+                ThreadPool.SetMaxThreads(4, 4);
                 var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
                 _networkBufferSettings = new NetworkBufferSettings(serverBufferSize, serverBufferSize);
                 _fixedBufferPool = _networkBufferSettings.CreateBufferPool();
@@ -64,7 +66,6 @@ namespace BDN.benchmark.Network
                 var client = new TcpClient();
                 await client.ConnectAsync("127.0.0.1", 3278);
                 var sslStream = new SslStream(client.GetStream(), false, certValidation, null);
-                await sslStream.AuthenticateAsClientAsync("127.0.0.1");
                 _tcpClients.Add(client, sslStream);
             }
         }
