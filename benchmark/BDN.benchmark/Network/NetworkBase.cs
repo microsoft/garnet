@@ -1,14 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
-using BDN.benchmark.Operations;
-using BenchmarkDotNet.Attributes;
-using Garnet.server.Auth.Settings;
-using Garnet.server;
-using System.Runtime.CompilerServices;
-using Garnet.server.TLS;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
+using BenchmarkDotNet.Attributes;
+using Garnet.server;
+using Garnet.server.TLS;
 
 namespace BDN.benchmark.Network
 {
@@ -36,8 +31,6 @@ namespace BDN.benchmark.Network
 
                 var server = new GarnetServerTcp("127.0.0.1", 3278, 0, tlsOptions);
                 _server = server;
-                _networkEchoCommandBuffer = Encoding.ASCII.GetBytes("\r\n\"*1\\r\\n$1\\r\\nECHO\\r\\n\"");
-
                 _server.Start();
             }
             catch (Exception ex)
