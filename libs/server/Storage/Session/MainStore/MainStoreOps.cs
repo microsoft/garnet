@@ -1227,7 +1227,6 @@ namespace Garnet.server
                 CompletePendingForSession(ref status, ref _output, ref context);
 
             Debug.Assert(_output.IsSpanByte);
-            Debug.Assert(_output.Length == outputBufferLength);
 
             output = NumUtils.BytesToLong(_output.Length, outputBuffer);
             return GarnetStatus.OK;

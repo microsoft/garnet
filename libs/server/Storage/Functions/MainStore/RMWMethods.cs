@@ -632,6 +632,12 @@ namespace Garnet.server
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
+                        if (recordInfo.ETag)
+                        {
+                            CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output);
+                            return true;
+                        }
+
                         var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
                         var expiration = input.arg1;
                         if (expiration == -1)
@@ -658,7 +664,7 @@ namespace Garnet.server
 
                         var valueLength = value.LengthWithoutMetadata;
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        var ret = functions.InPlaceUpdater(key.AsReadOnlySpan(), ref input, value.AsSpan(), ref valueLength, ref outp, ref rmwInfo);
+                        var ret = functions.InPlaceUpdater(key.AsReadOnlySpan(), ref input, value.AsSpan(etagIgnoredOffset), ref valueLength, ref outp, ref rmwInfo);
                         Debug.Assert(valueLength <= value.LengthWithoutMetadata);
 
                         // Adjust value length if user shrinks it
@@ -1045,6 +1051,12 @@ namespace Garnet.server
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
+                        if (recordInfo.ETag)
+                        {
+                            CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output);
+                            return true;
+                        }
+
                         var functions = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd);
                         var expiration = input.arg1;
                         if (expiration == 0)
