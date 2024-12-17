@@ -33,21 +33,14 @@ namespace BDN.benchmark.Network
         public async Task TestNetworkTask()
         {
             var sslStreams = GetStreams();
-            var echoBuffer = System.Text.Encoding.ASCII.GetBytes("PING\r\n");
             var sslStreamWrites = new List<Task>();
+            var sslClientAuthOptions = new SslClientAuthenticationOptions { RemoteCertificateValidationCallback = certValidation };
             foreach (var stream in sslStreams)
             {
-                sslStreamWrites.Add(stream.WriteAsync(echoBuffer, 0, echoBuffer.Length));
+                sslStreamWrites.Add(stream.AuthenticateAsClientAsync(sslClientAuthOptions));
             }
             await Task.WhenAll(sslStreamWrites);
 
         }
-
-        public void Test()
-        {
-            
-
-        }
-
     }
 }
