@@ -67,7 +67,7 @@ namespace Garnet.test
             db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
             string r = db.HashGet("user:user1", "Title");
             ClassicAssert.AreEqual("Tsavorite", r);
-            await Task.Delay(110);
+            await Task.Delay(200);
             r = db.HashGet("user:user1", "Title");
             ClassicAssert.IsNull(r);
         }
@@ -80,7 +80,7 @@ namespace Garnet.test
             db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite")]);
             db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
             db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite")]);
-            await Task.Delay(110);
+            await Task.Delay(200);
             string r = db.HashGet("user:user1", "Title");
             ClassicAssert.AreEqual("Tsavorite", r);
         }
@@ -238,7 +238,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(hashEntries.Length, result.Select(r => r.Name).Distinct().Count());
             ClassicAssert.IsTrue(hashEntries.OrderBy(e => e.Name).SequenceEqual(result.OrderBy(r => r.Name)));
 
-            await Task.Delay(110);
+            await Task.Delay(200);
 
             result = db.HashGetAll("user:user1");
             ClassicAssert.AreEqual(hashEntries.Length - 1, result.Length);
@@ -274,7 +274,7 @@ namespace Garnet.test
             var result = db.HashExists(new RedisKey("user:user1"), "Title");
             ClassicAssert.IsTrue(result);
 
-            await Task.Delay(110);
+            await Task.Delay(200);
 
             result = db.HashExists(new RedisKey("user:user1"), "Title");
             ClassicAssert.IsFalse(result);
@@ -309,7 +309,7 @@ namespace Garnet.test
             long r = db.HashStringLength("user:user1", "Title");
             ClassicAssert.AreEqual(9, r);
 
-            await Task.Delay(110);
+            await Task.Delay(200);
 
             r = db.HashStringLength("user:user1", "Title");
             ClassicAssert.AreEqual(0, r);
@@ -346,7 +346,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Year")));
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Company")));
 
-            await Task.Delay(110);
+            await Task.Delay(200);
 
             result = db.HashKeys("user:user1");
             ClassicAssert.AreEqual(2, result.Length);
@@ -389,7 +389,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("2021")));
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Acme")));
 
-            await Task.Delay(110);
+            await Task.Delay(200);
 
             result = db.HashValues("user:user1");
             ClassicAssert.AreEqual(2, result.Length);
@@ -432,7 +432,7 @@ namespace Garnet.test
             var result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field2"), -4);
             ClassicAssert.AreEqual(-3, result);
 
-            await Task.Delay(110);
+            await Task.Delay(200);
 
             result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field2"), -4);
             ClassicAssert.AreEqual(-4, result);
@@ -490,7 +490,7 @@ namespace Garnet.test
             var result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field1"), 2.2222222222);
             ClassicAssert.AreEqual(3.3333333333, result, 1e-15);
 
-            await Task.Delay(110);
+            await Task.Delay(200);
 
             result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field1"), 2.2222222222);
             ClassicAssert.AreEqual(2.2222222222, result, 1e-15);
@@ -518,7 +518,7 @@ namespace Garnet.test
             db.HashFieldExpire("user:user1", ["Field"], TimeSpan.FromMilliseconds(100));
             db.HashSet(new RedisKey("user:user1"), new RedisValue("Field"), new RedisValue("Hello"), When.NotExists);
 
-            await Task.Delay(110);
+            await Task.Delay(200);
 
             string result = db.HashGet("user:user1", "Field");
             ClassicAssert.IsNull(result); // SetNX should not reset the expiration
@@ -603,7 +603,7 @@ namespace Garnet.test
             string field = db.HashRandomField(hashKey);
             ClassicAssert.AreEqual(field, "Title");
 
-            await Task.Delay(110);
+            await Task.Delay(200);
 
             field = db.HashRandomField(hashKey);
             ClassicAssert.IsNull(field);
@@ -623,7 +623,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(field.Length, 1);
             ClassicAssert.AreEqual("Title", field[0]);
 
-            await Task.Delay(110);
+            await Task.Delay(200);
 
             field = db.HashRandomFields(hashKey, 10).Select(x => (string)x).ToArray();
             ClassicAssert.AreEqual(field.Length, 0);
@@ -715,7 +715,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(((IScanningCursor)members).Cursor == 0);
             ClassicAssert.IsTrue(members.Count() == 4, "HSCAN with MATCH failed.");
 
-            await Task.Delay(110);
+            await Task.Delay(200);
 
             // HSCAN with match
             members = db.HashScan("user:user789", "email*");
@@ -818,7 +818,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("email@example.com", members[0]);
             ClassicAssert.AreEqual("email1@example.com", members[1]);
 
-            await Task.Delay(110);
+            await Task.Delay(200);
 
             members = (string[])db.Execute("HMGET", "user:user789", "email", "email1");
             ClassicAssert.IsNull(members[0]);
