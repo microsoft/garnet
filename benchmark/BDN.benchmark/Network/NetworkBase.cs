@@ -64,7 +64,7 @@ namespace BDN.benchmark.Network
                 var sslStream = new SslStream(client.GetStream(), false, CertValidationCallback, null);
                 TcpClients.Add(client, sslStream);
             }
-            SslStreams = [..TcpClients.Values];
+            SslStreams = [.. TcpClients.Values];
         }
 
         /// <summary>
