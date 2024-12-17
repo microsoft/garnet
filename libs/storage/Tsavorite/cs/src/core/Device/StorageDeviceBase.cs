@@ -82,8 +82,9 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="filename">Name of the file to use</param>
         /// <param name="sectorSize">The smallest unit of write of the underlying storage device (e.g. 512 bytes for a disk) </param>
-        /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPAPCITY_UNSPECIFIED if there is no such limit </param>
-        public StorageDeviceBase(string filename, uint sectorSize, long capacity)
+        /// <param name="capacity">The maximal number of bytes this storage device can accommodate, or CAPAPCITY_UNSPECIFIED if there is no such limit </param>
+        /// <param name="readOnly">Open file in readOnly mode </param>
+        public StorageDeviceBase(string filename, uint sectorSize, long capacity, bool readOnly = false)
         {
             FileName = filename;
             SectorSize = sectorSize;

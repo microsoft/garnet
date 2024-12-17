@@ -456,13 +456,13 @@ namespace Tsavorite.core
         /// <param name="currentAddress">LogicalAddress of the record to be copied</param>
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ConditionalScanPush(ScanCursorState<TKey, TValue> scanCursorState, RecordInfo recordInfo, ref TKey key, ref TValue value, long currentAddress, long untilAddress)
+        internal Status ConditionalScanPush(ScanCursorState<TKey, TValue> scanCursorState, RecordInfo recordInfo, ref TKey key, ref TValue value, long currentAddress, long untilAddress, long maxAddress)
         {
             UnsafeResumeThread();
             try
             {
                 return store.hlogBase.ConditionalScanPush<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
-                        sessionFunctions, scanCursorState, recordInfo, ref key, ref value, currentAddress, untilAddress);
+                        sessionFunctions, scanCursorState, recordInfo, ref key, ref value, currentAddress, untilAddress, maxAddress);
             }
             finally
             {

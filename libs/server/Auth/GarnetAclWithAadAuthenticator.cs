@@ -38,5 +38,13 @@ namespace Garnet.server.Auth
             }
             return false;
         }
+
+        public override bool IsAuthenticated
+        {
+            get
+            {
+                return this._garnetAuthenticator.IsAuthenticated && base.IsAuthenticated;
+            }
+        }
     }
 }

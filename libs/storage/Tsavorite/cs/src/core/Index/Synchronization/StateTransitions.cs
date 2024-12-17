@@ -47,6 +47,9 @@ namespace Tsavorite.core
         /// <summary>Wait for an index-only checkpoint to complete</summary>
         WAIT_INDEX_ONLY_CHECKPOINT,
 
+        /// <summary>Wait for pre-scan (until ReadOnlyAddress) to complete for streaming snapshot</summary>
+        PREP_STREAMING_SNAPSHOT_CHECKPOINT,
+
         /// <summary>Prepare for a checkpoint, still in (v) version</summary>
         PREPARE,
 

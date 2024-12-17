@@ -623,6 +623,9 @@ namespace Garnet.server
                 RespCommand.ZREVRANGEBYLEX => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZSCAN => ObjectScan(GarnetObjectType.SortedSet, ref storageApi),
+                RespCommand.ZINTER => SortedSetIntersect(ref storageApi),
+                RespCommand.ZINTERCARD => SortedSetIntersectLength(ref storageApi),
+                RespCommand.ZINTERSTORE => SortedSetIntersectStore(ref storageApi),
                 //SortedSet for Geo Commands
                 RespCommand.GEOADD => GeoAdd(ref storageApi),
                 RespCommand.GEOHASH => GeoCommands(cmd, ref storageApi),
@@ -663,6 +666,7 @@ namespace Garnet.server
                 RespCommand.BRPOP => ListBlockingPop(cmd),
                 RespCommand.BLMOVE => ListBlockingMove(),
                 RespCommand.BRPOPLPUSH => ListBlockingPopPush(),
+                RespCommand.BLMPOP => ListBlockingPopMultiple(),
                 // Hash Commands
                 RespCommand.HSET => HashSet(cmd, ref storageApi),
                 RespCommand.HMSET => HashSet(cmd, ref storageApi),
@@ -745,7 +749,10 @@ namespace Garnet.server
                 RespCommand.SCAN => NetworkSCAN(ref storageApi),
                 RespCommand.TYPE => NetworkTYPE(ref storageApi),
                 // Script Commands
-                RespCommand.SCRIPT => TrySCRIPT(),
+                RespCommand.SCRIPT_EXISTS => NetworkScriptExists(),
+                RespCommand.SCRIPT_FLUSH => NetworkScriptFlush(),
+                RespCommand.SCRIPT_LOAD => NetworkScriptLoad(),
+
                 RespCommand.EVAL => TryEVAL(),
                 RespCommand.EVALSHA => TryEVALSHA(),
                 _ => Process(command)
@@ -775,8 +782,8 @@ namespace Garnet.server
                 // Perform the operation
                 TryTransactionProc(currentCustomTransaction.id,
                     customCommandManagerSession
-                        .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager, scratchBufferManager)
-                        .Item1);
+                        .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager,
+                            scratchBufferManager, out _));
                 currentCustomTransaction = null;
                 return true;
             }
@@ -815,7 +822,7 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomRawStringCommand(currentCustomRawStringCommand.GetRespCommand(),
+            TryCustomRawStringCommand((RespCommand)currentCustomRawStringCommand.id,
                 currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
             currentCustomRawStringCommand = null;
             return true;
@@ -831,7 +838,7 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomObjectCommand(currentCustomObjectCommand.GetObjectType(), currentCustomObjectCommand.subid,
+            TryCustomObjectCommand((GarnetObjectType)currentCustomObjectCommand.id, currentCustomObjectCommand.subid,
                 currentCustomObjectCommand.type, ref storageApi);
             currentCustomObjectCommand = null;
             return true;
@@ -839,7 +846,7 @@ namespace Garnet.server
 
         private bool IsCommandArityValid(string cmdName, int count)
         {
-            if (storeWrapper.customCommandManager.CustomCommandsInfo.TryGetValue(cmdName, out var cmdInfo))
+            if (storeWrapper.customCommandManager.customCommandsInfo.TryGetValue(cmdName, out var cmdInfo))
             {
                 Debug.Assert(cmdInfo != null, "Custom command info should not be null");
                 if ((cmdInfo.Arity > 0 && count != cmdInfo.Arity - 1) ||
