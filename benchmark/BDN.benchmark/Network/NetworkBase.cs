@@ -22,6 +22,7 @@ namespace BDN.benchmark.Network
         private IGarnetServer GarnetServer;
         private Dictionary<TcpClient, SslStream> TcpClients;
         private IReadOnlyList<SslStream> SslStreams;
+        protected const int MaxConnections = 128;
 
         [GlobalSetup]
         public virtual async Task GlobalSetup()
@@ -56,7 +57,7 @@ namespace BDN.benchmark.Network
         private async Task SetupClientPool()
         {
             TcpClients = new Dictionary<TcpClient, SslStream>();
-            for (int i = 0; i < 128; i++)
+            for (int i = 0; i < MaxConnections; i++)
             {
                 var client = new TcpClient();
                 await client.ConnectAsync("127.0.0.1", 3278);
