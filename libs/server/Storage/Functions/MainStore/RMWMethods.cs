@@ -275,7 +275,6 @@ namespace Garnet.server
                 oldEtag = *(long*)value.ToPointer();
             }
 
-            // First byte of input payload identifies command
             switch (cmd)
             {
                 case RespCommand.SETEXNX:
@@ -423,7 +422,6 @@ namespace Garnet.server
 
                 case RespCommand.PEXPIRE:
                 case RespCommand.EXPIRE:
-                    // doesn't update etag    
                     var expiryExists = value.MetadataSize > 0;
 
                     var expiryValue = input.parseState.GetLong(0);
@@ -435,6 +433,8 @@ namespace Garnet.server
 
                     if (!EvaluateExpireInPlace(expireOption, expiryExists, expiryTicks, ref value, ref output))
                         return false;
+
+                    // doesn't update etag, since it's only the metadata that was updated
                     return true; ;
                 case RespCommand.PEXPIREAT:
                 case RespCommand.EXPIREAT:
@@ -448,6 +448,8 @@ namespace Garnet.server
 
                     if (!EvaluateExpireInPlace(expireOption, expiryExists, expiryTicks, ref value, ref output))
                         return false;
+
+                    // doesn't update etag, since it's only the metadata that was updated
                     return true;
 
                 case RespCommand.PERSIST:
@@ -529,11 +531,16 @@ namespace Garnet.server
 
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, v, value.Length - etagIgnoredOffset);
 
-                    if (!overflow)
-                        CopyRespNumber(bitfieldReturnValue, ref output);
-                    else
+                    if (overflow)
+                    {
                         CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                        // etag not updated
+                        return true;
+                    }
+
+                    CopyRespNumber(bitfieldReturnValue, ref output);
                     break;
+
                 case RespCommand.PFADD:
                     v = value.ToPointer();
 
