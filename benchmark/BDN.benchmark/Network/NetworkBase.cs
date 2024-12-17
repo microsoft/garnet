@@ -1,7 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-using System.Net.Security;
+using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using BenchmarkDotNet.Attributes;
@@ -9,14 +10,11 @@ using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
 using Garnet.server.TLS;
-using Microsoft.Extensions.Logging;
-using System.Collections.Concurrent;
 
 namespace BDN.benchmark.Network
 {
     public abstract class NetworkBase
     {
-        private IGarnetServer _server;
         private Socket _serverSocket;
         /// <summary>
         /// Base class for operations benchmarks
@@ -28,23 +26,26 @@ namespace BDN.benchmark.Network
         private NetworkBufferSettings _networkBufferSettings;
         private LimitedFixedBufferPool _fixedBufferPool;
         protected RemoteCertificateValidationCallback certValidation = (a, b, c, d) => { return true; };
-
+        private IGarnetServer garnetServer;
         private Dictionary<TcpClient, SslStream> _tcpClients;
-
+        private IReadOnlyList<SslStream> sslStreams;
 
         [GlobalSetup]
         public virtual async Task GlobalSetup()
         {
             try
             {
-                ThreadPool.SetMinThreads(4, 4);
-                ThreadPool.SetMaxThreads(4, 4);
+                var tlsOptions = new GarnetTlsOptions(
+                  certFileName: "testcert.pfx",
+                  certPassword: "placeholder",
+                  clientCertificateRequired: false,
+                  certificateRevocationCheckMode: X509RevocationMode.NoCheck,
+                  issuerCertificatePath: "testcert.pfx",
+                  null, 0, false, null);
                 var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
-                _networkBufferSettings = new NetworkBufferSettings(serverBufferSize, serverBufferSize);
-                _fixedBufferPool = _networkBufferSettings.CreateBufferPool();
-                activeHandlers = new ConcurrentDictionary<INetworkHandler, byte>();
-                _serverSocket = new Socket(SocketType.Stream, ProtocolType.Tcp);
-                StartSocketAccept();
+                garnetServer = new GarnetServerTcp("127.0.0.1", 3278, serverBufferSize, tlsOptions);
+                garnetServer.Start();
+                ThreadPool.SetMinThreads(4, 4);
                 await SetupClientPool();
             }
             catch (Exception ex)
@@ -55,19 +56,20 @@ namespace BDN.benchmark.Network
 
         public IReadOnlyList<SslStream> GetStreams()
         {
-            return _tcpClients.Values.ToList();
+            return sslStreams;
         }
 
         private async Task SetupClientPool()
         {
             _tcpClients = new Dictionary<TcpClient, SslStream>();
-            for (int i = 0; i < 16; i++)
+            for (int i = 0; i < 128; i++)
             {
                 var client = new TcpClient();
                 await client.ConnectAsync("127.0.0.1", 3278);
                 var sslStream = new SslStream(client.GetStream(), false, certValidation, null);
                 _tcpClients.Add(client, sslStream);
             }
+            sslStreams = [.. _tcpClients.Values];
         }
 
         public void StartSocketAccept()
@@ -95,7 +97,7 @@ namespace BDN.benchmark.Network
                            issuerCertificatePath: "testcert.pfx",
                            null, 0, false, null);
                     MockTcpNetworkHandler networkHandler = new MockTcpNetworkHandler(e.AcceptSocket, _networkBufferSettings, _fixedBufferPool, true);
-                    if(activeHandlers.TryAdd(networkHandler, 0))
+                    if (activeHandlers.TryAdd(networkHandler, 0))
                     {
                         networkHandler.Start(tlsOptions.TlsServerOptions);
                     }
@@ -119,11 +121,7 @@ namespace BDN.benchmark.Network
                 tcpClient.Value.Dispose();
                 tcpClient.Key.Dispose();
             }
-                foreach (var handler in activeHandlers)
-            {
-                handler.Key.Dispose();
-            }
-            _serverSocket.Dispose();
+            garnetServer.Dispose();
         }
     }
 }

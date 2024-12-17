@@ -28,7 +28,6 @@ namespace BDN.benchmark.Network
     [MemoryDiagnoser]
     public class Network : NetworkBase
     {
-       
         [Benchmark]
         public async Task TestNetworkTask()
         {
@@ -40,7 +39,6 @@ namespace BDN.benchmark.Network
                 sslStreamWrites.Add(stream.AuthenticateAsClientAsync(sslClientAuthOptions));
             }
             await Task.WhenAll(sslStreamWrites);
-
         }
     }
 }
