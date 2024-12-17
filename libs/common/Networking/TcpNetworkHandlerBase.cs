@@ -137,12 +137,6 @@ namespace Garnet.common
 
         void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
         {
-            if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success || serverHook.Disposed)
-            {
-                // No more things to receive
-                Dispose(e);
-                return;
-            }
             // Complete receive event and release thread while we process data async
             _ = HandleReceiveAsync(sender, e);
         }
@@ -151,12 +145,22 @@ namespace Garnet.common
         {
             try
             {
-                var receiveTask = OnNetworkReceiveAsync(e.BytesTransferred);
-                if (!receiveTask.IsCompleted)
+                do
                 {
-                    await receiveTask;
+                    if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success || serverHook.Disposed)
+                    {
+                        // No more things to receive
+                        Dispose(e);
+                        return;
+                    }
+                    var receiveTask = OnNetworkReceiveAsync(e.BytesTransferred);
+                    if (!receiveTask.IsCompleted)
+                    {
+                        await receiveTask;
+                    }
+                    NetworkBufferProcessed(sender, e);
                 }
-                NetworkBufferProcessed(sender, e);
+                while (!e.AcceptSocket.ReceiveAsync(e));
             }
             catch (Exception ex)
             {
@@ -167,10 +171,6 @@ namespace Garnet.common
         void NetworkBufferProcessed(object sender, SocketAsyncEventArgs e)
         {
             e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
-            if (!e.AcceptSocket.ReceiveAsync(e))
-            {
-                RecvEventArg_Completed(sender, e);
-            }
         }
 
         void HandleReceiveFailure(Exception ex, SocketAsyncEventArgs e)
