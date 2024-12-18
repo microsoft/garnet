@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Garnet;
+using Garnet.networking;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 
@@ -34,9 +35,9 @@ namespace Embedded.perftest
         /// Return a RESP session to this server
         /// </summary>
         /// <returns>A new RESP server session</returns>
-        internal RespServerSession GetRespSession()
+        internal RespServerSession GetRespSession(INetworkSender networkSender = null)
         {
-            return new RespServerSession(0, new DummyNetworkSender(), storeWrapper, null, null, true);
+            return new RespServerSession(0, networkSender ?? new DummyNetworkSender(), storeWrapper, null, null, true);
         }
     }
 }
