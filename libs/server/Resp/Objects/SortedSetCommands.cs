@@ -1303,5 +1303,225 @@ namespace Garnet.server
 
             return true;
         }
+
+        /// <summary>
+        ///  Computes a union operation between multiple sorted sets and returns the result to the client.
+        ///  The total number of input keys is specified.
+        /// </summary>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool SortedSetUnion<TGarnetApi>(ref TGarnetApi storageApi)
+             where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZUNION));
+            }
+
+            // Number of keys
+            if (!parseState.TryGetInt(0, out var nKeys))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            }
+
+            if (nKeys < 1)
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZUNION))));
+            }
+
+            if (parseState.Count < nKeys + 1)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
+            var currentArg = nKeys + 1;
+            var includeWithScores = false;
+            double[] weights = null;
+            var aggregateType = SortedSetAggregateType.Sum;
+
+            // Parse optional arguments
+            while (currentArg < parseState.Count)
+            {
+                var arg = parseState.GetArgSliceByRef(currentArg).ReadOnlySpan;
+                if (arg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHSCORES))
+                {
+                    includeWithScores = true;
+                    currentArg++;
+                }
+                else if (arg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WEIGHTS))
+                {
+                    currentArg++;
+                    if (currentArg + nKeys > parseState.Count)
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                    }
+
+                    weights = new double[nKeys];
+                    for (var i = 0; i < nKeys; i++)
+                    {
+                        if (!parseState.TryGetDouble(currentArg + i, out weights[i]))
+                        {
+                            return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrNotAFloat, "weight")));
+                        }
+                    }
+                    currentArg += nKeys;
+                }
+                else if (arg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.AGGREGATE))
+                {
+                    currentArg++;
+                    if (currentArg >= parseState.Count)
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                    }
+
+                    if (!parseState.TryGetSortedSetAggregateType(currentArg, out aggregateType))
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                    }
+                    currentArg++;
+                }
+                else
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                }
+            }
+
+            // Read all the keys
+            var keys = parseState.Parameters.Slice(1, nKeys);
+
+            var status = storageApi.SortedSetUnion(keys, weights, aggregateType, out var result);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    if (result == null || result.Count == 0)
+                    {
+                        while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    }
+
+                    // write the size of the array reply
+                    while (!RespWriteUtils.WriteArrayLength(includeWithScores ? result.Count * 2 : result.Count, ref dcurr, dend))
+                        SendAndReset();
+
+                    foreach (var (element, score) in result)
+                    {
+                        while (!RespWriteUtils.WriteBulkString(element, ref dcurr, dend))
+                            SendAndReset();
+
+                        if (includeWithScores)
+                        {
+                            while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                    }
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Computes a union operation between multiple sorted sets and stores the result in destination.
+        /// Returns the number of elements in the resulting sorted set at destination.
+        /// </summary>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool SortedSetUnionStore<TGarnetApi>(ref TGarnetApi storageApi)
+             where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 3)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZUNIONSTORE));
+            }
+
+            // Number of keys
+            if (!parseState.TryGetInt(1, out var nKeys))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (nKeys < 1)
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZUNIONSTORE))));
+            }
+
+            if (parseState.Count < nKeys + 2)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
+            var currentArg = nKeys + 2;
+            double[] weights = null;
+            var aggregateType = SortedSetAggregateType.Sum;
+
+            // Parse optional arguments
+            while (currentArg < parseState.Count)
+            {
+                var arg = parseState.GetArgSliceByRef(currentArg).ReadOnlySpan;
+                if (arg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WEIGHTS))
+                {
+                    currentArg++;
+                    if (currentArg + nKeys > parseState.Count)
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                    }
+
+                    weights = new double[nKeys];
+                    for (var i = 0; i < nKeys; i++)
+                    {
+                        if (!parseState.TryGetDouble(currentArg + i, out weights[i]))
+                        {
+                            return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrNotAFloat, "weight")));
+                        }
+                    }
+                    currentArg += nKeys;
+                }
+                else if (arg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.AGGREGATE))
+                {
+                    currentArg++;
+                    if (currentArg + 1 > parseState.Count)
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                    }
+
+                    if (!parseState.TryGetSortedSetAggregateType(currentArg, out aggregateType))
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                    }
+                    currentArg++;
+                }
+                else
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                }
+            }
+
+            var destination = parseState.GetArgSliceByRef(0);
+            var keys = parseState.Parameters.Slice(2, nKeys);
+
+            var status = storageApi.SortedSetUnionStore(destination, keys, weights, aggregateType, out var count);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    while (!RespWriteUtils.WriteInteger(count, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }
     }
 }
