@@ -991,6 +991,162 @@ namespace Garnet.server
          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
+        public GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        {
+            pairs = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                txnManager.Run(true);
+            }
+
+            var objectContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                return SortedSetUnion(keys, ref objectContext, out pairs, weights, aggregateType);
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
+
+        public GarnetStatus SortedSetUnionStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)
+        {
+            count = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            var objectContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                var status = SortedSetUnion(keys, ref objectContext, out var pairs, weights, aggregateType);
+
+                if (status == GarnetStatus.WRONGTYPE)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                count = pairs?.Count ?? 0;
+
+                if (count > 0)
+                {
+                    SortedSetObject newSortedSetObject = new();
+                    foreach (var (element, score) in pairs)
+                    {
+                        newSortedSetObject.Add(element, score);
+                    }
+                    _ = SET(destinationKey.ToArray(), newSortedSetObject, ref objectContext);
+                }
+                else
+                {
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                        ref lockableContext, ref objectContext);
+                }
+
+                return status;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
+
+        private GarnetStatus SortedSetUnion<TObjectContext>(ReadOnlySpan<ArgSlice> keys, ref TObjectContext objectContext,
+            out Dictionary<byte[], double> pairs, double[] weights = null, SortedSetAggregateType aggregateType = SortedSetAggregateType.Sum)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            pairs = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            // Get the first sorted set
+            var status = GET(keys[0].ToArray(), out var firstObj, ref objectContext);
+            if (status == GarnetStatus.OK)
+            {
+                if (firstObj.garnetObject is not SortedSetObject firstSortedSet)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                // Initialize pairs with the first set
+                if (weights is null)
+                {
+                    pairs = new Dictionary<byte[], double>(firstSortedSet.Dictionary, ByteArrayComparer.Instance);
+                }
+                else
+                {
+                    pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
+                    foreach (var (key, score) in firstSortedSet.Dictionary)
+                    {
+                        pairs[key] = weights[0] * score;
+                    }
+                }
+
+                // Process remaining sets
+                for (var i = 1; i < keys.Length; i++)
+                {
+                    status = GET(keys[i].ToArray(), out var nextObj, ref objectContext);
+                    if (status != GarnetStatus.OK)
+                        continue;
+
+                    if (nextObj.garnetObject is not SortedSetObject nextSortedSet)
+                    {
+                        pairs = default;
+                        return GarnetStatus.WRONGTYPE;
+                    }
+
+                    foreach (var (key, score) in nextSortedSet.Dictionary)
+                    {
+                        var weightedScore = weights is null ? score : score * weights[i];
+                        if (pairs.TryGetValue(key, out var existingScore))
+                        {
+                            pairs[key] = aggregateType switch
+                            {
+                                SortedSetAggregateType.Sum => existingScore + weightedScore,
+                                SortedSetAggregateType.Min => Math.Min(existingScore, weightedScore),
+                                SortedSetAggregateType.Max => Math.Max(existingScore, weightedScore),
+                                _ => existingScore + weightedScore // Default to SUM
+                            };
+                        }
+                        else
+                        {
+                            pairs[key] = weightedScore;
+                        }
+                    }
+                }
+            }
+
+            return GarnetStatus.OK;
+        }
+
         private GarnetStatus SortedSetDifference<TObjectContext>(ReadOnlySpan<ArgSlice> keys, ref TObjectContext objectContext, out Dictionary<byte[], double> pairs)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {

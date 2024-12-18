@@ -120,12 +120,12 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LEFT => "LEFT"u8;
         public static ReadOnlySpan<byte> BYLEX => "BYLEX"u8;
         public static ReadOnlySpan<byte> REV => "REV"u8;
+        public static ReadOnlySpan<byte> LIMIT => "LIMIT"u8;
+        public static ReadOnlySpan<byte> MIN => "MIN"u8;
+        public static ReadOnlySpan<byte> MAX => "MAX"u8;
         public static ReadOnlySpan<byte> WEIGHTS => "WEIGHTS"u8;
         public static ReadOnlySpan<byte> AGGREGATE => "AGGREGATE"u8;
         public static ReadOnlySpan<byte> SUM => "SUM"u8;
-        public static ReadOnlySpan<byte> MIN => "MIN"u8;
-        public static ReadOnlySpan<byte> MAX => "MAX"u8;
-        public static ReadOnlySpan<byte> LIMIT => "LIMIT"u8;
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
 
         /// <summary>

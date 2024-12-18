@@ -114,6 +114,8 @@ namespace Garnet.test.cluster
                 new ZINTER(),
                 new ZINTERCARD(),
                 new ZINTERSTORE(),
+                new ZUNION(),
+                new ZUNIONSTORE(),
                 new HSET(),
                 new HGET(),
                 new HGETALL(),
@@ -311,6 +313,8 @@ namespace Garnet.test.cluster
         [TestCase("ZINTER")]
         [TestCase("ZINTERCARD")]
         [TestCase("ZINTERSTORE")]
+        [TestCase("ZUNION")]
+        [TestCase("ZUNIONSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -472,6 +476,8 @@ namespace Garnet.test.cluster
         [TestCase("ZINTER")]
         [TestCase("ZINTERCARD")]
         [TestCase("ZINTERSTORE")]
+        [TestCase("ZUNION")]
+        [TestCase("ZUNIONSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -642,6 +648,8 @@ namespace Garnet.test.cluster
         [TestCase("ZINTER")]
         [TestCase("ZINTERCARD")]
         [TestCase("ZINTERSTORE")]
+        [TestCase("ZUNION")]
+        [TestCase("ZUNIONSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -803,6 +811,8 @@ namespace Garnet.test.cluster
         [TestCase("ZINTER")]
         [TestCase("ZINTERCARD")]
         [TestCase("ZINTERSTORE")]
+        [TestCase("ZUNION")]
+        [TestCase("ZUNIONSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -972,6 +982,8 @@ namespace Garnet.test.cluster
         [TestCase("ZINTER")]
         [TestCase("ZINTERCARD")]
         [TestCase("ZINTERSTORE")]
+        [TestCase("ZUNION")]
+        [TestCase("ZUNIONSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -1159,6 +1171,8 @@ namespace Garnet.test.cluster
         [TestCase("ZINTER")]
         [TestCase("ZINTERCARD")]
         [TestCase("ZINTERSTORE")]
+        [TestCase("ZUNION")]
+        [TestCase("ZUNIONSTORE")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
