@@ -230,9 +230,9 @@ end
         readonly int argvTableRegistryIndex;
         readonly int loadSandboxedRegistryIndex;
         readonly int resetKeysAndArgvRegistryIndex;
-        readonly int okConstStringRegisteryIndex;
+        readonly int okConstStringRegistryIndex;
         readonly int errConstStringRegistryIndex;
-        readonly int noSessionAvailableConstStringRegisteryIndex;
+        readonly int noSessionAvailableConstStringRegistryIndex;
         readonly int pleaseSpecifyRedisCallConstStringRegistryIndex;
         readonly int errNoAuthConstStringRegistryIndex;
         readonly int errUnknownConstStringRegistryIndex;
@@ -316,13 +316,13 @@ end
             resetKeysAndArgvRegistryIndex = state.Ref();
 
             // Commonly used strings, register them once so we don't have to copy them over each time we need them
-            okConstStringRegisteryIndex = ConstantStringToRegistery(CmdStrings.LUA_OK);
-            errConstStringRegistryIndex = ConstantStringToRegistery(CmdStrings.LUA_err);
-            noSessionAvailableConstStringRegisteryIndex = ConstantStringToRegistery(CmdStrings.LUA_No_session_available);
-            pleaseSpecifyRedisCallConstStringRegistryIndex = ConstantStringToRegistery(CmdStrings.LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call);
-            errNoAuthConstStringRegistryIndex = ConstantStringToRegistery(CmdStrings.RESP_ERR_NOAUTH);
-            errUnknownConstStringRegistryIndex = ConstantStringToRegistery(CmdStrings.LUA_ERR_Unknown_Redis_command_called_from_script);
-            errBadArgConstStringRegistryIndex = ConstantStringToRegistery(CmdStrings.LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers);
+            okConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_OK);
+            errConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_err);
+            noSessionAvailableConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_No_session_available);
+            pleaseSpecifyRedisCallConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call);
+            errNoAuthConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.RESP_ERR_NOAUTH);
+            errUnknownConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ERR_Unknown_Redis_command_called_from_script);
+            errBadArgConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers);
 
             state.ExpectLuaStackEmpty();
         }
@@ -340,7 +340,7 @@ end
         ///
         /// So instead we stash them in the Registry and load them by index
         /// </summary>
-        int ConstantStringToRegistery(ReadOnlySpan<byte> str)
+        int ConstantStringToRegistry(ReadOnlySpan<byte> str)
         {
             state.PushBuffer(str);
             return state.Ref();
@@ -560,7 +560,7 @@ end
 
                     _ = api.SET(key, value);
 
-                    state.PushConstantString(okConstStringRegisteryIndex);
+                    state.PushConstantString(okConstStringRegistryIndex);
                     return 1;
                 }
                 else if (AsciiUtils.EqualsUpperCaseSpanIgnoringCase(cmdSpan, "GET"u8) && argCount == 2)

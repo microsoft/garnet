@@ -322,9 +322,9 @@ namespace Garnet.server
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly void Unref(LuaRegistry registery, int reference)
+        internal readonly void Unref(LuaRegistry registry, int reference)
         {
-            state.Unref(registery, reference);
+            state.Unref(registry, reference);
         }
 
         /// <summary>
