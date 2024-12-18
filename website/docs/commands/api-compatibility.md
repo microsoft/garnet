@@ -351,8 +351,8 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZREVRANK](data-structures.md#zrevrank) | ➕ |  |
 |  | [ZSCAN](data-structures.md#zscan) | ➕ |  |
 |  | [ZSCORE](data-structures.md#zscore) | ➕ |  |
-|  | ZUNION | ➖ |  |
-|  | ZUNIONSTORE | ➖ |  |
+|  | [ZUNION](data-structures.md#zunion) | ➕ |  |
+|  | [ZUNIONSTORE](data-structures.md#zunionstore) | ➕ |  |
 | <span id="stream">**STREAM**</span> | XACK | ➖ |  |
 |  | XADD | ➖ |  |
 |  | XAUTOCLAIM | ➖ |  |
