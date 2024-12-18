@@ -139,12 +139,31 @@ namespace Garnet.server
             => storageSession.SortedSetDifference(keys, out pairs);
 
         /// <inheritdoc />
+        public GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+            => storageSession.SortedSetUnion(keys, weights, aggregateType, out pairs);
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetDifferenceStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, out int count)
             => storageSession.SortedSetDifferenceStore(destinationKey, keys, out count);
+
+        public GarnetStatus SortedSetUnionStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)
+            => storageSession.SortedSetUnionStore(destinationKey, keys, weights, aggregateType, out count);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
             => storageSession.ObjectScan(GarnetObjectType.SortedSet, key, cursor, match, count, out items, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetIntersect(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+            => storageSession.SortedSetIntersect(keys, weights, aggregateType, out pairs);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+            => storageSession.SortedSetIntersectLength(keys, limit, out count);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetIntersectStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)
+            => storageSession.SortedSetIntersectStore(destinationKey, keys, weights, aggregateType, out count);
 
         #endregion
 
