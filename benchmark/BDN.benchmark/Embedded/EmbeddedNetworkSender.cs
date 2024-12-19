@@ -4,12 +4,12 @@
 using System.Runtime.CompilerServices;
 using Garnet.networking;
 
-namespace Embedded.perftest
+namespace Embedded.server
 {
     /// <summary>
     /// Dummy network sender that reads from a fixed in-memory buffer
     /// </summary>
-    unsafe class DummyNetworkSender : INetworkSender
+    internal unsafe class EmbeddedNetworkSender : INetworkSender
     {
         /// <summary>
         /// Max size settings of the in-memory sender buffer
@@ -34,7 +34,7 @@ namespace Embedded.perftest
         /// <summary>
         /// Create a new dummy network sender with a simple in-memory buffer
         /// </summary>
-        public DummyNetworkSender()
+        public EmbeddedNetworkSender()
         {
             maxSizeSettings = new MaxSizeSettings();
             serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
