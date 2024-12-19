@@ -151,16 +151,15 @@ namespace Garnet.common
                     {
                         // No more things to receive
                         Dispose(e);
-                        return;
+                        break;
                     }
                     var receiveTask = OnNetworkReceiveAsync(e.BytesTransferred);
-                    if (!receiveTask.IsCompleted)
+                    if (!receiveTask.IsCompletedSuccessfully)
                     {
                         await receiveTask;
                     }
-                    NetworkBufferProcessed(sender, e);
-                }
-                while (!e.AcceptSocket.ReceiveAsync(e));
+                    e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
+                } while (!e.AcceptSocket.ReceiveAsync(e));
             }
             catch (Exception ex)
             {
@@ -170,7 +169,6 @@ namespace Garnet.common
 
         void NetworkBufferProcessed(object sender, SocketAsyncEventArgs e)
         {
-            e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
         }
 
         void HandleReceiveFailure(Exception ex, SocketAsyncEventArgs e)
