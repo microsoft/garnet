@@ -341,5 +341,13 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
         public static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
         public static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
+
+        // Lua scripting strings
+        public static ReadOnlySpan<byte> LUA_OK => "OK"u8;
+        public static ReadOnlySpan<byte> LUA_err => "err"u8;
+        public static ReadOnlySpan<byte> LUA_No_session_available => "No session available"u8;
+        public static ReadOnlySpan<byte> LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call => "ERR Please specify at least one argument for this redis lib call"u8;
+        public static ReadOnlySpan<byte> LUA_ERR_Unknown_Redis_command_called_from_script => "ERR Unknown Redis command called from script"u8;
+        public static ReadOnlySpan<byte> LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers => "ERR Lua redis lib command arguments must be strings or integers"u8;
     }
 }

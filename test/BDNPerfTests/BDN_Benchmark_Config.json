@@ -9,15 +9,15 @@
     "expected_InlinePing_None": 0
   },
   "BDN.benchmark.Operations.ObjectOperations.*": {
-    "expected_ZAddRem_ACL": 17.97,
-    "expected_LPushPop_ACL": 14.06,
-    "expected_SAddRem_ACL": 12.5,
-    "expected_ZAddRem_AOF": 17.97,
-    "expected_LPushPop_AOF": 14.06,
-    "expected_SAddRem_AOF": 12.5,
-    "expected_ZAddRem_None": 17.97,
-    "expected_LPushPop_None": 14.06,
-    "expected_SAddRem_None": 12.5
+    "expected_ZAddRem_ACL": 18400,
+    "expected_LPushPop_ACL": 14400,
+    "expected_SAddRem_ACL": 12800,
+    "expected_ZAddRem_AOF": 18400,
+    "expected_LPushPop_AOF": 14400,
+    "expected_SAddRem_AOF": 12800,
+    "expected_ZAddRem_None": 18400,
+    "expected_LPushPop_None": 14400,
+    "expected_SAddRem_None": 12800
   },
   "BDN.benchmark.Operations.HashObjectOperations.*": {
     "expected_HSetDel_ACL": 16000,
