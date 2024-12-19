@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 
 namespace Garnet.cluster
 {
@@ -60,5 +61,8 @@ namespace Garnet.cluster
             };
             return await client.ExecuteForLongResultWithCancellationAsync(GarnetClient.CLUSTER, args, cancellationToken).ConfigureAwait(false);
         }
+
+        public static void ClusterPublish(this GarnetClient client, RespCommand cmd, ref Span<byte> channel, ref Span<byte> message, CancellationToken cancellationToken = default)
+            => client.ExecuteFireAndForgetWithNoResponse(GarnetClient.CLUSTER, RespCommand.PUBLISH == cmd ? GarnetClient.PUBLISH : GarnetClient.SPUBLISH, ref channel, ref message, cancellationToken);
     }
 }
