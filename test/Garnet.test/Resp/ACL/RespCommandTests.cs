@@ -2261,7 +2261,7 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task CommandGetKeysAsync()
+        public async Task CommandGetKeysACLsAsync()
         {
             await CheckCommandsAsync(
                 "COMMAND GETKEYS",
@@ -2277,7 +2277,7 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task CommandGetKeysAndFlagsAsync()
+        public async Task CommandGetKeysAndFlagsACLsAsync()
         {
             await CheckCommandsAsync(
                 "COMMAND GETKEYSANDFLAGS",

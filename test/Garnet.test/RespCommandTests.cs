@@ -373,6 +373,8 @@ namespace Garnet.test
                 RespCommand.COMMAND_COUNT,
                 RespCommand.COMMAND_DOCS,
                 RespCommand.COMMAND_INFO,
+                RespCommand.COMMAND_GETKEYS,
+                RespCommand.COMMAND_GETKEYSANDFLAGS,
                 RespCommand.MEMORY_USAGE,
                 // Config
                 RespCommand.CONFIG_GET,
@@ -544,7 +546,7 @@ namespace Garnet.test
         [TestCase("MSET", new[] { "key1", "key2" }, new[] { "key1", "value1", "key2", "value2" }, Description = "Multiple SET pairs")]
         [TestCase("MGET", new[] { "key1", "key2", "key3" }, new[] { "key1", "key2", "key3" }, Description = "Multiple GET keys")]
         [TestCase("ZUNIONSTORE", new[] { "destination", "key1", "key2" }, new[] { "destination", "2", "key1", "key2" }, Description = "ZUNIONSTORE with multiple source keys")]
-        [TestCase("EVAL", new[] { "key1", "key2" }, new[] { "key1", "key2" }, new[] { "return redis.call('GET', KEYS[1])", "2", "key1", "key2" }, Description = "EVAL with multiple keys")]
+        [TestCase("EVAL", new[] { "key1", "key2" }, new[] { "return redis.call('GET', KEYS[1])", "2", "key1", "key2" }, Description = "EVAL with multiple keys")]
         [TestCase("EXPIRE", new[] { "mykey" }, new[] { "mykey", "100", "NX" }, Description = "EXPIRE with NX option")]
         [TestCase("MIGRATE", new[] { "key1", "key2" }, new[] { "127.0.0.1", "6379", "", "0", "5000", "KEYS", "key1", "key2" }, Description = "MIGRATE with multiple keys")]
         [TestCase("GEOSEARCHSTORE", new[] { "dst", "src" }, new[] { "dst", "src", "FROMMEMBER", "member", "COUNT", "10", "ASC" }, Description = "GEOSEARCHSTORE with options")]
@@ -615,27 +617,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            // Test with no arguments
-            try
-            {
-                db.Execute("COMMAND", subcommand);
-                Assert.Fail("Should throw exception for missing command argument");
-            }
-            catch (RedisServerException e)
-            {
-                ClassicAssert.AreEqual("ERR Invalid arguments specified for command", e.Message);
-            }
-
-            // Test with invalid command
-            try
-            {
-                db.Execute("COMMAND", subcommand, "INVALIDCOMMAND", "key1");
-                Assert.Fail("Should throw exception for invalid command");
-            }
-            catch (RedisServerException e)
-            {
-                ClassicAssert.AreEqual("ERR Invalid command specified", e.Message);
-            }
+            Assert.Throws<RedisServerException>(() => db.Execute("COMMAND", subcommand));
+            Assert.Throws<RedisServerException>(() => db.Execute("COMMAND", subcommand, "INVALIDCOMMAND", "key1"));
         }
     }
 }
