@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Net.Security;
+using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -11,6 +13,43 @@ namespace Embedded.server
     {
         public GarnetServerEmbedded() : base("0.0.0.0", 0, 1 << 10)
         {
+        }
+
+        public EmbeddedNetworkHandler CreateNetworkHandler(SslClientAuthenticationOptions tlsOptions = null, string remoteEndpointName = null)
+        {
+            var networkSender = new EmbeddedNetworkSender();
+            var networkSettings = new NetworkBufferSettings();
+            var networkPool = networkSettings.CreateBufferPool();
+            EmbeddedNetworkHandler handler = null;
+
+            if (activeHandlerCount >= 0)
+            {
+                var currentActiveHandlerCount = Interlocked.Increment(ref activeHandlerCount);
+                if (currentActiveHandlerCount > 0)
+                {
+                    try
+                    {
+                        handler = new EmbeddedNetworkHandler(this, networkSender, networkSettings, networkPool, tlsOptions != null);
+                        if (!activeHandlers.TryAdd(handler, default))
+                            throw new Exception("Unable to add handler to dictionary");
+
+                        handler.Start(tlsOptions, remoteEndpointName);
+                        incr_conn_recv();
+                        return handler;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "Error starting network handler");
+                        Interlocked.Decrement(ref activeHandlerCount);
+                        handler?.Dispose();
+                    }
+                }
+                else
+                {
+                    Interlocked.Decrement(ref activeHandlerCount);
+                }
+            }
+            return handler;
         }
 
         public void DisposeMessageConsumer(INetworkHandler session)

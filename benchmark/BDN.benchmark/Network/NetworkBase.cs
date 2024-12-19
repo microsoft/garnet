@@ -4,7 +4,6 @@
 using System.Runtime.CompilerServices;
 using BenchmarkDotNet.Attributes;
 using Embedded.server;
-using Garnet.common;
 using Garnet.server;
 
 namespace BDN.benchmark.Network
@@ -54,11 +53,7 @@ namespace BDN.benchmark.Network
             };
             var garnetServerEmbedded = new GarnetServerEmbedded();
             server = new EmbeddedRespServer(opts, null, garnetServerEmbedded);
-
-            var networkSender = new EmbeddedNetworkSender();
-            var networkSettings = new NetworkBufferSettings();
-            var networkPool = networkSettings.CreateBufferPool();
-            networkHandler = new EmbeddedNetworkHandler(garnetServerEmbedded, networkSender, networkSettings, networkPool, Params.useTLS);
+            networkHandler = garnetServerEmbedded.CreateNetworkHandler();
 
             // Send a PING message to warm up the session
             SlowConsumeMessage("PING\r\n"u8);

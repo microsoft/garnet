@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using Garnet;
-using Garnet.networking;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 
@@ -34,9 +33,9 @@ namespace Embedded.server
         /// Return a RESP session to this server
         /// </summary>
         /// <returns>A new RESP server session</returns>
-        internal RespServerSession GetRespSession(INetworkSender networkSender = null)
+        internal RespServerSession GetRespSession()
         {
-            return new RespServerSession(0, networkSender ?? new EmbeddedNetworkSender(), storeWrapper, null, null, true);
+            return new RespServerSession(0, new EmbeddedNetworkSender(), storeWrapper, null, null, true);
         }
     }
 }
