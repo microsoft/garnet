@@ -701,10 +701,6 @@ namespace Garnet.server
                 return true;
             }
 
-            // Make space for value header
-            var valPtr = sbVal.ToPointer() - sizeof(int);
-            var vSize = sbVal.Length;
-
             bool withEtag = etagOption == EtagOption.WITHETAG;
 
             var isHighPrecision = expOption == ExpirationOption.PX;
@@ -788,66 +784,66 @@ namespace Garnet.server
 
             if (withEtag)
                 input.header.SetWithEtagFlag();
-            
+
             if (getValue)
                 input.header.SetSetGetFlag();
 
-            // getValue and withEtag both need to write to memory something from the record
+            SpanByteAndMemory outputBuffer = default;
+            GarnetStatus status;
+
+            // SETIFMATCH will always hit this conditional and have o point to the right memory
             if (getValue || withEtag)
             {
-                var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.SET_Conditional(ref key,
-                    ref input, ref o, cmd);
-
-                // not found for a withEtag based set is okay, and so we invert it
-                if (withEtag && status == GarnetStatus.NOTFOUND)
-                {
-                    status = GarnetStatus.OK;
-                }
-
-                // Status tells us whether an old image was found during RMW or not
-                switch (status)
-                {
-                    case GarnetStatus.NOTFOUND:
-                        Debug.Assert(o.IsSpanByte);
-                        while (!RespWriteUtils.WriteNull(ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    // SETIFNOTMATCH is the only one who can return this and is always called with getvalue so we only handle this here
-                    case GarnetStatus.ETAGMISMATCH:
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ETAGMISMTACH, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    default:
-                        if (!o.IsSpanByte)
-                            SendAndReset(o.Memory, o.Length);
-                        else
-                            dcurr += o.Length;
-                        break;
-                }
+                // anything with getValue or withEtag may choose to write to the buffer in success scenarios
+                outputBuffer = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+                status = storageApi.SET_Conditional(ref key,
+                    ref input, ref outputBuffer, cmd);
             }
             else
             {
-                var status = storageApi.SET_Conditional(ref key, ref input);
+                // the following debug is the catch any edge case leading to SETIFMATCH skipping the above block
+                Debug.Assert(cmd != RespCommand.SETIFMATCH, "SETIFMATCH should have gone though pointing to right output variable");
 
-                var ok = status != GarnetStatus.NOTFOUND;
+                status = storageApi.SET_Conditional(ref key, ref input);
+            }
 
-                // Status tells us whether an old image was found during RMW or not
-                // For a "set if not exists" NOTFOUND means the operation succeeded
-                // So we invert the ok flag
-                if (cmd == RespCommand.SETEXNX)
-                    ok = !ok;
-                if (!ok)
-                {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+            switch ((getValue, withEtag, cmd, status))
+            {
+                case (_, _, RespCommand.SETIFMATCH, GarnetStatus.ETAGMISMATCH): // write back mismatch error
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ETAGMISMTACH, ref dcurr, dend))
                         SendAndReset();
-                }
-                else
-                {
+                    break;
+
+                case (_, true, RespCommand.SET, GarnetStatus.NOTFOUND): // since SET with etag goes down RMW a not found is okay and data is on buffer
+                // if getvalue || etag and Status is OK then the response is always on the buffer, getvalue is never used with conditionals
+                // extra pattern matching on command below for invariant get value cannot be used with EXXX and EXNX
+                case (true, _, RespCommand.SET or RespCommand.SETIFMATCH or RespCommand.SETKEEPTTL, GarnetStatus.OK):
+                case (_, true, _, GarnetStatus.OK):
+                    if (!outputBuffer.IsSpanByte)
+                        SendAndReset(outputBuffer.Memory, outputBuffer.Length);
+                    else
+                        dcurr += outputBuffer.Length;
+                    break;
+
+                case (false, false, RespCommand.SETEXNX, GarnetStatus.NOTFOUND): // SETEXNX is at success if not found and nothign on buffer if no get or withetag so return +OK
+                case (false, false,
+                    RespCommand.SET or RespCommand.SETIFMATCH or RespCommand.SETEXXX or RespCommand.SETKEEPTTL or RespCommand.SETKEEPTTLXX,
+                GarnetStatus.OK): // for everything EXCPET SETEXNX if no get, and no etag, then an OK returns +OK response
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
-                }
-            }
+                    break;
+
+                case (_, _, RespCommand.SETEXNX, GarnetStatus.OK): // For NX semantics an OK indicates a found, which means nothing was set and hence we return NIL
+                // anything not found that did not come from SETEXNX always returns NIL, also anything that is indicating wrong type or moved will return NIL
+                case (_, _, _, GarnetStatus.NOTFOUND or GarnetStatus.WRONGTYPE or GarnetStatus.MOVED):
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+
+                default:
+                    Debug.Assert(false, $"({getValue}, {withEtag}, {cmd}, {status}) unaccounted for combination in response pattern matching. Please make explicit.");
+                    break;
+            };
 
             return true;
         }
