@@ -9,22 +9,30 @@ namespace BDN.benchmark.Network
     /// Benchmark for BasicOperations
     /// </summary>
     [MemoryDiagnoser]
-    public unsafe class BasicOperations : NetworkBase
+    public class BasicNetworkOperations : NetworkBase
     {
         static ReadOnlySpan<byte> INLINE_PING => "PING\r\n"u8;
         byte[] pingRequestBuffer;
-        byte* pingRequestBufferPointer;
+        unsafe byte* pingRequestBufferPointer;
 
         public override void GlobalSetup()
         {
             base.GlobalSetup();
-            SetupOperation(ref pingRequestBuffer, ref pingRequestBufferPointer, INLINE_PING);
+            unsafe
+            {
+                SetupOperation(ref pingRequestBuffer, ref pingRequestBufferPointer, INLINE_PING);
+            }
         }
 
         [Benchmark]
-        public void InlinePing()
+        public async ValueTask InlinePing()
         {
-            Send(pingRequestBuffer, pingRequestBufferPointer, pingRequestBuffer.Length);
+            unsafe
+            {
+                Send(pingRequestBuffer, pingRequestBufferPointer, 0);
+            }
+            await Receive(pingRequestBuffer.Length);
+
         }
     }
 }

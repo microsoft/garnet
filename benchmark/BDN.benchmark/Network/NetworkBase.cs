@@ -11,7 +11,7 @@ namespace BDN.benchmark.Network
     /// <summary>
     /// Base class for network benchmarks
     /// </summary>
-    public abstract unsafe class NetworkBase
+    public abstract class NetworkBase
     {
         /// <summary>
         /// Parameters
@@ -69,12 +69,17 @@ namespace BDN.benchmark.Network
             server.Dispose();
         }
 
-        protected void Send(byte[] requestBuffer, byte* requestBufferPointer, int length)
+        protected unsafe void Send(byte[] requestBuffer, byte* requestBufferPointer, int length)
         {
             networkHandler.Send(requestBuffer, requestBufferPointer, length);
         }
 
-        protected void SetupOperation(ref byte[] requestBuffer, ref byte* requestBufferPointer, ReadOnlySpan<byte> operation)
+        public async ValueTask Receive(int length)
+        {
+            await networkHandler.ReceiveData(length);
+        }
+
+        protected unsafe void SetupOperation(ref byte[] requestBuffer, ref byte* requestBufferPointer, ReadOnlySpan<byte> operation)
         {
             requestBuffer = GC.AllocateArray<byte>(operation.Length * batchSize, pinned: true);
             requestBufferPointer = (byte*)Unsafe.AsPointer(ref requestBuffer[0]);
@@ -82,7 +87,7 @@ namespace BDN.benchmark.Network
                 operation.CopyTo(new Span<byte>(requestBuffer).Slice(i * operation.Length));
         }
 
-        protected void SlowConsumeMessage(ReadOnlySpan<byte> message)
+        protected unsafe void SlowConsumeMessage(ReadOnlySpan<byte> message)
         {
             var buffer = GC.AllocateArray<byte>(message.Length, pinned: true);
             var bufferPointer = (byte*)Unsafe.AsPointer(ref buffer[0]);

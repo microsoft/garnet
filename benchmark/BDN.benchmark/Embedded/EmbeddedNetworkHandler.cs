@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading.Tasks;
 using System.Diagnostics;
 using Garnet.common;
 using Garnet.networking;
@@ -26,14 +27,17 @@ namespace Embedded.server
 
         public unsafe void Send(byte[] buffer, byte* bufferPtr, int length)
         {
-         
             networkReceiveBuffer = buffer;
             networkReceiveBufferPtr = bufferPtr;
-            OnNetworkReceiveAsync(length);
+        }
 
+        public async ValueTask ReceiveData(int length)
+        {
+            await OnNetworkReceiveAsync(length);
             // We should have consumed the entire buffer
             Debug.Assert(networkBytesRead == 0);
             Debug.Assert(networkReadHead == 0);
         }
+
     }
 }
