@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Columns;
 using Garnet.server;
 
 namespace BDN.benchmark.Lua
@@ -11,7 +10,6 @@ namespace BDN.benchmark.Lua
     /// Benchmark for Lua
     /// </summary>
     [MemoryDiagnoser]
-    [HideColumns(Column.Gen0)]
     public unsafe class LuaScripts
     {
         /// <summary>
@@ -35,13 +33,13 @@ namespace BDN.benchmark.Lua
         public void GlobalSetup()
         {
             r1 = new LuaRunner("return");
-            r1.Compile();
+            r1.CompileForRunner();
             r2 = new LuaRunner("return 1 + 1");
-            r2.Compile();
+            r2.CompileForRunner();
             r3 = new LuaRunner("return KEYS[1]");
-            r3.Compile();
+            r3.CompileForRunner();
             r4 = new LuaRunner("return redis.call(KEYS[1])");
-            r4.Compile();
+            r4.CompileForRunner();
         }
 
         [GlobalCleanup]
@@ -55,18 +53,18 @@ namespace BDN.benchmark.Lua
 
         [Benchmark]
         public void Script1()
-            => r1.Run();
+            => r1.RunForRunner();
 
         [Benchmark]
         public void Script2()
-            => r2.Run();
+            => r2.RunForRunner();
 
         [Benchmark]
         public void Script3()
-            => r3.Run(keys, null);
+            => r3.RunForRunner(keys, null);
 
         [Benchmark]
         public void Script4()
-            => r4.Run(keys, null);
+            => r4.RunForRunner(keys, null);
     }
 }

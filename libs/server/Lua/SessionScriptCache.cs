@@ -25,7 +25,7 @@ namespace Garnet.server
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly StoreWrapper storeWrapper;
         readonly ILogger logger;
-        readonly Dictionary<SpanByteAndMemory, LuaRunner> scriptCache = new(SpanByteAndMemoryComparer.Instance);
+        readonly Dictionary<ScriptHashKey, LuaRunner> scriptCache = [];
         readonly byte[] hash = new byte[SHA1Len / 2];
 
         public SessionScriptCache(StoreWrapper storeWrapper, IGarnetAuthenticator authenticator, ILogger logger = null)
@@ -52,47 +52,48 @@ namespace Garnet.server
         /// <summary>
         /// Try get script runner for given digest
         /// </summary>
-        public bool TryGetFromDigest(SpanByteAndMemory digest, out LuaRunner scriptRunner)
+        public bool TryGetFromDigest(ScriptHashKey digest, out LuaRunner scriptRunner)
         => scriptCache.TryGetValue(digest, out scriptRunner);
 
         /// <summary>
-        /// Load script into the cache
+        /// Load script into the cache.
+        /// 
+        /// If necessary, <paramref name="digestOnHeap"/> will be set so the allocation can be reused.
         /// </summary>
-        public bool TryLoad(byte[] source, out byte[] digest, out LuaRunner runner, out string error)
-        {
-            digest = new byte[SHA1Len];
-            GetScriptDigest(source, digest);
-
-            return TryLoad(source, new SpanByteAndMemory(new ScriptHashOwner(digest), digest.Length), out runner, out error);
-        }
-
-        internal bool TryLoad(byte[] source, SpanByteAndMemory digest, out LuaRunner runner, out string error)
+        internal bool TryLoad(RespServerSession session, ReadOnlySpan<byte> source, ScriptHashKey digest, out LuaRunner runner, out ScriptHashKey? digestOnHeap, out string error)
         {
             error = null;
 
             if (scriptCache.TryGetValue(digest, out runner))
+            {
+                digestOnHeap = null;
                 return true;
+            }
 
             try
             {
-                runner = new LuaRunner(source, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
-                runner.Compile();
+                var sourceOnHeap = source.ToArray();
 
-                // need to make sure the key is on the heap, so move it over if needed
-                var storeKeyDigest = digest;
-                if (storeKeyDigest.IsSpanByte)
-                {
-                    var into = new byte[storeKeyDigest.Length];
-                    storeKeyDigest.AsReadOnlySpan().CopyTo(into);
+                runner = new LuaRunner(sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
+                runner.CompileForSession(session);
 
-                    storeKeyDigest = new SpanByteAndMemory(new ScriptHashOwner(into), into.Length);
-                }
+                // Need to make sure the key is on the heap, so move it over
+                //
+                // There's an implicit assumption that all callers are using unmanaged memory.
+                // If that becomes untrue, there's an optimization opportunity to re-use the 
+                // managed memory here.
+                var into = GC.AllocateUninitializedArray<byte>(SHA1Len, pinned: true);
+                digest.CopyTo(into);
+
+                ScriptHashKey storeKeyDigest = new(into);
+                digestOnHeap = storeKeyDigest;
 
                 _ = scriptCache.TryAdd(storeKeyDigest, runner);
             }
             catch (Exception ex)
             {
                 error = ex.Message;
+                digestOnHeap = null;
                 return false;
             }
 

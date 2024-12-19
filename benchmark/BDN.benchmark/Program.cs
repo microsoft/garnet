@@ -7,7 +7,9 @@ using BenchmarkDotNet.Environments;
 using BenchmarkDotNet.Exporters;
 using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Loggers;
+using BenchmarkDotNet.Reports;
 using BenchmarkDotNet.Running;
+using Perfolizer.Metrology;
 
 BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly)
 #if DEBUG
@@ -25,6 +27,7 @@ public class BaseConfig : ManualConfig
         AddLogger(ConsoleLogger.Default);
         AddExporter(DefaultExporters.Markdown);
         AddColumnProvider(DefaultColumnProviders.Instance);
+        WithSummaryStyle(SummaryStyle.Default.WithSizeUnit(SizeUnit.B));
 
         var baseJob = Job.Default.WithGcServer(true);
 

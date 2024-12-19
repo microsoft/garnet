@@ -86,7 +86,7 @@ namespace Garnet.server
         /// </summary>
         int endReadHead;
 
-        byte* dcurr, dend;
+        internal byte* dcurr, dend;
         bool toDispose;
 
         int opCount;
@@ -984,7 +984,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SendAndReset()
+        internal void SendAndReset()
         {
             byte* d = networkSender.GetResponseObjectHead();
             if ((int)(dcurr - d) > 0)
