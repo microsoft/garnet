@@ -5,22 +5,24 @@ using Garnet;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 
-namespace Embedded.perftest
+namespace Embedded.server
 {
     /// <summary>
     /// Implements an embedded Garnet RESP server
     /// </summary>
-    public sealed class EmbeddedRespServer : GarnetServer
+    internal sealed class EmbeddedRespServer : GarnetServer
     {
+        readonly GarnetServerEmbedded garnetServerEmbedded;
 
         /// <summary>
         /// Creates an EmbeddedRespServer instance
         /// </summary>
         /// <param name="opts">Server options to configure the base GarnetServer instance</param>
         /// <param name="loggerFactory">Logger factory to configure the base GarnetServer instance</param>
-        public EmbeddedRespServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null) : base(opts, loggerFactory)
+        /// <param name="server">Server network</param>
+        public EmbeddedRespServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, GarnetServerEmbedded server = null) : base(opts, loggerFactory, server)
         {
-            // Nothing...
+            this.garnetServerEmbedded = server;
         }
 
         /// <summary>
@@ -31,12 +33,17 @@ namespace Embedded.perftest
         public StoreWrapper StoreWrapper => storeWrapper;
 
         /// <summary>
-        /// Return a RESP session to this server
+        /// Return a direct RESP session to this server
         /// </summary>
         /// <returns>A new RESP server session</returns>
         internal RespServerSession GetRespSession()
         {
-            return new RespServerSession(0, new DummyNetworkSender(), storeWrapper, null, null, true);
+            return new RespServerSession(0, new EmbeddedNetworkSender(), storeWrapper, null, null, true);
+        }
+
+        internal EmbeddedNetworkHandler GetNetworkHandler()
+        {
+            return garnetServerEmbedded.CreateNetworkHandler();
         }
     }
 }

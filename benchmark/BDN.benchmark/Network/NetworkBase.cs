@@ -5,29 +5,26 @@ using System.Runtime.CompilerServices;
 using BenchmarkDotNet.Attributes;
 using Embedded.server;
 using Garnet.server;
-using Garnet.server.Auth.Settings;
 
-namespace BDN.benchmark.Operations
+namespace BDN.benchmark.Network
 {
     /// <summary>
-    /// Base class for operations benchmarks
+    /// Base class for network benchmarks
     /// </summary>
-    public abstract unsafe class OperationsBase
+    public abstract unsafe class NetworkBase
     {
         /// <summary>
         /// Parameters
         /// </summary>
-        [ParamsSource(nameof(OperationParamsProvider))]
-        public OperationParams Params { get; set; }
+        [ParamsSource(nameof(NetworkParamsProvider))]
+        public NetworkParams Params { get; set; }
 
         /// <summary>
         /// Operation parameters provider
         /// </summary>
-        public IEnumerable<OperationParams> OperationParamsProvider()
+        public IEnumerable<NetworkParams> NetworkParamsProvider()
         {
-            yield return new(false, false);
-            yield return new(true, false);
-            yield return new(false, true);
+            yield return new(false);
         }
 
         /// <summary>
@@ -39,9 +36,9 @@ namespace BDN.benchmark.Operations
         ///  25 us =  4 Mops/sec
         /// 100 us =  1 Mops/sec
         /// </summary>
-        internal const int batchSize = 100;
-        internal EmbeddedRespServer server;
-        internal RespServerSession session;
+        const int batchSize = 100;
+        EmbeddedRespServer server;
+        EmbeddedNetworkHandler networkHandler;
 
         /// <summary>
         /// Setup
@@ -52,39 +49,14 @@ namespace BDN.benchmark.Operations
             var opts = new GarnetServerOptions
             {
                 QuietMode = true,
-                EnableLua = true,
                 DisablePubSub = true,
             };
-            if (Params.useAof)
-            {
-                opts.EnableAOF = true;
-                opts.UseAofNullDevice = true;
-                opts.MainMemoryReplication = true;
-                opts.CommitFrequencyMs = -1;
-                opts.AofPageSize = "128m";
-                opts.AofMemorySize = "256m";
-            }
 
-            string aclFile = null;
-            try
-            {
-                if (Params.useACLs)
-                {
-                    aclFile = Path.GetTempFileName();
-                    File.WriteAllText(aclFile, @"user default on nopass -@all +ping +set +get +setex +incr +decr +incrby +decrby +zadd +zrem +lpush +lpop +sadd +srem +hset +hdel +@custom");
-                    opts.AuthSettings = new AclAuthenticationPasswordSettings(aclFile);
-                }
+            server = new EmbeddedRespServer(opts, null, new GarnetServerEmbedded());
+            networkHandler = server.GetNetworkHandler();
 
-                server = new EmbeddedRespServer(opts, null, new GarnetServerEmbedded());
-                session = server.GetRespSession();
-            }
-            finally
-            {
-                if (aclFile != null)
-                    File.Delete(aclFile);
-            }
-
-            session = server.GetRespSession();
+            // Send a PING message to warm up the session
+            SlowConsumeMessage("PING\r\n"u8);
         }
 
         /// <summary>
@@ -93,13 +65,13 @@ namespace BDN.benchmark.Operations
         [GlobalCleanup]
         public virtual void GlobalCleanup()
         {
-            session.Dispose();
+            networkHandler.Dispose();
             server.Dispose();
         }
 
         protected void Send(byte[] requestBuffer, byte* requestBufferPointer, int length)
         {
-            _ = session.TryConsumeMessages(requestBufferPointer, length);
+            networkHandler.Send(requestBuffer, requestBufferPointer, length);
         }
 
         protected void SetupOperation(ref byte[] requestBuffer, ref byte* requestBufferPointer, ReadOnlySpan<byte> operation)
@@ -115,7 +87,7 @@ namespace BDN.benchmark.Operations
             var buffer = GC.AllocateArray<byte>(message.Length, pinned: true);
             var bufferPointer = (byte*)Unsafe.AsPointer(ref buffer[0]);
             message.CopyTo(new Span<byte>(buffer));
-            _ = session.TryConsumeMessages(bufferPointer, buffer.Length);
+            Send(buffer, bufferPointer, buffer.Length);
         }
     }
 }

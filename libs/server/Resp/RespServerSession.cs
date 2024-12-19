@@ -86,7 +86,7 @@ namespace Garnet.server
         /// </summary>
         int endReadHead;
 
-        byte* dcurr, dend;
+        internal byte* dcurr, dend;
         bool toDispose;
 
         int opCount;
@@ -626,6 +626,8 @@ namespace Garnet.server
                 RespCommand.ZINTER => SortedSetIntersect(ref storageApi),
                 RespCommand.ZINTERCARD => SortedSetIntersectLength(ref storageApi),
                 RespCommand.ZINTERSTORE => SortedSetIntersectStore(ref storageApi),
+                RespCommand.ZUNION => SortedSetUnion(ref storageApi),
+                RespCommand.ZUNIONSTORE => SortedSetUnionStore(ref storageApi),
                 //SortedSet for Geo Commands
                 RespCommand.GEOADD => GeoAdd(ref storageApi),
                 RespCommand.GEOHASH => GeoCommands(cmd, ref storageApi),
@@ -973,7 +975,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SendAndReset()
+        internal void SendAndReset()
         {
             byte* d = networkSender.GetResponseObjectHead();
             if ((int)(dcurr - d) > 0)
