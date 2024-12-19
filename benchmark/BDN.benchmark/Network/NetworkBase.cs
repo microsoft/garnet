@@ -69,14 +69,14 @@ namespace BDN.benchmark.Network
             server.Dispose();
         }
 
-        protected unsafe void Send(byte[] requestBuffer, byte* requestBufferPointer, int length)
+        protected unsafe void PrepareBuffer(byte[] requestBuffer, byte* requestBufferPointer)
         {
-            networkHandler.Send(requestBuffer, requestBufferPointer, length);
+            networkHandler.PrepareBuffer(requestBuffer, requestBufferPointer);
         }
 
-        public async ValueTask Receive(int length)
+        public async ValueTask Send(int length)
         {
-            await networkHandler.ReceiveData(length);
+            await networkHandler.Send(length);
         }
 
         protected unsafe void SetupOperation(ref byte[] requestBuffer, ref byte* requestBufferPointer, ReadOnlySpan<byte> operation)

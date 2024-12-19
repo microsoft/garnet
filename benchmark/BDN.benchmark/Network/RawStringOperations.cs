@@ -78,9 +78,9 @@ namespace BDN.benchmark.Network
         {
             unsafe
             {
-                Send(setRequestBuffer, setRequestBufferPointer, setRequestBuffer.Length);
+                PrepareBuffer(setRequestBuffer, setRequestBufferPointer);
             }
-            await Receive(setRequestBuffer.Length);
+            await Send(setRequestBuffer.Length);
         }
 
         [Benchmark]
@@ -88,9 +88,9 @@ namespace BDN.benchmark.Network
         {
             unsafe
             {
-                Send(setexRequestBuffer, setexRequestBufferPointer, setexRequestBuffer.Length);
+                PrepareBuffer(setexRequestBuffer, setexRequestBufferPointer);
             }
-            await Receive(setexRequestBuffer.Length);
+            await Send(setexRequestBuffer.Length);
         }
 
         [Benchmark]
@@ -98,9 +98,9 @@ namespace BDN.benchmark.Network
         {
             unsafe
             {
-                Send(setnxRequestBuffer, setnxRequestBufferPointer, setnxRequestBuffer.Length);
+                PrepareBuffer(setnxRequestBuffer, setnxRequestBufferPointer);
             }
-            await Receive(setnxRequestBuffer.Length);
+            await Send(setnxRequestBuffer.Length);
         }
 
         [Benchmark]
@@ -108,10 +108,10 @@ namespace BDN.benchmark.Network
         {
             unsafe
             {
-                Send(setxxRequestBuffer, setxxRequestBufferPointer, setxxRequestBuffer.Length);
+                PrepareBuffer(setxxRequestBuffer, setxxRequestBufferPointer);
 
             }
-            await Receive(setxxRequestBuffer.Length);
+            await Send(setxxRequestBuffer.Length);
         }
 
         [Benchmark]
@@ -119,9 +119,9 @@ namespace BDN.benchmark.Network
         {
             unsafe
             {
-                Send(getfRequestBuffer, getfRequestBufferPointer, getfRequestBuffer.Length);
+                PrepareBuffer(getfRequestBuffer, getfRequestBufferPointer);
             }
-            await Receive(getfRequestBuffer.Length);
+            await Send(getfRequestBuffer.Length);
         }
 
         [Benchmark]
@@ -129,9 +129,9 @@ namespace BDN.benchmark.Network
         {
             unsafe
             {
-                Send(getnfRequestBuffer, getnfRequestBufferPointer, getnfRequestBuffer.Length);
+                PrepareBuffer(getnfRequestBuffer, getnfRequestBufferPointer);
             }
-            await Receive(getnfRequestBuffer.Length);
+            await Send(getnfRequestBuffer.Length);
         }
 
         [Benchmark]
@@ -139,9 +139,9 @@ namespace BDN.benchmark.Network
         {
             unsafe
             {
-                Send(incrRequestBuffer, incrRequestBufferPointer, incrRequestBuffer.Length);
+                PrepareBuffer(incrRequestBuffer, incrRequestBufferPointer);
             }
-            await Receive(incrRequestBuffer.Length);
+            await Send(incrRequestBuffer.Length);
         }
 
         [Benchmark]
@@ -149,9 +149,9 @@ namespace BDN.benchmark.Network
         {
             unsafe
             {
-                Send(decrRequestBuffer, decrRequestBufferPointer, decrRequestBuffer.Length);
+                PrepareBuffer(decrRequestBuffer, decrRequestBufferPointer);
             }
-            await Receive(decrRequestBuffer.Length);
+            await Send(decrRequestBuffer.Length);
         }
 
         [Benchmark]
@@ -159,9 +159,9 @@ namespace BDN.benchmark.Network
         {
             unsafe
             {
-                Send(incrbyRequestBuffer, incrbyRequestBufferPointer, incrbyRequestBuffer.Length);
+                PrepareBuffer(incrbyRequestBuffer, incrbyRequestBufferPointer);
             }
-            await Receive(incrbyRequestBuffer.Length);
+            await Send(incrbyRequestBuffer.Length);
         }
 
         [Benchmark]
@@ -169,9 +169,9 @@ namespace BDN.benchmark.Network
         {
             unsafe
             {
-                Send(decrbyRequestBuffer, decrbyRequestBufferPointer, decrbyRequestBuffer.Length);
+                PrepareBuffer(decrbyRequestBuffer, decrbyRequestBufferPointer);
             }
-            await Receive(decrRequestBuffer.Length);
+            await Send(decrbyRequestBuffer.Length);
         }
     }
 }

@@ -25,13 +25,13 @@ namespace Embedded.server
 
         public override bool TryClose() => throw new NotImplementedException();
 
-        public unsafe void Send(byte[] buffer, byte* bufferPtr, int length)
+        public unsafe void PrepareBuffer(byte[] buffer, byte* bufferPtr)
         {
             networkReceiveBuffer = buffer;
             networkReceiveBufferPtr = bufferPtr;
         }
 
-        public async ValueTask ReceiveData(int length)
+        public async ValueTask Send(int length)
         {
             await OnNetworkReceiveAsync(length);
             // We should have consumed the entire buffer
