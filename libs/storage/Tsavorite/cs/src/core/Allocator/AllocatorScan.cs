@@ -346,7 +346,7 @@ namespace Tsavorite.core
 
             public void RMWCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
 
-            public int GetRMWModifiedValueLength(ref TValue value, ref TInput input) => 0;
+            public int GetRMWModifiedValueLength(ref TValue value, ref TInput input, bool hasEtag) => 0;
             public int GetRMWInitialValueLength(ref TInput input) => 0;
             public int GetUpsertValueLength(ref TValue value, ref TInput input) => 0;
 

@@ -4443,6 +4443,21 @@
         "DisplayText": "newkey",
         "Type": "Key",
         "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "WITHETAG",
+            "DisplayText": "WITHETAG",
+            "Type": "PureToken",
+            "Token": "WITHETAG"
+          }
+        ]
       }
     ]
   },

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -375,7 +376,7 @@ namespace Garnet.server
             }
         }
 
-        public unsafe GarnetStatus SET_Conditional<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
+        public unsafe GarnetStatus SET_Conditional<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context, RespCommand cmd)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             var status = context.RMW(ref key, ref input, ref output);
@@ -391,6 +392,11 @@ namespace Garnet.server
             {
                 incr_session_notfound();
                 return GarnetStatus.NOTFOUND;
+            }
+            else if (cmd == RespCommand.SETIFMATCH && status.IsCanceled)
+            {
+                // The RMW operation for SETIFMATCH upon not finding the etags match between the existing record and sent etag returns Cancelled Operation
+                return GarnetStatus.ETAGMISMATCH;
             }
             else
             {
@@ -548,9 +554,9 @@ namespace Garnet.server
             return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
-        public unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType)
+        public unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, bool withEtag)
         {
-            return RENAME(oldKeySlice, newKeySlice, storeType, false, out _);
+            return RENAME(oldKeySlice, newKeySlice, storeType, false, out _, withEtag);
         }
 
         /// <summary>
@@ -560,12 +566,13 @@ namespace Garnet.server
         /// <param name="newKeySlice">The new key name.</param>
         /// <param name="storeType">The type of store to perform the operation on.</param>
         /// <returns></returns>
-        public unsafe GarnetStatus RENAMENX(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, out int result)
+        public unsafe GarnetStatus RENAMENX(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, out int result, bool withEtag)
         {
-            return RENAME(oldKeySlice, newKeySlice, storeType, true, out result);
+            return RENAME(oldKeySlice, newKeySlice, storeType, true, out result, withEtag);
         }
 
-        private unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, bool isNX, out int result)
+        // HK TODO
+        private unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, bool isNX, out int result, bool withEtag)
         {
             RawStringInput input = default;
             var returnStatus = GarnetStatus.NOTFOUND;
@@ -620,47 +627,60 @@ namespace Garnet.server
                             var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
                             RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
 
-                            input = new RawStringInput(RespCommand.SETEXNX);
+                            input = isNX ? new RawStringInput(RespCommand.SETEXNX): new RawStringInput(RespCommand.SET);
 
                             // If the key has an expiration, set the new key with the expiration
                             if (expireTimeMs > 0)
                             {
-                                if (isNX)
+                                if (!withEtag && !isNX)
+                                {
+                                    SETEX(newKeySlice, newValSlice, TimeSpan.FromMilliseconds(expireTimeMs), ref context);
+                                }
+                                else
                                 {
                                     // Move payload forward to make space for RespInputHeader and Metadata
                                     parseState.InitializeWithArgument(newValSlice);
                                     input.parseState = parseState;
                                     input.arg1 = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
 
+                                    if (withEtag)
+                                        input.header.CheckWithEtagFlag();
+
                                     var setStatus = SET_Conditional(ref newKey, ref input, ref context);
 
-                                    // For SET NX `NOTFOUND` means the operation succeeded
-                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
-                                    returnStatus = GarnetStatus.OK;
-                                }
-                                else
-                                {
-                                    SETEX(newKeySlice, newValSlice, TimeSpan.FromMilliseconds(expireTimeMs), ref context);
+                                    if (isNX)
+                                    {
+
+                                        // For SET NX `NOTFOUND` means the operation succeeded
+                                        result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                        returnStatus = GarnetStatus.OK;
+                                    }
                                 }
                             }
                             else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
                             {
-                                if (isNX)
+                                if (!withEtag && !isNX)
+                                {
+                                    var value = newValSlice.SpanByte;
+                                    SET(ref newKey, ref value, ref context);
+                                }
+                                else
                                 {
                                     // Build parse state
                                     parseState.InitializeWithArgument(newValSlice);
                                     input.parseState = parseState;
 
+                                    if (withEtag)
+                                        input.header.SetWithEtagFlag();
+
                                     var setStatus = SET_Conditional(ref newKey, ref input, ref context);
 
-                                    // For SET NX `NOTFOUND` means the operation succeeded
-                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
-                                    returnStatus = GarnetStatus.OK;
-                                }
-                                else
-                                {
-                                    var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
-                                    SET(ref newKey, ref value, ref context);
+                                    if (isNX)
+                                    {
+                                        // For SET NX `NOTFOUND` means the operation succeeded
+                                        result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                        returnStatus = GarnetStatus.OK;
+                                    }
                                 }
                             }
 
@@ -1100,7 +1120,6 @@ namespace Garnet.server
                 CompletePendingForSession(ref status, ref _output, ref context);
 
             Debug.Assert(_output.IsSpanByte);
-            Debug.Assert(_output.Length == outputBufferLength);
 
             output = NumUtils.BytesToLong(_output.Length, outputBuffer);
             return GarnetStatus.OK;

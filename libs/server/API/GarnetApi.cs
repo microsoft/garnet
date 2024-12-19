@@ -127,8 +127,8 @@ namespace Garnet.server
             => storageSession.SET_Conditional(ref key, ref input, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
-            => storageSession.SET_Conditional(ref key, ref input, ref output, ref context);
+        public GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, RespCommand cmd)
+            => storageSession.SET_Conditional(ref key, ref input, ref output, ref context, cmd);
 
         /// <inheritdoc />
         public GarnetStatus SET(ArgSlice key, Memory<byte> value)
@@ -176,12 +176,12 @@ namespace Garnet.server
 
         #region RENAME
         /// <inheritdoc />
-        public GarnetStatus RENAME(ArgSlice oldKey, ArgSlice newKey, StoreType storeType = StoreType.All)
-            => storageSession.RENAME(oldKey, newKey, storeType);
+        public GarnetStatus RENAME(ArgSlice oldKey, ArgSlice newKey, bool withEtag, StoreType storeType = StoreType.All)
+            => storageSession.RENAME(oldKey, newKey, storeType, withEtag);
 
         /// <inheritdoc />
-        public GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, out int result, StoreType storeType = StoreType.All)
-            => storageSession.RENAMENX(oldKey, newKey, storeType, out result);
+        public GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, out int result, bool withEtag, StoreType storeType = StoreType.All)
+            => storageSession.RENAMENX(oldKey, newKey, storeType, out result, withEtag);
         #endregion
 
         #region EXISTS
