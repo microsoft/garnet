@@ -3,6 +3,7 @@
 
 using System;
 using CommandLine;
+using Embedded.server;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
