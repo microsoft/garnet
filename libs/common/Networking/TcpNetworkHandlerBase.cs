@@ -166,10 +166,6 @@ namespace Garnet.common
             }
         }
 
-        void NetworkBufferProcessed(object sender, SocketAsyncEventArgs e)
-        {
-        }
-
         void HandleReceiveFailure(Exception ex, SocketAsyncEventArgs e)
         {
             if (ex is ObjectDisposedException ex2 && ex2.ObjectName == "System.Net.Sockets.Socket")
