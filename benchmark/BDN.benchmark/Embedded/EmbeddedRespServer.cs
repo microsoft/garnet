@@ -10,16 +10,19 @@ namespace Embedded.server
     /// <summary>
     /// Implements an embedded Garnet RESP server
     /// </summary>
-    public sealed class EmbeddedRespServer : GarnetServer
+    internal sealed class EmbeddedRespServer : GarnetServer
     {
+        readonly GarnetServerEmbedded garnetServerEmbedded;
+
         /// <summary>
         /// Creates an EmbeddedRespServer instance
         /// </summary>
         /// <param name="opts">Server options to configure the base GarnetServer instance</param>
         /// <param name="loggerFactory">Logger factory to configure the base GarnetServer instance</param>
-        public EmbeddedRespServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, IGarnetServer server = null) : base(opts, loggerFactory, server)
+        /// <param name="server">Server network</param>
+        public EmbeddedRespServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, GarnetServerEmbedded server = null) : base(opts, loggerFactory, server)
         {
-            // Nothing...
+            this.garnetServerEmbedded = server;
         }
 
         /// <summary>
@@ -30,12 +33,17 @@ namespace Embedded.server
         public StoreWrapper StoreWrapper => storeWrapper;
 
         /// <summary>
-        /// Return a RESP session to this server
+        /// Return a direct RESP session to this server
         /// </summary>
         /// <returns>A new RESP server session</returns>
         internal RespServerSession GetRespSession()
         {
             return new RespServerSession(0, new EmbeddedNetworkSender(), storeWrapper, null, null, true);
+        }
+
+        internal EmbeddedNetworkHandler GetNetworkHandler()
+        {
+            return garnetServerEmbedded.CreateNetworkHandler();
         }
     }
 }

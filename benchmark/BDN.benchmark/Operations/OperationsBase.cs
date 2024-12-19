@@ -75,8 +75,8 @@ namespace BDN.benchmark.Operations
                     opts.AuthSettings = new AclAuthenticationPasswordSettings(aclFile);
                 }
 
-                var garnetServerEmbedded = new GarnetServerEmbedded();
-                server = new EmbeddedRespServer(opts, null, garnetServerEmbedded);
+                server = new EmbeddedRespServer(opts, null, new GarnetServerEmbedded());
+                session = server.GetRespSession();
             }
             finally
             {

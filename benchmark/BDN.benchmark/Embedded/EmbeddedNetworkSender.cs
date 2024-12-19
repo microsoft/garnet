@@ -9,7 +9,7 @@ namespace Embedded.server
     /// <summary>
     /// Dummy network sender that reads from a fixed in-memory buffer
     /// </summary>
-    unsafe class EmbeddedNetworkSender : INetworkSender
+    internal unsafe class EmbeddedNetworkSender : INetworkSender
     {
         /// <summary>
         /// Max size settings of the in-memory sender buffer

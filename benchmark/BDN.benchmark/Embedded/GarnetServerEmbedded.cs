@@ -1,7 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Net.Security;
+using System.Threading;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
@@ -9,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Embedded.server
 {
-    class GarnetServerEmbedded : GarnetServerBase, IServerHook
+    internal class GarnetServerEmbedded : GarnetServerBase, IServerHook
     {
         public GarnetServerEmbedded() : base("0.0.0.0", 0, 1 << 10)
         {

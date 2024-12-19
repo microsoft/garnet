@@ -51,9 +51,9 @@ namespace BDN.benchmark.Network
                 QuietMode = true,
                 DisablePubSub = true,
             };
-            var garnetServerEmbedded = new GarnetServerEmbedded();
-            server = new EmbeddedRespServer(opts, null, garnetServerEmbedded);
-            networkHandler = garnetServerEmbedded.CreateNetworkHandler();
+
+            server = new EmbeddedRespServer(opts, null, new GarnetServerEmbedded());
+            networkHandler = server.GetNetworkHandler();
 
             // Send a PING message to warm up the session
             SlowConsumeMessage("PING\r\n"u8);
