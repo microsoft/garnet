@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using BenchmarkDotNet.Attributes;
-using Embedded.perftest;
+using Embedded.server;
 using Garnet.server;
 
 namespace BDN.benchmark.Lua
