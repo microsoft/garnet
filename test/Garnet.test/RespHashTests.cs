@@ -1185,7 +1185,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]);
 
-            result = db.Execute("HEXPIRE", "myhash", "2", "FIELDS", "2", "field3", "field4");
+            result = db.Execute("HEXPIRE", "myhash", "3", "FIELDS", "2", "field3", "field4");
             results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
@@ -1205,7 +1205,7 @@ namespace Garnet.test
             ClassicAssert.Less(newMemory, orginalMemory);
             orginalMemory = newMemory;
 
-            await Task.Delay(1200);
+            await Task.Delay(2200);
 
             newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
             ClassicAssert.AreEqual(newMemory, orginalMemory);
