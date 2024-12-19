@@ -26,9 +26,10 @@ namespace Embedded.server
 
         public unsafe void Send(byte[] buffer, byte* bufferPtr, int length)
         {
+         
             networkReceiveBuffer = buffer;
             networkReceiveBufferPtr = bufferPtr;
-            OnNetworkReceive(length);
+            OnNetworkReceiveAsync(length);
 
             // We should have consumed the entire buffer
             Debug.Assert(networkBytesRead == 0);
