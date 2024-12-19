@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Text;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -212,10 +213,66 @@ namespace Garnet.test
             res = lightClientRequest.SendCommand("EXEC");
 
             expectedResponse = "*2\r\n$14\r\nvalue1_updated\r\n+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
+            ClassicAssert.AreEqual(
+                expectedResponse,
+                Encoding.ASCII.GetString(res.AsSpan().Slice(0, expectedResponse.Length)));
         }
 
+        [Test]
+        public async Task WatchTestWithSetWithEtag()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            byte[] res;
+
+            string expectedResponse = ":0\r\n";
+            res = lightClientRequest.SendCommand("SETWITHETAG key1 value1");
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+
+            expectedResponse = "+OK\r\n";
+            res = lightClientRequest.SendCommand("WATCH key1");
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+
+            res = lightClientRequest.SendCommand("MULTI");
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+
+            res = lightClientRequest.SendCommand("GET key1");
+            expectedResponse = "+QUEUED\r\n";
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            res = lightClientRequest.SendCommand("SET key2 value2");
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+
+            await Task.Run(() => updateKey("key1", "value1_updated", retainEtag: true));
+
+            res = lightClientRequest.SendCommand("EXEC");
+            expectedResponse = "*-1";
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+
+            // This one should Commit
+            lightClientRequest.SendCommand("MULTI");
+
+            lightClientRequest.SendCommand("GET key1");
+            lightClientRequest.SendCommand("SET key2 value2");
+            // check that all the etag commands can be called inside a transaction
+            lightClientRequest.SendCommand("SETWITHETAG key3 value2");
+            lightClientRequest.SendCommand("GETWITHETAG key3");
+            lightClientRequest.SendCommand("GETIFNOTMATCH key3 0");
+            lightClientRequest.SendCommand("SETIFMATCH key3 anotherVal 0");
+            lightClientRequest.SendCommand("SETWITHETAG key3 arandomval RETAINETAG");
+
+            res = lightClientRequest.SendCommand("EXEC");
+
+            expectedResponse = "*7\r\n$14\r\nvalue1_updated\r\n+OK\r\n:0\r\n*2\r\n:0\r\n$6\r\nvalue2\r\n+NOTCHANGED\r\n*2\r\n:1\r\n$10\r\nanotherVal\r\n:2\r\n";
+            string response = Encoding.ASCII.GetString(res.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(response, expectedResponse);
+
+            // check if we still have the appropriate etag on the key we had set
+            var otherLighClientRequest = TestUtils.CreateRequest();
+            res = otherLighClientRequest.SendCommand("GETWITHETAG key1");
+            expectedResponse = "*2\r\n:1\r\n$14\r\nvalue1_updated\r\n";
+            response = Encoding.ASCII.GetString(res.AsSpan().Slice(0, expectedResponse.Length));
+            ClassicAssert.AreEqual(response, expectedResponse);
+        }
 
         [Test]
         public async Task WatchNonExistentKey()
@@ -304,10 +361,12 @@ namespace Garnet.test
             ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
         }
 
-        private static void updateKey(string key, string value)
+        private static void updateKey(string key, string value, bool retainEtag = false)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            byte[] res = lightClientRequest.SendCommand("SET " + key + " " + value);
+            string command = $"SET {key} {value}";
+            command += retainEtag ? " RETAINETAG" : "";
+            byte[] res = lightClientRequest.SendCommand(command);
             string expectedResponse = "+OK\r\n";
             ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
         }

@@ -33,7 +33,9 @@ namespace Garnet.server
         GEOSEARCH,
         GET,
         GETBIT,
+        GETIFNOTMATCH,
         GETRANGE,
+        GETWITHETAG,
         HEXISTS,
         HGET,
         HGETALL,
@@ -152,9 +154,11 @@ namespace Garnet.server
         SETEXNX,
         SETEXXX,
         SETNX,
+        SETIFMATCH,
         SETKEEPTTL,
         SETKEEPTTLXX,
         SETRANGE,
+        SETWITHETAG,
         SINTERSTORE,
         SMOVE,
         SPOP,
@@ -1422,6 +1426,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.SDIFFSTORE;
                                 }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nSETI"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("FMATCH\r\n"u8))
+                                {
+                                    return RespCommand.SETIFMATCH;
+                                }
                                 else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nEXPI"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
                                 {
                                     return RespCommand.EXPIRETIME;
@@ -1447,7 +1455,6 @@ namespace Garnet.server
                                     return RespCommand.ZINTERCARD;
                                 }
                                 break;
-
                             case 11:
                                 if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nUNSUB"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("SCRIBE\r\n"u8))
                                 {
@@ -1472,6 +1479,14 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSINTE"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RSTORE\r\n"u8))
                                 {
                                     return RespCommand.SINTERSTORE;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nGETWI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("THETAG\r\n"u8))
+                                {
+                                    return RespCommand.GETWITHETAG;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSETWI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("THETAG\r\n"u8))
+                                {
+                                    return RespCommand.SETWITHETAG;
                                 }
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nPEXPI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
                                 {
@@ -1510,6 +1525,10 @@ namespace Garnet.server
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nZRANGEB"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("YSCORE\r\n"u8))
                                 {
                                     return RespCommand.ZRANGEBYSCORE;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nGETIFNO"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("TMATCH\r\n"u8))
+                                {
+                                    return RespCommand.GETIFNOTMATCH;
                                 }
                                 break;
 

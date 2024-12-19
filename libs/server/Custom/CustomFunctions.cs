@@ -119,6 +119,17 @@ namespace Garnet.server
         /// <summary>
         /// Create output as bulk string, from given Span
         /// </summary>
+        protected static unsafe void WriteBulkString(ref MemoryResult<byte> output, Span<byte> simpleString)
+        {
+            var _output = (output.MemoryOwner, output.Length);
+            WriteBulkString(ref _output, simpleString);
+            output.MemoryOwner = _output.MemoryOwner;
+            output.Length = _output.Length;
+        }
+
+        /// <summary>
+        /// Create output as bulk string, from given Span
+        /// </summary>
         protected static unsafe void WriteBulkString(ref (IMemoryOwner<byte>, int) output, Span<byte> bulkString)
         {
             // Get space for bulk string

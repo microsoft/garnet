@@ -98,6 +98,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> KEEPTTL => "KEEPTTL"u8;
         public static ReadOnlySpan<byte> NX => "NX"u8;
         public static ReadOnlySpan<byte> XX => "XX"u8;
+        public static ReadOnlySpan<byte> RETAINETAG => "RETAINETAG"u8;
         public static ReadOnlySpan<byte> UNSAFETRUNCATELOG => "UNSAFETRUNCATELOG"u8;
         public static ReadOnlySpan<byte> SAMPLES => "SAMPLES"u8;
         public static ReadOnlySpan<byte> RANK => "RANK"u8;
@@ -140,6 +141,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_PONG => "+PONG\r\n"u8;
         public static ReadOnlySpan<byte> RESP_EMPTY => "$0\r\n\r\n"u8;
         public static ReadOnlySpan<byte> RESP_QUEUED => "+QUEUED\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_VALNOTCHANGED => "+NOTCHANGED\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ETAGMISMTACH => "+ETAGMISMATCH\r\n"u8;
 
         /// <summary>
         /// Simple error response strings, i.e. these are of the form "-errorString\r\n"
@@ -148,6 +151,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_WRONG_TYPE => "WRONGTYPE Operation against a key holding the wrong kind of value."u8;
         public static ReadOnlySpan<byte> RESP_ERR_WRONG_TYPE_HLL => "WRONGTYPE Key is not a valid HyperLogLog string value."u8;
         public static ReadOnlySpan<byte> RESP_ERR_EXEC_ABORT => "EXECABORT Transaction discarded because of previous errors."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ETAG_ON_CUSTOM_PROC => "WRONGTYPE Key with etag cannot be used for custom procedure."u8;
 
         /// <summary>
         /// Generic error response strings, i.e. these are of the form "-ERR error message\r\n"
