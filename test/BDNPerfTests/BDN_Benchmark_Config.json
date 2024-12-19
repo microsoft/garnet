@@ -161,5 +161,20 @@
     "expected_SmallScript_None": 0,
     "expected_LargeScript_None": 12,
     "expected_ArrayReturn_None": 0
+  },
+  "BDN.benchmark.Network.RawStringOperations.*": {
+    "expected_Set_None": 0,
+    "expected_SetEx_None": 0,
+    "expected_SetNx_None": 0,
+    "expected_SetXx_None": 0,
+    "expected_GetFound_None": 0,
+    "expected_GetNotFound_None": 0,
+    "expected_Increment_None": 0,
+    "expected_Decrement_None": 0,
+    "expected_IncrementBy_None": 0,
+    "expected_DecrementBy_None": 0
+  },
+  "BDN.benchmark.Network.BasicOperations.*": {
+    "expected_InlinePing_None": 0
   }
 }
