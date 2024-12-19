@@ -10,6 +10,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\benchmark\BDN.benchmark\Embedded\EmbeddedNetworkSender.cs" Link="EmbeddedNetworkSender.cs" />
+    <Compile Include="..\..\benchmark\BDN.benchmark\Embedded\EmbeddedRespServer.cs" Link="EmbeddedRespServer.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="CommandLineParser" />
     <PackageReference Include="Microsoft.Extensions.Logging.Configuration" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" />

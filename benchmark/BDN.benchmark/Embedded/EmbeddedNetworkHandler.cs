@@ -1,16 +1,16 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using Embedded.perftest;
+using System.Diagnostics;
 using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
 
-namespace BDN.benchmark.Network
+namespace Embedded.server
 {
-    class BdnNetworkHandler : NetworkHandler<GarnetServerEmbedded, DummyNetworkSender>
+    class EmbeddedNetworkHandler : NetworkHandler<GarnetServerEmbedded, EmbeddedNetworkSender>
     {
-        public BdnNetworkHandler(GarnetServerEmbedded serverHook, DummyNetworkSender networkSender, NetworkBufferSettings networkBufferSettings, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer = null, ILogger logger = null) : base(serverHook, networkSender, networkBufferSettings, networkPool, useTLS, messageConsumer, logger)
+        public EmbeddedNetworkHandler(GarnetServerEmbedded serverHook, EmbeddedNetworkSender networkSender, NetworkBufferSettings networkBufferSettings, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer = null, ILogger logger = null) : base(serverHook, networkSender, networkBufferSettings, networkPool, useTLS, messageConsumer, logger)
         {
         }
 
@@ -18,6 +18,7 @@ namespace BDN.benchmark.Network
         public override string LocalEndpointName => throw new NotImplementedException();
         public override void Dispose()
         {
+            DisposeImpl();
         }
 
         public override bool TryClose() => throw new NotImplementedException();
@@ -27,6 +28,10 @@ namespace BDN.benchmark.Network
             networkReceiveBuffer = buffer;
             networkReceiveBufferPtr = bufferPtr;
             OnNetworkReceive(length);
+
+            // We should have consumed the entire buffer
+            Debug.Assert(networkBytesRead == 0);
+            Debug.Assert(networkReadHead == 0);
         }
     }
 }

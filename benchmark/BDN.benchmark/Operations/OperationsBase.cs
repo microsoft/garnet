@@ -3,7 +3,7 @@
 
 using System.Runtime.CompilerServices;
 using BenchmarkDotNet.Attributes;
-using Embedded.perftest;
+using Embedded.server;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
 
@@ -53,6 +53,7 @@ namespace BDN.benchmark.Operations
             {
                 QuietMode = true,
                 EnableLua = true,
+                DisablePubSub = true,
             };
             if (Params.useAof)
             {

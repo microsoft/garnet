@@ -3,7 +3,7 @@
 
 using System.Runtime.CompilerServices;
 using BenchmarkDotNet.Attributes;
-using Embedded.perftest;
+using Embedded.server;
 using Garnet.common;
 using Garnet.server;
 
@@ -39,7 +39,7 @@ namespace BDN.benchmark.Network
         /// </summary>
         const int batchSize = 100;
         EmbeddedRespServer server;
-        BdnNetworkHandler networkHandler;
+        EmbeddedNetworkHandler networkHandler;
 
         /// <summary>
         /// Setup
@@ -50,13 +50,15 @@ namespace BDN.benchmark.Network
             var opts = new GarnetServerOptions
             {
                 QuietMode = true,
+                DisablePubSub = true,
             };
-            server = new EmbeddedRespServer(opts);
+            var garnetServerEmbedded = new GarnetServerEmbedded();
+            server = new EmbeddedRespServer(opts, null, garnetServerEmbedded);
 
-            var networkSender = new DummyNetworkSender();
+            var networkSender = new EmbeddedNetworkSender();
             var networkSettings = new NetworkBufferSettings();
             var networkPool = networkSettings.CreateBufferPool();
-            networkHandler = new BdnNetworkHandler(new GarnetServerEmbedded(server), networkSender, networkSettings, networkPool, Params.useTLS);
+            networkHandler = new EmbeddedNetworkHandler(garnetServerEmbedded, networkSender, networkSettings, networkPool, Params.useTLS);
 
             // Send a PING message to warm up the session
             SlowConsumeMessage("PING\r\n"u8);
