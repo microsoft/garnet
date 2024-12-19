@@ -66,6 +66,12 @@ namespace Garnet.server
                     SetOperation.SPOP => false,
                     _ => true,
                 },
+                GarnetObjectType.Hash => header.HashOp switch
+                {
+                    HashOperation.HEXPIRE => false,
+                    HashOperation.HCOLLECT => false,
+                    _ => true,
+                },
                 GarnetObjectType.Expire => false,
                 GarnetObjectType.PExpire => false,
                 GarnetObjectType.Persist => false,
