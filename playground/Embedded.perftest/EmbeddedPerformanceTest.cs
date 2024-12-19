@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Embedded.server;
 using Microsoft.Extensions.Logging;
 
 namespace Embedded.perftest
