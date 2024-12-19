@@ -958,50 +958,6 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Read string array with length header
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadStringArrayResponseWithLengthHeader(out string[] result, ref byte* ptr, byte* end)
-        {
-            result = null;
-
-            // Parse RESP array header
-            if (!ReadSignedArrayLength(out var length, ref ptr, end))
-            {
-                return false;
-            }
-
-            if (length < 0)
-            {
-                // NULL value ('*-1\r\n')
-                return true;
-            }
-
-            // Parse individual strings in the array
-            result = new string[length];
-            for (var i = 0; i < length; i++)
-            {
-                if (*ptr == '$')
-                {
-                    if (!ReadStringResponseWithLengthHeader(out result[i], ref ptr, end))
-                        return false;
-                }
-                else if (*ptr == '+')
-                {
-                    if (!ReadSimpleString(out result[i], ref ptr, end))
-                        return false;
-                }
-                else
-                {
-                    if (!ReadIntegerAsString(out result[i], ref ptr, end))
-                        return false;
-                }
-            }
-
-            return true;
-        }
-
-        /// <summary>
         /// Read double with length header
         /// </summary>
         public static bool ReadDoubleWithLengthHeader(out double result, out bool parsed, ref byte* ptr, byte* end)

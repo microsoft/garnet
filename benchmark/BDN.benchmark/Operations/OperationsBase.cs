@@ -3,7 +3,7 @@
 
 using System.Runtime.CompilerServices;
 using BenchmarkDotNet.Attributes;
-using Embedded.perftest;
+using Embedded.server;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
 
@@ -39,7 +39,7 @@ namespace BDN.benchmark.Operations
         ///  25 us =  4 Mops/sec
         /// 100 us =  1 Mops/sec
         /// </summary>
-        const int batchSize = 100;
+        internal const int batchSize = 100;
         internal EmbeddedRespServer server;
         internal RespServerSession session;
 
@@ -53,6 +53,7 @@ namespace BDN.benchmark.Operations
             {
                 QuietMode = true,
                 EnableLua = true,
+                DisablePubSub = true,
             };
             if (Params.useAof)
             {
@@ -73,7 +74,9 @@ namespace BDN.benchmark.Operations
                     File.WriteAllText(aclFile, @"user default on nopass -@all +ping +set +get +setex +incr +decr +incrby +decrby +zadd +zrem +lpush +lpop +sadd +srem +hset +hdel +@custom");
                     opts.AuthSettings = new AclAuthenticationPasswordSettings(aclFile);
                 }
-                server = new EmbeddedRespServer(opts);
+
+                server = new EmbeddedRespServer(opts, null, new GarnetServerEmbedded());
+                session = server.GetRespSession();
             }
             finally
             {
@@ -92,6 +95,11 @@ namespace BDN.benchmark.Operations
         {
             session.Dispose();
             server.Dispose();
+        }
+
+        protected void Send(byte[] requestBuffer, byte* requestBufferPointer, int length)
+        {
+            _ = session.TryConsumeMessages(requestBufferPointer, length);
         }
 
         protected void SetupOperation(ref byte[] requestBuffer, ref byte* requestBufferPointer, ReadOnlySpan<byte> operation)

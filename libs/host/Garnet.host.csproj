@@ -29,7 +29,7 @@
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="Azure.Storage.Blobs" />
-    <PackageReference Include="NLua" />
+    <PackageReference Include="KeraLua" />
   </ItemGroup>
 
   <ItemGroup>

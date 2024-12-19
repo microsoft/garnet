@@ -3,13 +3,13 @@
 
 using BenchmarkDotNet.Attributes;
 
-namespace BDN.benchmark.Operations
+namespace BDN.benchmark.Network
 {
     /// <summary>
     /// Benchmark for RawStringOperations
     /// </summary>
     [MemoryDiagnoser]
-    public unsafe class RawStringOperations : OperationsBase
+    public unsafe class RawStringOperations : NetworkBase
     {
         static ReadOnlySpan<byte> SET => "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\na\r\n"u8;
         byte[] setRequestBuffer;

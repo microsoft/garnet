@@ -1,114 +1,63 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-using System.Collections.Concurrent;
-using System.Net;
-using System.Net.Security;
-using System.Net.Sockets;
-using System.Security.Cryptography.X509Certificates;
+
+using System.Runtime.CompilerServices;
 using BenchmarkDotNet.Attributes;
-using Garnet.common;
-using Garnet.networking;
+using Embedded.server;
 using Garnet.server;
-using Garnet.server.TLS;
 
 namespace BDN.benchmark.Network
 {
-    public abstract class NetworkBase
+    /// <summary>
+    /// Base class for network benchmarks
+    /// </summary>
+    public abstract unsafe class NetworkBase
     {
-        private Socket _serverSocket;
         /// <summary>
-        /// Base class for operations benchmarks
+        /// Parameters
         /// </summary>
+        [ParamsSource(nameof(NetworkParamsProvider))]
+        public NetworkParams Params { get; set; }
 
-        protected byte[] _networkEchoCommandBuffer;
+        /// <summary>
+        /// Operation parameters provider
+        /// </summary>
+        public IEnumerable<NetworkParams> NetworkParamsProvider()
+        {
+            yield return new(false);
+        }
 
-        private ConcurrentDictionary<INetworkHandler, byte> activeHandlers;
-        private NetworkBufferSettings _networkBufferSettings;
-        private LimitedFixedBufferPool _fixedBufferPool;
-        protected RemoteCertificateValidationCallback certValidation = (a, b, c, d) => { return true; };
-        private IGarnetServer garnetServer;
-        private Dictionary<TcpClient, SslStream> _tcpClients;
-        private IReadOnlyList<SslStream> sslStreams;
+        /// <summary>
+        /// Batch size per method invocation
+        /// With a batchSize of 100, we have a convenient conversion of latency to throughput:
+        ///   5 us = 20 Mops/sec
+        ///  10 us = 10 Mops/sec
+        ///  20 us =  5 Mops/sec
+        ///  25 us =  4 Mops/sec
+        /// 100 us =  1 Mops/sec
+        /// </summary>
+        const int batchSize = 100;
+        EmbeddedRespServer server;
+        EmbeddedNetworkHandler networkHandler;
 
+        /// <summary>
+        /// Setup
+        /// </summary>
         [GlobalSetup]
-        public virtual async Task GlobalSetup()
+        public virtual void GlobalSetup()
         {
-            try
+            var opts = new GarnetServerOptions
             {
-                var tlsOptions = new GarnetTlsOptions(
-                  certFileName: "testcert.pfx",
-                  certPassword: "placeholder",
-                  clientCertificateRequired: false,
-                  certificateRevocationCheckMode: X509RevocationMode.NoCheck,
-                  issuerCertificatePath: "testcert.pfx",
-                  null, 0, false, null);
-                var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
-                garnetServer = new GarnetServerTcp("127.0.0.1", 3278, serverBufferSize, tlsOptions);
-                garnetServer.Start();
-                ThreadPool.SetMinThreads(4, 4);
-                await SetupClientPool();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.ToString());
-            }
+                QuietMode = true,
+                DisablePubSub = true,
+            };
+
+            server = new EmbeddedRespServer(opts, null, new GarnetServerEmbedded());
+            networkHandler = server.GetNetworkHandler();
+
+            // Send a PING message to warm up the session
+            SlowConsumeMessage("PING\r\n"u8);
         }
-
-        public IReadOnlyList<SslStream> GetStreams()
-        {
-            return sslStreams;
-        }
-
-        private async Task SetupClientPool()
-        {
-            _tcpClients = new Dictionary<TcpClient, SslStream>();
-            for (int i = 0; i < 128; i++)
-            {
-                var client = new TcpClient();
-                await client.ConnectAsync("127.0.0.1", 3278);
-                var sslStream = new SslStream(client.GetStream(), false, certValidation, null);
-                _tcpClients.Add(client, sslStream);
-            }
-            sslStreams = [.. _tcpClients.Values];
-        }
-
-        public void StartSocketAccept()
-        {
-            var endPoint = new IPEndPoint(IPAddress.Parse("127.0.0.1"), 3278);
-            var acceptEventArg = new SocketAsyncEventArgs();
-            _serverSocket.Bind(endPoint);
-            _serverSocket.Listen(512);
-            if (!_serverSocket.AcceptAsync(acceptEventArg))
-                AcceptEventArg_Completed(null, acceptEventArg);
-            acceptEventArg.Completed += AcceptEventArg_Completed;
-        }
-
-        private void AcceptEventArg_Completed(object sender, SocketAsyncEventArgs e)
-        {
-            try
-            {
-                do
-                {
-                    var tlsOptions = new GarnetTlsOptions(
-                           certFileName: "testcert.pfx",
-                           certPassword: "placeholder",
-                           clientCertificateRequired: false,
-                           certificateRevocationCheckMode: X509RevocationMode.NoCheck,
-                           issuerCertificatePath: "testcert.pfx",
-                           null, 0, false, null);
-                    MockTcpNetworkHandler networkHandler = new MockTcpNetworkHandler(e.AcceptSocket, _networkBufferSettings, _fixedBufferPool, true);
-                    if (activeHandlers.TryAdd(networkHandler, 0))
-                    {
-                        networkHandler.Start(tlsOptions.TlsServerOptions);
-                    }
-
-                    e.AcceptSocket = null;
-                } while (!_serverSocket.AcceptAsync(e));
-            }
-            // socket disposed
-            catch (ObjectDisposedException) { }
-        }
-
 
         /// <summary>
         /// Cleanup
@@ -116,12 +65,29 @@ namespace BDN.benchmark.Network
         [GlobalCleanup]
         public virtual void GlobalCleanup()
         {
-            foreach (var tcpClient in _tcpClients)
-            {
-                tcpClient.Value.Dispose();
-                tcpClient.Key.Dispose();
-            }
-            garnetServer.Dispose();
+            networkHandler.Dispose();
+            server.Dispose();
+        }
+
+        protected void Send(byte[] requestBuffer, byte* requestBufferPointer, int length)
+        {
+            networkHandler.Send(requestBuffer, requestBufferPointer, length);
+        }
+
+        protected void SetupOperation(ref byte[] requestBuffer, ref byte* requestBufferPointer, ReadOnlySpan<byte> operation)
+        {
+            requestBuffer = GC.AllocateArray<byte>(operation.Length * batchSize, pinned: true);
+            requestBufferPointer = (byte*)Unsafe.AsPointer(ref requestBuffer[0]);
+            for (int i = 0; i < batchSize; i++)
+                operation.CopyTo(new Span<byte>(requestBuffer).Slice(i * operation.Length));
+        }
+
+        protected void SlowConsumeMessage(ReadOnlySpan<byte> message)
+        {
+            var buffer = GC.AllocateArray<byte>(message.Length, pinned: true);
+            var bufferPointer = (byte*)Unsafe.AsPointer(ref buffer[0]);
+            message.CopyTo(new Span<byte>(buffer));
+            Send(buffer, bufferPointer, buffer.Length);
         }
     }
 }
