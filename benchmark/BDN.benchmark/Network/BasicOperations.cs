@@ -3,13 +3,13 @@
 
 using BenchmarkDotNet.Attributes;
 
-namespace BDN.benchmark.Operations
+namespace BDN.benchmark.Network
 {
     /// <summary>
     /// Benchmark for BasicOperations
     /// </summary>
     [MemoryDiagnoser]
-    public unsafe class BasicOperations : OperationsBase
+    public unsafe class BasicOperations : NetworkBase
     {
         static ReadOnlySpan<byte> INLINE_PING => "PING\r\n"u8;
         byte[] pingRequestBuffer;
