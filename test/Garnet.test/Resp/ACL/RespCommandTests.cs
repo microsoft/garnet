@@ -5028,21 +5028,6 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task SetWithEtagACLsAsync()
-        {
-            await CheckCommandsAsync(
-               "SETWITHETAG",
-               [DoSetWithEtagAsync]
-           );
-
-            static async Task DoSetWithEtagAsync(GarnetClient client)
-            {
-                long val = await client.ExecuteForLongResultAsync("SETWITHETAG", ["foo", "bar"]);
-                ClassicAssert.AreEqual(0, val);
-            }
-        }
-
-        [Test]
         public async Task SetIfMatchACLsAsync()
         {
             await CheckCommandsAsync(

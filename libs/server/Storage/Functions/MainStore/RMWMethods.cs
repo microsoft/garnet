@@ -50,7 +50,8 @@ namespace Garnet.server
             recordInfo.ClearHasETag();
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
 
-            switch (input.header.cmd)
+            RespCommand cmd = input.header.cmd;
+            switch (cmd)
             {
                 case RespCommand.PFADD:
                     var v = value.ToPointer();
@@ -74,20 +75,54 @@ namespace Garnet.server
 
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
+                    bool withEtag = input.header.CheckWithEtagFlag();
+                    int spaceForEtag = 0;
+                    if (withEtag)
+                    {
+                        spaceForEtag = Constants.EtagSize;
+                        recordInfo.SetHasETag();
+                    }
+
                     // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
                     value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(newInputValue.Length + metadataSize);
+                    value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
                     value.ExtraMetadata = input.arg1;
-                    newInputValue.CopyTo(value.AsSpan());
+                    newInputValue.CopyTo(value.AsSpan(spaceForEtag));
+                    if (withEtag)
+                    {
+                        // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
+                        *(long*)value.ToPointer() = Constants.BaseEtag + 1;
+                        if (cmd == RespCommand.SET)
+                        {
+                            // Copy initial etag to output only for SET + WITHETAG and not SET NX or XX 
+                            CopyRespNumber(Constants.BaseEtag + 1, ref output);
+                        }
+
+                    }
                     break;
 
                 case RespCommand.SETKEEPTTL:
+                    withEtag = input.header.CheckWithEtagFlag();
+                    spaceForEtag = 0;
+                    if (withEtag)
+                    {
+                        spaceForEtag = Constants.EtagSize;
+                        recordInfo.SetHasETag();
+                    }
+
                     // Copy input to value, retain metadata in value
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    value.ShrinkSerializedLength(value.MetadataSize + setValue.Length);
-                    setValue.CopyTo(value.AsSpan());
+                    value.ShrinkSerializedLength(value.MetadataSize + setValue.Length + spaceForEtag);
+                    setValue.CopyTo(value.AsSpan(spaceForEtag));
+
+                    if (withEtag)
+                    {
+                        *(long*)value.ToPointer() = Constants.BaseEtag + 1;
+                        // Copy initial etag to output
+                        CopyRespNumber(Constants.BaseEtag + 1, ref output);
+                    }
                     break;
 
                 case RespCommand.SETKEEPTTLXX:
@@ -175,19 +210,6 @@ namespace Garnet.server
                         return true;
                     }
                     CopyUpdateNumber(incrByFloat, ref value, ref output);
-                    break;
-                case RespCommand.SETWITHETAG:
-                    metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
-                    value.UnmarkExtraMetadata();
-                    value.ExtraMetadata = input.arg1;
-                    recordInfo.SetHasETag();
-                    var valueToSet = input.parseState.GetArgSliceByRef(0);
-                    value.ShrinkSerializedLength(value.MetadataSize + valueToSet.Length + Constants.EtagSize);
-                    // initial etag set to 0, this is a counter based etag that is incremented on change
-                    *(long*)value.ToPointer() = 0;
-                    valueToSet.ReadOnlySpan.CopyTo(value.AsSpan(Constants.EtagSize));
-                    // Copy initial etag to output
-                    CopyRespNumber(0, ref output);
                     break;
                 default:
                     value.UnmarkExtraMetadata();
@@ -284,44 +306,13 @@ namespace Garnet.server
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref value, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
-                    return true;
-                case RespCommand.SETWITHETAG:
-                    // SETWITHETAG WILL OVERRIDE the existing value, unless sent with RETAIN ETAG and already has etag
-                    var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
-
-                    long etag = recordInfo.ETag && input.header.CheckRetainEtagFlag() ? oldEtag + 1 : 0;
-                    var valueToSet = input.parseState.GetArgSliceByRef(0);
-
-                    if (value.Length < valueToSet.length + metadataSize + Constants.EtagSize)
-                        return false;
-
-                    recordInfo.SetHasETag();
-
-                    // Adjust value length that will result from this change
-                    rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
-                    value.ShrinkSerializedLength(metadataSize + valueToSet.Length + Constants.EtagSize);
-                    rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
-
-                    if (metadataSize != 0)
-                        value.ExtraMetadata = input.arg1;
-                    *(long*)value.ToPointer() = etag;
-                    valueToSet.ReadOnlySpan.CopyTo(value.AsSpan(Constants.EtagSize));
-
-                    // Copy initial etag to output
-                    CopyRespNumber(etag, ref output);
-
+                    // Nothing is set because being in this block means NX was already violated
                     return true;
                 case RespCommand.SETIFMATCH:
-                    // Cancelling the operation and returning false is used to indicate no RMW because of ETAGMISMATCH
-                    // In this case no etag will match the "nil" etag on a record without an etag
-                    if (!recordInfo.ETag)
-                    {
-                        rmwInfo.Action = RMWAction.CancelOperation;
-                        return false;
-                    }
+                    long etagFromClient = input.parseState.GetLong(1);
 
-                    var prevEtag = *(long*)value.ToPointer();
-                    var etagFromClient = input.parseState.GetLong(1);
+                    // No Etag is the same as having an etag of 0
+                    long prevEtag = recordInfo.ETag ? *(long*)value.ToPointer() : 0;
 
                     if (prevEtag != etagFromClient)
                     {
@@ -332,9 +323,10 @@ namespace Garnet.server
 
                     // Need Copy update if no space for new value
                     var inputValue = input.parseState.GetArgSliceByRef(0);
-                    if (value.Length - Constants.EtagSize < inputValue.length)
+                    if (value.Length < inputValue.length + Constants.EtagSize)
                         return false;
 
+                    recordInfo.SetHasETag();
                     // Increment the ETag
                     long newEtag = prevEtag + 1;
 
@@ -352,30 +344,44 @@ namespace Garnet.server
                     return true;
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
-                    // If user wants to retain etag and the data has etag, we need to silently update/keep the etag, but the response should not be written with the etag
+                    // If the user calls withetag then we need to either update an existing etag and set the value
+                    // or set the value with an initial etag and increment it.
+                    // If withEtag is called we return the etag back to the user
+
                     var nextUpdateEtagOffset = etagIgnoredOffset;
                     var nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
-                    if (!input.header.CheckRetainEtagFlag())
+                    if (!input.header.CheckWithEtagFlag())
                     {
                         // if the user did not explictly asked for retaining the etag we need to ignore the etag even if it existed on the previous record
                         nextUpdateEtagOffset = 0;
                         nextUpdateEtagIgnoredEnd = -1;
                         recordInfo.ClearHasETag();
                     }
+                    else if (!recordInfo.ETag)
+                    {
+                        // this is the case where we have withetag option and no etag from before
+                        nextUpdateEtagOffset = Constants.EtagSize;
+                        nextUpdateEtagIgnoredEnd = value.LengthWithoutMetadata;
+                        oldEtag = Constants.BaseEtag;
+                    }
 
-                    var setValue = input.parseState.GetArgSliceByRef(0);
+                    ArgSlice setValue = input.parseState.GetArgSliceByRef(0);
 
                     // Need CU if no space for new value
-                    metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
-                    if (setValue.Length + metadataSize > value.Length - etagIgnoredOffset)
+                    int metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
+                    if (setValue.Length + metadataSize > value.Length - nextUpdateEtagOffset)
                         return false;
 
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
                     {
+                        Debug.Assert(!input.header.CheckWithEtagFlag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref value, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
+
+                    if (input.header.CheckWithEtagFlag())
+                        recordInfo.SetHasETag();
 
                     // Adjust value length
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
@@ -387,28 +393,53 @@ namespace Garnet.server
                     setValue.ReadOnlySpan.CopyTo(value.AsSpan(nextUpdateEtagOffset));
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
+                    if (input.header.CheckWithEtagFlag())
+                    {
+                        *(long*)value.ToPointer() = oldEtag + 1;
+                        // withetag flag means we need to write etag back to the output buffer
+                        CopyRespNumber(oldEtag + 1, ref output);
+                        // early return since we already updated etag
+                        return true;
+                    }
+
                     break;
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
-                    // respect etag retention only if input header tells you to explicitly
-                    if (!input.header.CheckRetainEtagFlag())
+                    // If the user calls withetag then we need to either update an existing etag and set the value
+                    // or set the value with an initial etag and increment it.
+                    // If withEtag is called we return the etag back to the user
+                    nextUpdateEtagOffset = etagIgnoredOffset;
+                    nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
+                    if (!input.header.CheckWithEtagFlag())
                     {
-                        etagIgnoredOffset = 0;
-                        etagIgnoredEnd = -1;
+                        // if the user did not explictly asked for retaining the etag we need to ignore the etag even if it existed on the previous record
+                        nextUpdateEtagOffset = 0;
+                        nextUpdateEtagIgnoredEnd = -1;
                         recordInfo.ClearHasETag();
+                    }
+                    else if (!recordInfo.ETag)
+                    {
+                        // this is the case where we have withetag option and no etag from before
+                        nextUpdateEtagOffset = Constants.EtagSize;
+                        nextUpdateEtagIgnoredEnd = value.LengthWithoutMetadata;
+                        oldEtag = Constants.BaseEtag;
                     }
 
                     setValue = input.parseState.GetArgSliceByRef(0);
                     // Need CU if no space for new value
-                    if (setValue.Length + value.MetadataSize > value.Length - etagIgnoredOffset)
+                    if (setValue.Length + value.MetadataSize > value.Length - nextUpdateEtagOffset)
                         return false;
 
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
                     {
+                        Debug.Assert(!input.header.CheckWithEtagFlag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref value, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
+
+                    if (input.header.CheckWithEtagFlag())
+                        recordInfo.SetHasETag();
 
                     // Adjust value length
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
@@ -417,8 +448,17 @@ namespace Garnet.server
                     // Copy input to value
                     setValue.ReadOnlySpan.CopyTo(value.AsSpan(etagIgnoredOffset));
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
-                    // etag is not updated
-                    return true;
+
+                    if (input.header.CheckWithEtagFlag())
+                    {
+                        *(long*)value.ToPointer() = oldEtag + 1;
+                        // withetag flag means we need to write etag back to the output buffer
+                        CopyRespNumber(oldEtag + 1, ref output);
+                        // early return since we already updated etag
+                        return true;
+                    }
+
+                    break;
 
                 case RespCommand.PEXPIRE:
                 case RespCommand.EXPIRE:
@@ -711,17 +751,26 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.SETIFMATCH:
-                    if (!rmwInfo.RecordInfo.ETag)
-                        return false;
+                    long etagToCheckWith = input.parseState.GetLong(1);
+                    // lack of an etag is the same as having a zero'd etag
+                    long existingEtag;
+                    // No Etag is the same as having an etag of 0
+                    if (rmwInfo.RecordInfo.ETag)
+                    {
+                        existingEtag = *(long*)oldValue.ToPointer();
+                    }
+                    else
+                    {
+                        existingEtag = 0;
+                    }
 
-                    var etagToCheckWith = input.parseState.GetLong(1);
-                    long existingEtag = *(long*)oldValue.ToPointer();
                     if (existingEtag != etagToCheckWith)
                     {
                         // cancellation and return false indicates ETag mismatch
                         rmwInfo.Action = RMWAction.CancelOperation;
                         return false;
                     }
+
                     return true;
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
@@ -731,12 +780,14 @@ namespace Garnet.server
                         rmwInfo.Action = RMWAction.ExpireAndResume;
                         return false;
                     }
+
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref oldValue, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
+                    // since this block is only hit when this an update, the NX is violated and so we can return early from it without setting the value
                     return false;
                 case RespCommand.SETEXXX:
                     // Expired data, return false immediately so we do not set, since it does not exist
@@ -774,8 +825,8 @@ namespace Garnet.server
 
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref newValue, newValue.TotalSize);
 
-            var cmd = input.header.cmd;
-            var shouldUpdateEtag = true;
+            RespCommand cmd = input.header.cmd;
+            bool shouldUpdateEtag = true;
             int etagIgnoredOffset = 0;
             int etagIgnoredEnd = -1;
             long oldEtag = -1;
@@ -788,89 +839,107 @@ namespace Garnet.server
 
             switch (cmd)
             {
-                case RespCommand.SETWITHETAG:
-                    recordInfo.SetHasETag();
-                    var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
-                    if (metadataSize != 0)
-                        newValue.ExtraMetadata = input.arg1;
-
-                    long etag = input.header.CheckRetainEtagFlag() && recordInfo.ETag ? oldEtag + 1 : 0;
-                    var dest = newValue.AsSpan(Constants.EtagSize);
-                    var src = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-
-                    Debug.Assert(src.Length + Constants.EtagSize == newValue.Length);
-
-                    src.CopyTo(dest);
-
-                    CopyRespNumber(etag, ref output);
-                    break;
-
                 case RespCommand.SETIFMATCH:
-                    Debug.Assert(recordInfo.ETag, "We should never be able to CU for ETag command on non-etag data.");
-
-                    // avoids double update at the end
                     shouldUpdateEtag = false;
+
+                    // No Etag is the same as having an etag of 0
+                    if (!recordInfo.ETag)
+                    {
+                        oldEtag = 0;
+                    }
+
                     *(long*)newValue.ToPointer() = oldEtag + 1;
 
                     // Copy input to value
-                    dest = newValue.AsSpan(Constants.EtagSize);
-                    src = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                    Span<byte> dest = newValue.AsSpan(Constants.EtagSize);
+                    ReadOnlySpan<byte> src = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
-                    Debug.Assert(src.Length + Constants.EtagSize == newValue.Length);
+                    Debug.Assert(src.Length + Constants.EtagSize + oldValue.MetadataSize == newValue.Length);
 
+                    // retain metadata
+                    newValue.ExtraMetadata = oldValue.ExtraMetadata;
                     src.CopyTo(dest);
 
                     // Write Etag and Val back to Client
-                    CopyRespToWithInput(ref input, ref newValue, ref output, false, 0, -1, hasEtagInVal: true);
+                    CopyRespToWithInput(ref input, ref newValue, ref output, isFromPending: false, 0, -1, hasEtagInVal: true);
                     break;
 
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
                     var nextUpdateEtagOffset = etagIgnoredOffset;
                     var nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
-                    if (!input.header.CheckRetainEtagFlag())
+
+                    if (!input.header.CheckWithEtagFlag())
                     {
                         // if the user did not explictly asked for retaining the etag we need to ignore the etag if it existed on the previous record
                         nextUpdateEtagOffset = 0;
                         nextUpdateEtagIgnoredEnd = -1;
                         recordInfo.ClearHasETag();
                     }
+                    else if (!recordInfo.ETag)
+                    {
+                        // this is the case where we have withetag option and no etag from before
+                        nextUpdateEtagOffset = Constants.EtagSize;
+                        nextUpdateEtagIgnoredEnd = oldValue.LengthWithoutMetadata;
+                        oldEtag = 0;
+                        recordInfo.SetHasETag();
+                    }
 
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
                     {
+                        Debug.Assert(!input.header.CheckWithEtagFlag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref oldValue, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
 
                     // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
+                    int metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
 
                     // new value when allocated should have 8 bytes more if the previous record had etag and the cmd was not SETEXXX
-                    Debug.Assert(newInputValue.Length + metadataSize + etagIgnoredOffset == newValue.Length);
+                    Debug.Assert(newInputValue.Length + metadataSize + nextUpdateEtagOffset == newValue.Length);
 
                     newValue.ExtraMetadata = input.arg1;
                     newInputValue.CopyTo(newValue.AsSpan(nextUpdateEtagOffset));
+
+                    if (input.header.CheckWithEtagFlag())
+                    {
+                        shouldUpdateEtag = false;
+                        *(long*)newValue.ToPointer() = oldEtag + 1;
+                        // withetag flag means we need to write etag back to the output buffer
+                        CopyRespNumber(oldEtag + 1, ref output);
+                    }
+
                     break;
 
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
                     nextUpdateEtagOffset = etagIgnoredOffset;
                     nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
-                    if (input.header.CheckRetainEtagFlag())
+                    if (!input.header.CheckWithEtagFlag())
                     {
                         // if the user did not explictly asked for retaining the etag we need to ignore the etag if it existed on the previous record
                         nextUpdateEtagOffset = 0;
                         nextUpdateEtagIgnoredEnd = -1;
                     }
+                    else if (!recordInfo.ETag)
+                    {
+                        // this is the case where we have withetag option and no etag from before
+                        nextUpdateEtagOffset = Constants.EtagSize;
+                        nextUpdateEtagIgnoredEnd = oldValue.LengthWithoutMetadata;
+                        oldEtag = 0;
+                        recordInfo.SetHasETag();
+                    }
 
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    Debug.Assert(oldValue.MetadataSize + setValue.Length == newValue.Length - etagIgnoredOffset);
+
+                    Debug.Assert(oldValue.MetadataSize + setValue.Length + nextUpdateEtagOffset == newValue.Length);
 
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
                     {
+                        Debug.Assert(!input.header.CheckWithEtagFlag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref oldValue, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
@@ -878,6 +947,14 @@ namespace Garnet.server
                     // Copy input to value, retain metadata of oldValue
                     newValue.ExtraMetadata = oldValue.ExtraMetadata;
                     setValue.CopyTo(newValue.AsSpan(nextUpdateEtagOffset));
+                    if (input.header.CheckWithEtagFlag())
+                    {
+                        shouldUpdateEtag = false;
+                        *(long*)newValue.ToPointer() = oldEtag + 1;
+                        // withetag flag means we need to write etag back to the output buffer
+                        CopyRespNumber(oldEtag + 1, ref output);
+                    }
+
                     break;
 
                 case RespCommand.EXPIRE:
@@ -1015,6 +1092,7 @@ namespace Garnet.server
                     return false;
 
                 case RespCommand.GETEX:
+                    shouldUpdateEtag = false;
                     CopyRespTo(ref oldValue, ref output, etagIgnoredOffset, etagIgnoredEnd);
 
                     if (input.arg1 > 0)

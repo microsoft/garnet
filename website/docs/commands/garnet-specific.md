@@ -131,26 +131,6 @@ Compatibility with non-ETag commands and the behavior of data inserted with ETag
 
 ---
 
-### **SETWITHETAG**
-
-#### **Syntax**
-
-```bash
-SETWITHETAG key value [RETAINETAG]
-```
-
-Inserts a key-value string pair into Garnet, associating an ETag that will be updated upon changes to the value.
-
-**Options:**
-
-* RETAINETAG -- Update the Etag associated with the previous key-value pair, while setting the new value for the key. If not etag existed for the previous key this will initialize one.
-
-#### **Response**
-
-- **Integer reply**: A response integer indicating the initial ETag value on success.
-
----
-
 ### **GETWITHETAG**
 
 #### **Syntax**
@@ -186,7 +166,7 @@ One of the following:
 
 - **Integer reply**: The updated ETag if the value was successfully updated.
 - **Nil reply**: If the key does not exist.
-- **Simple string reply**: If the provided ETag does not match the current ETag or If the command is called on a record without an ETag a simple string indicating ETag mismatch is returned.
+- **Simple string reply**: If the provided ETag does not match the current ETag returns VAL_NOT_FOUND
 
 ---
 
@@ -204,9 +184,8 @@ Retrieves the value if the ETag associated with the key has changed; otherwise, 
 
 One of the following:
 
-- **Array reply**: If the ETag does not match, an array of two items is returned. The first item is the updated ETag, and the second item is the value associated with the key. If called on a record without an ETag the first item in the array will be nil.
+- **Array reply**: If the ETag does not match, an array of two items is returned. The first item is the updated ETag, and the second item is the value associated with the key. If called on a record without an ETag the first item in the array will be 0. If the etag matches then we the first item on the array is the existing etag, but the second value is Nil
 - **Nil reply**: If the key does not exist.
-- **Simple string reply**: if the provided ETag matches the current ETag, returns a simple string indicating the value is unchanged.
 
 ---
 
@@ -216,7 +195,7 @@ Below is the expected behavior of ETag-associated key-value pairs when non-ETag 
 
 - **MSET, BITOP**: These commands will replace an existing ETag-associated key-value pair with a non-ETag key-value pair, effectively removing the ETag.
 
-- **SET**: Only if used with additional option "RETAINETAG" will calling SET update the etag while inserting the new key-value pair over the existing key-value pair.
+- **SET**: Only if used with additional option "WITHETAG" will calling SET update the etag while inserting the new key-value pair over the existing key-value pair.
 
 - **RENAME**: Renaming an old ETag-associated key-value pair will create the newly renamed key with an initial etag of 0. If the key being renamed to already existed before hand, it will retain the etag of the existing key that was the target of the rename, and show it as an updated etag.
 

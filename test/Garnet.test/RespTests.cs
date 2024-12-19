@@ -1857,8 +1857,8 @@ namespace Garnet.test
             var key = "key1";
             var newKey = "key2";
 
-            db.Execute("SETWITHETAG", key, origValue);
-            db.Execute("SETWITHETAG", newKey, "foo");
+            db.Execute("SET", key, origValue, "WITHETAG");
+            db.Execute("SET", newKey, "foo", "WITHETAG");
 
             var result = db.KeyRename(key, newKey, When.NotExists);
             ClassicAssert.IsFalse(result);
@@ -1873,7 +1873,7 @@ namespace Garnet.test
             var key = "key1";
             var newKey = "key2";
 
-            db.Execute("SETWITHETAG", key, origValue);
+            db.Execute("SET", key, origValue, "WITHETAG");
 
             var result = db.KeyRename(key, newKey, When.NotExists);
             ClassicAssert.IsTrue(result);

@@ -110,10 +110,6 @@ namespace Garnet.server
                     ndigits = NumUtils.NumDigitsInLong(-input.arg1, ref fNeg);
 
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
-                case RespCommand.SETWITHETAG:
-                    // same space as SET but with 8 additional bytes for etag at the front of the payload
-                    newValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    return sizeof(int) + newValue.Length + Constants.EtagSize + metadataSize;
                 case RespCommand.INCRBYFLOAT:
                     if (!input.parseState.TryGetDouble(0, out var incrByFloat))
                         return sizeof(int);
@@ -136,7 +132,8 @@ namespace Garnet.server
                         return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
                     }
 
-                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + metadataSize;
+                    int allocationForEtag = input.header.CheckWithEtagFlag() ? Constants.EtagSize : 0;
+                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + metadataSize + allocationForEtag;
             }
         }
 
@@ -146,8 +143,8 @@ namespace Garnet.server
             if (input.header.cmd != RespCommand.NONE)
             {
                 var cmd = input.header.cmd;
-                int etagOffset = hasEtag ? Constants.EtagSize : 0;
-                bool retainEtag = input.header.CheckRetainEtagFlag();
+                bool withEtag = input.header.CheckWithEtagFlag();
+                int etagOffset = hasEtag || withEtag ? Constants.EtagSize : 0;
 
                 switch (cmd)
                 {
@@ -208,21 +205,21 @@ namespace Garnet.server
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
                         var setValue = input.parseState.GetArgSliceByRef(0);
-                        if (!retainEtag)
+                        if (!withEtag)
                             etagOffset = 0;
                         return sizeof(int) + t.MetadataSize + setValue.Length + etagOffset;
 
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
-                        if (!retainEtag)
+                        if (!withEtag)
                             etagOffset = 0;
                         return sizeof(int) + input.parseState.GetArgSliceByRef(0).Length + (input.arg1 == 0 ? 0 : sizeof(long)) + etagOffset;
                     case RespCommand.PERSIST:
                         return sizeof(int) + t.LengthWithoutMetadata;
-                    case RespCommand.SETWITHETAG:
                     case RespCommand.SETIFMATCH:
                         var newValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                        return sizeof(int) + newValue.Length + Constants.EtagSize + t.MetadataSize + (input.arg1 == 0 ? 0 : sizeof(long));
+                        // always preserves the metadata and includes the etag
+                        return sizeof(int) + newValue.Length + Constants.EtagSize + t.MetadataSize;
                     case RespCommand.EXPIRE:
                     case RespCommand.PEXPIRE:
                     case RespCommand.EXPIREAT:

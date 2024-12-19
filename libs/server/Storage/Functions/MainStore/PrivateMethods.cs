@@ -247,30 +247,23 @@ namespace Garnet.server
                 case RespCommand.SETIFMATCH:
                 case RespCommand.GETIFNOTMATCH:
                 case RespCommand.GETWITHETAG:
-                    // If this has an etag then we want to use it other wise null
-                    // we know somethgin doesnt have an etag if
-                    long etag = -1;
                     int valueLength = value.LengthWithoutMetadata;
-                    int desiredLength;
+                    // always writing an array of size 2 => *2\r\n
+                    int desiredLength = 4;
                     ReadOnlySpan<byte> etagTruncatedVal;
+                    // get etag to write, default etag 0 for when no etag
+                    long etag = hasEtagInVal ? *(long*)value.ToPointer() : Constants.BaseEtag;
+                    // remove the length of the ETAG
+                    var etagAccountedValueLength = valueLength - payloadEtagAccountedEndOffset;
                     if (hasEtagInVal)
                     {
-                        // Get value without RESP header; exclude expiration
-                        // extract ETAG, write as long into dst, and then value
-                        etag = *(long*)value.ToPointer();
-                        // remove the length of the ETAG
-                        valueLength -= Constants.EtagSize;
-                        // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
-                        etagTruncatedVal = value.AsReadOnlySpan(Constants.EtagSize);
-                        // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
-                        desiredLength = 4 + 1 + NumUtils.NumDigitsInLong(etag) + 2 + 1 + NumUtils.NumDigits(valueLength) + 2 + valueLength + 2;
+                        etagAccountedValueLength = valueLength - Constants.EtagSize;
+                        payloadEtagAccountedEndOffset = Constants.EtagSize;
                     }
-                    else
-                    {
-                        etagTruncatedVal = value.AsReadOnlySpan();
-                        // instead of :(etagdigits) we will have nil after array len
-                        desiredLength = 4 + 3 + 2 + 1 + NumUtils.NumDigits(valueLength) + 2 + valueLength + 2;
-                    }
+                    // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
+                    etagTruncatedVal = value.AsReadOnlySpan(payloadEtagAccountedEndOffset);
+                    // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
+                    desiredLength += 1 + NumUtils.NumDigitsInLong(etag) + 2 + 1 + NumUtils.NumDigits(etagAccountedValueLength) + 2 + etagAccountedValueLength + 2;
 
                     WriteValAndEtagToDst(desiredLength, ref etagTruncatedVal, etag, ref dst);
                     return;
@@ -290,14 +283,14 @@ namespace Garnet.server
             }
         }
 
-        void WriteValAndEtagToDst(int desiredLength, ref ReadOnlySpan<byte> value, long etag, ref SpanByteAndMemory dst)
+        void WriteValAndEtagToDst(int desiredLength, ref ReadOnlySpan<byte> value, long etag, ref SpanByteAndMemory dst, bool writeDirect = false)
         {
             if (desiredLength <= dst.Length)
             {
                 dst.Length = desiredLength;
                 byte* curr = dst.SpanByte.ToPointer();
                 byte* end = curr + dst.SpanByte.Length;
-                RespWriteEtagValArray(etag, ref value, ref curr, end);
+                RespWriteEtagValArray(etag, ref value, ref curr, end, writeDirect);
                 return;
             }
 
@@ -308,23 +301,20 @@ namespace Garnet.server
             {
                 byte* curr = ptr;
                 byte* end = ptr + desiredLength;
-                RespWriteEtagValArray(etag, ref value, ref curr, end);
+                RespWriteEtagValArray(etag, ref value, ref curr, end, writeDirect);
             }
         }
 
-        static void RespWriteEtagValArray(long etag, ref ReadOnlySpan<byte> value, ref byte* curr, byte* end)
+        static void RespWriteEtagValArray(long etag, ref ReadOnlySpan<byte> value, ref byte* curr, byte* end, bool writeDirect)
         {
             // Writes a Resp encoded Array of Integer for ETAG as first element, and bulk string for value as second element
             RespWriteUtils.WriteArrayLength(2, ref curr, end);
-            if (etag == -1)
-            {
-                RespWriteUtils.WriteNull(ref curr, end);
-            }
+            RespWriteUtils.WriteInteger(etag, ref curr, end);
+
+            if (writeDirect)
+                RespWriteUtils.WriteDirect(value, ref curr, end);
             else
-            {
-                RespWriteUtils.WriteInteger(etag, ref curr, end);
-            }
-            RespWriteUtils.WriteBulkString(value, ref curr, end);
+                RespWriteUtils.WriteBulkString(value, ref curr, end);
         }
 
         bool EvaluateExpireInPlace(ExpireOption optionType, bool expiryExists, long newExpiry, ref SpanByte value, ref SpanByteAndMemory output)

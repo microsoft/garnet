@@ -202,7 +202,7 @@ namespace Garnet.test
             RawStringInput input = new RawStringInput(RespCommand.SET);
             input.header.cmd = RespCommand.SET;
             // if we send a SET we must explictly ask it to retain etag, and use conditional set
-            input.header.SetRetainEtagFlag();
+            input.header.SetWithEtagFlag();
 
             fixed (byte* valuePtr = valueToMessWith.ToArray())
             {
@@ -1376,8 +1376,8 @@ namespace Garnet.test
 
             try
             {
-                db.Execute("SETWITHETAG", key1, value1);
-                db.Execute("SETWITHETAG", key2, value2);
+                db.Execute("SET", key1, value1, "WITHETAG");
+                db.Execute("SET", key2, value2, "WITHETAG");
 
                 RedisResult result = db.Execute("RANDOPS", key1, key2);
 
@@ -1414,8 +1414,8 @@ namespace Garnet.test
 
             try
             {
-                db.Execute("SETWITHETAG", key1, value1);
-                db.Execute("SETWITHETAG", key2, value2);
+                db.Execute("SET", key1, value1, "WITHETAG");
+                db.Execute("SET", key2, value2, "WITHETAG");
 
                 // incr key2, and just get key1
                 RedisResult result = db.Execute("INCRGET", key2, key1);

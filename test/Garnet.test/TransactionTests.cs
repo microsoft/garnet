@@ -226,7 +226,7 @@ namespace Garnet.test
             byte[] res;
 
             string expectedResponse = ":0\r\n";
-            res = lightClientRequest.SendCommand("SETWITHETAG key1 value1");
+            res = lightClientRequest.SendCommand("SET key1 value1 WITHETAG");
             ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             expectedResponse = "+OK\r\n";
@@ -242,7 +242,7 @@ namespace Garnet.test
             res = lightClientRequest.SendCommand("SET key2 value2");
             ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
-            await Task.Run(() => updateKey("key1", "value1_updated", retainEtag: true));
+            await Task.Run(() => updateKey("key1", "value1_updated", withEtag: true));
 
             res = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
@@ -254,17 +254,17 @@ namespace Garnet.test
             lightClientRequest.SendCommand("GET key1");
             lightClientRequest.SendCommand("SET key2 value2");
             // check that all the etag commands can be called inside a transaction
-            lightClientRequest.SendCommand("SETWITHETAG key3 value2");
+            lightClientRequest.SendCommand("SET key3 value2 WITHETAG ");
             lightClientRequest.SendCommand("GETWITHETAG key3");
             lightClientRequest.SendCommand("GETIFNOTMATCH key3 0");
             lightClientRequest.SendCommand("SETIFMATCH key3 anotherVal 0");
-            lightClientRequest.SendCommand("SETWITHETAG key3 arandomval RETAINETAG");
+            lightClientRequest.SendCommand("SET key3 arandomval WITHETAG");
 
             res = lightClientRequest.SendCommand("EXEC");
 
-            expectedResponse = "*7\r\n$14\r\nvalue1_updated\r\n+OK\r\n:0\r\n*2\r\n:0\r\n$6\r\nvalue2\r\n+NOTCHANGED\r\n*2\r\n:1\r\n$10\r\nanotherVal\r\n:2\r\n";
+            expectedResponse = "*7\r\n$14\r\nvalue1_updated\r\n+OK\r\n:0\r\n*2\r\n:0\r\n$6\r\nvalue2\r\n*2\r\n:0\r\n$-1\r\n*2\r\n:1\r\n$10\r\nanotherVal\r\n:2\r\n";
             string response = Encoding.ASCII.GetString(res.AsSpan().Slice(0, expectedResponse.Length));
-            ClassicAssert.AreEqual(response, expectedResponse);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             // check if we still have the appropriate etag on the key we had set
             var otherLighClientRequest = TestUtils.CreateRequest();
@@ -361,11 +361,11 @@ namespace Garnet.test
             ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
         }
 
-        private static void updateKey(string key, string value, bool retainEtag = false)
+        private static void updateKey(string key, string value, bool withEtag = false)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             string command = $"SET {key} {value}";
-            command += retainEtag ? " RETAINETAG" : "";
+            command += withEtag ? " WITHETAG" : "";
             byte[] res = lightClientRequest.SendCommand(command);
             string expectedResponse = "+OK\r\n";
             ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);

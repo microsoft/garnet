@@ -3009,7 +3009,7 @@
   {
     "Command": "RENAME",
     "Name": "RENAME",
-    "Arity": 3,
+    "Arity": -3,
     "Flags": "Write",
     "FirstKey": 1,
     "LastKey": 2,
@@ -3047,7 +3047,7 @@
   {
     "Command": "RENAMENX",
     "Name": "RENAMENX",
-    "Arity": 3,
+    "Arity": -3,
     "Flags": "Fast, Write",
     "FirstKey": 1,
     "LastKey": 2,
@@ -3541,20 +3541,6 @@
         "Flags": "RW, Update"
       }
     ]
-  },
-  {
-    "Command": "SETWITHETAG",
-    "Name": "SETWITHETAG",
-    "IsInternal": false,
-    "Arity": -3,
-    "Flags": "NONE",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Fast, String, Write",
-    "Tips": null,
-    "KeySpecifications": null,
-    "SubCommands": null
   },
   {
     "Command": "SINTER",

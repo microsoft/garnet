@@ -38,13 +38,13 @@ namespace Garnet.test
         #region ETAG SET Happy Paths
 
         [Test]
-        public void SetWithEtagReturnsEtagForNewData()
+        public void SETReturnsEtagForNewData()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
-            RedisResult res = db.Execute("SETWITHETAG", ["rizz", "buzz"]);
+            RedisResult res = db.Execute("SET", ["rizz", "buzz", "WITHETAG"]);
             long etag = long.Parse(res.ToString());
-            ClassicAssert.AreEqual(0, etag);
+            ClassicAssert.AreEqual(1, etag);
         }
 
         [Test]
@@ -54,9 +54,9 @@ namespace Garnet.test
             IDatabase db = redis.GetDatabase(0);
 
             var key = "florida";
-            RedisResult res = (RedisResult)db.Execute("SETWITHETAG", [key, "one"]);
+            RedisResult res = (RedisResult)db.Execute("SET", [key, "one", "WITHETAG"]);
             long initalEtag = long.Parse(res.ToString());
-            ClassicAssert.AreEqual(0, initalEtag);
+            ClassicAssert.AreEqual(1, initalEtag);
 
             // ETAGMISMATCH test
             var incorrectEtag = 1738;
@@ -69,7 +69,7 @@ namespace Garnet.test
             long nextEtag = long.Parse(setIfMatchRes[0].ToString());
             string value = setIfMatchRes[1].ToString();
 
-            ClassicAssert.AreEqual(1, nextEtag);
+            ClassicAssert.AreEqual(2, nextEtag);
             ClassicAssert.AreEqual(value, "nextone");
 
             // set a bigger val
@@ -77,7 +77,7 @@ namespace Garnet.test
             nextEtag = long.Parse(setIfMatchRes[0].ToString());
             value = setIfMatchRes[1].ToString();
 
-            ClassicAssert.AreEqual(2, nextEtag);
+            ClassicAssert.AreEqual(3, nextEtag);
             ClassicAssert.AreEqual(value, "nextnextone");
 
             // ETAGMISMATCH again
@@ -89,7 +89,7 @@ namespace Garnet.test
             nextEtag = long.Parse(setIfMatchRes[0].ToString());
             value = setIfMatchRes[1].ToString();
 
-            ClassicAssert.AreEqual(3, nextEtag);
+            ClassicAssert.AreEqual(4, nextEtag);
             ClassicAssert.AreEqual(value, "lastOne");
         }
 
@@ -109,14 +109,14 @@ namespace Garnet.test
             ClassicAssert.IsTrue(nonExistingData.IsNull);
 
             // insert data
-            var initEtag = db.Execute("SETWITHETAG", [key, "hkhalid"]);
-            ClassicAssert.AreEqual(0, long.Parse(initEtag.ToString()));
+            var initEtag = db.Execute("SET", key, "hkhalid", "WITHETAG");
+            ClassicAssert.AreEqual(1, long.Parse(initEtag.ToString()));
 
             RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", [key]);
             long etag = long.Parse(res[0].ToString());
             string value = res[1].ToString();
 
-            ClassicAssert.AreEqual(0, etag);
+            ClassicAssert.AreEqual(1, etag);
             ClassicAssert.AreEqual("hkhalid", value);
         }
 
@@ -132,18 +132,78 @@ namespace Garnet.test
             ClassicAssert.IsTrue(nonExistingData.IsNull);
 
             // insert data 
-            var _ = db.Execute("SETWITHETAG", [key, "maximus"]);
+            var _ = db.Execute("SET", key, "maximus", "WITHETAG");
 
-            RedisResult noDataOnMatch = db.Execute("GETIFNOTMATCH", [key, 0]);
+            RedisResult[] noDataOnMatch = (RedisResult[])db.Execute("GETIFNOTMATCH", key, 1);
+            ClassicAssert.AreEqual("1", noDataOnMatch[0].ToString());
+            ClassicAssert.IsTrue(noDataOnMatch[1].IsNull);
 
-            ClassicAssert.AreEqual("NOTCHANGED", noDataOnMatch.ToString());
-
-            RedisResult[] res = (RedisResult[])db.Execute("GETIFNOTMATCH", [key, 1]);
+            RedisResult[] res = (RedisResult[])db.Execute("GETIFNOTMATCH", [key, 2]);
             long etag = long.Parse(res[0].ToString());
             string value = res[1].ToString();
 
-            ClassicAssert.AreEqual(0, etag);
+            ClassicAssert.AreEqual(1, etag);
             ClassicAssert.AreEqual("maximus", value);
+        }
+
+        [Test]
+        public void SetWithEtagWorksWithMetadata()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            // Scenario: set withetag with expiration on non existing key 
+            var key1 = "key1";
+            var res1 = db.Execute("SET", key1, "value1", "WITHETAG", "EX", 10);
+            long etag1 = (long)res1;
+            ClassicAssert.AreEqual(1, etag1);
+            db.KeyDelete(key1); // Cleanup
+
+            // Scenario: set with etag with expiration NX with existing key
+            var key2 = "key2";
+            db.Execute("SET", key2, "value2", "WITHETAG");
+            var res2 = db.Execute("SET", key2, "value3", "WITHETAG", "NX", "EX", 10);
+            // it 1 if key set, 0 if not set
+            ClassicAssert.AreEqual(1, (int)res2);
+            db.KeyDelete(key2); // Cleanup
+
+            // Scenario: set with etag with expiration NX with non-existent key
+            var key3 = "key3";
+            var res3 = db.Execute("SET", key3, "value4", "WITHETAG", "NX", "EX", 10);
+            long etag3 = (long)res3;
+            ClassicAssert.AreEqual(1, etag3);
+            db.KeyDelete(key3); // Cleanup
+
+            // Scenario: set with etag with expiration XX
+            var key4 = "key4";
+            db.Execute("SET", key4, "value5", "WITHETAG");
+            var res4 = db.Execute("SET", key4, "value6", "WITHETAG", "XX", "EX", 10);
+            long etag4 = (long)res4;
+            ClassicAssert.AreEqual(2, etag4);
+            db.KeyDelete(key4); // Cleanup
+
+            // Scenario: set with etag with expiration on existing data with etag
+            var key5 = "key5";
+            db.Execute("SET", key5, "value7", "WITHETAG");
+            var res5 = db.Execute("SET", key5, "value8", "WITHETAG", "EX", 10);
+            long etag5 = (long)res5;
+            ClassicAssert.AreEqual(2, etag5);
+            db.KeyDelete(key5); // Cleanup
+
+            // Scenario: set with etag with expiration on existing data without etag
+            var key6 = "key6";
+            db.Execute("SET", key6, "value9");
+            var res6 = db.Execute("SET", key6, "value10", "WITHETAG", "EX", 10);
+            long etag6 = (long)res6;
+            ClassicAssert.AreEqual(1, etag6);
+            db.KeyDelete(key6); // Cleanup
+
+            // Scenario: set with keepttl on key with etag and expiration should retain metadata and 
+            var key7 = "key7";
+            db.Execute("SET", key7, "value11", "WITHETAG", "EX", 10);
+            var res7 = db.Execute("SET", key7, "value12", "WITHETAG", "KEEPTTL");
+            long etag7 = (long)res7;
+            ClassicAssert.AreEqual(2, etag7);
         }
 
         #endregion
@@ -151,47 +211,54 @@ namespace Garnet.test
         # region Edgecases
 
         [Test]
-        public void SetWithEtagOnAlreadyExistingSetWithEtagDataOverridesItWithInitialEtag()
+        public void SETOnAlreadyExistingSETDataOverridesItWithInitialEtag()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
 
-            RedisResult res = db.Execute("SETWITHETAG", ["rizz", "buzz"]);
+            RedisResult res = db.Execute("SET", "rizz", "buzz", "WITHETAG");
             long etag = (long)res;
-            ClassicAssert.AreEqual(0, etag);
+            ClassicAssert.AreEqual(1, etag);
 
             // update to value to update the etag
             RedisResult[] updateRes = (RedisResult[])db.Execute("SETIFMATCH", ["rizz", "fixx", etag.ToString()]);
             etag = (long)updateRes[0];
-            ClassicAssert.AreEqual(1, etag);
+            ClassicAssert.AreEqual(2, etag);
             ClassicAssert.AreEqual("fixx", updateRes[1].ToString());
 
             // inplace update
-            res = db.Execute("SETWITHETAG", ["rizz", "meow"]);
+            res = db.Execute("SET", "rizz", "meow", "WITHETAG");
             etag = (long)res;
-            ClassicAssert.AreEqual(0, etag);
+            ClassicAssert.AreEqual(3, etag);
 
             // update to value to update the etag
             updateRes = (RedisResult[])db.Execute("SETIFMATCH", ["rizz", "fooo", etag.ToString()]);
             etag = (long)updateRes[0];
-            ClassicAssert.AreEqual(1, etag);
+            ClassicAssert.AreEqual(4, etag);
             ClassicAssert.AreEqual("fooo", updateRes[1].ToString());
 
             // Copy update
-            res = db.Execute("SETWITHETAG", ["rizz", "oneofus"]);
+            res = db.Execute("SET", ["rizz", "oneofus", "WITHETAG"]);
             etag = (long)res;
-            ClassicAssert.AreEqual(0, etag);
+            ClassicAssert.AreEqual(5, etag);
+
+            // now we should do a getwithetag and see the etag as 0
+            res = db.Execute("SET", ["rizz", "oneofus"]);
+            ClassicAssert.AreEqual(res.ToString(), "OK");
+
+            var getwithetagRes = (RedisResult[])db.Execute("GETWITHETAG", "rizz");
+            ClassicAssert.AreEqual("0", getwithetagRes[0].ToString());
         }
 
         [Test]
-        public void SetWithEtagWithRetainEtagOnAlreadyExistingSetWithEtagDataOverridesItButUpdatesEtag()
+        public void SETWithWITHETAGOnAlreadyExistingSETDataOverridesItButUpdatesEtag()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
 
-            RedisResult res = db.Execute("SETWITHETAG", ["rizz", "buzz", "RETAINETAG"]);
+            RedisResult res = db.Execute("SET", ["rizz", "buzz", "WITHETAG"]);
             long etag = (long)res;
-            ClassicAssert.AreEqual(0, etag);
+            ClassicAssert.AreEqual(1, etag);
 
             // update to value to update the etag
             RedisResult[] updateRes = (RedisResult[])db.Execute("SETIFMATCH", ["rizz", "fixx", etag.ToString()]);
@@ -200,7 +267,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("fixx", updateRes[1].ToString());
 
             // inplace update
-            res = db.Execute("SETWITHETAG", ["rizz", "meow", "RETAINETAG"]);
+            res = db.Execute("SET", ["rizz", "meow", "WITHETAG"]);
             etag = (long)res;
             ClassicAssert.AreEqual(2, etag);
 
@@ -211,13 +278,13 @@ namespace Garnet.test
             ClassicAssert.AreEqual("fooo", updateRes[1].ToString());
 
             // Copy update
-            res = db.Execute("SETWITHETAG", ["rizz", "oneofus", "RETAINETAG"]);
+            res = db.Execute("SET", ["rizz", "oneofus", "WITHETAG"]);
             etag = (long)res;
             ClassicAssert.AreEqual(4, etag);
         }
 
         [Test]
-        public void SetWithEtagWithRetainEtagOnAlreadyExistingNonEtagDataOverridesItToInitialEtag()
+        public void SETWithWITHETAGOnAlreadyExistingNonEtagDataOverridesItToInitialEtag()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
@@ -225,18 +292,18 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.StringSet("rizz", "used"));
 
             // inplace update
-            RedisResult res = db.Execute("SETWITHETAG", ["rizz", "buzz", "RETAINETAG"]);
+            RedisResult res = db.Execute("SET", ["rizz", "buzz", "WITHETAG"]);
             long etag = long.Parse(res.ToString());
-            ClassicAssert.AreEqual(0, etag);
+            ClassicAssert.AreEqual(1, etag);
 
             db.KeyDelete("rizz");
 
             ClassicAssert.IsTrue(db.StringSet("rizz", "my"));
 
             // Copy update
-            res = db.Execute("SETWITHETAG", ["rizz", "some", "RETAINETAG"]);
+            res = db.Execute("SET", ["rizz", "some", "WITHETAG"]);
             etag = long.Parse(res.ToString());
-            ClassicAssert.AreEqual(0, etag);
+            ClassicAssert.AreEqual(1, etag);
         }
 
         #endregion
@@ -244,7 +311,7 @@ namespace Garnet.test
         #region ETAG Apis with non-etag data
 
         [Test]
-        public void SetWithEtagOnAlreadyExistingNonEtagDataOverridesIt()
+        public void SETOnAlreadyExistingNonEtagDataOverridesIt()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
@@ -252,41 +319,22 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.StringSet("rizz", "used"));
 
             // inplace update
-            RedisResult res = db.Execute("SETWITHETAG", ["rizz", "buzz"]);
+            RedisResult res = db.Execute("SET", ["rizz", "buzz", "WITHETAG"]);
             long etag = long.Parse(res.ToString());
-            ClassicAssert.AreEqual(0, etag);
+            ClassicAssert.AreEqual(1, etag);
+
+            res = db.Execute("SET", ["rizz", "buzz", "WITHETAG"]);
+            etag = long.Parse(res.ToString());
+            ClassicAssert.AreEqual(2, etag);
 
             db.KeyDelete("rizz");
 
             ClassicAssert.IsTrue(db.StringSet("rizz", "my"));
 
             // Copy update
-            res = db.Execute("SETWITHETAG", ["rizz", "some"]);
+            res = db.Execute("SET", ["rizz", "some", "WITHETAG"]);
             etag = long.Parse(res.ToString());
-            ClassicAssert.AreEqual(0, etag);
-        }
-
-        [Test]
-        public void SetWithEtagWithRetainEtagOnAlreadyExistingNonEtagDataOverridesIt()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            IDatabase db = redis.GetDatabase(0);
-
-            ClassicAssert.IsTrue(db.StringSet("rizz", "used"));
-
-            // inplace update
-            RedisResult res = db.Execute("SETWITHETAG", ["rizz", "buzz"]);
-            long etag = long.Parse(res.ToString());
-            ClassicAssert.AreEqual(0, etag);
-
-            db.KeyDelete("rizz");
-
-            ClassicAssert.IsTrue(db.StringSet("rizz", "my"));
-
-            // Copy update
-            res = db.Execute("SETWITHETAG", ["rizz", "some"]);
-            etag = long.Parse(res.ToString());
-            ClassicAssert.AreEqual(0, etag);
+            ClassicAssert.AreEqual(1, etag);
         }
 
 
@@ -298,7 +346,7 @@ namespace Garnet.test
 
             var _ = db.StringSet("h", "k");
 
-            var res = db.Execute("SETIFMATCH", ["h", "t", "0"]);
+            var res = db.Execute("SETIFMATCH", ["h", "t", "2"]);
             ClassicAssert.AreEqual("ETAGMISMATCH", res.ToString());
         }
 
@@ -312,12 +360,12 @@ namespace Garnet.test
 
             var res = (RedisResult[])db.Execute("GETIFNOTMATCH", ["h", "1"]);
 
-            ClassicAssert.IsTrue(res[0].IsNull);
+            ClassicAssert.AreEqual("0", res[0].ToString());
             ClassicAssert.AreEqual("k", res[1].ToString());
         }
 
         [Test]
-        public void GetWithEtagOnNonEtagDataReturnsNilForEtagAndCorrectData()
+        public void GetWithEtagOnNonEtagDataReturns0ForEtagAndCorrectData()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
@@ -325,7 +373,7 @@ namespace Garnet.test
             var _ = db.StringSet("h", "k");
 
             var res = (RedisResult[])db.Execute("GETWITHETAG", ["h"]);
-            ClassicAssert.IsTrue(res[0].IsNull);
+            ClassicAssert.AreEqual("0", res[0].ToString());
             ClassicAssert.AreEqual("k", res[1].ToString());
         }
 
@@ -340,7 +388,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             string origValue = "abcdefg";
-            db.Execute("SETWITHETAG", ["mykey", origValue]);
+            db.Execute("SET", ["mykey", origValue, "WITHETAG"]);
 
             string retValue = db.StringGet("mykey");
 
@@ -354,7 +402,7 @@ namespace Garnet.test
             db.Connect();
 
             string origValue = "笑い男";
-            await db.ExecuteForLongResultAsync("SETWITHETAG", ["mykey", origValue]);
+            await db.ExecuteForLongResultAsync("SET", ["mykey", origValue, "WITHETAG"]);
 
             string retValue = await db.StringGetAsync("mykey");
 
@@ -373,9 +421,9 @@ namespace Garnet.test
             for (int i = 0; i < length; i++)
                 value[i] = (byte)((byte)'a' + ((byte)i % 26));
 
-            RedisResult res = await db.ExecuteAsync("SETWITHETAG", ["mykey", value]);
+            RedisResult res = await db.ExecuteAsync("SET", ["mykey", value, "WITHETAG"]);
             long initalEtag = long.Parse(res.ToString());
-            ClassicAssert.AreEqual(0, initalEtag);
+            ClassicAssert.AreEqual(1, initalEtag);
 
             // Backwards compatability of data set with etag and plain GET call
             var retvalue = (byte[])await db.StringGetAsync("mykey");
@@ -392,13 +440,8 @@ namespace Garnet.test
             string origValue = "abcdefghij";
 
             // set with etag
-            long initalEtag = long.Parse(db.Execute("SETWITHETAG", ["mykey", origValue]).ToString());
-            ClassicAssert.AreEqual(0, initalEtag);
-
-            // Expire the key in few seconds from now
-            ClassicAssert.IsTrue(
-                db.KeyExpire("mykey", TimeSpan.FromSeconds(2))
-            );
+            long initalEtag = long.Parse(db.Execute("SET", ["mykey", origValue, "EX", 2, "WITHETAG"]).ToString());
+            ClassicAssert.AreEqual(1, initalEtag);
 
             string retValue = db.StringGet("mykey");
             ClassicAssert.AreEqual(origValue, retValue, "Get() before expiration");
@@ -435,11 +478,8 @@ namespace Garnet.test
 
             var origValue = "abcdeghijklmno";
             // set with etag
-            long initalEtag = long.Parse(db.Execute("SETWITHETAG", ["mykey", origValue]).ToString());
-            ClassicAssert.AreEqual(0, initalEtag);
-
-            // Expire the key in few seconds from now
-            db.KeyExpire("mykey", TimeSpan.FromSeconds(1.9));
+            long initalEtag = long.Parse(db.Execute("SET", ["mykey", origValue, "PX", 1900, "WITHETAG"]).ToString());
+            ClassicAssert.AreEqual(1, initalEtag);
 
             string retValue = db.StringGet("mykey");
             ClassicAssert.AreEqual(origValue, retValue);
@@ -454,103 +494,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SetGetWithRetainEtagForEtagSetData()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            string key = "mykey";
-            string origValue = "abcdefghijklmnopqrst";
-
-            // Initial set
-            var _ = db.Execute("SETWITHETAG", [key, origValue]);
-            string retValue = db.StringGet(key);
-            ClassicAssert.AreEqual(origValue, retValue);
-
-            // Smaller new value without expiration
-            string newValue1 = "abcdefghijklmnopqrs";
-
-            retValue = db.Execute("SET", [key, newValue1, "GET", "RETAINETAG"]).ToString();
-
-            ClassicAssert.AreEqual(origValue, retValue);
-
-            retValue = db.StringGet(key);
-            ClassicAssert.AreEqual(newValue1, retValue);
-
-            // This should increase the ETAG internally so we have a check for that here
-            long checkEtag = long.Parse(db.Execute("GETWITHETAG", [key])[0].ToString());
-            ClassicAssert.AreEqual(1, checkEtag);
-
-            // Smaller new value with KeepTtl
-            string newValue2 = "abcdefghijklmnopqr";
-            retValue = db.Execute("SET", [key, newValue2, "GET", "RETAINETAG"]).ToString();
-
-            // This should increase the ETAG internally so we have a check for that here
-            checkEtag = long.Parse(db.Execute("GETWITHETAG", [key])[0].ToString());
-            ClassicAssert.AreEqual(2, checkEtag);
-
-            ClassicAssert.AreEqual(newValue1, retValue);
-            retValue = db.StringGet(key);
-            ClassicAssert.AreEqual(newValue2, retValue);
-            var expiry = db.KeyTimeToLive(key);
-            ClassicAssert.IsNull(expiry);
-
-            // Smaller new value with expiration
-            string newValue3 = "01234";
-            retValue = db.Execute("SET", [key, newValue3, "EX", "10", "GET", "RETAINETAG"]).ToString();
-            ClassicAssert.AreEqual(newValue2, retValue);
-
-            // This should increase the ETAG internally so we have a check for that here
-            checkEtag = long.Parse(db.Execute("GETWITHETAG", [key])[0].ToString());
-            ClassicAssert.AreEqual(3, checkEtag);
-
-            retValue = db.StringGet(key);
-            ClassicAssert.AreEqual(newValue3, retValue);
-            expiry = db.KeyTimeToLive(key);
-            ClassicAssert.IsTrue(expiry.Value.TotalSeconds > 0);
-
-            // Larger new value with expiration
-            string newValue4 = "abcdefghijklmnopqrstabcdefghijklmnopqrst";
-            retValue = db.Execute("SET", [key, newValue4, "EX", "100", "GET", "RETAINETAG"]).ToString();
-            ClassicAssert.AreEqual(newValue3, retValue);
-
-            // This should increase the ETAG internally so we have a check for that here
-            checkEtag = long.Parse(db.Execute("GETWITHETAG", [key])[0].ToString());
-            ClassicAssert.AreEqual(4, checkEtag);
-
-            retValue = db.StringGet(key);
-            ClassicAssert.AreEqual(newValue4, retValue);
-            expiry = db.KeyTimeToLive(key);
-            ClassicAssert.IsTrue(expiry.Value.TotalSeconds > 0);
-
-            // Smaller new value without expiration
-            string newValue5 = "0123401234";
-            retValue = db.Execute("SET", [key, newValue5, "GET", "RETAINETAG"]).ToString();
-            ClassicAssert.AreEqual(newValue4, retValue);
-            retValue = db.StringGet(key);
-            ClassicAssert.AreEqual(newValue5, retValue);
-            expiry = db.KeyTimeToLive(key);
-            ClassicAssert.IsNull(expiry);
-
-            // This should increase the ETAG internally so we have a check for that here
-            checkEtag = long.Parse(db.Execute("GETWITHETAG", [key])[0].ToString());
-            ClassicAssert.AreEqual(5, checkEtag);
-
-            // Larger new value without expiration
-            string newValue6 = "abcdefghijklmnopqrstabcdefghijklmnopqrst";
-            retValue = db.Execute("SET", [key, newValue6, "GET", "RETAINETAG"]).ToString();
-            ClassicAssert.AreEqual(newValue5, retValue);
-            retValue = db.StringGet(key);
-            ClassicAssert.AreEqual(newValue6, retValue);
-            expiry = db.KeyTimeToLive(key);
-            ClassicAssert.IsNull(expiry);
-
-            // This should increase the ETAG internally so we have a check for that here
-            checkEtag = long.Parse(db.Execute("GETWITHETAG", [key])[0].ToString());
-            ClassicAssert.AreEqual(6, checkEtag);
-        }
-
-        [Test]
         public void SetExpiryIncrForEtagSetData()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -559,7 +502,7 @@ namespace Garnet.test
             // Key storing integer
             var nVal = -100000;
             var strKey = "key1";
-            db.Execute("SETWITHETAG", [strKey, nVal]);
+            db.Execute("SET", [strKey, nVal, "WITHETAG"]);
             db.KeyExpire(strKey, TimeSpan.FromSeconds(5));
 
             string res1 = db.StringGet(strKey);
@@ -568,7 +511,7 @@ namespace Garnet.test
 
             // This should increase the ETAG internally so we have a check for that here
             var checkEtag = long.Parse(db.Execute("GETWITHETAG", [strKey])[0].ToString());
-            ClassicAssert.AreEqual(1, checkEtag);
+            ClassicAssert.AreEqual(2, checkEtag);
 
             string res = db.StringGet(strKey);
             long nRetVal = Convert.ToInt64(res);
@@ -589,8 +532,7 @@ namespace Garnet.test
 
             Thread.Sleep(5000);
 
-            // Expired key, restart increment,after exp this is treated as new record
-            // without etag
+            // Expired key, restart increment,after exp this is treated as new record 
             n = db.StringIncrement(strKey);
             ClassicAssert.AreEqual(1, n);
 
@@ -599,7 +541,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, nRetVal);
 
             var etagGet = (RedisResult[])db.Execute("GETWITHETAG", [strKey]);
-            ClassicAssert.IsTrue(etagGet[0].IsNull);
+            // Etag will show up as 0 since the previous one had expired
+            ClassicAssert.AreEqual("0", etagGet[0].ToString());
             ClassicAssert.AreEqual(1, Convert.ToInt64(etagGet[1]));
         }
 
@@ -611,10 +554,10 @@ namespace Garnet.test
 
             var strKey = "key1";
 
-            db.Execute("SETWITHETAG", [strKey, 9]);
+            db.Execute("SET", [strKey, 9, "WITHETAG"]);
 
             long checkEtag = long.Parse(db.Execute("GETWITHETAG", [strKey])[0].ToString());
-            ClassicAssert.AreEqual(0, checkEtag);
+            ClassicAssert.AreEqual(1, checkEtag);
 
             db.KeyExpire(strKey, TimeSpan.FromSeconds(5));
 
@@ -647,16 +590,16 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var strKey = "mykey";
-            db.Execute("SETWITHETAG", [strKey, 9]);
+            db.Execute("SET", [strKey, 9, "WITHETAG"]);
 
             long checkEtag = long.Parse(db.Execute("GETWITHETAG", [strKey])[0].ToString());
-            ClassicAssert.AreEqual(0, checkEtag);
+            ClassicAssert.AreEqual(1, checkEtag);
 
-            // Unless the SET was called with RETAINETAG a call to set will override the setwithetag to a new
+            // Unless the SET was called with WITHETAG a call to set will override the SET to a new
             // value altogether, this will make it lose it's etag capability. This is a limitation for Etags
             // because plain sets are upserts (blind updates), and currently we cannot increase the latency in
             // the common path for set to check beyong Readonly address for the existence of a record with ETag.
-            // This means that sets are complete upserts and clients need to use setifmatch, or set with RETAINETAG
+            // This means that sets are complete upserts and clients need to use setifmatch, or set with WITHETAG
             // if they want each consequent set to maintain the key value pair's etag property.
             ClassicAssert.IsTrue(db.StringSet(strKey, "ciaociao"));
 
@@ -664,7 +607,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("ciaociao", retVal);
 
             var res = (RedisResult[])db.Execute("GETWITHETAG", [strKey]);
-            ClassicAssert.IsTrue(res[0].IsNull);
+            ClassicAssert.AreEqual("0", res[0].ToString());
             ClassicAssert.AreEqual("ciaociao", res[1].ToString());
         }
 
@@ -675,13 +618,13 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var strKey = "mykey";
-            db.Execute("SETWITHETAG", [strKey, 9]);
+            db.Execute("SET", strKey, "9", "WITHETAG");
 
             long checkEtag = (long)db.Execute("GETWITHETAG", [strKey])[0];
-            ClassicAssert.AreEqual(0, checkEtag);
+            ClassicAssert.AreEqual(1, checkEtag);
 
-            // Unless you explicitly call SET with RETAINETAG option you will lose the etag on the previous key-value pair
-            db.Execute("SET", [strKey, "ciaociao", "RETAINETAG"]);
+            // Unless you explicitly call SET with WITHETAG option you will lose the etag on the previous key-value pair
+            db.Execute("SET", [strKey, "ciaociao", "WITHETAG"]);
 
             string retVal = db.StringGet(strKey).ToString();
             ClassicAssert.AreEqual("ciaociao", retVal);
@@ -690,7 +633,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, (long)res[0]);
 
             // on subsequent upserts we are still increasing the etag transparently
-            db.Execute("SET", [strKey, "ciaociaociao", "RETAINETAG"]);
+            db.Execute("SET", [strKey, "ciaociaociao", "WITHETAG"]);
 
             retVal = db.StringGet(strKey).ToString();
             ClassicAssert.AreEqual("ciaociaociao", retVal);
@@ -701,7 +644,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void LockTakeReleaseOnAValueInitiallySetWithEtag()
+        public void LockTakeReleaseOnAValueInitiallySET()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -709,8 +652,8 @@ namespace Garnet.test
             string key = "lock-key";
             string value = "lock-value";
 
-            var initalEtag = long.Parse(db.Execute("SETWITHETAG", [key, value]).ToString());
-            ClassicAssert.AreEqual(0, initalEtag);
+            var initalEtag = long.Parse(db.Execute("SET", [key, value, "WITHETAG"]).ToString());
+            ClassicAssert.AreEqual(1, initalEtag);
 
             var success = db.LockTake(key, value, TimeSpan.FromSeconds(100));
             ClassicAssert.IsFalse(success);
@@ -748,8 +691,8 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             // Key storing integer
-            var initalEtag = long.Parse(db.Execute("SETWITHETAG", [strKey, nVal]).ToString());
-            ClassicAssert.AreEqual(0, initalEtag);
+            var initalEtag = long.Parse(db.Execute("SET", [strKey, nVal, "WITHETAG"]).ToString());
+            ClassicAssert.AreEqual(1, initalEtag);
 
             long n = db.StringDecrement(strKey);
             ClassicAssert.AreEqual(nVal - 1, n);
@@ -771,8 +714,8 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             // Key storing integer val
             var strKey = "key1";
-            var initalEtag = long.Parse(db.Execute("SETWITHETAG", [strKey, nVal]).ToString());
-            ClassicAssert.AreEqual(0, initalEtag);
+            var initalEtag = long.Parse(db.Execute("SET", [strKey, nVal, "WITHETAG"]).ToString());
+            ClassicAssert.AreEqual(1, initalEtag);
 
             long n = db.StringDecrement(strKey, nDecr);
 
@@ -798,8 +741,8 @@ namespace Garnet.test
             {
                 var key = $"key{i}";
                 var exception = false;
-                var initalEtag = long.Parse(db.Execute("SETWITHETAG", [key, values[i]]).ToString());
-                ClassicAssert.AreEqual(0, initalEtag);
+                var initalEtag = long.Parse(db.Execute("SET", [key, values[i], "WITHETAG"]).ToString());
+                ClassicAssert.AreEqual(1, initalEtag);
 
                 try
                 {
@@ -840,19 +783,19 @@ namespace Garnet.test
                 switch (cmd)
                 {
                     case RespCommand.INCR:
-                        _ = db.Execute("SETWITHETAG", [key, long.MaxValue.ToString()]);
+                        _ = db.Execute("SET", [key, long.MaxValue.ToString(), "WITHETAG"]);
                         _ = db.StringIncrement(key);
                         break;
                     case RespCommand.DECR:
-                        _ = db.Execute("SETWITHETAG", [key, long.MinValue.ToString()]);
+                        _ = db.Execute("SET", [key, long.MinValue.ToString(), "WITHETAG"]);
                         _ = db.StringDecrement(key);
                         break;
                     case RespCommand.INCRBY:
-                        _ = db.Execute("SETWITHETAG", [key, 0]);
+                        _ = db.Execute("SET", [key, 0, "WITHETAG"]);
                         _ = db.Execute("INCRBY", [key, ulong.MaxValue.ToString()]);
                         break;
                     case RespCommand.DECRBY:
-                        _ = db.Execute("SETWITHETAG", [key, 0]);
+                        _ = db.Execute("SET", [key, 0, "WITHETAG"]);
                         _ = db.Execute("DECRBY", [key, ulong.MaxValue.ToString()]);
                         break;
                 }
@@ -882,7 +825,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             var key = "key1";
-            db.Execute("SETWITHETAG", key, initialValue);
+            db.Execute("SET", key, initialValue, "WITHETAG");
 
             var expectedResult = initialValue + incrByValue;
 
@@ -911,7 +854,7 @@ namespace Garnet.test
             // Key storing integer
             var nVal = 100;
             var strKey = "key1";
-            db.Execute("SETWITHETAG", [strKey, nVal]);
+            db.Execute("SET", [strKey, nVal, "WITHETAG"]);
             db.KeyDelete(strKey);
             var retVal = Convert.ToBoolean(db.StringGet(strKey));
             ClassicAssert.AreEqual(retVal, false);
@@ -931,7 +874,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            db.Execute("SETWITHETAG", [key, value]);
+            db.Execute("SET", [key, value, "WITHETAG"]);
 
             var resp = (string)db.StringGet(key);
             ClassicAssert.AreEqual(resp, value);
@@ -970,7 +913,7 @@ namespace Garnet.test
             {
                 data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
                 var pair = data.Last();
-                db.Execute("SETWITHETAG", [pair.Item1, pair.Item2]);
+                db.Execute("SET", [pair.Item1, pair.Item2, "WITHETAG"]);
             }
 
 
@@ -1013,7 +956,7 @@ namespace Garnet.test
             {
                 data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
                 var pair = data.Last();
-                db.Execute("SETWITHETAG", [pair.Item1, pair.Item2]);
+                db.Execute("SET", [pair.Item1, pair.Item2, "WITHETAG"]);
             }
 
             var keys = data.Select(x => (RedisKey)x.Item1).ToArray();
@@ -1048,7 +991,7 @@ namespace Garnet.test
             {
                 data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
                 var pair = data.Last();
-                db.Execute("SETWITHETAG", [pair.Item1, pair.Item2]);
+                db.Execute("SET", [pair.Item1, pair.Item2, "WITHETAG"]);
             }
 
             var keys = data.Select(x => (object)x.Item1).ToArray();
@@ -1077,7 +1020,7 @@ namespace Garnet.test
             var strKey = "key1";
             ClassicAssert.IsFalse(db.KeyExists(strKey));
 
-            db.Execute("SETWITHETAG", [strKey, nVal]);
+            db.Execute("SET", [strKey, nVal, "WITHETAG"]);
 
             bool fExists = db.KeyExists("key1", CommandFlags.None);
             ClassicAssert.AreEqual(fExists, true);
@@ -1101,191 +1044,102 @@ namespace Garnet.test
 
             db.StringSet("foo", "bar");
 
-            db.Execute("SETWITHETAG", ["rizz", "bar"]);
+            db.Execute("SET", ["rizz", "bar", "WITHETAG"]);
 
             var exists = db.KeyExists(["key", "listKey", "zset:test", "foo", "rizz"]);
             ClassicAssert.AreEqual(4, exists);
         }
 
-        [Test]
-        public void SingleRenameEtagSetData()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+        #region RENAME
 
-            string origValue = "test1";
-            long etag = long.Parse(db.Execute("SETWITHETAG", ["key1", origValue]).ToString());
-            ClassicAssert.AreEqual(0, etag);
-
-            db.KeyRename("key1", "key2");
-            string retValue = db.StringGet("key2");
-
-            ClassicAssert.AreEqual(origValue, retValue);
-
-            // other key now gives no result
-            ClassicAssert.AreEqual("", db.Execute("GETWITHETAG", ["key1"]).ToString());
-
-            // new Key value pair created with older value, the etag is reset here back to 0
-            var res = (RedisResult[])db.Execute("GETWITHETAG", ["key2"]);
-            ClassicAssert.AreEqual("0", res[0].ToString());
-            ClassicAssert.AreEqual(origValue, res[1].ToString());
-
-            origValue = db.StringGet("key1");
-            ClassicAssert.AreEqual(null, origValue);
-        }
 
         [Test]
-        public void SingleRenameEtagShouldRetainEtagOfNewKeyIfExistsWithEtag()
+        public void RenameEtagTests()
         {
+            // old key had etag => new key zero'd etag when made without withetag (new key did not exists)
+            // old key had etag => new key zero'd etag when made without withetag (new key exists without etag)
+            // old key had etag => new key has updated etag when made with withetag (new key exists withetag)
+            // old key not have etag => new key made with updated etag when made withetag (new key did exist withetag)
+            // old key had etag and, new key has initial etag when made with withetag (new key did not exists)
+            // old key not have etag and, new key made with initial etag when made withetag (new key did not exist)
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            string existingNewKey = "key2";
-            string existingVal = "foo";
-            long etag = (long)db.Execute("SETWITHETAG", [existingNewKey, existingVal]);
-            ClassicAssert.AreEqual(0, etag);
-            RedisResult[] updateRes = (RedisResult[])db.Execute("SETIFMATCH", [existingNewKey, "updated", etag.ToString()]);
-            long updatedEtag = (long)updateRes[0];
+            IDatabase db = redis.GetDatabase(0);
 
             string origValue = "test1";
-            etag = long.Parse(db.Execute("SETWITHETAG", ["key1", origValue]).ToString());
-            ClassicAssert.AreEqual(0, etag);
-
-            db.KeyRename("key1", existingNewKey);
-            string retValue = db.StringGet(existingNewKey);
-            ClassicAssert.AreEqual(origValue, retValue);
-
-            // new Key value pair created with older value, the etag is reusing the existingnewkey etag
-            var res = (RedisResult[])db.Execute("GETWITHETAG", [existingNewKey]);
-            ClassicAssert.AreEqual(updatedEtag + 1, (long)res[0]);
-            ClassicAssert.AreEqual(origValue, res[1].ToString());
-
-            origValue = db.StringGet("key1");
-            ClassicAssert.AreEqual(null, origValue);
-        }
-
-        [Test]
-        public void SingleRenameKeyEdgeCaseEtagSetData([Values] bool withoutObjectStore)
-        {
-            if (withoutObjectStore)
-            {
-                TearDown();
-                TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
-                server.Start();
-            }
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            //1. Key rename does not exist
-            try
-            {
-                var res = db.KeyRename("key1", "key2");
-            }
-            catch (Exception ex)
-            {
-                ClassicAssert.AreEqual("ERR no such key", ex.Message);
-            }
-
-            //2. Key rename oldKey.Equals(newKey)
-            string origValue = "test1";
-            db.Execute("SETWITHETAG", ["key1", origValue]);
-
-            bool renameRes = db.KeyRename("key1", "key1");
-            ClassicAssert.IsTrue(renameRes);
-            string retValue = db.StringGet("key1");
-            ClassicAssert.AreEqual(origValue, retValue);
-        }
-
-        [Test]
-        public void SingleRenameShouldNotAddEtagEvenIfExistingKeyHadEtagButNotTheOriginal()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            string existingNewKey = "key2";
-            string existingVal = "foo";
-            long etag = (long)db.Execute("SETWITHETAG", [existingNewKey, existingVal]);
-            ClassicAssert.AreEqual(0, etag);
-            RedisResult[] updateRes = (RedisResult[])db.Execute("SETIFMATCH", [existingNewKey, "updated", etag.ToString()]);
-            long updatedEtag = (long)updateRes[0];
-
-            string origValue = "test1";
-            ClassicAssert.IsTrue(db.StringSet("key1", origValue));
-
-            db.KeyRename("key1", existingNewKey);
-            string retValue = db.StringGet(existingNewKey);
-            ClassicAssert.AreEqual(origValue, retValue);
-
-            // new Key value pair created with older value, the etag is reusing the existingnewkey etag
-            var res = (RedisResult[])db.Execute("GETWITHETAG", [existingNewKey]);
-            ClassicAssert.IsTrue(res[0].IsNull);
-            ClassicAssert.AreEqual(origValue, res[1].ToString());
-
-            origValue = db.StringGet("key1");
-            ClassicAssert.AreEqual(null, origValue);
-        }
-
-        [Test]
-        public void SingleRenameShouldAddEtagIfOldKeyHadEtagButNotExistingNewkey()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            string existingNewKey = "key2";
-            string existingVal = "foo";
-
-            ClassicAssert.IsTrue(db.StringSet(existingNewKey, existingVal));
-
-            string origValue = "test1";
-            long etag = (long)db.Execute("SETWITHETAG", ["key1", origValue]);
-            ClassicAssert.AreEqual(0, etag);
-
-            db.KeyRename("key1", existingNewKey);
-            string retValue = db.StringGet(existingNewKey);
-            ClassicAssert.AreEqual(origValue, retValue);
-
-            // new Key value pair created with older value
-            var res = (RedisResult[])db.Execute("GETWITHETAG", [existingNewKey]);
-            ClassicAssert.AreEqual(0, (long)res[0]);
-            ClassicAssert.AreEqual(origValue, res[1].ToString());
-
-            origValue = db.StringGet("key1");
-            ClassicAssert.AreEqual(null, origValue);
-        }
-
-        [Test]
-        public void SingleRenameShouldAddEtagAndMetadataIfOldKeyHadEtagAndMetadata()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            string origKey = "key1";
-            string origValue = "test1";
-            long etag = (long)db.Execute("SETWITHETAG", ["key1", origValue]);
-            ClassicAssert.AreEqual(0, etag);
-
-            ClassicAssert.IsTrue(db.KeyExpire(origKey, TimeSpan.FromSeconds(10)));
-
+            string oldKey = "key1";
             string newKey = "key2";
-            db.KeyRename(origKey, newKey);
 
-            string retValue = db.StringGet(newKey);
-            ClassicAssert.AreEqual(origValue, retValue);
+            // Scenario: old key had etag and => new key zero'd etag when made without withetag (new key did not exists)
 
-            // new Key value pair created with older value
-            var res = (RedisResult[])db.Execute("GETWITHETAG", [newKey]);
-            ClassicAssert.AreEqual(0, (long)res[0]);
-            ClassicAssert.AreEqual(origValue, res[1].ToString());
+            long etag = long.Parse(db.Execute("SET", [oldKey, origValue, "WITHETAG"]).ToString());
+            ClassicAssert.AreEqual(1, etag);
 
-            // check that the ttl is not empty on new key because it inherited it from prev key
-            TimeSpan? ttl = db.KeyTimeToLive(newKey);
-            ClassicAssert.IsNotNull(ttl);
+            db.KeyRename(oldKey, newKey);
 
-            origValue = db.StringGet(origKey);
-            ClassicAssert.AreEqual(null, origValue);
+            ClassicAssert.IsTrue(db.StringGet(oldKey).IsNull);
+            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 0, origValue));
+            // old key has been deleted, and new key exists without etag at this point
+
+            // Scenario: old key had etag => new key zero'd etag when made without withetag (new key exists without etag)
+            db.Execute("SET", oldKey, origValue, "WITHETAG");
+
+            db.KeyRename(oldKey, newKey);
+
+            ClassicAssert.IsTrue(db.StringGet(oldKey).IsNull);
+            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 0, origValue));
+            db.KeyDelete(newKey);
+
+            // Scenario: old key had etag => new key has updated etag when made with withetag (new key exists withetag)
+            // setup new key with updated etag
+            db.Execute("SET", newKey, origValue + "delta", "WITHETAG");
+            db.Execute("SETIFMATCH", newKey, origValue, 1); // updates etag to 2
+            // old key with etag
+            etag = long.Parse(db.Execute("SET", [oldKey, origValue, "WITHETAG"]).ToString());
+            ClassicAssert.AreEqual(1, etag);
+
+            db.Execute("RENAME", oldKey, newKey, "WITHETAG"); // should update etag to 3
+
+            ClassicAssert.IsTrue(db.StringGet(oldKey).IsNull);
+            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 3, origValue));
+            // at this point new key exists with etag, old key does not exist at all
+
+            // Scenario: old key not have etag => new key made with updated etag when made withetag (new key did exist withetag)
+            db.Execute("SET", oldKey, origValue);
+
+            db.Execute("RENAME", oldKey, newKey, "WITHETAG");
+
+            ClassicAssert.IsTrue(db.StringGet(oldKey).IsNull);
+            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 4, origValue));
+            db.KeyDelete(newKey);
+
+            // Scenario: old key had etag => new key has initial etag when made with withetag (new key did not exists)
+            db.Execute("SET", oldKey, origValue, "WITHETAG");
+
+            db.Execute("RENAME", oldKey, newKey, "WITHETAG");
+
+            ClassicAssert.IsTrue(db.StringGet(oldKey).IsNull);
+            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 1, origValue));
+            db.KeyDelete(newKey);
+
+            // Scenario: old key not have etag => new key made with initial etag when made withetag (new key did not exist)
+            db.Execute("SET", oldKey, origValue);
+
+            db.Execute("RENAME", oldKey, newKey, "WITHETAG");
+
+            ClassicAssert.IsTrue(db.StringGet(oldKey).IsNull);
+            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 1, origValue));
+            db.KeyDelete(newKey);
         }
 
+        private bool EtagAndValMatches(IDatabase db, string key, long expectedEtag, string expectedValue)
+        {
+            var res = (RedisResult[])db.Execute("GETWITHETAG", key);
+            var responseEtag = long.Parse(res[0].ToString());
+            var responseValue = res[1].ToString();
+            return responseValue == expectedValue && responseEtag == expectedEtag;
+        }
+
+        #endregion
 
         [Test]
         public void PersistTTLTestForEtagSetData()
@@ -1300,14 +1154,14 @@ namespace Garnet.test
             var ttl = db.Execute("TTL", key);
             ClassicAssert.AreEqual(-2, (int)ttl);
 
-            db.Execute("SETWITHETAG", [key, val]);
+            db.Execute("SET", [key, val, "WITHETAG"]);
             ttl = db.Execute("TTL", key);
             ClassicAssert.AreEqual(-1, (int)ttl);
 
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
             var res = (RedisResult[])db.Execute("GETWITHETAG", [key]);
-            ClassicAssert.AreEqual(0, long.Parse(res[0].ToString()));
+            ClassicAssert.AreEqual(1, long.Parse(res[0].ToString()));
             ClassicAssert.AreEqual(val, res[1].ToString());
 
             var time = db.KeyTimeToLive(key);
@@ -1344,7 +1198,7 @@ namespace Garnet.test
 
             int expire = 100;
             var keyA = "keyA";
-            db.Execute("SETWITHETAG", [keyA, keyA]);
+            db.Execute("SET", [keyA, keyA, "WITHETAG"]);
 
             var response = db.KeyPersist(keyA);
             ClassicAssert.IsFalse(response);
@@ -1363,7 +1217,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(value, keyA);
 
             var res = (RedisResult[])db.Execute("GETWITHETAG", [keyA]);
-            ClassicAssert.AreEqual(0, long.Parse(res[0].ToString()));
+            ClassicAssert.AreEqual(1, long.Parse(res[0].ToString()));
             ClassicAssert.AreEqual(keyA, res[1].ToString());
 
             var noKey = "noKey";
@@ -1380,7 +1234,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var key = "keyA";
-            db.Execute("SETWITHETAG", [key, key]);
+            db.Execute("SET", [key, key]);
 
             var value = db.StringGet(key);
             ClassicAssert.AreEqual(key, (string)value);
@@ -1406,7 +1260,7 @@ namespace Garnet.test
 
             var key = "keyA";
             object[] args = [key, 1000, ""];
-            db.Execute("SETWITHETAG", [key, key]);
+            db.Execute("SET", [key, key, "WITHETAG"]);
 
             args[2] = "XX";// XX -- Set expiry only when the key has an existing expiry
             bool resp = (bool)db.Execute($"{command}", args);
@@ -1469,8 +1323,7 @@ namespace Garnet.test
 
             const string key = "test:1";
 
-            // Do SETIWTHETAG
-            ClassicAssert.AreEqual(0, long.Parse(db.Execute("SETWITHETAG", [key, "v1"]).ToString()));
+            ClassicAssert.AreEqual(1, long.Parse(db.Execute("SET", key, "v1", "WITHETAG").ToString()));
 
             // Do SetAdd using the same key
             ClassicAssert.IsTrue(db.SetAdd(key, "v2"));
@@ -1501,7 +1354,7 @@ namespace Garnet.test
             var resp = (string)db.StringGetRange(key, 2, 10);
             ClassicAssert.AreEqual(string.Empty, resp);
 
-            ClassicAssert.AreEqual(0, long.Parse(db.Execute("SETWITHETAG", [key, value]).ToString()));
+            ClassicAssert.AreEqual(1, long.Parse(db.Execute("SET", key, value, "WITHETAG").ToString()));
 
             //0,0
             resp = (string)db.StringGetRange(key, 0, 0);
@@ -1617,7 +1470,7 @@ namespace Garnet.test
             string value = "0123456789";
             string newValue = "ABCDE";
 
-            db.Execute("SETWITHETAG", [key, value]);
+            db.Execute("SET", key, value, "WITHETAG");
 
             var resp = db.StringGet(key);
             ClassicAssert.AreEqual("0123456789", resp.ToString());
@@ -1630,7 +1483,7 @@ namespace Garnet.test
 
             // should update the etag internally
             var updatedEtagRes = db.Execute("GETWITHETAG", key);
-            ClassicAssert.AreEqual(1, long.Parse(updatedEtagRes[0].ToString()));
+            ClassicAssert.AreEqual(2, long.Parse(updatedEtagRes[0].ToString()));
 
             ClassicAssert.IsTrue(db.KeyDelete(key));
 
@@ -1646,7 +1499,7 @@ namespace Garnet.test
             }
 
             // existing key, length 10, offset 0, value length 5 -> 10 ("ABCDE56789")
-            db.Execute("SETWITHETAG", [key, value]);
+            db.Execute("SET", key, value, "WITHETAG");
 
             resp = db.StringSetRange(key, 0, newValue);
             ClassicAssert.AreEqual("10", resp.ToString());
@@ -1660,7 +1513,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.KeyDelete(key));
 
             // key, length 10, offset 5, value length 5 -> 10 ("01234ABCDE")
-            db.Execute("SETWITHETAG", [key, value]);
+            db.Execute("SET", key, value, "WITHETAG");
 
             resp = db.StringSetRange(key, 5, newValue);
             ClassicAssert.AreEqual("10", resp.ToString());
@@ -1673,7 +1526,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.KeyDelete(key));
 
             // existing key, length 10, offset 10, value length 5 -> 15 ("0123456789ABCDE")
-            db.Execute("SETWITHETAG", [key, value]);
+            db.Execute("SET", [key, value, "WITHETAG"]);
             resp = db.StringSetRange(key, 10, newValue);
             ClassicAssert.AreEqual("15", resp.ToString());
             resp = db.StringGet(key);
@@ -1681,7 +1534,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.KeyDelete(key));
 
             // existing key, length 10, offset 15, value length 5 -> 20 ("0123456789\0\0\0\0\0ABCDE")
-            db.Execute("SETWITHETAG", [key, value]);
+            db.Execute("SET", [key, value, "WITHETAG"]);
 
             resp = db.StringSetRange(key, 15, newValue);
             ClassicAssert.AreEqual("20", resp.ToString());
@@ -1690,7 +1543,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.KeyDelete(key));
 
             // existing key, length 10, offset -1, value length 5 -> RedisServerException ("ERR offset is out of range")
-            db.Execute("SETWITHETAG", [key, value]);
+            db.Execute("SET", [key, value, "WITHETAG"]);
             try
             {
                 db.StringSetRange(key, -1, newValue);
@@ -1703,7 +1556,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void KeepTtlTestForDataInitiallySetWithEtag()
+        public void KeepTtlTestForDataInitiallySET()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1711,8 +1564,8 @@ namespace Garnet.test
             int expire = 3;
             var keyA = "keyA";
             var keyB = "keyB";
-            db.Execute("SETWITHETAG", [keyA, keyA]);
-            db.Execute("SETWITHETAG", [keyB, keyB]);
+            db.Execute("SET", [keyA, keyA]);
+            db.Execute("SET", [keyB, keyB]);
 
             db.KeyExpire(keyA, TimeSpan.FromSeconds(expire));
             db.KeyExpire(keyB, TimeSpan.FromSeconds(expire));
@@ -1740,13 +1593,13 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            db.Execute("SETWITHETAG", ["mykey", "foo bar"]);
+            db.Execute("SET", ["mykey", "foo bar", "WITHETAG"]);
 
             ClassicAssert.AreEqual(7, db.StringLength("mykey"));
             ClassicAssert.AreEqual(0, db.StringLength("nokey"));
 
             var etagToCheck = db.Execute("GETWITHETAG", "mykey");
-            ClassicAssert.AreEqual(0, long.Parse(etagToCheck[0].ToString()));
+            ClassicAssert.AreEqual(1, long.Parse(etagToCheck[0].ToString()));
         }
 
         [Test]
@@ -1762,7 +1615,7 @@ namespace Garnet.test
             var pttl = db.Execute("PTTL", key);
             ClassicAssert.AreEqual(-2, (int)pttl);
 
-            db.Execute("SETWITHETAG", [key, val]);
+            db.Execute("SET", [key, val, "WITHETAG"]);
 
             pttl = db.Execute("PTTL", key);
             ClassicAssert.AreEqual(-1, (int)pttl);
@@ -1786,7 +1639,7 @@ namespace Garnet.test
 
             // nothing should have affected the etag in the above commands
             long etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [key]))[0].ToString());
-            ClassicAssert.AreEqual(0, etagToCheck);
+            ClassicAssert.AreEqual(1, etagToCheck);
         }
 
         [Test]
@@ -1799,7 +1652,7 @@ namespace Garnet.test
             var val = "myKeyValue";
 
             // Key Setup
-            db.Execute("SETWITHETAG", [key, val]);
+            db.Execute("SET", [key, val, "WITHETAG"]);
 
             var retval = db.StringGet(key);
             ClassicAssert.AreEqual(val, retval.ToString());
@@ -1819,7 +1672,7 @@ namespace Garnet.test
             key = "myKeyWithMetadata";
             val = "myValueWithMetadata";
 
-            db.Execute("SETWITHETAG", [key, val]);
+            db.Execute("SET", [key, val, "WITHETAG"]);
             db.KeyExpire(key, TimeSpan.FromSeconds(10000));
 
             retval = db.StringGet(key);
@@ -1843,7 +1696,7 @@ namespace Garnet.test
             var val = "myKeyValue";
             var val2 = "myKeyValue2";
 
-            db.Execute("SETWITHETAG", [key, val]);
+            db.Execute("SET", [key, val, "WITHETAG"]);
 
             var len = db.StringAppend(key, val2);
             ClassicAssert.AreEqual(val.Length + val2.Length, len);
@@ -1852,12 +1705,12 @@ namespace Garnet.test
             ClassicAssert.AreEqual(val + val2, _val.ToString());
 
             long etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [key]))[0].ToString());
-            ClassicAssert.AreEqual(1, etagToCheck);
+            ClassicAssert.AreEqual(2, etagToCheck);
 
             db.KeyDelete(key);
 
             // Test appending an empty string
-            db.Execute("SETWITHETAG", [key, val]);
+            db.Execute("SET", [key, val, "WITHETAG"]);
 
             var len1 = db.StringAppend(key, "");
             ClassicAssert.AreEqual(val.Length, len1);
@@ -1881,7 +1734,7 @@ namespace Garnet.test
 
             // Test appending to a key with a large value
             var largeVal = new string('a', 1000000);
-            db.Execute("SETWITHETAG", [key, largeVal]);
+            db.Execute("SET", [key, largeVal, "WITHETAG"]);
             var len3 = db.StringAppend(key, val2);
             ClassicAssert.AreEqual(largeVal.Length + val2.Length, len3);
 
@@ -1890,7 +1743,7 @@ namespace Garnet.test
 
             // Test appending to a key with metadata
             var keyWithMetadata = "keyWithMetadata";
-            db.Execute("SETWITHETAG", [keyWithMetadata, val]);
+            db.Execute("SET", [keyWithMetadata, val, "WITHETAG"]);
             db.KeyExpire(keyWithMetadata, TimeSpan.FromSeconds(10000));
             etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [keyWithMetadata]))[0].ToString());
             ClassicAssert.AreEqual(0, etagToCheck);
@@ -1919,13 +1772,13 @@ namespace Garnet.test
             Byte[] initialBitmap = new byte[8];
             string bitMapAsStr = Encoding.UTF8.GetString(initialBitmap); ;
 
-            db.Execute("SETWITHETAG", [key, bitMapAsStr]);
+            db.Execute("SET", [key, bitMapAsStr, "WITHETAG"]);
 
             long setbits = db.StringBitCount(key);
             ClassicAssert.AreEqual(0, setbits);
 
             long etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [key]))[0].ToString());
-            ClassicAssert.AreEqual(0, etagToCheck);
+            ClassicAssert.AreEqual(1, etagToCheck);
 
             // set all 64 bits one by one 
             var expectedBitCount = 0;
@@ -1997,13 +1850,13 @@ namespace Garnet.test
             var key = "mewo";
 
             // Arrange - Set an 8-bit unsigned value at offset 0
-            db.Execute("SETWITHETAG", [key, Encoding.UTF8.GetString(new byte[1])]); // Initialize key with an empty byte
+            db.Execute("SET", [key, Encoding.UTF8.GetString(new byte[1]), "WITHETAG"]); // Initialize key with an empty byte
 
             // Act - Set value to 127 (binary: 01111111)
             db.Execute("BITFIELD", key, "SET", "u8", "0", "127");
 
             long etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [key]))[0].ToString());
-            ClassicAssert.AreEqual(1, etagToCheck);
+            ClassicAssert.AreEqual(2, etagToCheck);
 
             // Get value back
             var getResult = (RedisResult[])db.Execute("BITFIELD", key, "GET", "u8", "0");
@@ -2021,12 +1874,12 @@ namespace Garnet.test
             var key = "mewo";
 
             // Arrange - Set an 8-bit unsigned value at offset 0
-            db.Execute("SETWITHETAG", [key, Encoding.UTF8.GetString(new byte[1])]); // Initialize key with an empty byte
+            db.Execute("SET", [key, Encoding.UTF8.GetString(new byte[1]), "WITHETAG"]); // Initialize key with an empty byte
 
             // Act - Set initial value to 255 and try to increment by 1
             db.Execute("BITFIELD", key, "SET", "u8", "0", "255");
             long etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [key]))[0].ToString());
-            ClassicAssert.AreEqual(1, etagToCheck);
+            ClassicAssert.AreEqual(2, etagToCheck);
 
             var incrResult = db.Execute("BITFIELD", key, "INCRBY", "u8", "0", "1");
 
@@ -2046,7 +1899,7 @@ namespace Garnet.test
             var key = "mewo";
 
             // Arrange - Set an 8-bit unsigned value at offset 0
-            db.Execute("SETWITHETAG", [key, Encoding.UTF8.GetString(new byte[1])]); // Initialize key with an empty byte
+            db.Execute("SET", [key, Encoding.UTF8.GetString(new byte[1]), "WITHETAG"]); // Initialize key with an empty byte
 
             // Act - Set initial value to 250 and try to increment by 10 with saturate overflow
             var bitfieldRes = db.Execute("BITFIELD", key, "SET", "u8", "0", "250");
@@ -2054,7 +1907,7 @@ namespace Garnet.test
 
             var result = (RedisResult[])db.Execute("GETWITHETAG", [key]);
             long etagToCheck = long.Parse(result[0].ToString());
-            ClassicAssert.AreEqual(1, etagToCheck);
+            ClassicAssert.AreEqual(2, etagToCheck);
 
             var incrResult = db.Execute("BITFIELD", key, "OVERFLOW", "SAT", "INCRBY", "u8", "0", "10");
 
@@ -2074,8 +1927,8 @@ namespace Garnet.test
             var key = "mewo";
             var key2 = "dude";
 
-            db.Execute("SETWITHETAG", [key, "mars"]);
-            db.Execute("SETWITHETAG", [key2, "marsrover"]);
+            db.Execute("SET", [key, "mars", "WITHETAG"]);
+            db.Execute("SET", [key2, "marsrover", "WITHETAG"]);
 
             RedisServerException ex = Assert.Throws<RedisServerException>(() => db.Execute("PFADD", [key, "woohoo"]));
 
@@ -2089,7 +1942,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SetWithRetainEtagOnANewUpsertWillCreateKeyValueWithoutEtag()
+        public void SetWithWITHETAGOnANewUpsertWillCreateKeyValueWithoutEtag()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -2098,24 +1951,24 @@ namespace Garnet.test
             string val = "mouse";
 
             // a new upsert on a non-existing key will retain the "nil" etag
-            db.Execute("SET", [key, val, "RETAINETAG"]).ToString();
+            db.Execute("SET", [key, val, "WITHETAG"]).ToString();
 
             RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", [key]);
             RedisResult etag = res[0];
             string value = res[1].ToString();
 
-            ClassicAssert.IsTrue(etag.IsNull);
+            ClassicAssert.AreEqual("1", etag.ToString());
             ClassicAssert.AreEqual(val, value);
 
             string newval = "clubhouse";
 
-            // a new upsert on an existing key will retain the "nil" etag from the prev
-            db.Execute("SET", [key, newval, "RETAINETAG"]).ToString();
+            // a new upsert on an existing key will reset the etag on the key
+            db.Execute("SET", [key, newval]).ToString();
             res = (RedisResult[])db.Execute("GETWITHETAG", [key]);
             etag = res[0];
             value = res[1].ToString();
 
-            ClassicAssert.IsTrue(etag.IsNull);
+            ClassicAssert.AreEqual("0", etag.ToString());
             ClassicAssert.AreEqual(newval, value);
         }
 

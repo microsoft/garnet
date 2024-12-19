@@ -240,7 +240,6 @@ namespace CommandInfoUpdater
             new("SETIFMATCH", RespCommand.SETIFMATCH),
             new("SETNX", RespCommand.SETNX),
             new("SETRANGE", RespCommand.SETRANGE),
-            new("SETWITHETAG", RespCommand.SETWITHETAG),
             new("SISMEMBER", RespCommand.SISMEMBER),
             new("SLAVEOF", RespCommand.SECONDARYOF),
             new("SMEMBERS", RespCommand.SMEMBERS),
