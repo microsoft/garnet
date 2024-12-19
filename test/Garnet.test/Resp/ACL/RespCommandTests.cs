@@ -3959,6 +3959,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task LCSACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "LCS",
+                [DoLCSAsync]
+            );
+
+            static async Task DoLCSAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("LCS", ["foo", "bar"]);
+                ClassicAssert.AreEqual("", val);
+            }
+        }
+
+        [Test]
         public async Task LLenACLsAsync()
         {
             await CheckCommandsAsync(
