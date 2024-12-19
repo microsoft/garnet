@@ -1193,7 +1193,7 @@ namespace Garnet.test
 
             var orginalMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
 
-            await Task.Delay(1000);
+            await Task.Delay(1200);
 
             var newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
             ClassicAssert.AreEqual(newMemory, orginalMemory);
@@ -1205,7 +1205,7 @@ namespace Garnet.test
             ClassicAssert.Less(newMemory, orginalMemory);
             orginalMemory = newMemory;
 
-            await Task.Delay(1000);
+            await Task.Delay(1200);
 
             newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
             ClassicAssert.AreEqual(newMemory, orginalMemory);
