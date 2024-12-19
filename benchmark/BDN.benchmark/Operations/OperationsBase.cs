@@ -39,7 +39,7 @@ namespace BDN.benchmark.Operations
         ///  25 us =  4 Mops/sec
         /// 100 us =  1 Mops/sec
         /// </summary>
-        const int batchSize = 100;
+        internal const int batchSize = 100;
         internal EmbeddedRespServer server;
         internal RespServerSession session;
 
