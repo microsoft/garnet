@@ -1270,8 +1270,9 @@ namespace Garnet.server
                 int searchStartIndex = bsKeyword.StartFrom;
                 if (searchStartIndex < 0)
                 {
-                    searchStartIndex = parseState.Count + searchStartIndex; // Convert negative index to positive from end
-                    
+                    // Convert negative index to positive from end
+                    searchStartIndex = parseState.Count + searchStartIndex;
+
                     // Search backwards from the calculated start position for the keyword
                     for (int i = searchStartIndex; i >= 0; i--)
                     {
@@ -1307,7 +1308,7 @@ namespace Garnet.server
                     // For negative LastKey, calculate limit based on the factor
                     int availableArgs = parseState.Count - startIndex;
                     int limitFactor = range.Limit <= 1 ? availableArgs : availableArgs / range.Limit;
-                    
+
                     // Calculate available slots based on keyStep
                     int slotsAvailable = (limitFactor + range.KeyStep - 1) / range.KeyStep;
                     lastKey = startIndex + (slotsAvailable * range.KeyStep) - range.KeyStep;

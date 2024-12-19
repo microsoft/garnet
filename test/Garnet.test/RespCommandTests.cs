@@ -558,7 +558,7 @@ namespace Garnet.test
 
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(expectedKeys.Length, results.Length);
-            
+
             for (var i = 0; i < expectedKeys.Length; i++)
             {
                 ClassicAssert.AreEqual(expectedKeys[i], results[i].ToString());
@@ -592,13 +592,13 @@ namespace Garnet.test
 
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(expectedKeys.Length, results.Length);
-            
+
             for (var i = 0; i < expectedKeys.Length; i++)
             {
                 var keyInfo = (RedisResult[])results[i];
                 ClassicAssert.AreEqual(2, keyInfo.Length);
                 ClassicAssert.AreEqual(expectedKeys[i], keyInfo[0].ToString());
-                
+
                 var flags = ((RedisResult[])keyInfo[1]).Select(f => f.ToString()).ToArray();
                 CollectionAssert.AreEquivalent(expectedFlags[i], flags);
             }

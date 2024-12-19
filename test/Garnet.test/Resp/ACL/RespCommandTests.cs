@@ -12,6 +12,7 @@ using Garnet.server;
 using Garnet.server.ACL;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using StackExchange.Redis;
 
 namespace Garnet.test.Resp.ACL
 {
@@ -2256,6 +2257,37 @@ namespace Garnet.test.Resp.ACL
             {
                 // COMMAND|DOCS returns an array of arrays, which GarnetClient doesn't deal with
                 await client.ExecuteForStringResultAsync("COMMAND", ["DOCS", "GET", "SET", "APPEND"]);
+            }
+        }
+
+        [Test]
+        public async Task CommandGetKeysAsync()
+        {
+            await CheckCommandsAsync(
+                "COMMAND GETKEYS",
+                [DoCommandGetKeysAsync]
+            );
+
+            static async Task DoCommandGetKeysAsync(GarnetClient client)
+            {
+                string[] res = await client.ExecuteForStringArrayResultAsync("COMMAND", ["GETKEYS", "SET", "mykey", "value"]);
+                ClassicAssert.IsNotNull(res);
+                ClassicAssert.Contains("mykey", res);
+            }
+        }
+
+        [Test]
+        public async Task CommandGetKeysAndFlagsAsync()
+        {
+            await CheckCommandsAsync(
+                "COMMAND GETKEYSANDFLAGS",
+                [DoCommandGetKeysAndFlagsAsync]
+            );
+
+            static async Task DoCommandGetKeysAndFlagsAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringArrayResultAsync("COMMAND", ["GETKEYSANDFLAGS", "EVAL", "return redis.call('TIME')", "0"]);
+                ClassicAssert.AreEqual(0, res.Length);
             }
         }
 
