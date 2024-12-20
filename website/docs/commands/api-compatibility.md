@@ -76,7 +76,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SETNAME](client.md#client-setname) | ➕ |  |
 |  | TRACKING | ➖ |  |
 |  | TRACKINGINFO | ➖ |  |
-|  | UNBLOCK | ➖ |  |
+|  | [UNBLOCK](client.md#client-unblock) | ➖ |  |
 |  | UNPAUSE | ➖ |  |
 | <span id="cluster">**CLUSTER**</span> | [ADDSLOTS](cluster.md#cluster-addslots) | ➕ |  |
 |  | [ADDSLOTSRANGE](cluster.md#cluster-addslotsrange) | ➕ |  |

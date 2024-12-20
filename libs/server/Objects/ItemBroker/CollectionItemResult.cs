@@ -20,6 +20,11 @@ namespace Garnet.server
             Items = items;
         }
 
+        private CollectionItemResult(bool isError)
+        {
+            IsError = isError;
+        }
+
         /// <summary>
         /// True if item was found
         /// </summary>
@@ -41,8 +46,18 @@ namespace Garnet.server
         internal byte[][] Items { get; }
 
         /// <summary>
+        /// Indicates whether the result represents an error.
+        /// </summary>
+        internal readonly bool IsError { get; }
+
+        /// <summary>
         /// Instance of empty result
         /// </summary>
         internal static readonly CollectionItemResult Empty = new(null, item: null);
+
+        /// <summary>
+        /// Instance representing an error result.
+        /// </summary>
+        internal static readonly CollectionItemResult Error = new(true);
     }
 }
