@@ -30,17 +30,17 @@ namespace Tsavorite.core
             this.objectIdMap = objectIdMap;
         }
 
-        private readonly int* ValueAddress => (int*)(physicalAddress + recBase.ValueOffset);
+        internal readonly int* ValueIdAddress => (int*)recBase.ValueAddress;
 
         /// <summary>The value object id (index into the object values array)</summary>
-        internal readonly int ValueId => *ValueAddress;
+        internal readonly int ValueId => *ValueIdAddress;
 
         public readonly IHeapObject GetValue() => objectIdMap.GetRef(ValueId);
         public readonly void SetValue(IHeapObject value)
         {
-            if (*ValueAddress == ObjectIdMap.InvalidObjectId)
-                *ValueAddress = objectIdMap.Allocate();
-            objectIdMap.GetRef(*ValueAddress) = value;
+            if (*ValueIdAddress == ObjectIdMap.InvalidObjectId)
+                *ValueIdAddress = objectIdMap.Allocate();
+            objectIdMap.GetRef(*ValueIdAddress) = value;
         }
 
         public readonly int RecordSize => recBase.GetRecordSize(ValueLen);

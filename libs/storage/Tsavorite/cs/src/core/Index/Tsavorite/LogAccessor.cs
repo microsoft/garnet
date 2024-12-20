@@ -56,14 +56,6 @@ namespace Tsavorite.core
         public long BeginAddress => allocatorBase.BeginAddress;
 
         /// <summary>
-        /// Get the bytes used on the primary log by every record. Does not include
-        /// the size of variable-length inline data. Note that class objects occupy
-        /// 8 bytes (reference) on the main log (i.e., the heap space occupied by
-        /// class objects is not included in the result of this call).
-        /// </summary>
-        public int FixedRecordSize => allocator.GetFixedRecordSize();
-
-        /// <summary>
         /// Number of pages left empty or unallocated in the in-memory buffer (between 0 and BufferSize-1)
         /// </summary>
         public int EmptyPageCount

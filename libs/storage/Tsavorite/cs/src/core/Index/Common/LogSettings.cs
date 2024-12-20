@@ -25,6 +25,9 @@ namespace Tsavorite.core
         /// <summary>Maximum number of bits for the size of the in-memory portion of the log</summary>
         public const int kMaxMemorySizeBits = kMaxSegmentSizeBits;
 
+        /// <summary>Maximum number of bits for the size of an inline (not overflow) key</summary>
+        public const int kMaxInlineKeySizeBits = 7;
+
         /// <summary>
         /// Device used for main hybrid log
         /// </summary>
@@ -89,6 +92,6 @@ namespace Tsavorite.core
         /// <summary>
         /// Maximum size of a key stored inline in the in-memory portion of the main log.
         /// </summary>
-        public int MaxInlineKeySizeBits = 6;
+        public int MaxInlineKeySizeBits = kMaxInlineKeySizeBits;
     }
 }

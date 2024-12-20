@@ -5,9 +5,9 @@ using System.Runtime.InteropServices;
 
 namespace Tsavorite.core
 {
-    struct PageUnit
+    struct PageUnit<TValuePage>
     {
-        public byte[] value;
+        public TValuePage value;
         public long pointer;
     }
 

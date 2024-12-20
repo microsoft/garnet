@@ -90,7 +90,7 @@ namespace Tsavorite.benchmark
 
             device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
 
-            var kvSettings = new KVSettings<SpanByte, SpanByte>()
+            var kvSettings = new KVSettings()
             {
                 IndexSize = testLoader.GetHashTableSize(),
                 LogDevice = device,

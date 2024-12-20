@@ -63,33 +63,17 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref IHeapObject GetValue(long physicalAddress) => ref _this.GetValue(physicalAddress);
+        public readonly void InitializeValue(long physicalAddress, long endPhysicalAddress) => ObjectAllocatorImpl<TStoreFunctions>.InitializeValue(physicalAddress, endPhysicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref IHeapObject GetAndInitializeValue(long physicalAddress, long endPhysicalAddress) => ref GetValue(physicalAddress);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress) => _this.GetRecordSize(physicalAddress);
+        public readonly (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress) => new ObjectLogRecord(physicalAddress).RecordSizes;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref SpanByte key, ref TInput input, ref IHeapObject value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<IHeapObject, TInput>
              => _this.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref recordInfo, varlenInput);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetRequiredRecordSize(long physicalAddress, int availableBytes) => GetAverageRecordSize();
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetAverageRecordSize() => _this.GetAverageRecordSize();
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetFixedRecordSize() => _this.GetFixedRecordSize();
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -106,10 +90,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref SpanByte key, ref IHeapObject value) => _this.GetRecordSize(ref key, ref value);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetValueLength(ref IHeapObject value) => ObjectAllocatorImpl<TStoreFunctions>.GetValueLength(ref value);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -166,6 +146,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SerializeKey(ref SpanByte key, long physicalAddress) => _this.SerializeKey(ref key, physicalAddress);
+        public readonly void SerializeKey(ref SpanByte key, long physicalAddress) => ObjectAllocatorImpl<TStoreFunctions>.SerializeKey(ref key, physicalAddress);
     }
 }

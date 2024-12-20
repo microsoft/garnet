@@ -68,7 +68,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
 
             // Make the main log mutable region small enough that we force the readonly region to stay close to tail, causing inserts.
             int pageBits = 15, memoryBits = 34;
-            KVSettings<SpanByte, SpanByte> kvSettings = new()
+            KVSettings kvSettings = new()
             {
                 LogDevice = log,
                 PageSize = 1L << pageBits,

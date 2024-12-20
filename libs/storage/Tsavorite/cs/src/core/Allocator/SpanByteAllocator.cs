@@ -59,8 +59,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref SpanByte GetKey(long physicalAddress)
-            => ref SpanByteAllocatorImpl<TStoreFunctions>.GetKey(physicalAddress);
+        public readonly SpanByte GetKey(long physicalAddress) => SpanByteAllocatorImpl<TStoreFunctions>.GetKey(physicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -68,25 +67,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress) => _this.GetRecordSize(physicalAddress);
+        public readonly (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress) => new StringLogRecord(physicalAddress).RecordSizes;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref SpanByte key, ref TInput input, ref SpanByte value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
              => _this.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref recordInfo, varlenInput);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetRequiredRecordSize(long physicalAddress, int availableBytes) => _this.GetRequiredRecordSize(physicalAddress, availableBytes);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetAverageRecordSize() => _this.GetAverageRecordSize();
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetFixedRecordSize() => _this.GetFixedRecordSize();
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -103,11 +90,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref SpanByte key, ref SpanByte value) => _this.GetRecordSize(ref key, ref value);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetValueLength(ref SpanByte value)
-            => SpanByteAllocatorImpl<TStoreFunctions>.GetValueLength(ref value);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -141,15 +123,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void FreePage(long pageIndex) => _this.FreePage(pageIndex);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, SpanByte> ctx)
-            => ref SpanByteAllocatorImpl<TStoreFunctions>.GetContextRecordKey(ref ctx);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref SpanByte GetContextRecordValue(ref AsyncIOContext<SpanByte, SpanByte> ctx) => ref _this.GetContextRecordValue(ref ctx);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -38,7 +38,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
         }
 
-        private void Setup(KVSettings<KeyStruct, ValueStruct> kvSettings, DeviceType deviceType, int latencyMs = DefaultLocalMemoryDeviceLatencyMs)
+        private void Setup(KVSettings kvSettings, DeviceType deviceType, int latencyMs = DefaultLocalMemoryDeviceLatencyMs)
         {
             kvSettings.IndexSize = 1L << 13;
 

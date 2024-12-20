@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using static Tsavorite.core.Utility;
 
@@ -13,24 +14,20 @@ namespace Tsavorite.core
     internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions> : AllocatorBase<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte>
     {
-        // Circular buffer definition
-        private readonly byte[][] values;
-        private readonly long[] pointers;
-        private readonly long* nativePointers;
+        /// <summary>Circular buffer definition, in parallel with <see cref="values"/></summary>
+        /// <remarks>The long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation more easily</remarks>
+        long* pagePointers;
 
-        private readonly OverflowPool<PageUnit> overflowPagePool;
+        private readonly OverflowPool<PageUnit<int>> overflowPagePool;
 
         public SpanByteAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, SpanByteAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
-            overflowPagePool = new OverflowPool<PageUnit>(4, p => { });
+            overflowPagePool = new OverflowPool<PageUnit<int>>(4, p => { });
 
-            if (BufferSize > 0)
-            {
-                values = new byte[BufferSize][];
-                pointers = GC.AllocateArray<long>(BufferSize, true);
-                nativePointers = (long*)Unsafe.AsPointer(ref pointers[0]);
-            }
+            var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
+            pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
+            NativeMemory.Clear(pagePointers, bufferSizeInBytes);
         }
 
         internal int OverflowPageCount => overflowPagePool.Count;
@@ -56,124 +53,60 @@ namespace Tsavorite.core
 
             if (overflowPagePool.TryGet(out var item))
             {
-                pointers[index] = item.pointer;
-                values[index] = item.value;
+                pagePointers[index] = item.pointer;
+                // unused: _ = item.value;
                 return;
             }
 
-            var adjustedSize = PageSize + 2 * sectorSize;
-
-            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
-            long p = (long)Unsafe.AsPointer(ref tmp[0]);
-            pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
-            values[index] = tmp;
+            pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
         }
 
         void ReturnPage(int index)
         {
             Debug.Assert(index < BufferSize);
-            if (values[index] != null)
+            if (pagePointers[index] != default)
             {
-                overflowPagePool.TryAdd(new PageUnit
+                _ = overflowPagePool.TryAdd(new()
                 {
-                    pointer = pointers[index],
-                    value = values[index]
+                    pointer = pagePointers[index],
+                    value = default
                 });
-                values[index] = null;
-                pointers[index] = 0;
-                Interlocked.Decrement(ref AllocatedPageCount);
+                pagePointers[index] = default;
+                _ = Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
 
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref new StringLogRecord(physicalAddress).recBase.InfoRef;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ref SpanByte GetKey(long physicalAddress) => ref Unsafe.AsRef<SpanByte>((byte*)physicalAddress + RecordInfo.GetLength());
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitializeValue(long physicalAddress, long endAddress)
         {
             // Initialize the SpanByte to the length of the entire value space, less the length of the int size prefix.
-            var src = (byte*)ValueOffset(physicalAddress);
+            var src = (byte*)ValueAddress(physicalAddress);
             *(int*)src = (int)((byte*)endAddress - src) - sizeof(int);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static long KeyOffset(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private long ValueOffset(long physicalAddress) => new StringLogRecord(physicalAddress).recBase.ValueOffset;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int KeySize(long physicalAddress) => (*(SpanByte*)KeyOffset(physicalAddress)).TotalSize;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int ValueSize(long physicalAddress) => (*(SpanByte*)ValueOffset(physicalAddress)).TotalSize;
+        private int ValueSize(long physicalAddress) => (*(SpanByte*)ValueAddress(physicalAddress)).TotalSize;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetValueLength(ref SpanByte value) => value.TotalSize;
-
-        const int FieldInitialLength = sizeof(int);     // The .Length field of a SpanByte is the initial length
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (int actualSize, int allocatedSize) GetRecordSizes(long physicalAddress) => new StringLogRecord(physicalAddress).RecordSizes;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref SpanByte key, ref TInput input, ref SpanByte value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
         {
             // Used by RMW to determine the length of copy destination (taking Input into account), so does not need to get filler length.
+            // TODO: Adjust for key overflowing and thus taking only 12 bytes inline
             var keySize = key.TotalSize;
             var size = RecordInfo.GetLength() + RoundUp(keySize, Constants.kRecordAlignment) + varlenInput.GetRMWModifiedValueLength(ref value, ref input);
             return (size, RoundUp(size, Constants.kRecordAlignment), keySize);
         }
 
-        public int GetRequiredRecordSize(long physicalAddress, int availableBytes)
-        {
-            // We need at least [average record size]...
-            var reqBytes = GetAverageRecordSize();
-            if (availableBytes < reqBytes)
-                return reqBytes;
-
-            // We need at least [RecordInfo size] + [actual key size]...
-            reqBytes = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + FieldInitialLength;
-            if (availableBytes < reqBytes)
-                return reqBytes;
-
-            // We need at least [RecordInfo size] + [actual key size] + [actual value size]
-            var recordInfo = GetInfoRef(physicalAddress);
-            var valueLen = ValueSize(physicalAddress);
-            if (recordInfo.HasFiller)
-            {
-                // We have a filler, so the valueLen we have now is the usedValueLength; we need to offset to where the extraValueLength is and read that int
-                var alignedUsedValueLength = RoundUp(valueLen, sizeof(int));
-                reqBytes = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + alignedUsedValueLength + sizeof(int);
-                if (availableBytes < reqBytes)
-                    return reqBytes;
-                valueLen += *(int*)(ValueOffset(physicalAddress) + alignedUsedValueLength);
-            }
-
-            // Now we know the full record length.
-            reqBytes = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + valueLen;
-            reqBytes = RoundUp(reqBytes, Constants.kRecordAlignment);
-            return reqBytes;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetAverageRecordSize() => RecordInfo.GetLength() + (RoundUp(FieldInitialLength, Constants.kRecordAlignment) * 2);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetFixedRecordSize() => GetAverageRecordSize();
-
         public (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : IVariableLengthInput<SpanByte, TInput>
         {
+            // TODO: Adjust for key overflowing and thus taking only 12 bytes inline
             int keySize = key.TotalSize;
             var actualSize = RecordInfo.GetLength() + RoundUp(keySize, Constants.kRecordAlignment) + sessionFunctions.GetRMWInitialValueLength(ref input);
             return (actualSize, RoundUp(actualSize, Constants.kRecordAlignment), keySize);
@@ -182,6 +115,7 @@ namespace Tsavorite.core
         public (int actualSize, int allocatedSize, int keySize) GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref SpanByte value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : IVariableLengthInput<SpanByte, TInput>
         {
+            // TODO: Adjust for key overflowing and thus taking only 12 bytes inline
             int keySize = key.TotalSize;
             var actualSize = RecordInfo.GetLength() + RoundUp(keySize, Constants.kRecordAlignment) + sessionFunctions.GetUpsertValueLength(ref value, ref input);
             return (actualSize, RoundUp(actualSize, Constants.kRecordAlignment), keySize);
@@ -189,13 +123,11 @@ namespace Tsavorite.core
 
         public (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref SpanByte key, ref SpanByte value)
         {
+            // TODO: Adjust for key overflowing and thus taking only 12 bytes inline
             int keySize = key.TotalSize;
             var actualSize = RecordInfo.GetLength() + RoundUp(keySize, Constants.kRecordAlignment) + value.TotalSize;
             return (actualSize, RoundUp(actualSize, Constants.kRecordAlignment), keySize);
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void SerializeKey(ref SpanByte src, long physicalAddress) => src.CopyTo((byte*)KeyOffset(physicalAddress));
 
         /// <summary>
         /// Dispose memory allocator
@@ -214,14 +146,14 @@ namespace Tsavorite.core
 
             // Index of page within the circular buffer
             var pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
-            return *(nativePointers + pageIndex) + offset;
+            return *(pagePointers + pageIndex) + offset;
         }
 
-        internal bool IsAllocated(int pageIndex) => values[pageIndex] != null;
+        internal bool IsAllocated(int pageIndex) => pagePointers[pageIndex] != 0;
 
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {
-            WriteAsync((IntPtr)pointers[flushPage % BufferSize],
+            WriteAsync((IntPtr)pagePointers[flushPage % BufferSize],
                     (ulong)(AlignedPageSizeBytes * flushPage),
                     (uint)AlignedPageSizeBytes,
                     callback,
@@ -235,32 +167,14 @@ namespace Tsavorite.core
             VerifyCompatibleSectorSize(device);
             var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
 
-            WriteAsync((IntPtr)pointers[flushPage % BufferSize],
+            WriteAsync((IntPtr)pagePointers[flushPage % BufferSize],
                         (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                         (uint)alignedPageSize, callback, asyncResult,
                         device);
         }
 
-        public long GetStartLogicalAddress(long page) => page << LogPageSizeBits;
-
-        public long GetFirstValidLogicalAddress(long page)
-        {
-            if (page == 0)
-                return (page << LogPageSizeBits) + Constants.kFirstValidAddress;
-            return page << LogPageSizeBits;
-        }
-
         internal void ClearPage(long page, int offset)
-        {
-            if (offset == 0)
-                Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
-            else
-            {
-                // Adjust array offset for cache alignment
-                offset += (int)(pointers[page % BufferSize] - (long)Unsafe.AsPointer(ref values[page % BufferSize][0]));
-                Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
-            }
-        }
+            => NativeMemory.Clear((byte*)pagePointers[page] + offset, (nuint)(PageSize - offset));
 
         internal void FreePage(long page)
         {
@@ -272,7 +186,7 @@ namespace Tsavorite.core
         protected override void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
-            device.ReadAsync(alignedSourceAddress, (IntPtr)pointers[destinationPageIndex], aligned_read_length, callback, asyncResult);
+            device.ReadAsync(alignedSourceAddress, (IntPtr)pagePointers[destinationPageIndex], aligned_read_length, callback, asyncResult);
         }
 
         /// <summary>
@@ -290,10 +204,6 @@ namespace Tsavorite.core
         }
 
         internal static bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte, SpanByte> ctx) => true;
-
-        internal static ref SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, SpanByte> ctx) => ref GetKey((long)ctx.record.GetValidPointer());
-
-        internal ref SpanByte GetContextRecordValue(ref AsyncIOContext<SpanByte, SpanByte> ctx) => ref GetValue((long)ctx.record.GetValidPointer());
 
         internal IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => new SpanByteHeapContainer(ref key, bufferPool);
 

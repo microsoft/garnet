@@ -158,7 +158,7 @@ namespace Tsavorite.core
         {
             completionEvent.Prepare(_wrapper.GetKeyContainer(ref key), logicalAddress);
 
-            AsyncGetFromDisk(logicalAddress, _wrapper.GetAverageRecordSize(), completionEvent.request);
+            AsyncGetFromDisk(logicalAddress, DiskRecord.GetIOSize(sectorSize), completionEvent.request);
             completionEvent.Wait();
 
             stop = false;

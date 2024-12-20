@@ -14,7 +14,7 @@ namespace Tsavorite.core
     ///     <list>
     ///     <item>[RecordInfo][FullRecordLength][DBId?][ETag?][Expiration?][key SpanByte][value SpanByte]</item>
     ///     </list>
-    /// This lets us get to the optional fields for comparisons without loading the full record (GetAverageRecordSize should cover the space for optionals).
+    /// This lets us get to the optional fields for comparisons without loading the full record (GetIOSize should cover the space for optionals).
     /// </remarks>
     public unsafe struct DiskRecord(long physicalAddress)
     {
@@ -58,6 +58,14 @@ namespace Tsavorite.core
         public readonly int GetDBId() => Info.HasDBId ? *(byte*)GetDBIdAddress() : 0;
         public readonly long GetETag() => Info.HasETag ? *(long*)GetETagAddress() : 0;
         public readonly long GetExpiration() => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
+
+        /// <summary>The size to IO from disk when reading a record. Keys and Values are SpanByte on disk and we reuse the max inline key size
+        /// for both key and value for this estimate. They prefaced by the full record length and optionals (DBID, ETag, Expiration) which we include in the estimate.</summary>
+        public static int GetIOSize(int sectorSize) => RoundUp(RecordInfo.GetLength() + FullRecordLenSize + sizeof(long) * 2 + sizeof(int) * 2 + (1 << LogSettings.kMaxInlineKeySizeBits) * 2, sectorSize);
+
+        internal static SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, SpanByte> ctx) => new DiskRecord((long)ctx.record.GetValidPointer()).Key;
+
+        internal static SpanByte GetContextRecordValue(ref AsyncIOContext<SpanByte, SpanByte> ctx) => new DiskRecord((long)ctx.record.GetValidPointer()).Value;
 
         /// <inheritdoc/>
         public override readonly string ToString()

@@ -35,7 +35,7 @@ namespace Tsavorite.core
         /// <remarks>Not a ref return as it cannot be changed</remarks>
         public readonly SpanByte Key => *(SpanByte*)(physicalAddress + RecordInfo.GetLength());
 
-        internal readonly int ValueOffset => RecordInfo.GetLength() + Key.TotalInlineSize;
+        internal readonly int ValueAddress => RecordInfo.GetLength() + Key.TotalInlineSize;
 
         private readonly int DBIdLen => Info.HasDBId ? 1 : 0;
         private readonly int ETagLen => Info.HasETag ? Constants.ETagSize : 0;
@@ -89,7 +89,7 @@ namespace Tsavorite.core
                 return false;
 
             // Start at FillerLen address
-            var address = physicalAddress + ValueOffset + valueLen + OptionalLength;
+            var address = physicalAddress + ValueAddress + valueLen + OptionalLength;
             var extraLen = availableSpace - growth;
 
             // Preserve zero-init by:
@@ -131,7 +131,7 @@ namespace Tsavorite.core
             var availableSpace = maxLen - recordLen;
 
             // Start at FillerLen address
-            var address = physicalAddress + ValueOffset + valueLen + OptionalLength;
+            var address = physicalAddress + ValueAddress + valueLen + OptionalLength;
             var extraLen = availableSpace + growth;
 
             // Preserve zero-init by:
@@ -175,7 +175,7 @@ namespace Tsavorite.core
                 return false;
 
             // Start at FillerLen address
-            var address = physicalAddress + ValueOffset + valueLen + OptionalLength;
+            var address = physicalAddress + ValueAddress + valueLen + OptionalLength;
             var extraLen = availableSpace - growth;
 
             // Preserve zero-init by:
@@ -205,7 +205,7 @@ namespace Tsavorite.core
             var availableSpace = maxLen - recordLen;
 
             // Start at FillerLen address
-            var address = physicalAddress + ValueOffset + valueLen + OptionalLength;
+            var address = physicalAddress + ValueAddress + valueLen + OptionalLength;
             var extraLen = availableSpace + growth;
 
             // Preserve zero-init by:

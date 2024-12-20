@@ -1,8 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+//#define READ_WRITE
+
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -16,15 +17,15 @@ namespace Tsavorite.core
     internal sealed unsafe class ObjectAllocatorImpl<TStoreFunctions> : AllocatorBase<SpanByte, IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions<SpanByte, IHeapObject>
     {
-        // Circular buffer definition (the long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation easier).
+        /// <summary>Circular buffer definition, in parallel with <see cref="values"/></summary>
+        /// <remarks>The long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation more easily</remarks>
         long* pagePointers;
 
-        // The values array, per-page.
-        readonly IHeapObject[][] values;
+        /// <summary>For each in-memory page of this allocator we have an ObjectIdMap to contain the Object values (for GC) and mapping index.</summary>
+        ObjectIdMap[] values;
 
         readonly int maxInlineKeySize;
         readonly KeyOverflowAllocator keyOverflowAllocator;
-        readonly ObjectIdMap objectIdMap;
 
         // Size of object chunks being written to storage
         private readonly int objectBlockSize = 100 * (1 << 20);
@@ -35,19 +36,18 @@ namespace Tsavorite.core
         /// <summary>Minimum size of a record: header, key (length and 4 bytes), and Value Id. Does not include optional fields such as DBId, ETag, Expiration, or FillerLen.</summary>
         private static int MinRecordSize => RecordInfo.GetLength() + (sizeof(int) * 2) + ObjectIdMap.ObjectIdSize;
 
-        private readonly OverflowPool<PageUnit> overflowPagePool;
+        private readonly OverflowPool<PageUnit<ObjectIdMap>> overflowPagePool;
 
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
-            values = new IHeapObject[BufferSize][];
+            values = new ObjectIdMap[BufferSize];
 
             // TODO: Verify LogSettings.MaxInlineKeySizeBits and .KeyOverflowPageSizeBits are in range. Do we need config for AverageKeySizeBits?
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
             keyOverflowAllocator = new(1 << settings.LogSettings.KeyOverflowPageSizeBits, 1 << (settings.LogSettings.MaxInlineKeySizeBits - 1));
-            objectIdMap = new(PageSize / MinRecordSize);
 
-            overflowPagePool = new OverflowPool<PageUnit>(4, p => { });
+            overflowPagePool = new OverflowPool<PageUnit<ObjectIdMap>>(4, p => { });
 
             var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
             pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
@@ -73,9 +73,14 @@ namespace Tsavorite.core
             IncrementAllocatedPageCount();
 
             if (overflowPagePool.TryGet(out var item))
+            {
                 pagePointers[index] = item.pointer;
-            else
-                pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
+                values[index] = item.value;
+                return;
+            }
+
+            pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
+            values[index] = new(PageSize / MinRecordSize);
         }
 
         void ReturnPage(int index)
@@ -83,10 +88,10 @@ namespace Tsavorite.core
             Debug.Assert(index < BufferSize);
             if (pagePointers[index] != default)
             {
-                _ = overflowPagePool.TryAdd(new PageUnit
+                _ = overflowPagePool.TryAdd(new ()
                 {
                     pointer = pagePointers[index],
-                    value = default
+                    value = values[index]
                 });
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
@@ -95,55 +100,13 @@ namespace Tsavorite.core
 
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
-        /// <summary>Get start logical address</summary>
-        public long GetStartLogicalAddress(long page) => page << LogPageSizeBits;
-
-        /// <summary>Get first valid address</summary>
-        public long GetFirstValidLogicalAddress(long page) => page == 0 ? Constants.kFirstValidAddress : page << LogPageSizeBits;
-
-        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref new ObjectLogRecord(physicalAddress).recBase.InfoRef;
-
-        public static ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
-
-        // GetKey is used in TracebackForKeyMatch. We do not need GetValue because it is obtained from ObjectLogRecord.
-        public static SpanByte GetKey(long physicalAddress) => new ObjectLogRecord(physicalAddress).recBase.Key;
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeValue(long physicalAddress, long _ /* endAddress */) { }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static long KeyOffset(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private long ValueOffset(long physicalAddress) => new ObjectLogRecord(physicalAddress).recBase.ValueOffset;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int KeySize(long physicalAddress) => (*(SpanByte*)KeyOffset(physicalAddress)).TotalSize;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int ValueSize(long physicalAddress) => FixedValueSize;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetValueLength(ref IHeapObject value) => FixedValueSize;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (int actualSize, int allocatedSize) GetRecordSizes(long physicalAddress) => new ObjectLogRecord(physicalAddress).RecordSizes;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void SerializeKey(ref SpanByte src, long physicalAddress) => src.CopyTo((byte*)KeyOffset(physicalAddress));
+        public static void InitializeValue(long physicalAddress, long _ /* endAddress */) => *(new ObjectLogRecord(physicalAddress).ValueIdAddress) = 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref SpanByte key, ref TInput input, ref IHeapObject value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
             => GetRecordSize(ref key);
-
-        const int KeyInitialLength = sizeof(int) * 2;     // The .Length field of a SpanByte is the initial length, but the key won't be empty, so add another int
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetAverageRecordSize() => RecordInfo.GetLength() + RoundUp(KeyInitialLength, Constants.kRecordAlignment) + FixedValueSize;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetFixedRecordSize() => GetAverageRecordSize();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
@@ -157,6 +120,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref SpanByte key)
         {
+            // TODO: Adjust for key overflowing and thus taking only 12 bytes inline
+            // TODO: Consider adjusting for value overflowing and thus taking only 12 bytes inline
             var keySize = key.TotalSize;
             var size = RecordInfo.GetLength() + RoundUp(keySize, Constants.kRecordAlignment) + FixedValueSize;
             return (size, RoundUp(size, Constants.kRecordAlignment), keySize);
@@ -170,10 +135,11 @@ namespace Tsavorite.core
         /// </summary>
         public override void Dispose()
         {
-            var localMap = Interlocked.Exchange(ref objectIdMap, null);
-            if (localMap != null)
+            var localValues = Interlocked.Exchange(ref values, null);
+            if (localValues != null)
             {
-                localMap.Clear();
+                foreach (var value in localValues)
+                    value.Clear();
                 overflowPagePool.Dispose();
                 base.Dispose();
             }
@@ -213,13 +179,14 @@ namespace Tsavorite.core
                     (ulong)(AlignedPageSizeBytes * flushPage),
                     (uint)PageSize,
                     callback,
-                    asyncResult, device, objectLogDevice);
+                    asyncResult, device);
         }
 
         protected override void WriteAsyncToDevice<TContext>
             (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress)
         {
+#if READ_WRITE
             VerifyCompatibleSectorSize(device);
             VerifyCompatibleSectorSize(objectLogDevice);
 
@@ -250,12 +217,13 @@ namespace Tsavorite.core
                 if (epochTaken)
                     epoch.Suspend();
             }
+#endif // READ_WRITE
         }
 
         internal void ClearPage(long page, int offset)
         {
             // This is called during recovery, not as part of normal operations, so there is no need to walk pages starting at offset to Free() ObjectIds
-            NativeMemory.Clear((byte*)pagePointers[page] + offset, (nuint)(adjustedPageSize - offset));
+            NativeMemory.Clear((byte*)pagePointers[page] + offset, (nuint)(PageSize - offset));
         }
 
         internal void FreePage(long page)
@@ -266,11 +234,13 @@ namespace Tsavorite.core
             var thisCloseSegment = page >> (LogSegmentSizeBits - LogPageSizeBits);
             var nextCloseSegment = (page + 1) >> (LogSegmentSizeBits - LogPageSizeBits);
 
+#if READ_WRITE
             if (thisCloseSegment != nextCloseSegment)
             {
                 // We are clearing the last page in current segment
                 segmentOffsets[thisCloseSegment % SegmentBufferSize] = 0;
             }
+#endif // READ_WRITE
 
             // If all pages are being used (i.e. EmptyPageCount == 0), nothing to re-utilize by adding
             // to overflow pool.
@@ -280,8 +250,9 @@ namespace Tsavorite.core
 
         private void WriteAsync<TContext>(long flushPage, ulong alignedDestinationAddress, uint numBytesToWrite,
                         DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
-                        IDevice device, IDevice objlogDevice, long intendedDestinationPage = -1, long[] localSegmentOffsets = null, long fuzzyStartLogicalAddress = long.MaxValue)
+                        IDevice device, long intendedDestinationPage = -1, long[] localSegmentOffsets = null, long fuzzyStartLogicalAddress = long.MaxValue)
         {
+#if READ_WRITE
             // Short circuit if we are using a null device
             if ((device as NullDevice) != null)
             {
@@ -526,6 +497,7 @@ namespace Tsavorite.core
                 if (epochProtected)
                     epoch.Resume();
             }
+#endif // READ_WRITE
         }
 
         private void AsyncReadPageCallback(uint errorCode, uint numBytes, object context)
@@ -542,6 +514,7 @@ namespace Tsavorite.core
             ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
+#if READ_WRITE
             asyncResult.freeBuffer1 = bufferPool.Get((int)aligned_read_length);
             asyncResult.freeBuffer1.required_bytes = (int)aligned_read_length;
 
@@ -563,6 +536,7 @@ namespace Tsavorite.core
 
             device.ReadAsync(alignedSourceAddress, (IntPtr)asyncResult.freeBuffer1.aligned_pointer,
                     aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
+#endif // READ_WRITE
         }
 
 
@@ -584,6 +558,7 @@ namespace Tsavorite.core
 
         private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, object context)
         {
+#if READ_WRITE
             if (errorCode != 0)
                 logger?.LogError($"{nameof(AsyncReadPageWithObjectsCallback)} error: {{errorCode}}", errorCode);
 
@@ -642,6 +617,7 @@ namespace Tsavorite.core
                 (int)((result.page - result.offset) >> (LogSegmentSizeBits - LogPageSizeBits)),
                 (ulong)startptr,
                 (IntPtr)objBuffer.aligned_pointer, (uint)alignedLength, AsyncReadPageWithObjectsCallback<TContext>, result);
+#endif // READ_WRITE
         }
 
         /// <summary>
@@ -653,8 +629,9 @@ namespace Tsavorite.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<TKey, TValue> context, SectorAlignedMemory result = default)
+        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<SpanByte, IHeapObject> context, SectorAlignedMemory result = default)
         {
+#if READ_WRITE
             var fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             var alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
 
@@ -677,6 +654,7 @@ namespace Tsavorite.core
                 alignedReadLength,
                 callback,
                 asyncResult);
+#endif // READ_WRITE
         }
 
         /// <summary>
@@ -699,7 +677,7 @@ namespace Tsavorite.core
                                         long untilAddress,
                                         DeviceIOCompletionCallback callback,
                                         TContext context,
-                                        GenericFrame<TKey, TValue> frame,
+                                        GenericFrame<SpanByte, IHeapObject> frame,
                                         out CountdownEvent completed,
                                         long devicePageOffset = 0,
                                         IDevice device = null, IDevice objectLogDevice = null)
@@ -753,8 +731,9 @@ namespace Tsavorite.core
         /// <param name="untilptr">Until pointer</param>
         /// <param name="src"></param>
         /// <param name="stream">Stream</param>
-        public void Deserialize(byte* raw, long ptr, long untilptr, AllocatorRecord<TKey, TValue>[] src, Stream stream)
+        public void Deserialize(byte* raw, long ptr, long untilptr, AllocatorRecord<SpanByte, IHeapObject>[] src, Stream stream)
         {
+#if READ_WRITE
             long streamStartPos = stream.Position;
             long start_addr = -1;
             int start_offset = -1, end_offset = -1;
@@ -812,6 +791,7 @@ namespace Tsavorite.core
                 using var iter = new MemoryPageScanIterator<TKey, TValue>(src, start_offset, end_offset, -1, RecordSize);
                 OnDeserializationObserver.OnNext(iter);
             }
+#endif // READ_WRITE
         }
 
         /// <summary>
@@ -825,6 +805,7 @@ namespace Tsavorite.core
         /// <param name="size"></param>
         public void GetObjectInfo(byte* raw, ref long ptr, long untilptr, int objectBlockSize, out long startptr, out long size)
         {
+#if READ_WRITE
             var minObjAddress = long.MaxValue;
             var maxObjAddress = long.MinValue;
             var done = false;
@@ -882,11 +863,16 @@ namespace Tsavorite.core
 
             startptr = minObjAddress;
             size = maxObjAddress - minObjAddress;
+#else
+            startptr = 0;
+            size = 0;
+#endif // READ_WRITE
         }
 
         /// <summary>Retrieve objects from object log</summary>
         internal bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte, IHeapObject> ctx)
         {
+#if READ_WRITE
             if (!KeyHasObjects())
                 ctx.key = Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(record).key;
             if (!ValueHasObjects())
@@ -946,28 +932,32 @@ namespace Tsavorite.core
 
             ctx.objBuffer.Return();
             return true;
+#else
+            return false;
+#endif // READ_WRITE
         }
 
-        internal static ref SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, IHeapObject> ctx) => ref GetKey((long)ctx.record.GetValidPointer());
-
         internal IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => new SpanByteHeapContainer(ref key, bufferPool);
-        #endregion
+#endregion
 
-        public long[] GetSegmentOffsets() => segmentOffsets;
+        public long[] GetSegmentOffsets() => null;
 
         internal void PopulatePage(byte* src, int required_bytes, long destinationPage)
-            => PopulatePage(src, required_bytes, ref values[destinationPage % BufferSize]);
-
-        internal void PopulatePageFrame(byte* src, int required_bytes, AllocatorRecord<TKey, TValue>[] frame)
-            => PopulatePage(src, required_bytes, ref frame);
-
-        internal void PopulatePage(byte* src, int required_bytes, ref AllocatorRecord<TKey, TValue>[] destinationPage)
         {
+#if READ_WRITE
+            PopulatePage(src, required_bytes, ref values[destinationPage % BufferSize]);
+#endif // READ_WRITE
+        }
+
+        internal void PopulatePage(byte* src, int required_bytes, ref AllocatorRecord<SpanByte, IHeapObject>[] destinationPage)
+        {
+#if READ_WRITE
             fixed (RecordInfo* pin = &destinationPage[0].info)
             {
                 Debug.Assert(required_bytes <= RecordSize * destinationPage.Length);
                 Buffer.MemoryCopy(src, Unsafe.AsPointer(ref destinationPage[0]), required_bytes, required_bytes);
             }
+#endif // READ_WRITE
         }
 
         /// <summary>
@@ -1010,15 +1000,21 @@ namespace Tsavorite.core
 
         private void ComputeScanBoundaries(long beginAddress, long endAddress, out long pageStartAddress, out int start, out int end)
         {
+#if READ_WRITE
             pageStartAddress = beginAddress & ~PageSizeMask;
             start = (int)(beginAddress & PageSizeMask) / RecordSize;
             var count = (int)(endAddress - beginAddress) / RecordSize;
             end = start + count;
+#else
+            pageStartAddress = 0;
+            start = end = 0;
+#endif // READ_WRITE
         }
 
         /// <inheritdoc />
         internal override void EvictPage(long page)
         {
+#if READ_WRITE
             if (OnEvictionObserver is not null)
             {
                 var beginAddress = page << LogPageSizeBits;
@@ -1029,11 +1025,13 @@ namespace Tsavorite.core
             }
 
             FreePage(page);
+#endif // READ_WRITE
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<TKey, TValue>> observer)
+        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<SpanByte, IHeapObject>> observer)
         {
+#if READ_WRITE
             var page = (beginAddress >> LogPageSizeBits) % BufferSize;
             ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
             using var iter = new MemoryPageScanIterator<TKey, TValue>(values[page], start, end, pageStartAddress, RecordSize);
@@ -1047,6 +1045,7 @@ namespace Tsavorite.core
             {
                 epoch.Resume();
             }
+#endif // READ_WRITE
         }
 
         internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)

@@ -20,7 +20,7 @@ namespace Tsavorite.core
         private static int ValueSize => Unsafe.SizeOf<TValue>();
         internal static int RecordSize => Unsafe.SizeOf<AllocatorRecord<TKey, TValue>>();
 
-        private readonly OverflowPool<PageUnit> overflowPagePool;
+        private readonly OverflowPool<PageUnit<byte[]>> overflowPagePool;
 
         public BlittableAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, BlittableAllocator<TKey, TValue, TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
@@ -28,7 +28,7 @@ namespace Tsavorite.core
             if (!Utility.IsBlittable<TKey>() || !Utility.IsBlittable<TValue>())
                 throw new TsavoriteException($"BlittableAllocator requires blittlable Key ({typeof(TKey)}) and Value ({typeof(TValue)})");
 
-            overflowPagePool = new OverflowPool<PageUnit>(4, p => { });
+            overflowPagePool = new OverflowPool<PageUnit<byte[]>>(4, p => { });
 
             if (BufferSize > 0)
             {
@@ -49,12 +49,35 @@ namespace Tsavorite.core
             Initialize();
         }
 
+        /// <summary>
+        /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
+        /// </summary>
+        /// <param name="index"></param>
+        internal void AllocatePage(int index)
+        {
+            IncrementAllocatedPageCount();
+
+            if (overflowPagePool.TryGet(out var item))
+            {
+                pointers[index] = item.pointer;
+                values[index] = item.value;
+                return;
+            }
+
+            var adjustedSize = PageSize + 2 * sectorSize;
+
+            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
+            long p = (long)Unsafe.AsPointer(ref tmp[0]);
+            pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
+            values[index] = tmp;
+        }
+
         void ReturnPage(int index)
         {
             Debug.Assert(index < BufferSize);
             if (values[index] != null)
             {
-                _ = overflowPagePool.TryAdd(new PageUnit
+                _ = overflowPagePool.TryAdd(new ()
                 {
                     pointer = pointers[index],
                     value = values[index]
@@ -119,29 +142,6 @@ namespace Tsavorite.core
         {
             base.Dispose();
             overflowPagePool.Dispose();
-        }
-
-        /// <summary>
-        /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
-        /// </summary>
-        /// <param name="index"></param>
-        internal void AllocatePage(int index)
-        {
-            IncrementAllocatedPageCount();
-
-            if (overflowPagePool.TryGet(out var item))
-            {
-                pointers[index] = item.pointer;
-                values[index] = item.value;
-                return;
-            }
-
-            var adjustedSize = PageSize + 2 * sectorSize;
-
-            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
-            long p = (long)Unsafe.AsPointer(ref tmp[0]);
-            pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
-            values[index] = tmp;
         }
 
         internal int OverflowPageCount => overflowPagePool.Count;

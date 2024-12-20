@@ -33,12 +33,6 @@ namespace Tsavorite.core
         /// <summary>Get the actual (used) and allocated record sizes at <paramref name="physicalAddress"/></summary>
         (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress);
 
-        /// <summary>Get number of bytes required to read the full record that starts at <paramref name="physicalAddress"/> for <paramref name="availableBytes"/>.</summary>
-        int GetRequiredRecordSize(long physicalAddress, int availableBytes);
-
-        /// <summary>Get average record size</summary>
-        int GetAverageRecordSize();
-
         /// <summary>Allocate the page in the circular buffer slot at <paramref name="pageIndex"/></summary>
         void AllocatePage(int pageIndex);
 
@@ -59,15 +53,7 @@ namespace Tsavorite.core
         /// <summary>Number of extra overflow pages allocated</summary>
         int OverflowPageCount { get; }
 
-        int GetFixedRecordSize();
-
-        /// <summary>Retrieve key from IO context record</summary>
-        ref TKey GetContextRecordKey(ref AsyncIOContext<TKey, TValue> ctx);
-
-        /// <summary>Retrieve value from IO context record</summary>
-        ref TValue GetContextRecordValue(ref AsyncIOContext<TKey, TValue> ctx);
-
-        /// <summary>Determine whether we IO has returned the full record</summary>
+        /// <summary>Determine whether IO has returned the full record</summary>
         unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<TKey, TValue> ctx);
 
         /// <summary>Get heap container for pending key</summary>

@@ -671,7 +671,7 @@ namespace Tsavorite.test.Revivification
 
             CollisionRange collisionRange = CollisionRange.None;
 
-            var kvSettings = new KVSettings<SpanByte, SpanByte>()
+            var kvSettings = new KVSettings()
             {
                 IndexSize = 1L << 24,
                 LogDevice = log,

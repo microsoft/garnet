@@ -50,7 +50,7 @@ namespace Tsavorite.test.SingleWriter
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
 
             functions = new();
-            KVSettings<int, int> kvSettings = new()
+            KVSettings kvSettings = new()
             {
                 IndexSize = 1L << 26,
                 LogDevice = log,

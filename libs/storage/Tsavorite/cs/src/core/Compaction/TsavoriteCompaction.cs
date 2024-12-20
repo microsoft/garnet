@@ -85,9 +85,9 @@ namespace Tsavorite.core
             using var storeSession = NewSession<TInput, TOutput, TContext, LogCompactionFunctions<TKey, TValue, TInput, TOutput, TContext, TFunctions>>(lf);
             var storebContext = storeSession.BasicContext;
 
-            var tempKVSettings = new KVSettings<TKey, TValue>(baseDir: null, loggerFactory: loggerFactory)
+            var tempKVSettings = new KVSettings(baseDir: null, loggerFactory: loggerFactory)
             {
-                IndexSize = KVSettings<TKey, TValue>.SetIndexSizeFromCacheLines(IndexSize),
+                IndexSize = KVSettings.SetIndexSizeFromCacheLines(IndexSize),
                 LogDevice = new NullDevice(),
                 ObjectLogDevice = new NullDevice()
             };

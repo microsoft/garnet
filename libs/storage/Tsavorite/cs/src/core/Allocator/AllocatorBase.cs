@@ -389,6 +389,35 @@ namespace Tsavorite.core
 
         #endregion abstract and virtual methods
 
+        #region LogRecord functions
+
+        /// <summary>Get start logical address</summary>
+        public long GetStartLogicalAddress(long page) => page << LogPageSizeBits;
+
+        /// <summary>Get first valid address</summary>
+        public long GetFirstValidLogicalAddress(long page) => page == 0 ? Constants.kFirstValidAddress : page << LogPageSizeBits;
+
+        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref new LogRecordBase(physicalAddress).InfoRef;
+
+        public static unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
+
+        // GetKey is used in TracebackForKeyMatch. We do not need GetValue because it is obtained from ObjectLogRecord.
+        public static SpanByte GetKey(long physicalAddress) => new LogRecordBase(physicalAddress).Key;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static long KeyOffset(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal long ValueAddress(long physicalAddress) => new LogRecordBase(physicalAddress).ValueAddress;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal unsafe int KeySize(long physicalAddress) => (*(SpanByte*)KeyOffset(physicalAddress)).TotalSize;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe void SerializeKey(ref SpanByte src, long physicalAddress) => src.CopyTo((byte*)KeyOffset(physicalAddress));
+
+        #endregion LogRecord functions
+
         private protected void VerifyCompatibleSectorSize(IDevice device)
         {
             if (sectorSize % device.SectorSize != 0)
@@ -1721,7 +1750,7 @@ namespace Tsavorite.core
             try
             {
                 var record = ctx.record.GetValidPointer();
-                int requiredBytes = _wrapper.GetRequiredRecordSize((long)record, ctx.record.available_bytes);
+                int requiredBytes = new DiskRecord((long)record).FullRecordLen;
                 if (ctx.record.available_bytes >= requiredBytes)
                 {
                     Debug.Assert(!_wrapper.GetInfoRefFromBytePointer(record).Invalid, "Invalid records should not be in the hash chain for pending IO");

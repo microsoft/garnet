@@ -79,9 +79,9 @@ namespace Tsavorite.core
             this.store = store;
             iterationPhase = IterationPhase.MainKv;
 
-            var tempKVSettings = new KVSettings<TKey, TValue>(baseDir: null, loggerFactory: loggerFactory)
+            var tempKVSettings = new KVSettings(baseDir: null, loggerFactory: loggerFactory)
             {
-                IndexSize = KVSettings<TKey, TValue>.SetIndexSizeFromCacheLines(store.IndexSize),
+                IndexSize = KVSettings.SetIndexSizeFromCacheLines(store.IndexSize),
                 LogDevice = new NullDevice(),
                 ObjectLogDevice = new NullDevice(),
                 MutableFraction = 1,

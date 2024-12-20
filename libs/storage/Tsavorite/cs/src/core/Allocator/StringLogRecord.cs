@@ -20,7 +20,7 @@ namespace Tsavorite.core
         internal readonly LogRecordBase recBase = new(physicalAddress);
 
         /// <summary>The value object id (index into the object values array)</summary>
-        public readonly ref SpanByte ValueRef => ref *(SpanByte*)(physicalAddress + recBase.ValueOffset);
+        public readonly ref SpanByte ValueRef => ref *(SpanByte*)recBase.ValueAddress;
 
         public readonly int RecordSize => recBase.GetRecordSize(ValueRef.TotalSize);
         public readonly (int actualSize, int allocatedSize) RecordSizes => recBase.GetRecordSizes(ValueRef.TotalSize);
@@ -38,7 +38,7 @@ namespace Tsavorite.core
 
             var optLen = recBase.OptionalLength;
             var optStartAddress = recBase.GetOptionalStartAddress(ValueRef.TotalSize);
-            var fillerLenAddress = recBase.physicalAddress + recBase.ValueOffset + ValueRef.TotalSize + optLen;
+            var fillerLenAddress = recBase.ValueAddress + ValueRef.TotalSize + optLen;
             var extraLen = availableSpace - growth;
 
             if (growth > 0)

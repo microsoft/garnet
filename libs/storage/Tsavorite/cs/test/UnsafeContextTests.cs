@@ -34,7 +34,7 @@ namespace Tsavorite.test.UnsafeContext
             DeleteDirectory(MethodTestDir, wait: true);
         }
 
-        private void Setup(KVSettings<KeyStruct, ValueStruct> kvSettings, DeviceType deviceType)
+        private void Setup(KVSettings kvSettings, DeviceType deviceType)
         {
             string filename = Path.Join(MethodTestDir, TestContext.CurrentContext.Test.Name + deviceType.ToString() + ".log");
             log = CreateTestDevice(deviceType, filename);
