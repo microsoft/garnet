@@ -87,12 +87,16 @@ namespace BDN.benchmark.Network
                 operation.CopyTo(new Span<byte>(requestBuffer).Slice(i * operation.Length));
         }
 
-        protected unsafe void SlowConsumeMessage(ReadOnlySpan<byte> message)
+        protected void SlowConsumeMessage(ReadOnlySpan<byte> message)
         {
             var buffer = GC.AllocateArray<byte>(message.Length, pinned: true);
-            var bufferPointer = (byte*)Unsafe.AsPointer(ref buffer[0]);
-            message.CopyTo(new Span<byte>(buffer));
-            Send(buffer, bufferPointer, buffer.Length);
+            unsafe
+            {
+                var bufferPointer = (byte*)Unsafe.AsPointer(ref buffer[0]);
+                message.CopyTo(new Span<byte>(buffer));
+                PrepareBuffer(buffer, bufferPointer);
+            }
+            Send(buffer.Length).GetAwaiter().GetResult();
         }
     }
 }

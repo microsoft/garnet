@@ -29,9 +29,9 @@ namespace BDN.benchmark.Network
         {
             unsafe
             {
-                Send(pingRequestBuffer, pingRequestBufferPointer, 0);
+                PrepareBuffer(pingRequestBuffer, pingRequestBufferPointer);
             }
-            await Receive(pingRequestBuffer.Length);
+            await Send(pingRequestBuffer.Length);
 
         }
     }
