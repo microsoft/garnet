@@ -155,7 +155,7 @@ One of the following:
 #### **Syntax**
 
 ```bash
-SETIFMATCH key value etag
+SETIFMATCH key value etag [EX || PX expiration]
 ```
 
 Updates the value of a key if the provided ETag matches the current ETag of the key.
@@ -164,9 +164,8 @@ Updates the value of a key if the provided ETag matches the current ETag of the 
 
 One of the following:
 
-- **Integer reply**: The updated ETag if the value was successfully updated.
+- **Array reply**: The updated ETag if the value was successfully updated, and no a
 - **Nil reply**: If the key does not exist.
-- **Simple string reply**: If the provided ETag does not match the current ETag returns VAL_NOT_FOUND
 
 ---
 

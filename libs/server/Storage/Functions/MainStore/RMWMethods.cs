@@ -324,12 +324,7 @@ namespace Garnet.server
 
                     if (oldEtag != etagFromClient)
                     {
-                        // write back array of the format [etag, value]
-                        var valueToWrite = value.AsReadOnlySpan(etagIgnoredOffset);
-                        var digitsInLenOfValue = NumUtils.NumDigitsInLong(valueToWrite.Length);
-                        // *2\r\n: + <numDigitsInEtag> + \r\n + $ + <digitsInLenOfValue> + \r\n + <valueToWrite.Length> + \r\n
-                        var numDigitsInEtag = NumUtils.NumDigitsInLong(oldEtag);
-                        WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + 1 + digitsInLenOfValue + 2 + valueToWrite.Length + 2, ref valueToWrite, oldEtag, ref output, writeDirect: false);
+                        CopyRespToWithInput(ref input, ref value, ref output, isFromPending: false, etagIgnoredOffset, etagIgnoredEnd, hasEtagInVal: recordInfo.ETag);
                         return true;
                     }
 
@@ -786,12 +781,7 @@ namespace Garnet.server
 
                     if (existingEtag != etagToCheckWith)
                     {
-                        // write back array of the format [etag, value]
-                        var valueToWrite = oldValue.AsReadOnlySpan(etagIgnoredOffset);
-                        var digitsInLenOfValue = NumUtils.NumDigitsInLong(valueToWrite.Length);
-                        // *2\r\n: + <numDigitsInEtag> + \r\n + $ + <digitsInLenOfValue> + \r\n <valueToWrite.Length> + \r\n
-                        var numDigitsInEtag = NumUtils.NumDigitsInLong(existingEtag);
-                        WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + 1 + digitsInLenOfValue + 2 + valueToWrite.Length + 2, ref valueToWrite, existingEtag, ref output, writeDirect: false);
+                        CopyRespToWithInput(ref input, ref oldValue, ref output, isFromPending: false, etagIgnoredOffset, etagIgnoredEnd, hasEtagInVal: rmwInfo.RecordInfo.ETag);
                         return false;
                     }
 

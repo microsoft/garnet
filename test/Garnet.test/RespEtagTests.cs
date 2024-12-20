@@ -127,7 +127,7 @@ namespace Garnet.test
             // TTL should be retained 
             ttl = db.KeyTimeToLive(key);
             ClassicAssert.IsTrue(ttl.HasValue);
-        
+
             db.KeyDelete(key); // cleanup
 
             // Scenario: Key existed before and had expiration
@@ -207,7 +207,7 @@ namespace Garnet.test
 
             // confirm expiration retained -> TTL should exist
             ttl = db.KeyTimeToLive(key);
-            ClassicAssert.IsTrue(ttl.HasValue); 
+            ClassicAssert.IsTrue(ttl.HasValue);
         }
 
         #endregion
