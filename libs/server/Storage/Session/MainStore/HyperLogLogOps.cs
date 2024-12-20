@@ -244,7 +244,7 @@ namespace Garnet.server
                     parseState.InitializeWithArgument(mergeSlice);
 
                     currInput.parseState = parseState;
-                    SET_Conditional(ref dstKey, ref currInput, ref mergeBuffer, ref currLockableContext, input.header.cmd);
+                    SET_Conditional(ref dstKey, ref currInput, ref mergeBuffer, ref currLockableContext);
 
                     #endregion
                 }

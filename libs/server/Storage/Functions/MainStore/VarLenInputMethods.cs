@@ -218,8 +218,8 @@ namespace Garnet.server
                         return sizeof(int) + t.LengthWithoutMetadata;
                     case RespCommand.SETIFMATCH:
                         var newValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                        // always preserves the metadata and includes the etag
-                        return sizeof(int) + newValue.Length + Constants.EtagSize + t.MetadataSize;
+                        int metadataSize = input.arg1 == 0 ? t.MetadataSize : sizeof(long);
+                        return sizeof(int) + newValue.Length + Constants.EtagSize + metadataSize;
                     case RespCommand.EXPIRE:
                     case RespCommand.PEXPIRE:
                     case RespCommand.EXPIREAT:
@@ -250,7 +250,7 @@ namespace Garnet.server
                         {
                             var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
                             // compute metadata for result
-                            var metadataSize = input.arg1 switch
+                            metadataSize = input.arg1 switch
                             {
                                 -1 => 0,
                                 0 => t.MetadataSize,

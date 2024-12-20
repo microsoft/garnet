@@ -292,7 +292,7 @@ namespace Garnet.server
             var cmd = input.header.cmd;
             int etagIgnoredOffset = 0;
             int etagIgnoredEnd = -1;
-            long oldEtag = -1;
+            long oldEtag = Constants.BaseEtag;
             if (recordInfo.ETag)
             {
                 etagIgnoredOffset = Constants.EtagSize;
@@ -322,27 +322,37 @@ namespace Garnet.server
                 case RespCommand.SETIFMATCH:
                     long etagFromClient = input.parseState.GetLong(1);
 
-                    // No Etag is the same as having an etag of 0
-                    long prevEtag = recordInfo.ETag ? *(long*)value.ToPointer() : 0;
-
-                    if (prevEtag != etagFromClient)
+                    if (oldEtag != etagFromClient)
                     {
-                        // Cancelling the operation and returning false is used to indicate ETAGMISMATCH
-                        rmwInfo.Action = RMWAction.CancelOperation;
-                        return false;
+                        // write back array of the format [etag, value]
+                        var valueToWrite = value.AsReadOnlySpan(etagIgnoredOffset);
+                        var digitsInLenOfValue = NumUtils.NumDigitsInLong(valueToWrite.Length);
+                        // *2\r\n: + <numDigitsInEtag> + \r\n + $ + <digitsInLenOfValue> + \r\n + <valueToWrite.Length> + \r\n
+                        var numDigitsInEtag = NumUtils.NumDigitsInLong(oldEtag);
+                        WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + 1 + digitsInLenOfValue + 2 + valueToWrite.Length + 2, ref valueToWrite, oldEtag, ref output, writeDirect: false);
+                        return true;
                     }
 
                     // Need Copy update if no space for new value
                     var inputValue = input.parseState.GetArgSliceByRef(0);
-                    if (value.Length < inputValue.length + Constants.EtagSize)
+
+                    // retain metadata unless metadata sent
+                    int metadataSize = input.arg1 != 0 ? sizeof(long) : value.MetadataSize;
+
+                    if (value.Length < inputValue.length + Constants.EtagSize + metadataSize)
                         return false;
+
+                    if (input.arg1 != 0)
+                    {
+                        value.ExtraMetadata = input.arg1;
+                    }
 
                     recordInfo.SetHasETag();
                     // Increment the ETag
-                    long newEtag = prevEtag + 1;
+                    long newEtag = oldEtag + 1;
 
                     // Adjust value length if user shrinks it, how to get rid of spanbyte infront
-                    value.ShrinkSerializedLength(inputValue.Length + Constants.EtagSize);
+                    value.ShrinkSerializedLength(metadataSize + inputValue.Length + Constants.EtagSize);
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
 
@@ -379,7 +389,7 @@ namespace Garnet.server
                     ArgSlice setValue = input.parseState.GetArgSliceByRef(0);
 
                     // Need CU if no space for new value
-                    int metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
+                    metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
                     if (setValue.Length + metadataSize > value.Length - nextUpdateEtagOffset)
                         return false;
 
@@ -433,7 +443,6 @@ namespace Garnet.server
                         // this is the case where we have withetag option and no etag from before
                         nextUpdateEtagOffset = Constants.EtagSize;
                         nextUpdateEtagIgnoredEnd = value.LengthWithoutMetadata;
-                        oldEtag = Constants.BaseEtag;
                     }
 
                     setValue = input.parseState.GetArgSliceByRef(0);
@@ -765,20 +774,24 @@ namespace Garnet.server
                     long etagToCheckWith = input.parseState.GetLong(1);
                     // lack of an etag is the same as having a zero'd etag
                     long existingEtag;
-                    // No Etag is the same as having an etag of 0
+                    // No Etag is the same as having the base etag
                     if (rmwInfo.RecordInfo.ETag)
                     {
                         existingEtag = *(long*)oldValue.ToPointer();
                     }
                     else
                     {
-                        existingEtag = 0;
+                        existingEtag = Constants.BaseEtag;
                     }
 
                     if (existingEtag != etagToCheckWith)
                     {
-                        // cancellation and return false indicates ETag mismatch
-                        rmwInfo.Action = RMWAction.CancelOperation;
+                        // write back array of the format [etag, value]
+                        var valueToWrite = oldValue.AsReadOnlySpan(etagIgnoredOffset);
+                        var digitsInLenOfValue = NumUtils.NumDigitsInLong(valueToWrite.Length);
+                        // *2\r\n: + <numDigitsInEtag> + \r\n + $ + <digitsInLenOfValue> + \r\n <valueToWrite.Length> + \r\n
+                        var numDigitsInEtag = NumUtils.NumDigitsInLong(existingEtag);
+                        WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + 1 + digitsInLenOfValue + 2 + valueToWrite.Length + 2, ref valueToWrite, existingEtag, ref output, writeDirect: false);
                         return false;
                     }
 
@@ -848,7 +861,7 @@ namespace Garnet.server
             bool shouldUpdateEtag = true;
             int etagIgnoredOffset = 0;
             int etagIgnoredEnd = -1;
-            long oldEtag = -1;
+            long oldEtag = Constants.BaseEtag;
             if (recordInfo.ETag)
             {
                 etagIgnoredEnd = oldValue.LengthWithoutMetadata;
@@ -861,23 +874,26 @@ namespace Garnet.server
                 case RespCommand.SETIFMATCH:
                     shouldUpdateEtag = false;
 
-                    // No Etag is the same as having an etag of 0
-                    if (!recordInfo.ETag)
-                    {
-                        oldEtag = 0;
-                    }
-
-                    *(long*)newValue.ToPointer() = oldEtag + 1;
-
                     // Copy input to value
                     Span<byte> dest = newValue.AsSpan(Constants.EtagSize);
                     ReadOnlySpan<byte> src = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
-                    Debug.Assert(src.Length + Constants.EtagSize + oldValue.MetadataSize == newValue.Length);
+                    // retain metadata unless metadata sent
+                    int metadataSize = input.arg1 != 0 ? sizeof(long) : oldValue.MetadataSize;
 
-                    // retain metadata
-                    newValue.ExtraMetadata = oldValue.ExtraMetadata;
+                    Debug.Assert(src.Length + Constants.EtagSize + metadataSize == newValue.Length);
+
                     src.CopyTo(dest);
+
+                    newValue.ExtraMetadata = oldValue.ExtraMetadata;
+                    if (input.arg1 != 0)
+                    {
+                        newValue.ExtraMetadata = input.arg1;
+                    }
+
+                    *(long*)newValue.ToPointer() = oldEtag + 1;
+
+                    recordInfo.SetHasETag();
 
                     // Write Etag and Val back to Client
                     CopyRespToWithInput(ref input, ref newValue, ref output, isFromPending: false, 0, -1, hasEtagInVal: true);
@@ -900,7 +916,6 @@ namespace Garnet.server
                         // this is the case where we have withetag option and no etag from before
                         nextUpdateEtagOffset = Constants.EtagSize;
                         nextUpdateEtagIgnoredEnd = oldValue.LengthWithoutMetadata;
-                        oldEtag = 0;
                         recordInfo.SetHasETag();
                     }
 
@@ -914,7 +929,7 @@ namespace Garnet.server
 
                     // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    int metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
+                    metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
 
                     // new value when allocated should have 8 bytes more if the previous record had etag and the cmd was not SETEXXX
                     Debug.Assert(newInputValue.Length + metadataSize + nextUpdateEtagOffset == newValue.Length);
@@ -947,7 +962,6 @@ namespace Garnet.server
                         // this is the case where we have withetag option and no etag from before
                         nextUpdateEtagOffset = Constants.EtagSize;
                         nextUpdateEtagIgnoredEnd = oldValue.LengthWithoutMetadata;
-                        oldEtag = 0;
                         recordInfo.SetHasETag();
                     }
 

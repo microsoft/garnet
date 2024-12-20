@@ -376,7 +376,7 @@ namespace Garnet.server
             }
         }
 
-        public unsafe GarnetStatus SET_Conditional<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context, RespCommand cmd)
+        public unsafe GarnetStatus SET_Conditional<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             var status = context.RMW(ref key, ref input, ref output);
@@ -392,11 +392,6 @@ namespace Garnet.server
             {
                 incr_session_notfound();
                 return GarnetStatus.NOTFOUND;
-            }
-            else if (cmd == RespCommand.SETIFMATCH && status.IsCanceled)
-            {
-                // The RMW operation for SETIFMATCH upon not finding the etags match between the existing record and sent etag returns Cancelled Operation
-                return GarnetStatus.ETAGMISMATCH;
             }
             else
             {
@@ -571,7 +566,6 @@ namespace Garnet.server
             return RENAME(oldKeySlice, newKeySlice, storeType, true, out result, withEtag);
         }
 
-        // HK TODO
         private unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, bool isNX, out int result, bool withEtag)
         {
             RawStringInput input = default;
@@ -627,7 +621,7 @@ namespace Garnet.server
                             var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
                             RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
 
-                            input = isNX ? new RawStringInput(RespCommand.SETEXNX): new RawStringInput(RespCommand.SET);
+                            input = isNX ? new RawStringInput(RespCommand.SETEXNX) : new RawStringInput(RespCommand.SET);
 
                             // If the key has an expiration, set the new key with the expiration
                             if (expireTimeMs > 0)

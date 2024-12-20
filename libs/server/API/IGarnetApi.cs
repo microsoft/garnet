@@ -41,7 +41,7 @@ namespace Garnet.server
         /// <summary>
         /// SET Conditional
         /// </summary>
-        GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, RespCommand cmd);
+        GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// SET

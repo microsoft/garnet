@@ -54,14 +54,14 @@ namespace Garnet.test
             IDatabase db = redis.GetDatabase(0);
 
             var key = "florida";
-            RedisResult res = (RedisResult)db.Execute("SET", [key, "one", "WITHETAG"]);
+            RedisResult res = db.Execute("SET", [key, "one", "WITHETAG"]);
             long initalEtag = long.Parse(res.ToString());
             ClassicAssert.AreEqual(1, initalEtag);
 
-            // ETAGMISMATCH test
             var incorrectEtag = 1738;
-            RedisResult etagMismatchMsg = db.Execute("SETIFMATCH", [key, "nextone", incorrectEtag]);
-            ClassicAssert.AreEqual("ETAGMISMATCH", etagMismatchMsg.ToString());
+            RedisResult[] etagMismatchMsg = (RedisResult[])db.Execute("SETIFMATCH", [key, "nextone", incorrectEtag]);
+            ClassicAssert.AreEqual("1", etagMismatchMsg[0].ToString());
+            ClassicAssert.AreEqual("one", etagMismatchMsg[1].ToString());
 
             // set a bigger val
             RedisResult[] setIfMatchRes = (RedisResult[])db.Execute("SETIFMATCH", [key, "nextone", initalEtag]);
@@ -81,8 +81,9 @@ namespace Garnet.test
             ClassicAssert.AreEqual(value, "nextnextone");
 
             // ETAGMISMATCH again
-            etagMismatchMsg = db.Execute("SETIFMATCH", [key, "lastOne", incorrectEtag]);
-            ClassicAssert.AreEqual("ETAGMISMATCH", etagMismatchMsg.ToString());
+            res = db.Execute("SETIFMATCH", [key, "lastOne", incorrectEtag]);
+            ClassicAssert.AreEqual(nextEtag.ToString(), res[0].ToString());
+            ClassicAssert.AreEqual("nextnextone", res[1].ToString());
 
             // set a smaller val
             setIfMatchRes = (RedisResult[])db.Execute("SETIFMATCH", [key, "lastOne", nextEtag]);
@@ -91,6 +92,122 @@ namespace Garnet.test
 
             ClassicAssert.AreEqual(4, nextEtag);
             ClassicAssert.AreEqual(value, "lastOne");
+
+            // ETAGMISMATCH on data that never had an etag
+            db.KeyDelete(key);
+            db.StringSet(key, "one");
+            res = db.Execute("SETIFMATCH", [key, "lastOne", incorrectEtag]);
+            ClassicAssert.AreEqual("0", res[0].ToString());
+            ClassicAssert.AreEqual("one", res[1].ToString());
+        }
+
+        [Test]
+        public void SetIfMatchWorksWithExpiration()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            var key = "florida";
+            // Scenario: Key existed before and had no expiration
+            RedisResult res = db.Execute("SET", key, "one", "WITHETAG");
+            long initalEtag = long.Parse(res.ToString());
+            ClassicAssert.AreEqual(1, initalEtag);
+
+            // expiration added
+            long updatedEtagRes = long.Parse(db.Execute("SETIFMATCH", key, "nextone", 1, "EX", 100)[0].ToString());
+            ClassicAssert.AreEqual(2, updatedEtagRes);
+
+            // confirm expiration added -> TTL should exist
+            var ttl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(ttl.HasValue);
+
+            updatedEtagRes = long.Parse(db.Execute("SETIFMATCH", key, "nextoneeexpretained", updatedEtagRes)[0].ToString());
+            ClassicAssert.AreEqual(3, updatedEtagRes);
+
+            // TTL should be retained 
+            ttl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(ttl.HasValue);
+        
+            db.KeyDelete(key); // cleanup
+
+            // Scenario: Key existed before and had expiration
+            res = db.Execute("SET", key, "one", "WITHETAG", "PX", 100000);
+
+            // confirm expiration added -> TTL should exist
+            ttl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(ttl.HasValue);
+
+            // change value and retain expiration
+            updatedEtagRes = long.Parse(db.Execute("SETIFMATCH", key, "nextone", 1)[0].ToString());
+            ClassicAssert.AreEqual(2, updatedEtagRes);
+
+            // TTL should be retained
+            ttl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(ttl.HasValue);
+
+            // change value and change expiration
+            updatedEtagRes = long.Parse(db.Execute("SETIFMATCH", key, "nextoneeexpretained", 2, "EX", 100)[0].ToString());
+            ClassicAssert.AreEqual(3, updatedEtagRes);
+
+            db.KeyDelete(key); // cleanup
+
+            // Scenario: SET without etag and existing expiration when sent with setifmatch will add etag and retain the expiration too
+            res = db.Execute("SET", key, "one", "EX", 100000);
+            // when no etag then count 0 as it's existing etag
+            updatedEtagRes = long.Parse(db.Execute("SETIFMATCH", key, "nextone", 0)[0].ToString());
+            ClassicAssert.AreEqual(1, updatedEtagRes);
+
+            // confirm expiration retained -> TTL should exist
+            ttl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(ttl.HasValue);
+
+            // confirm has etag now
+            var etag = long.Parse(db.Execute("GETWITHETAG", key)[0].ToString());
+            ClassicAssert.AreEqual(1, etag);
+
+            db.KeyDelete(key); // cleanup
+
+
+            // Scenario: SET without etag and without expiration when sent with setifmatch will add etag and retain the expiration too
+            // copy update
+            res = db.Execute("SET", key, "one");
+            // when no etag then count 0 as it's existing etag
+            updatedEtagRes = long.Parse(db.Execute("SETIFMATCH", key, "nextone", 0, "EX", 10000)[0].ToString());
+            ClassicAssert.AreEqual(1, updatedEtagRes);
+
+            // confirm expiration retained -> TTL should exist
+            ttl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(ttl.HasValue);
+
+            // confirm has etag now
+            etag = long.Parse(db.Execute("GETWITHETAG", key)[0].ToString());
+            ClassicAssert.AreEqual(1, etag);
+
+            // same length update
+            res = db.Execute("SET", key, "one");
+            // when no etag then count 0 as it's existing etag
+            updatedEtagRes = long.Parse(db.Execute("SETIFMATCH", key, "two", 0, "EX", 10000)[0].ToString());
+            ClassicAssert.AreEqual(1, updatedEtagRes);
+
+            // confirm expiration retained -> TTL should exist
+            ttl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(ttl.HasValue);
+
+            // confirm has etag now
+            etag = long.Parse(db.Execute("GETWITHETAG", key)[0].ToString());
+            ClassicAssert.AreEqual(1, etag);
+
+            db.KeyDelete(key); // cleanup
+
+            // Scenario: smaller length update
+            res = db.Execute("SET", key, "oneofusoneofus");
+            // when no etag then count 0 as it's existing etag
+            updatedEtagRes = long.Parse(db.Execute("SETIFMATCH", key, "i", 0, "EX", 10000)[0].ToString());
+            ClassicAssert.AreEqual(1, updatedEtagRes);
+
+            // confirm expiration retained -> TTL should exist
+            ttl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(ttl.HasValue); 
         }
 
         #endregion
@@ -338,15 +455,16 @@ namespace Garnet.test
 
 
         [Test]
-        public void SetIfMatchOnNonEtagDataReturnsEtagMismatch()
+        public void SetIfMatchOnNonEtagDataReturnsNewEtagAndValue()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
 
             var _ = db.StringSet("h", "k");
 
-            var res = db.Execute("SETIFMATCH", ["h", "t", "2"]);
-            ClassicAssert.AreEqual("ETAGMISMATCH", res.ToString());
+            var res = (RedisResult[])db.Execute("SETIFMATCH", ["h", "t", "2"]);
+            ClassicAssert.AreEqual("0", res[0].ToString());
+            ClassicAssert.AreEqual("k", res[1].ToString());
         }
 
         [Test]

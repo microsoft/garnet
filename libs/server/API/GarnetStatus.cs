@@ -24,9 +24,5 @@ namespace Garnet.server
         /// Wrong type
         /// </summary>
         WRONGTYPE,
-        /// <summary>
-        /// ETAG mismatch result for an etag based command 
-        /// </summary>
-        ETAGMISMATCH,
     }
 }
