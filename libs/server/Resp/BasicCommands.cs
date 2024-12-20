@@ -345,8 +345,7 @@ namespace Garnet.server
 
         /// <summary>
         /// GETIFNOTMATCH key etag
-        /// Given a key and an etag, return the value and it's etag only if the sent ETag does not match the existing ETag
-        /// If the ETag matches then we just send back a string indicating the value has not changed.
+        /// Given a key and an etag, return the value and it's etag only if the sent ETag does not match the existing ETag.
         /// </summary>
         private bool NetworkGETIFNOTMATCH<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
@@ -377,7 +376,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// SETIFNOTMATCH key val etag
+        /// SETIFMATCH key val etag EX|PX expiry
         /// Sets a key value pair only if an already existing etag does not match the etag sent as a part of the request
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
@@ -876,10 +875,10 @@ namespace Garnet.server
             SpanByteAndMemory outputBuffer = default;
             GarnetStatus status;
 
-            // SETIFMATCH will always hit this conditional and have o point to the right memory
+            // SETIFMATCH will always hit this conditional and have assign output buffer to the right memory location
             if (getValue || withEtag)
             {
-                // anything with getValue or withEtag may choose to write to the buffer in success scenarios
+                // anything with getValue or withEtag writes to the buffer 
                 outputBuffer = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                 status = storageApi.SET_Conditional(ref key,
                     ref input, ref outputBuffer);

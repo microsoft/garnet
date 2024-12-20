@@ -170,7 +170,7 @@ Updates the value of a key if the provided ETag matches the current ETag of the 
 
 One of the following:
 
-- **Array reply**: If etags match an array where the first item is the updated etag, and the second value is nil. If the etags do not match the array will hold the latest etag, and the latest value from the in order.
+- **Array reply**: If etags match an array where the first item is the updated etag, and the second value is nil. If the etags do not match the array will hold the latest etag, and the latest value in order.
 - **Nil reply**: If the key does not exist.
 
 ---
