@@ -699,7 +699,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(n, nRetVal);
 
             long checkEtag = long.Parse(db.Execute("GETWITHETAG", [strKey])[0].ToString());
-            ClassicAssert.AreEqual(1, checkEtag);
+            ClassicAssert.AreEqual(2, checkEtag);
         }
 
         [Test]
@@ -722,7 +722,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(n, nRetVal);
 
             long checkEtag = long.Parse(db.Execute("GETWITHETAG", [strKey])[0].ToString());
-            ClassicAssert.AreEqual(1, checkEtag);
+            ClassicAssert.AreEqual(2, checkEtag);
         }
 
         [Test]
@@ -841,7 +841,7 @@ namespace Garnet.test
             long etag = (long)res[0];
             double value = double.Parse(res[1].ToString(), CultureInfo.InvariantCulture);
             Assert.That(value, Is.EqualTo(actualResultRaw).Within(1.0 / Math.Pow(10, 15)));
-            ClassicAssert.AreEqual(1, etag);
+            ClassicAssert.AreEqual(2, etag);
         }
 
         [Test]
@@ -1520,7 +1520,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("10", resp.ToString());
 
             updatedEtagRes = db.Execute("GETWITHETAG", key);
-            ClassicAssert.AreEqual(1, long.Parse(updatedEtagRes[0].ToString()));
+            ClassicAssert.AreEqual(2, long.Parse(updatedEtagRes[0].ToString()));
 
             resp = db.StringGet(key);
             ClassicAssert.AreEqual("01234ABCDE", resp.ToString());
@@ -1782,7 +1782,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, etagToCheck);
 
             // set all 64 bits one by one 
-            var expectedBitCount = 0;
+            long expectedBitCount = 0;
+            long expectedEtag = 1;
             for (int i = 0; i < 64; i++)
             {
                 // SET the ith bit in the bitmap 
@@ -1790,6 +1791,7 @@ namespace Garnet.test
                 ClassicAssert.IsFalse(originalValAtBit);
 
                 expectedBitCount++;
+                expectedEtag++;
 
                 bool currentBitVal = db.StringGetBit(key, i);
                 ClassicAssert.IsTrue(currentBitVal);
@@ -1809,10 +1811,9 @@ namespace Garnet.test
 
                 // with each bit set that we do, we are increasing the etag as well by 1
                 etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [key]))[0].ToString());
-                ClassicAssert.AreEqual(expectedBitCount, etagToCheck);
+                ClassicAssert.AreEqual(expectedEtag, etagToCheck);
             }
 
-            var expectedEtag = expectedBitCount;
             // unset all 64 bits one by one in reverse order
             for (int i = 63; i > -1; i--)
             {
@@ -1885,7 +1886,7 @@ namespace Garnet.test
             var incrResult = db.Execute("BITFIELD", key, "INCRBY", "u8", "0", "1");
 
             etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [key]))[0].ToString());
-            ClassicAssert.AreEqual(2, etagToCheck);
+            ClassicAssert.AreEqual(3, etagToCheck);
 
             // Assert
             ClassicAssert.AreEqual(0, (long)incrResult); // Should wrap around and return 0
