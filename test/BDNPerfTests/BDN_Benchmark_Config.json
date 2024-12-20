@@ -40,7 +40,7 @@
     "expected_HGet_AOF": 6400,
     "expected_HGetAll_AOF": 3200,
     "expected_HIncrby_AOF": 14400,
-    "expected_HIncrbyFloat_AOF": 14800,
+    "expected_HIncrbyFloat_AOF": 14400,
     "expected_HKeys_AOF": 3200,
     "expected_HLen_AOF": 3200,
     "expected_HMGet_AOF": 9600,
@@ -55,7 +55,7 @@
     "expected_HGet_None": 6400,
     "expected_HGetAll_None": 3200,
     "expected_HIncrby_None": 14400,
-    "expected_HIncrbyFloat_None": 14800,
+    "expected_HIncrbyFloat_None": 14400,
     "expected_HKeys_None": 3200,
     "expected_HLen_None": 3200,
     "expected_HMGet_None": 9600,
@@ -85,10 +85,10 @@
     "expected_MSet_None": 0
   },
   "BDN.benchmark.Lua.LuaScripts.*": {
-    "expected_Script1_None": 24,
-    "expected_Script2_None": 144,
-    "expected_Script3_None": 240,
-    "expected_Script4_None": 776
+    "expected_Script1_None": 0,
+    "expected_Script2_None": 24,
+    "expected_Script3_None": 32,
+    "expected_Script4_None": 0
   },
   "BDN.benchmark.Operations.CustomOperations.*": {
     "expected_CustomRawStringCommand_ACL": 0,
@@ -142,15 +142,39 @@
     "expected_ScriptExistsFalse_ACL": 0,
     "expected_Eval_ACL": 0,
     "expected_EvalSha_ACL": 0,
-    "expected_ScriptLoad_AOF": 16000,
+    "expected_SmallScript_ACL": 0,
+    "expected_LargeScript_ACL": 0,
+    "expected_ArrayReturn_ACL": 0,
+    "expected_ScriptLoad_AOF": 9600,
     "expected_ScriptExistsTrue_AOF": 0,
     "expected_ScriptExistsFalse_AOF": 0,
-    "expected_Eval_AOF": 16000,
-    "expected_EvalSha_AOF": 12000,
-    "expected_ScriptLoad_None": 16000,
+    "expected_Eval_AOF": 0,
+    "expected_EvalSha_AOF": 0,
+    "expected_SmallScript_AOF": 0,
+    "expected_LargeScript_AOF": 16,
+    "expected_ArrayReturn_AOF": 0,
+    "expected_ScriptLoad_None": 9600,
     "expected_ScriptExistsTrue_None": 0,
     "expected_ScriptExistsFalse_None": 0,
-    "expected_Eval_None": 16000,
-    "expected_EvalSha_None": 12000
+    "expected_Eval_None": 0,
+    "expected_EvalSha_None": 0,
+    "expected_SmallScript_None": 0,
+    "expected_LargeScript_None": 12,
+    "expected_ArrayReturn_None": 0
+  },
+  "BDN.benchmark.Network.RawStringOperations.*": {
+    "expected_Set_None": 0,
+    "expected_SetEx_None": 0,
+    "expected_SetNx_None": 0,
+    "expected_SetXx_None": 0,
+    "expected_GetFound_None": 0,
+    "expected_GetNotFound_None": 0,
+    "expected_Increment_None": 0,
+    "expected_Decrement_None": 0,
+    "expected_IncrementBy_None": 0,
+    "expected_DecrementBy_None": 0
+  },
+  "BDN.benchmark.Network.BasicOperations.*": {
+    "expected_InlinePing_None": 0
   }
 }
