@@ -12,7 +12,7 @@
     <PackageReference Include="BenchmarkDotNet" />
 		<PackageReference Include="KeraLua" />
 	</ItemGroup>
-	
+
   <ItemGroup>
     <ProjectReference Include="..\..\libs\cluster\Garnet.cluster.csproj" />
     <ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
