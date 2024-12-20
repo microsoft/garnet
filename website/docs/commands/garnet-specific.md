@@ -129,6 +129,8 @@ Garnet provides support for ETags on raw strings. By using the ETag-related comm
 
 Compatibility with non-ETag commands and the behavior of data inserted with ETags are detailed at the end of this document.
 
+To initialize a key value pair with an ETag you can use either the SET command with the newly added "WITHETAG" optional flag, or you can take any existing Key value pair and call SETIFMATCH with the ETag argument as 0 (Any key value pair without an explicit ETag has an ETag of 0 implicitly). You can read more about setting an initial ETag via SET [here](../commands/raw-string#set)
+
 ---
 
 ### **GETWITHETAG**
@@ -145,7 +147,7 @@ Retrieves the value and the ETag associated with the given key.
 
 One of the following:
 
-- **Array reply**: An array of two items returned on success. The first item is an integer representing the ETag, and the second is the bulk string value of the key. If called on a key-value pair without ETag, the first item will be nil.
+- **Array reply**: An array of two items returned on success. The first item is an integer representing the ETag, and the second is the bulk string value of the key. If called on a key-value pair without ETag, the etag will be 0.
 - **Nil reply**: If the key does not exist.
 
 ---
@@ -155,16 +157,20 @@ One of the following:
 #### **Syntax**
 
 ```bash
-SETIFMATCH key value etag [EX || PX expiration]
+SETIFMATCH key value etag [EX seconds | PX milliseconds]
 ```
 
 Updates the value of a key if the provided ETag matches the current ETag of the key.
+
+**Options:**
+* EX seconds -- Set the specified expire time, in seconds (a positive integer).
+* PX milliseconds -- Set the specified expire time, in milliseconds (a positive integer).
 
 #### **Response**
 
 One of the following:
 
-- **Array reply**: The updated ETag if the value was successfully updated, and no a
+- **Array reply**: If etags match an array where the first item is the updated etag, and the second value is nil. If the etags do not match the array will hold the latest etag, and the latest value from the in order.
 - **Nil reply**: If the key does not exist.
 
 ---
@@ -183,7 +189,7 @@ Retrieves the value if the ETag associated with the key has changed; otherwise, 
 
 One of the following:
 
-- **Array reply**: If the ETag does not match, an array of two items is returned. The first item is the updated ETag, and the second item is the value associated with the key. If called on a record without an ETag the first item in the array will be 0. If the etag matches then we the first item on the array is the existing etag, but the second value is Nil
+- **Array reply**: If the ETag does not match, an array of two items is returned. The first item is the latest ETag, and the second item is the value associated with the key. If the Etag matches  the first item in the response array is the etag and the second item is nil.
 - **Nil reply**: If the key does not exist.
 
 ---
@@ -196,7 +202,7 @@ Below is the expected behavior of ETag-associated key-value pairs when non-ETag 
 
 - **SET**: Only if used with additional option "WITHETAG" will calling SET update the etag while inserting the new key-value pair over the existing key-value pair.
 
-- **RENAME**: Renaming an old ETag-associated key-value pair will create the newly renamed key with an initial etag of 0. If the key being renamed to already existed before hand, it will retain the etag of the existing key that was the target of the rename, and show it as an updated etag.
+- **RENAME**: RENAME takes an option for WITHETAG. When called WITHETAG 
 
 - **Custom Commands**: While etag based key value pairs **can be used blindly inside of custom transactions and custom procedures**, ETag set key value pairs are **not supported to be used from inside of Custom Raw String Functions.**
 

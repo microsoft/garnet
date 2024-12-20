@@ -354,8 +354,11 @@ namespace Garnet.server
                     *(long*)value.ToPointer() = newEtag;
                     inputValue.ReadOnlySpan.CopyTo(value.AsSpan(Constants.EtagSize));
 
-                    CopyRespToWithInput(ref input, ref value, ref output, false, 0, -1, true);
-
+                    // write back array of the format [etag, nil]
+                    var nilResp = CmdStrings.RESP_ERRNOTFOUND;
+                    // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
+                    var numDigitsInEtag = NumUtils.NumDigitsInLong(newEtag);
+                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, writeDirect: true);
                     // early return since we already updated the ETag
                     return true;
                 case RespCommand.SET:
@@ -881,13 +884,19 @@ namespace Garnet.server
                         newValue.ExtraMetadata = input.arg1;
                     }
 
-                    *(long*)newValue.ToPointer() = oldEtag + 1;
+                    long newEtag = oldEtag + 1;
+                    *(long*)newValue.ToPointer() = newEtag;
 
                     recordInfo.SetHasETag();
 
                     // Write Etag and Val back to Client
-                    CopyRespToWithInput(ref input, ref newValue, ref output, isFromPending: false, 0, -1, hasEtagInVal: true);
-                    break;
+                    // write back array of the format [etag, nil]
+                    var nilResp = CmdStrings.RESP_ERRNOTFOUND;
+                    // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
+                    var numDigitsInEtag = NumUtils.NumDigitsInLong(newEtag);
+                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, writeDirect: true);
+                    // early return since we already updated the ETag
+                    return true;
 
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
