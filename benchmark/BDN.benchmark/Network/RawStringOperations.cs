@@ -9,7 +9,7 @@ namespace BDN.benchmark.Network
     /// Benchmark for RawStringOperations
     /// </summary>
     [MemoryDiagnoser]
-    public class RawStringNetworkOperations : NetworkBase
+    public class RawStringOperations : NetworkBase
     {
         static ReadOnlySpan<byte> SET => "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\na\r\n"u8;
         byte[] setRequestBuffer;

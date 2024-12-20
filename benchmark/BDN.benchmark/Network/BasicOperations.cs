@@ -9,7 +9,7 @@ namespace BDN.benchmark.Network
     /// Benchmark for BasicOperations
     /// </summary>
     [MemoryDiagnoser]
-    public class BasicNetworkOperations : NetworkBase
+    public class BasicOperations : NetworkBase
     {
         static ReadOnlySpan<byte> INLINE_PING => "PING\r\n"u8;
         byte[] pingRequestBuffer;
