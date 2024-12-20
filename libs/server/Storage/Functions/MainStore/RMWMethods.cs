@@ -21,7 +21,6 @@ namespace Garnet.server
             {
                 case RespCommand.SETIFMATCH:
                 case RespCommand.SETKEEPTTLXX:
-                case RespCommand.SETEXXX:
                 case RespCommand.PERSIST:
                 case RespCommand.EXPIRE:
                 case RespCommand.PEXPIRE:
@@ -29,6 +28,14 @@ namespace Garnet.server
                 case RespCommand.PEXPIREAT:
                 case RespCommand.GETDEL:
                 case RespCommand.GETEX:
+                    return false;
+                case RespCommand.SETEXXX:
+                    // when called withetag all output needs to be placed on the buffer
+                    if (input.header.CheckWithEtagFlag())
+                    {
+                        // EXX when unsuccesful will write back NIL
+                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                    }
                     return false;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
@@ -94,12 +101,8 @@ namespace Garnet.server
                     {
                         // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
                         *(long*)value.ToPointer() = Constants.BaseEtag + 1;
-                        if (cmd == RespCommand.SET)
-                        {
-                            // Copy initial etag to output only for SET + WITHETAG and not SET NX or XX 
-                            CopyRespNumber(Constants.BaseEtag + 1, ref output);
-                        }
-
+                        // Copy initial etag to output only for SET + WITHETAG and not SET NX or XX 
+                        CopyRespNumber(Constants.BaseEtag + 1, ref output);
                     }
                     break;
 
@@ -306,6 +309,14 @@ namespace Garnet.server
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref value, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
+
+                    // when called withetag all output needs to be placed on the buffer
+                    if (input.header.CheckWithEtagFlag())
+                    {
+                        // EXX when unsuccesful will write back NIL
+                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                    }
+
                     // Nothing is set because being in this block means NX was already violated
                     return true;
                 case RespCommand.SETIFMATCH:
@@ -787,6 +798,14 @@ namespace Garnet.server
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref oldValue, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
+
+                    // when called withetag all output needs to be placed on the buffer
+                    if (input.header.CheckWithEtagFlag())
+                    {
+                        // EXX when unsuccesful will write back NIL
+                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                    }
+
                     // since this block is only hit when this an update, the NX is violated and so we can return early from it without setting the value
                     return false;
                 case RespCommand.SETEXXX:

@@ -814,11 +814,12 @@ namespace Garnet.server
                         SendAndReset();
                     break;
 
-                case (_, true, RespCommand.SET, GarnetStatus.NOTFOUND): // since SET with etag goes down RMW a not found is okay and data is on buffer
+                // since SET with etag goes down RMW a not found is okay and data is on buffer
+                case (_, true, RespCommand.SET, GarnetStatus.NOTFOUND): 
                 // if getvalue || etag and Status is OK then the response is always on the buffer, getvalue is never used with conditionals
                 // extra pattern matching on command below for invariant get value cannot be used with EXXX and EXNX
                 case (true, _, RespCommand.SET or RespCommand.SETIFMATCH or RespCommand.SETKEEPTTL, GarnetStatus.OK):
-                case (_, true, _, GarnetStatus.OK):
+                case (_, true, _, GarnetStatus.OK or GarnetStatus.NOTFOUND):
                     if (!outputBuffer.IsSpanByte)
                         SendAndReset(outputBuffer.Memory, outputBuffer.Length);
                     else
@@ -834,8 +835,8 @@ namespace Garnet.server
                     break;
 
                 case (_, _, RespCommand.SETEXNX, GarnetStatus.OK): // For NX semantics an OK indicates a found, which means nothing was set and hence we return NIL
-                // anything not found that did not come from SETEXNX always returns NIL, also anything that is indicating wrong type or moved will return NIL
-                case (_, _, _, GarnetStatus.NOTFOUND or GarnetStatus.WRONGTYPE or GarnetStatus.MOVED):
+                // anything not found that did not come from SETEXNX or WITHETAG always returns NIL, also anything that is indicating wrong type or moved will return NIL
+                case (_, false, not RespCommand.SETEXNX, GarnetStatus.NOTFOUND or GarnetStatus.WRONGTYPE or GarnetStatus.MOVED):
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                     break;
