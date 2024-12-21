@@ -42,7 +42,7 @@ namespace BDN.benchmark.Operations
         static ReadOnlySpan<byte> DECRBY => "*3\r\n$6\r\nDECRBY\r\n$1\r\nl\r\n$10\r\n1234567890\r\n"u8;
         Request decrby;
 
-        public override unsafe void GlobalSetup()
+        public override void GlobalSetup()
         {
             base.GlobalSetup();
             SetupOperation(ref set, SET);
