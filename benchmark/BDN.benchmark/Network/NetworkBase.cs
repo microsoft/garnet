@@ -69,34 +69,24 @@ namespace BDN.benchmark.Network
             server.Dispose();
         }
 
-        protected unsafe void PrepareBuffer(byte[] requestBuffer, byte* requestBufferPointer)
+        protected void Send(Request request)
         {
-            networkHandler.PrepareBuffer(requestBuffer, requestBufferPointer);
+            networkHandler.Send(request);
         }
 
-        public async ValueTask Send(int length)
+        protected unsafe void SetupOperation(ref Request request, ReadOnlySpan<byte> operation, int batchSize = batchSize)
         {
-            await networkHandler.Send(length);
-        }
-
-        protected unsafe void SetupOperation(ref byte[] requestBuffer, ref byte* requestBufferPointer, ReadOnlySpan<byte> operation)
-        {
-            requestBuffer = GC.AllocateArray<byte>(operation.Length * batchSize, pinned: true);
-            requestBufferPointer = (byte*)Unsafe.AsPointer(ref requestBuffer[0]);
+            request.buffer = GC.AllocateArray<byte>(operation.Length * batchSize, pinned: true);
+            request.bufferPtr = (byte*)Unsafe.AsPointer(ref request.buffer[0]);
             for (int i = 0; i < batchSize; i++)
-                operation.CopyTo(new Span<byte>(requestBuffer).Slice(i * operation.Length));
+                operation.CopyTo(new Span<byte>(request.buffer).Slice(i * operation.Length));
         }
 
         protected void SlowConsumeMessage(ReadOnlySpan<byte> message)
         {
-            var buffer = GC.AllocateArray<byte>(message.Length, pinned: true);
-            unsafe
-            {
-                var bufferPointer = (byte*)Unsafe.AsPointer(ref buffer[0]);
-                message.CopyTo(new Span<byte>(buffer));
-                PrepareBuffer(buffer, bufferPointer);
-            }
-            Send(buffer.Length).GetAwaiter().GetResult();
+            Request request = default;
+            SetupOperation(ref request, message, 1);
+            Send(request);
         }
     }
 }

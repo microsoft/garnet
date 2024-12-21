@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using BenchmarkDotNet.Attributes;
+using Embedded.server;
 
 namespace BDN.benchmark.Operations
 {
@@ -133,81 +134,62 @@ return returnValue
 ";
 
         static ReadOnlySpan<byte> SCRIPT_LOAD => "*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n$8\r\nreturn 1\r\n"u8;
-        byte[] scriptLoadRequestBuffer;
-        byte* scriptLoadRequestBufferPointer;
+        Request scriptLoad;
 
         static ReadOnlySpan<byte> SCRIPT_EXISTS_LOADED => "*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n$10\r\nreturn nil\r\n"u8;
 
         static ReadOnlySpan<byte> SCRIPT_EXISTS_TRUE => "*3\r\n$6\r\nSCRIPT\r\n$6\r\nEXISTS\r\n$40\r\n79cefb99366d8809d2e903c5f36f50c2b731913f\r\n"u8;
-        byte[] scriptExistsTrueRequestBuffer;
-        byte* scriptExistsTrueRequestBufferPointer;
+        Request scriptExistsTrue;
 
         static ReadOnlySpan<byte> SCRIPT_EXISTS_FALSE => "*3\r\n$6\r\nSCRIPT\r\n$6\r\nEXISTS\r\n$40\r\n0000000000000000000000000000000000000000\r\n"u8;
-        byte[] scriptExistsFalseRequestBuffer;
-        byte* scriptExistsFalseRequestBufferPointer;
+        Request scriptExistsFalse;
 
         static ReadOnlySpan<byte> EVAL => "*3\r\n$4\r\nEVAL\r\n$10\r\nreturn nil\r\n$1\r\n0\r\n"u8;
-        byte[] evalRequestBuffer;
-        byte* evalRequestBufferPointer;
+        Request eval;
 
         static ReadOnlySpan<byte> EVALSHA => "*3\r\n$7\r\nEVALSHA\r\n$40\r\n79cefb99366d8809d2e903c5f36f50c2b731913f\r\n$1\r\n0\r\n"u8;
-        byte[] evalShaRequestBuffer;
-        byte* evalShaRequestBufferPointer;
+        Request evalSha;
 
-        byte[] evalShaSmallScriptBuffer;
-        byte* evalShaSmallScriptBufferPointer;
-
-        byte[] evalShaLargeScriptBuffer;
-        byte* evalShaLargeScriptBufferPointer;
+        Request evalShaSmallScript;
+        Request evalShaLargeScript;
 
         static ReadOnlySpan<byte> ARRAY_RETURN => "*3\r\n$4\r\nEVAL\r\n$22\r\nreturn {1, 2, 3, 4, 5}\r\n$1\r\n0\r\n"u8;
-        byte[] arrayReturnRequestBuffer;
-        byte* arrayReturnRequestBufferPointer;
+        Request arrayReturn;
 
         public override void GlobalSetup()
         {
             base.GlobalSetup();
 
-            SetupOperation(ref scriptLoadRequestBuffer, ref scriptLoadRequestBufferPointer, SCRIPT_LOAD);
+            SetupOperation(ref scriptLoad, SCRIPT_LOAD);
 
-            byte[] scriptExistsLoadedBuffer = null;
-            byte* scriptExistsLoadedPointer = null;
-            SetupOperation(ref scriptExistsLoadedBuffer, ref scriptExistsLoadedPointer, SCRIPT_EXISTS_LOADED);
-            _ = session.TryConsumeMessages(scriptExistsLoadedPointer, scriptExistsLoadedBuffer.Length);
-            SetupOperation(ref scriptExistsTrueRequestBuffer, ref scriptExistsTrueRequestBufferPointer, SCRIPT_EXISTS_TRUE);
+            Request scriptExistsLoaded = default;
+            SetupOperation(ref scriptExistsLoaded, SCRIPT_EXISTS_LOADED, 1);
+            Send(scriptExistsLoaded);
 
-            SetupOperation(ref scriptExistsFalseRequestBuffer, ref scriptExistsFalseRequestBufferPointer, SCRIPT_EXISTS_FALSE);
-
-            SetupOperation(ref evalRequestBuffer, ref evalRequestBufferPointer, EVAL);
-
-            SetupOperation(ref evalShaRequestBuffer, ref evalShaRequestBufferPointer, EVALSHA);
-
-            SetupOperation(ref arrayReturnRequestBuffer, ref arrayReturnRequestBufferPointer, ARRAY_RETURN);
+            SetupOperation(ref scriptExistsTrue, SCRIPT_EXISTS_TRUE);
+            SetupOperation(ref scriptExistsFalse, SCRIPT_EXISTS_FALSE);
+            SetupOperation(ref eval, EVAL);
+            SetupOperation(ref evalSha, EVALSHA);
+            SetupOperation(ref arrayReturn, ARRAY_RETURN);
 
             // Setup small script
             var loadSmallScript = $"*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n${SmallScriptText.Length}\r\n{SmallScriptText}\r\n";
             var loadSmallScriptBytes = Encoding.UTF8.GetBytes(loadSmallScript);
             fixed (byte* loadPtr = loadSmallScriptBytes)
             {
-                _ = session.TryConsumeMessages(loadPtr, loadSmallScriptBytes.Length);
+                Send(new Request { buffer = loadSmallScriptBytes, bufferPtr = loadPtr });
             }
 
             var smallScriptHash = string.Join("", SHA1.HashData(Encoding.UTF8.GetBytes(SmallScriptText)).Select(static x => x.ToString("x2")));
-            var evalShaSmallScript = $"*4\r\n$7\r\nEVALSHA\r\n$40\r\n{smallScriptHash}\r\n$1\r\n1\r\n$3\r\nfoo\r\n";
-            evalShaSmallScriptBuffer = GC.AllocateUninitializedArray<byte>(evalShaSmallScript.Length * batchSize, pinned: true);
-            for (var i = 0; i < batchSize; i++)
-            {
-                var start = i * evalShaSmallScript.Length;
-                Encoding.UTF8.GetBytes(evalShaSmallScript, evalShaSmallScriptBuffer.AsSpan().Slice(start, evalShaSmallScript.Length));
-            }
-            evalShaSmallScriptBufferPointer = (byte*)Unsafe.AsPointer(ref evalShaSmallScriptBuffer[0]);
+            var evalShaSmallScriptStr = $"*4\r\n$7\r\nEVALSHA\r\n$40\r\n{smallScriptHash}\r\n$1\r\n1\r\n$3\r\nfoo\r\n";
+            SetupOperation(ref evalShaSmallScript, evalShaSmallScriptStr);
 
             // Setup large script
             var loadLargeScript = $"*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n${LargeScriptText.Length}\r\n{LargeScriptText}\r\n";
             var loadLargeScriptBytes = Encoding.UTF8.GetBytes(loadLargeScript);
             fixed (byte* loadPtr = loadLargeScriptBytes)
             {
-                _ = session.TryConsumeMessages(loadPtr, loadLargeScriptBytes.Length);
+                Send(new Request { buffer = loadLargeScriptBytes, bufferPtr = loadPtr });
             }
 
             var largeScriptHash = string.Join("", SHA1.HashData(Encoding.UTF8.GetBytes(LargeScriptText)).Select(static x => x.ToString("x2")));
@@ -231,57 +213,55 @@ return returnValue
                 var asBytes = Encoding.UTF8.GetBytes(evalShaLargeScript);
                 largeScriptEvals.AddRange(asBytes);
             }
-            evalShaLargeScriptBuffer = GC.AllocateUninitializedArray<byte>(largeScriptEvals.Count, pinned: true);
-            largeScriptEvals.CopyTo(evalShaLargeScriptBuffer);
-            evalShaLargeScriptBufferPointer = (byte*)Unsafe.AsPointer(ref evalShaLargeScriptBuffer[0]);
+            SetupOperation(ref evalShaLargeScript, largeScriptEvals);
         }
 
         [Benchmark]
         public void ScriptLoad()
         {
-            _ = session.TryConsumeMessages(scriptLoadRequestBufferPointer, scriptLoadRequestBuffer.Length);
+            Send(scriptLoad);
         }
 
         [Benchmark]
         public void ScriptExistsTrue()
         {
-            _ = session.TryConsumeMessages(scriptExistsTrueRequestBufferPointer, scriptExistsTrueRequestBuffer.Length);
+            Send(scriptExistsTrue);
         }
 
         [Benchmark]
         public void ScriptExistsFalse()
         {
-            _ = session.TryConsumeMessages(scriptExistsFalseRequestBufferPointer, scriptExistsFalseRequestBuffer.Length);
+            Send(scriptExistsFalse);
         }
 
         [Benchmark]
         public void Eval()
         {
-            _ = session.TryConsumeMessages(evalRequestBufferPointer, evalRequestBuffer.Length);
+            Send(eval);
         }
 
         [Benchmark]
         public void EvalSha()
         {
-            _ = session.TryConsumeMessages(evalShaRequestBufferPointer, evalShaRequestBuffer.Length);
+            Send(evalSha);
         }
 
         [Benchmark]
         public void SmallScript()
         {
-            _ = session.TryConsumeMessages(evalShaSmallScriptBufferPointer, evalShaSmallScriptBuffer.Length);
+            Send(evalShaSmallScript);
         }
 
         [Benchmark]
         public void LargeScript()
         {
-            _ = session.TryConsumeMessages(evalShaLargeScriptBufferPointer, evalShaLargeScriptBuffer.Length);
+            Send(evalShaLargeScript);
         }
 
         [Benchmark]
         public void ArrayReturn()
         {
-            _ = session.TryConsumeMessages(arrayReturnRequestBufferPointer, arrayReturnRequestBuffer.Length);
+            Send(arrayReturn);
         }
     }
 }

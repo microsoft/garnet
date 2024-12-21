@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using BenchmarkDotNet.Attributes;
+using Embedded.server;
 
 namespace BDN.benchmark.Network
 {
@@ -12,27 +13,18 @@ namespace BDN.benchmark.Network
     public class BasicNetworkOperations : NetworkBase
     {
         static ReadOnlySpan<byte> INLINE_PING => "PING\r\n"u8;
-        byte[] pingRequestBuffer;
-        unsafe byte* pingRequestBufferPointer;
+        Request ping;
 
         public override void GlobalSetup()
         {
             base.GlobalSetup();
-            unsafe
-            {
-                SetupOperation(ref pingRequestBuffer, ref pingRequestBufferPointer, INLINE_PING);
-            }
+            SetupOperation(ref ping, INLINE_PING);
         }
 
         [Benchmark]
-        public async ValueTask InlinePing()
+        public void InlinePing()
         {
-            unsafe
-            {
-                PrepareBuffer(pingRequestBuffer, pingRequestBufferPointer);
-            }
-            await Send(pingRequestBuffer.Length);
-
+            Send(ping);
         }
     }
 }
