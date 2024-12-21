@@ -96,6 +96,8 @@ namespace CommandInfoUpdater
                 new("COMMAND|INFO", RespCommand.COMMAND_INFO),
                 new("COMMAND|COUNT", RespCommand.COMMAND_COUNT),
                 new("COMMAND|DOCS", RespCommand.COMMAND_DOCS),
+                new("COMMAND|GETKEYS", RespCommand.COMMAND_GETKEYS),
+                new("COMMAND|GETKEYSANDFLAGS", RespCommand.COMMAND_GETKEYSANDFLAGS),
             ]),
             new("COMMITAOF", RespCommand.COMMITAOF),
             new("CONFIG", RespCommand.CONFIG,
