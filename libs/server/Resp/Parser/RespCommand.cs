@@ -33,7 +33,9 @@ namespace Garnet.server
         GEOSEARCH,
         GET,
         GETBIT,
+        GETIFNOTMATCH,
         GETRANGE,
+        GETWITHETAG,
         HEXISTS,
         HGET,
         HGETALL,
@@ -152,6 +154,7 @@ namespace Garnet.server
         SETEXNX,
         SETEXXX,
         SETNX,
+        SETIFMATCH,
         SETKEEPTTL,
         SETKEEPTTLXX,
         SETRANGE,
@@ -675,8 +678,6 @@ namespace Garnet.server
                         (2 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nPFADD\r\n"u8) => RespCommand.PFADD,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("INCRBY\r\n"u8) => RespCommand.INCRBY,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("DECRBY\r\n"u8) => RespCommand.DECRBY,
-                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("RENAME\r\n"u8) => RespCommand.RENAME,
-                        (2 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("NAMENX\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("RE"u8) => RespCommand.RENAMENX,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETBIT\r\n"u8) => RespCommand.GETBIT,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("APPEND\r\n"u8) => RespCommand.APPEND,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETSET\r\n"u8) => RespCommand.GETSET,
@@ -693,6 +694,8 @@ namespace Garnet.server
                         _ => ((length << 4) | count) switch
                         {
                             // Commands with dynamic number of arguments
+                            >= ((6 << 4) | 2) and <= ((6 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("RENAME\r\n"u8) => RespCommand.RENAME,
+                            >= ((8 << 4) | 2) and <= ((8 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("NAMENX\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("RE"u8) => RespCommand.RENAMENX,
                             >= ((3 << 4) | 3) and <= ((3 << 4) | 6) when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SETEXNX,
                             >= ((5 << 4) | 1) and <= ((5 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("\nGETEX\r\n"u8) => RespCommand.GETEX,
                             >= ((6 << 4) | 0) and <= ((6 << 4) | 9) when lastWord == MemoryMarshal.Read<ulong>("RUNTXP\r\n"u8) => RespCommand.RUNTXP,
@@ -1422,6 +1425,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.SDIFFSTORE;
                                 }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nSETI"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("FMATCH\r\n"u8))
+                                {
+                                    return RespCommand.SETIFMATCH;
+                                }
                                 else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nEXPI"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
                                 {
                                     return RespCommand.EXPIRETIME;
@@ -1447,7 +1454,6 @@ namespace Garnet.server
                                     return RespCommand.ZINTERCARD;
                                 }
                                 break;
-
                             case 11:
                                 if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nUNSUB"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("SCRIBE\r\n"u8))
                                 {
@@ -1472,6 +1478,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSINTE"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RSTORE\r\n"u8))
                                 {
                                     return RespCommand.SINTERSTORE;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nGETWI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("THETAG\r\n"u8))
+                                {
+                                    return RespCommand.GETWITHETAG;
                                 }
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nPEXPI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
                                 {
@@ -1510,6 +1520,10 @@ namespace Garnet.server
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nZRANGEB"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("YSCORE\r\n"u8))
                                 {
                                     return RespCommand.ZRANGEBYSCORE;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nGETIFNO"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("TMATCH\r\n"u8))
+                                {
+                                    return RespCommand.GETIFNOTMATCH;
                                 }
                                 break;
 

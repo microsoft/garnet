@@ -1497,6 +1497,20 @@
     ]
   },
   {
+    "Command": "GETIFNOTMATCH",
+    "Name": "GETIFNOTMATCH",
+    "IsInternal": false,
+    "Arity": 3,
+    "Flags": "NONE",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Read",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "GETRANGE",
     "Name": "GETRANGE",
     "Arity": 4,
@@ -1545,6 +1559,20 @@
         "Flags": "RW, Access, Update"
       }
     ]
+  },
+  {
+    "Command": "GETWITHETAG",
+    "Name": "GETWITHETAG",
+    "IsInternal": false,
+    "Arity": 2,
+    "Flags": "NONE",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Read",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
   },
   {
     "Command": "HDEL",
@@ -2981,7 +3009,7 @@
   {
     "Command": "RENAME",
     "Name": "RENAME",
-    "Arity": 3,
+    "Arity": -3,
     "Flags": "Write",
     "FirstKey": 1,
     "LastKey": 2,
@@ -3019,7 +3047,7 @@
   {
     "Command": "RENAMENX",
     "Name": "RENAMENX",
-    "Arity": 3,
+    "Arity": -3,
     "Flags": "Fast, Write",
     "FirstKey": 1,
     "LastKey": 2,
@@ -3474,6 +3502,20 @@
         "Flags": "OW, Insert"
       }
     ]
+  },
+  {
+    "Command": "SETIFMATCH",
+    "Name": "SETIFMATCH",
+    "IsInternal": false,
+    "Arity": -4,
+    "Flags": "NONE",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
   },
   {
     "Command": "SETRANGE",

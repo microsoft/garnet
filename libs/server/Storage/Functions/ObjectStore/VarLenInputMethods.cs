@@ -12,7 +12,7 @@ namespace Garnet.server
     public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc/>
-        public int GetRMWModifiedValueLength(ref IGarnetObject value, ref ObjectInput input)
+        public int GetRMWModifiedValueLength(ref IGarnetObject value, ref ObjectInput input, bool hasEtag)
         {
             throw new GarnetException("GetRMWModifiedValueLength is not available on the object store");
         }

@@ -443,6 +443,9 @@ namespace Tsavorite.core
             }
             else
             {
+                if (srcRecordInfo.ETag)
+                    newRecordInfo.SetHasETag();
+
                 if (sessionFunctions.CopyUpdater(ref key, ref input, ref value, ref newRecordValue, ref output, ref rmwInfo, ref newRecordInfo))
                 {
                     SetExtraValueLength(ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);

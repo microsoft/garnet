@@ -289,7 +289,7 @@ Simple string reply: OK.
 #### Syntax
 
 ```bash
-    SET key value [NX | XX] [GET] [EX seconds | PX milliseconds |
+    SET key value [NX | XX] [GET] [EX seconds | PX milliseconds] [KEEPTTL] [WITHETAG]
 ```
 
 Set **key** to hold the string value. If key already holds a value, it is overwritten, regardless of its type. Any previous time to live associated with the **key** is discarded on successful SET operation.
@@ -301,6 +301,7 @@ Set **key** to hold the string value. If key already holds a value, it is overwr
 * NX -- Only set the key if it does not already exist.
 * XX -- Only set the key if it already exists.
 * KEEPTTL -- Retain the time to live associated with the key.
+* WITHETAG -- Adding this option sets the Key Value pair with an initial ETag, if called on an existing key value pair with an ETag, this command will update the ETag transparently. This is a Garnet specific command, you can read more about ETag support [here](../commands/garnet-specific-commands#native-etag-support). WITHETAG and GET options cannot be sent at the same time.
 
 #### Resp Reply
 
@@ -310,6 +311,7 @@ Any of the following:
 * Simple string reply: OK. GET not given: The key was set.
 * Nil reply: GET given: The key didn't exist before the SET.
 * Bulk string reply: GET given: The previous value of the key.
+* Integer reply: WITHETAG given: The ETag either created on the value, or the updated Etag.
 
 ---
 

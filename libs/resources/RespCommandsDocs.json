@@ -4443,6 +4443,59 @@
         "DisplayText": "newkey",
         "Type": "Key",
         "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "WITHETAG",
+            "DisplayText": "WITHETAG",
+            "Type": "PureToken",
+            "Token": "WITHETAG"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "RENAMENX",
+    "Name": "RENAMENX",
+    "Summary": "Renames a key and overwrites the destination if the newkey does not exist.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "NEWKEY",
+        "DisplayText": "newkey",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "WITHETAG",
+            "DisplayText": "WITHETAG",
+            "Type": "PureToken",
+            "Token": "WITHETAG"
+          }
+        ]
       }
     ]
   },
@@ -4874,6 +4927,44 @@
         "ArgumentFlags": "Optional"
       },
       {
+        "Command": "GETIFNOTMATCH",
+        "Name": "GETIFNOTMATCH",
+        "Summary": "Gets the ETag and value if the key\u0027s current etag does not match the given etag.",
+        "Group": "String",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "KeySpecIndex": 0
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ETAG",
+            "DisplayText": "etag",
+            "Type": "Integer"
+          }
+        ]
+      },
+      {
+        "Command": "GETWITHETAG",
+        "Name": "GETWITHETAG",
+        "Summary": "Gets the ETag and value for the key",
+        "Group": "String",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "KeySpecIndex": 0
+          }
+        ]
+      },
+      {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "EXPIRATION",
         "Type": "OneOf",
@@ -4913,6 +5004,56 @@
             "DisplayText": "keepttl",
             "Type": "PureToken",
             "Token": "KEEPTTL"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "SETIFMATCH",
+    "Name": "SETIFMATCH",
+    "Summary": "Sets the string value of a key, ignoring its type, if the key\u0027s current etag matches the given etag.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
           }
         ]
       }
