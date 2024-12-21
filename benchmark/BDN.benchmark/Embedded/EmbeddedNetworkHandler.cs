@@ -24,11 +24,12 @@ namespace Embedded.server
 
         public override bool TryClose() => throw new NotImplementedException();
 
-        public unsafe void Send(byte[] buffer, byte* bufferPtr, int length)
+        public unsafe void Send(Request request)
         {
-            networkReceiveBuffer = buffer;
-            networkReceiveBufferPtr = bufferPtr;
-            OnNetworkReceive(length);
+            networkReceiveBuffer = request.buffer;
+            networkReceiveBufferPtr = request.bufferPtr;
+
+            OnNetworkReceive(request.buffer.Length);
 
             // We should have consumed the entire buffer
             Debug.Assert(networkBytesRead == 0);
