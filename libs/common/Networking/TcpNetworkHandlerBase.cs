@@ -136,6 +136,12 @@ namespace Garnet.common
 
         void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
         {
+            // Complete receive event and release thread while we process data async
+            _ = HandleReceiveAsync(sender, e);
+        }
+
+        private async ValueTask HandleReceiveAsync(object sender, SocketAsyncEventArgs e)
+        {
             try
             {
                 do
@@ -146,18 +152,27 @@ namespace Garnet.common
                         Dispose(e);
                         break;
                     }
-                    OnNetworkReceive(e.BytesTransferred);
+                    var receiveTask = OnNetworkReceiveAsync(e.BytesTransferred);
+                    if (!receiveTask.IsCompletedSuccessfully)
+                    {
+                        await receiveTask;
+                    }
                     e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
                 } while (!e.AcceptSocket.ReceiveAsync(e));
             }
             catch (Exception ex)
             {
-                if (ex is ObjectDisposedException ex2 && ex2.ObjectName == "System.Net.Sockets.Socket")
-                    logger?.LogTrace("Accept socket was disposed at RecvEventArg_Completed");
-                else
-                    logger?.LogError(ex, "An error occurred at RecvEventArg_Completed");
-                Dispose(e);
+                HandleReceiveFailure(ex, e);
             }
+        }
+
+        void HandleReceiveFailure(Exception ex, SocketAsyncEventArgs e)
+        {
+            if (ex is ObjectDisposedException ex2 && ex2.ObjectName == "System.Net.Sockets.Socket")
+                logger?.LogTrace("Accept socket was disposed at RecvEventArg_Completed");
+            else
+                logger?.LogError(ex, "An error occurred at RecvEventArg_Completed");
+            Dispose(e);
         }
 
         unsafe void AllocateNetworkReceiveBuffer()

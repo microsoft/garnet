@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
@@ -24,16 +25,17 @@ namespace Embedded.server
 
         public override bool TryClose() => throw new NotImplementedException();
 
-        public unsafe void Send(Request request)
+        public unsafe ValueTask Send(Request request)
         {
             networkReceiveBuffer = request.buffer;
             networkReceiveBufferPtr = request.bufferPtr;
 
-            OnNetworkReceive(request.buffer.Length);
+            var networkReceive = OnNetworkReceiveAsync(request.buffer.Length);
 
-            // We should have consumed the entire buffer
             Debug.Assert(networkBytesRead == 0);
             Debug.Assert(networkReadHead == 0);
+            return networkReceive;
         }
+
     }
 }
