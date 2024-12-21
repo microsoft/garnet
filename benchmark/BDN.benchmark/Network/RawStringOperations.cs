@@ -65,25 +65,25 @@ namespace BDN.benchmark.Network
         }
 
         [Benchmark]
-        public async ValueTask Set()
+        public void Set()
         {
             Send(set);
         }
 
         [Benchmark]
-        public async ValueTask SetEx()
+        public void SetEx()
         {
             Send(setex);
         }
 
         [Benchmark]
-        public async ValueTask SetNx()
+        public void SetNx()
         {
             Send(setnx);
         }
 
         [Benchmark]
-        public async ValueTask SetXx()
+        public void SetXx()
         {
             Send(setxx);
         }

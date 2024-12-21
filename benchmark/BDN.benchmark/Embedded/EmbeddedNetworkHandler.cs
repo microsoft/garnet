@@ -30,7 +30,7 @@ namespace Embedded.server
             networkReceiveBuffer = request.buffer;
             networkReceiveBufferPtr = request.bufferPtr;
 
-            var networkReceive =  OnNetworkReceiveAsync(request.buffer.Length);
+            var networkReceive = OnNetworkReceiveAsync(request.buffer.Length);
 
             Debug.Assert(networkBytesRead == 0);
             Debug.Assert(networkReadHead == 0);
