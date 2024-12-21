@@ -213,9 +213,7 @@ return returnValue
                 var asBytes = Encoding.UTF8.GetBytes(evalShaLargeScript);
                 largeScriptEvals.AddRange(asBytes);
             }
-            evalShaLargeScript.buffer = GC.AllocateUninitializedArray<byte>(largeScriptEvals.Count, pinned: true);
-            largeScriptEvals.CopyTo(evalShaLargeScript.buffer);
-            evalShaLargeScript.bufferPtr = (byte*)Unsafe.AsPointer(ref evalShaLargeScript.buffer[0]);
+            SetupOperation(ref evalShaLargeScript, largeScriptEvals);
         }
 
         [Benchmark]

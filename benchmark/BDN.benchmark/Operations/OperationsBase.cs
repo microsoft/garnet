@@ -122,6 +122,13 @@ namespace BDN.benchmark.Operations
             request.bufferPtr = (byte*)Unsafe.AsPointer(ref request.buffer[0]);
         }
 
+        protected unsafe void SetupOperation(ref Request request, List<byte> operationBytes)
+        {
+            request.buffer = GC.AllocateUninitializedArray<byte>(operationBytes.Count, pinned: true);
+            operationBytes.CopyTo(request.buffer);
+            request.bufferPtr = (byte*)Unsafe.AsPointer(ref request.buffer[0]);
+        }
+
         protected void SlowConsumeMessage(ReadOnlySpan<byte> message)
         {
             Request request = default;
