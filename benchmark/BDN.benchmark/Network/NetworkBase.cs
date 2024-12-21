@@ -11,7 +11,7 @@ namespace BDN.benchmark.Network
     /// <summary>
     /// Base class for network benchmarks
     /// </summary>
-    public abstract class NetworkBase
+    public abstract unsafe class NetworkBase
     {
         /// <summary>
         /// Parameters
