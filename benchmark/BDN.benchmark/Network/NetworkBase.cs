@@ -28,15 +28,10 @@ namespace BDN.benchmark.Network
         }
 
         /// <summary>
-        /// Batch size per method invocation
-        /// With a batchSize of 100, we have a convenient conversion of latency to throughput:
-        ///   5 us = 20 Mops/sec
-        ///  10 us = 10 Mops/sec
-        ///  20 us =  5 Mops/sec
-        ///  25 us =  4 Mops/sec
-        /// 100 us =  1 Mops/sec
+        /// Batch size per method invocation - we use a batch size of 1 for network BDNs
+        /// in order to stress the network layer.
         /// </summary>
-        const int batchSize = 100;
+        const int batchSize = 1;
         EmbeddedRespServer server;
         EmbeddedNetworkHandler networkHandler;
 
