@@ -515,6 +515,8 @@ namespace Garnet.server
              */
             _ = cmd switch
             {
+                RespCommand.RESTORE => NetworkRESTORE(ref storageApi),
+                RespCommand.DUMP => NetworkDUMP(ref storageApi),
                 RespCommand.GET => NetworkGET(ref storageApi),
                 RespCommand.GETEX => NetworkGETEX(ref storageApi),
                 RespCommand.SET => NetworkSET(ref storageApi),

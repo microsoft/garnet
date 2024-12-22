@@ -1396,6 +1396,56 @@
     ]
   },
   {
+    "Command": "RESTORE",
+    "Name": "RESTORE",
+    "Arity": -4,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "KeySpace, Dangerous",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 0,
+          "Limit": 0
+        },
+        "Flags": "OW, Update"
+      }
+    ]
+  },
+  {
+    "Command": "DUMP",
+    "Name": "DUMP",
+    "Arity": 2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "KeySpace",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
     "Command": "GET",
     "Name": "GET",
     "Arity": 2,
