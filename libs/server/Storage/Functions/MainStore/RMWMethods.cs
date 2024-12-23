@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -54,7 +55,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InitialUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            recordInfo.ClearHasETag();
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
 
             RespCommand cmd = input.header.cmd;
@@ -286,19 +286,23 @@ namespace Garnet.server
             if (value.MetadataSize > 0 && input.header.CheckExpiry(value.ExtraMetadata))
             {
                 rmwInfo.Action = RMWAction.ExpireAndResume;
+                recordInfo.ClearHasETag();
                 return false;
             }
 
-            var cmd = input.header.cmd;
-            int etagIgnoredOffset = 0;
-            int etagIgnoredEnd = -1;
-            long oldEtag = Constants.BaseEtag;
-            if (recordInfo.ETag)
-            {
-                etagIgnoredOffset = Constants.EtagSize;
-                etagIgnoredEnd = value.LengthWithoutMetadata;
-                oldEtag = *(long*)value.ToPointer();
-            }
+            RespCommand cmd = input.header.cmd;
+
+            bool hasETag = recordInfo.ETag; 
+            int etagMultiplier = Unsafe.As<bool, byte>(ref hasETag);
+
+            // 0 if no etag else EtagSize
+            int etagIgnoredOffset = etagMultiplier * Constants.EtagSize;
+            // -1 if no etag or oldValue.LengthWithoutMEtada if etag
+            int etagIgnoredEnd = etagMultiplier * (value.LengthWithoutMetadata + 1);
+            etagIgnoredEnd--;
+            
+            // 0 if no Etag exists else the first 8 bytes of value
+            long oldEtag = etagMultiplier * *(long*)value.ToPointer();
 
             switch (cmd)
             {
@@ -747,10 +751,10 @@ namespace Garnet.server
             }
 
             // increment the Etag transparently if in place update happened
-            if (recordInfo.ETag && rmwInfo.Action == RMWAction.Default)
-            {
-                *(long*)value.ToPointer() = oldEtag + 1;
-            }
+            // if etag needs to be updated set frist 8 bytes to oldEtag + 1 or leave it unchanged
+            long existingDataAtPtr = *(long*)value.ToPointer();
+            *(long*)value.ToPointer() = (etagMultiplier * (oldEtag + 1)) +
+                   ((1 - etagMultiplier) * existingDataAtPtr);
 
             return true;
         }
@@ -758,13 +762,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool NeedCopyUpdate(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
-            int etagIgnoredOffset = 0;
-            int etagIgnoredEnd = -1;
-            if (rmwInfo.RecordInfo.ETag)
-            {
-                etagIgnoredOffset = sizeof(long);
-                etagIgnoredEnd = oldValue.LengthWithoutMetadata;
-            }
+            bool hasETag = rmwInfo.RecordInfo.ETag; 
+            int etagMultiplier = Unsafe.As<bool, byte>(ref hasETag);
+
+            // 0 if no etag else EtagSize
+            int etagIgnoredOffset = etagMultiplier * Constants.EtagSize;
+            // -1 if no etag or oldValue.LengthWithoutMEtada if etag
+            int etagIgnoredEnd = etagMultiplier * (oldValue.LengthWithoutMetadata + 1);
+            etagIgnoredEnd--;
 
             switch (input.header.cmd)
             {
@@ -795,6 +800,7 @@ namespace Garnet.server
                     if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
                     {
                         rmwInfo.Action = RMWAction.ExpireAndResume;
+                        rmwInfo.RecordInfo.ClearHasETag();
                         return false;
                     }
 
@@ -852,15 +858,17 @@ namespace Garnet.server
 
             RespCommand cmd = input.header.cmd;
             bool shouldUpdateEtag = true;
-            int etagIgnoredOffset = 0;
-            int etagIgnoredEnd = -1;
-            long oldEtag = Constants.BaseEtag;
-            if (recordInfo.ETag)
-            {
-                etagIgnoredEnd = oldValue.LengthWithoutMetadata;
-                etagIgnoredOffset = Constants.EtagSize;
-                oldEtag = *(long*)oldValue.ToPointer();
-            }
+
+            bool hasETag = recordInfo.ETag; 
+            int etagMultiplier = Unsafe.As<bool, byte>(ref hasETag);
+
+            // 0 if no etag else EtagSize
+            int etagIgnoredOffset = etagMultiplier * Constants.EtagSize;
+            // -1 if no etag else oldValue.LenghWithoutMetadata
+            int etagIgnoredEnd = etagMultiplier * (oldValue.LengthWithoutMetadata + 1);
+            etagIgnoredEnd--;
+
+            long oldEtag = etagMultiplier * *(long*)oldValue.ToPointer();
 
             switch (cmd)
             {
@@ -1199,11 +1207,13 @@ namespace Garnet.server
 
             rmwInfo.SetUsedValueLength(ref recordInfo, ref newValue, newValue.TotalSize);
 
-            // increment the Etag transparently if in place update happened
-            if (recordInfo.ETag && shouldUpdateEtag)
-            {
-                *(long*)newValue.ToPointer() = oldEtag + 1;
-            }
+            long existingDataAtPtr = *(long*)newValue.ToPointer();
+            bool hasEtagAndShouldUpdate = recordInfo.ETag && shouldUpdateEtag;
+            long hasEtagAndShouldUpdateMultiplier = Unsafe.As<bool, byte>(ref hasEtagAndShouldUpdate);
+
+            // if etag needs to be updated set frist 8 bytes to oldEtag + 1 or leave it unchanged
+            *(long*)newValue.ToPointer() = (hasEtagAndShouldUpdateMultiplier * (oldEtag + 1)) +
+                   ((1 - hasEtagAndShouldUpdateMultiplier) * existingDataAtPtr);
 
             return true;
         }

@@ -3,6 +3,7 @@
 
 using System.Buffers;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -18,19 +19,17 @@ namespace Garnet.server
             ref SpanByte key, ref RawStringInput input,
             ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
         {
-            var hasEtag = readInfo.RecordInfo.ETag;
+            bool hasEtag = readInfo.RecordInfo.ETag;
             if (value.MetadataSize != 0 && CheckExpiry(ref value))
                 return false;
 
             var cmd = input.header.cmd;
 
-            var isEtagCmd = cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH;
-
             if (cmd == RespCommand.GETIFNOTMATCH)
             {
                 long etagToMatchAgainst = input.parseState.GetLong(0);
                 // Any value without an etag is treated the same as a value with an etag
-                long existingEtag = hasEtag ? *(long*)value.ToPointer() : 0;
+                long existingEtag = Unsafe.As<bool, byte>(ref hasEtag) * *(long*)value.ToPointer();
                 if (existingEtag == etagToMatchAgainst)
                 {
                     // write back array of the format [etag, nil]
@@ -54,13 +53,12 @@ namespace Garnet.server
             }
 
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
-            var start = 0;
-            var end = -1;
-            if (!isEtagCmd && hasEtag)
-            {
-                start = Constants.EtagSize;
-                end = value.LengthWithoutMetadata;
-            }
+            bool isNotEtagCmdAndRecordHasEtag = cmd is not (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH) && hasEtag;
+            int isNotEtagCmdAndRecordHasEtagMultiplier = Unsafe.As<bool, byte>(ref isNotEtagCmdAndRecordHasEtag);
+
+            int start = isNotEtagCmdAndRecordHasEtagMultiplier * Constants.EtagSize;
+            int end = isNotEtagCmdAndRecordHasEtagMultiplier * (value.LengthWithoutMetadata + 1);
+            end--;
 
             if (cmd == RespCommand.NONE)
                 CopyRespTo(ref value, ref dst, start, end);
@@ -89,7 +87,7 @@ namespace Garnet.server
             {
                 long etagToMatchAgainst = input.parseState.GetLong(0);
                 // Any value without an etag is treated the same as a value with an etag
-                long existingEtag = hasEtag ? *(long*)value.ToPointer() : 0;
+                long existingEtag = Unsafe.As<bool, byte>(ref hasEtag) * *(long*)value.ToPointer();
                 if (existingEtag == etagToMatchAgainst)
                 {
                     // write back array of the format [etag, nil]
@@ -113,13 +111,12 @@ namespace Garnet.server
             }
 
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
-            var start = 0;
-            var end = -1;
-            if (!isEtagCmd && hasEtag)
-            {
-                start = Constants.EtagSize;
-                end = value.LengthWithoutMetadata;
-            }
+            bool isNotEtagCmdAndRecordHasEtag = cmd is not (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH) && hasEtag;
+            int isNotEtagCmdAndRecordHasEtagMultiplier = Unsafe.As<bool, byte>(ref isNotEtagCmdAndRecordHasEtag);
+
+            int start = isNotEtagCmdAndRecordHasEtagMultiplier * Constants.EtagSize;
+            int end = isNotEtagCmdAndRecordHasEtagMultiplier * (value.LengthWithoutMetadata + 1);
+            end--;
 
             if (cmd == RespCommand.NONE)
                 CopyRespTo(ref value, ref dst, start, end);

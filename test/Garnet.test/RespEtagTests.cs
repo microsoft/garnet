@@ -653,7 +653,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, n);
 
             nRetVal = Convert.ToInt64(db.StringGet(strKey));
-            ClassicAssert.AreEqual(n, nRetVal);
             ClassicAssert.AreEqual(1, nRetVal);
 
             var etagGet = (RedisResult[])db.Execute("GETWITHETAG", [strKey]);

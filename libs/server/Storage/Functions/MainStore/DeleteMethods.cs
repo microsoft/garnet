@@ -14,6 +14,7 @@ namespace Garnet.server
         public bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
         {
             functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
+            recordInfo.ClearHasETag();
             return true;
         }
 
@@ -31,6 +32,7 @@ namespace Garnet.server
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 WriteLogDelete(ref key, deleteInfo.Version, deleteInfo.SessionID);
+            recordInfo.ClearHasETag();
             return true;
         }
     }
