@@ -3504,6 +3504,19 @@
     ]
   },
   {
+    "Command": "SETEXNX",
+    "Name": "SETEXNX",
+    "Arity": -3,
+    "Flags": "NONE",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write, Transaction",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "SETIFMATCH",
     "Name": "SETIFMATCH",
     "IsInternal": false,
