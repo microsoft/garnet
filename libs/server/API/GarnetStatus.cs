@@ -23,6 +23,6 @@ namespace Garnet.server
         /// <summary>
         /// Wrong type
         /// </summary>
-        WRONGTYPE
+        WRONGTYPE,
     }
 }

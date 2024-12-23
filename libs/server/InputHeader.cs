@@ -27,6 +27,12 @@ namespace Garnet.server
         /// Expired
         /// </summary>
         Expired = 128,
+
+        /// <summary>
+        /// Flag indicating if a SET operation should either add an etag or respect the etag semantics for a value with an etag already
+        /// This is used for conditional setting.
+        /// </summary>
+        WithEtag = 129,
     }
 
     /// <summary>
@@ -122,6 +128,17 @@ namespace Garnet.server
         /// Set "SetGet" flag, used to get the old value of a key after conditionally setting it
         /// </summary>
         internal unsafe void SetSetGetFlag() => flags |= RespInputFlags.SetGet;
+
+        /// <summary>
+        /// Set "WithEtag" flag, used to update the old etag of a key after conditionally setting it
+        /// </summary>
+        internal unsafe void SetWithEtagFlag() => flags |= RespInputFlags.WithEtag;
+
+        /// <summary>
+        /// Check if the WithEtag flag is set
+        /// </summary>
+        /// <returns></returns>
+        internal unsafe bool CheckWithEtagFlag() => (flags & RespInputFlags.WithEtag) != 0;
 
         /// <summary>
         /// Check if record is expired, either deterministically during log replay,

@@ -576,7 +576,7 @@ namespace Tsavorite.test.Revivification
             }
 
             // Override the default SpanByteFunctions impelementation; for these tests, we always want the input length.
-            public override int GetRMWModifiedValueLength(ref SpanByte value, ref SpanByte input) => input.TotalSize;
+            public override int GetRMWModifiedValueLength(ref SpanByte value, ref SpanByte input, bool hasEtag) => input.TotalSize;
 
             public override bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
             {
