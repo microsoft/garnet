@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -143,8 +144,8 @@ namespace Garnet.server
             if (input.header.cmd != RespCommand.NONE)
             {
                 var cmd = input.header.cmd;
-                bool withEtag = input.header.CheckWithEtagFlag();
-                int etagOffset = hasEtag || withEtag ? Constants.EtagSize : 0;
+                bool withEtagOrHasEtag = input.header.CheckWithEtagFlag() || hasEtag;
+                int etagOffset = Unsafe.As<bool, byte>(ref withEtagOrHasEtag) * Constants.EtagSize;
 
                 switch (cmd)
                 {
@@ -205,14 +206,10 @@ namespace Garnet.server
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
                         var setValue = input.parseState.GetArgSliceByRef(0);
-                        if (!withEtag)
-                            etagOffset = 0;
                         return sizeof(int) + t.MetadataSize + setValue.Length + etagOffset;
 
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
-                        if (!withEtag)
-                            etagOffset = 0;
                         return sizeof(int) + input.parseState.GetArgSliceByRef(0).Length + (input.arg1 == 0 ? 0 : sizeof(long)) + etagOffset;
                     case RespCommand.PERSIST:
                         return sizeof(int) + t.LengthWithoutMetadata;
