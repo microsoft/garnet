@@ -26,6 +26,7 @@ namespace Garnet.common
         readonly string remoteEndpoint;
         readonly string localEndpoint;
         int closeRequested;
+        readonly bool useTLS;
 
         /// <summary>
         /// Constructor
@@ -39,7 +40,7 @@ namespace Garnet.common
 
             remoteEndpoint = socket.RemoteEndPoint is IPEndPoint remote ? $"{remote.Address}:{remote.Port}" : "";
             localEndpoint = socket.LocalEndPoint is IPEndPoint local ? $"{local.Address}:{local.Port}" : "";
-
+            this.useTLS = useTLS;
             AllocateNetworkReceiveBuffer();
         }
 
@@ -137,7 +138,36 @@ namespace Garnet.common
         void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
         {
             // Complete receive event and release thread while we process data async
-            _ = HandleReceiveAsync(sender, e);
+            if (this.useTLS)
+            {
+                _ = HandleReceiveAsync(sender, e);
+            }
+            else
+            {
+                HandleReceiveSync(sender, e);
+            }
+        }
+
+        private void HandleReceiveSync(object sender, SocketAsyncEventArgs e)
+        {
+            try
+            {
+                do
+                {
+                    if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success || serverHook.Disposed)
+                    {
+                        // No more things to receive
+                        Dispose(e);
+                        break;
+                    }
+                    OnNetworkReceive(e.BytesTransferred);
+                    e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
+                } while (!e.AcceptSocket.ReceiveAsync(e));
+            }
+            catch (Exception ex)
+            {
+                HandleReceiveFailure(ex, e);
+            }
         }
 
         private async ValueTask HandleReceiveAsync(object sender, SocketAsyncEventArgs e)
@@ -152,7 +182,7 @@ namespace Garnet.common
                         Dispose(e);
                         break;
                     }
-                    var receiveTask = OnNetworkReceiveAsync(e.BytesTransferred);
+                    var receiveTask = OnNetworkReceiveWithTLS(e.BytesTransferred);
                     if (!receiveTask.IsCompletedSuccessfully)
                     {
                         await receiveTask;

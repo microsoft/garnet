@@ -267,11 +267,38 @@ namespace Garnet.networking
             }
         }
 
+        public void OnNetworkReceive(int bytesTransferred)
+        {
+            networkBytesRead += bytesTransferred;
+            transportReceiveBuffer = networkReceiveBuffer;
+            unsafe
+            {
+                transportReceiveBufferPtr = networkReceiveBufferPtr;
+            }
+            transportBytesRead = networkBytesRead;
+
+            // We do not have an active read task, so we will process on the network thread
+            Process();
+            EndTransformNetworkToTransport();
+            UpdateNetworkBuffers();
+        }
+
+        private void UpdateNetworkBuffers()
+        {
+            // Shift network buffer after processing is done
+            if (networkReadHead > 0)
+                ShiftNetworkReceiveBuffer();
+
+            // Double network buffer if out of space after processing is complete
+            if (networkBytesRead == networkReceiveBuffer.Length)
+                DoubleNetworkReceiveBuffer();
+        }
+
         /// <summary>
         /// On network receive
         /// </summary>
         /// <param name="bytesTransferred">Number of bytes transferred</param>
-        public async ValueTask OnNetworkReceiveAsync(int bytesTransferred)
+        public async ValueTask OnNetworkReceiveWithTLS(int bytesTransferred)
         {
             // Wait for SslStream async processing to complete, if any (e.g., authentication phase)
             while (readerStatus == TlsReaderStatus.Active)
@@ -283,26 +310,10 @@ namespace Garnet.networking
             switch (readerStatus)
             {
                 case TlsReaderStatus.Rest:
-                    // Synchronously try to process the received data
-                    if (sslStream == null)
-                    {
-                        transportReceiveBuffer = networkReceiveBuffer;
-                        unsafe
-                        {
-                            transportReceiveBufferPtr = networkReceiveBufferPtr;
-                        }
-                        transportBytesRead = networkBytesRead;
-
-                        // We do not have an active read task, so we will process on the network thread
-                        Process();
-                    }
-                    else
-                    {
-                        readerStatus = TlsReaderStatus.Active;
-                        Read();
-                        while (readerStatus == TlsReaderStatus.Active)
-                            await expectingData.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false);
-                    }
+                    readerStatus = TlsReaderStatus.Active;
+                    Read();
+                    while (readerStatus == TlsReaderStatus.Active)
+                        await expectingData.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false);
                     break;
                 case TlsReaderStatus.Waiting:
                     // We have a ReadAsync task waiting for new data, set it to active status
@@ -320,16 +331,7 @@ namespace Garnet.networking
             }
 
             Debug.Assert(readerStatus != TlsReaderStatus.Active);
-
-            EndTransformNetworkToTransport();
-
-            // Shift network buffer after processing is done
-            if (networkReadHead > 0)
-                ShiftNetworkReceiveBuffer();
-
-            // Double network buffer if out of space after processing is complete
-            if (networkBytesRead == networkReceiveBuffer.Length)
-                DoubleNetworkReceiveBuffer();
+            UpdateNetworkBuffers();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
