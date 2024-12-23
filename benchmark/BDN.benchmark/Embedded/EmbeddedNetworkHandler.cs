@@ -25,12 +25,12 @@ namespace Embedded.server
 
         public override bool TryClose() => throw new NotImplementedException();
 
-        public async ValueTask Send(Request request)
+        public void Send(Request request)
         {
             networkReceiveBuffer = request.buffer;
             unsafe { networkReceiveBufferPtr = request.bufferPtr; }
 
-            await OnNetworkReceiveAsync(request.buffer.Length);
+            OnNetworkReceive(request.buffer.Length);
 
             Debug.Assert(networkBytesRead == 0);
             Debug.Assert(networkReadHead == 0);

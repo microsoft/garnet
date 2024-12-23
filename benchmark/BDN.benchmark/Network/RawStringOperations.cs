@@ -65,63 +65,63 @@ namespace BDN.benchmark.Network
         }
 
         [Benchmark]
-        public async ValueTask Set()
+        public void Set()
         {
-            await Send(set);
+            Send(set);
         }
 
         [Benchmark]
-        public async ValueTask SetEx()
+        public void SetEx()
         {
-            await Send(setex);
+            Send(setex);
         }
 
         [Benchmark]
-        public async ValueTask SetNx()
+        public void SetNx()
         {
-            await Send(setnx);
+            Send(setnx);
         }
 
         [Benchmark]
-        public async ValueTask SetXx()
+        public void SetXx()
         {
-            await Send(setxx);
+            Send(setxx);
         }
 
         [Benchmark]
-        public async ValueTask GetFound()
+        public void GetFound()
         {
-            await Send(getf);
+            Send(getf);
         }
 
         [Benchmark]
-        public async ValueTask GetNotFound()
+        public void GetNotFound()
         {
-            await Send(getnf);
+            Send(getnf);
         }
 
         [Benchmark]
-        public async ValueTask Increment()
+        public void Increment()
         {
-            await Send(incr);
+            Send(incr);
         }
 
         [Benchmark]
-        public async ValueTask Decrement()
+        public void Decrement()
         {
-            await Send(decr);
+            Send(decr);
         }
 
         [Benchmark]
-        public async ValueTask IncrementBy()
+        public void IncrementBy()
         {
-            await Send(incrby);
+            Send(incrby);
         }
 
         [Benchmark]
-        public async ValueTask DecrementBy()
+        public void DecrementBy()
         {
-            await Send(decrby);
+            Send(decrby);
         }
     }
 }

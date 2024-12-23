@@ -64,10 +64,7 @@ namespace BDN.benchmark.Network
             server.Dispose();
         }
 
-        protected ValueTask Send(Request request)
-        {
-            return networkHandler.Send(request);
-        }
+        protected void Send(Request request) => networkHandler.Send(request);
 
         protected unsafe void SetupOperation(ref Request request, ReadOnlySpan<byte> operation, int batchSize = batchSize)
         {
