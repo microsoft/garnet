@@ -24,7 +24,11 @@ namespace BDN.benchmark.Network
         [Benchmark]
         public async ValueTask InlinePing()
         {
-            await Send(ping);
+            var task = Send(ping);
+            if (!task.IsCompletedSuccessfully)
+            {
+                await task;
+            }
         }
     }
 }
