@@ -30,11 +30,7 @@ namespace Embedded.server
             networkReceiveBuffer = request.buffer;
             unsafe { networkReceiveBufferPtr = request.bufferPtr; }
 
-            var task = OnNetworkReceiveAsync(request.buffer.Length);
-            if (!task.IsCompletedSuccessfully)
-            {
-                await task;
-            }
+            await OnNetworkReceiveAsync(request.buffer.Length);
 
             Debug.Assert(networkBytesRead == 0);
             Debug.Assert(networkReadHead == 0);
