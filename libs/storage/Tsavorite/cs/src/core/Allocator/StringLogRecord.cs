@@ -15,35 +15,63 @@ namespace Tsavorite.core
     ///     </list>
     /// This lets us get to the key and value without intermediate computations to account for the optional fields.
     /// </remarks>
-    public unsafe struct StringLogRecord(long physicalAddress)
+    public unsafe struct StringLogRecord
     {
-        internal readonly LogRecordBase recBase = new(physicalAddress);
+        internal readonly LogRecordBase recBase;
 
-        /// <summary>The value object id (index into the object values array)</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal StringLogRecord(long physicalAddress) => recBase = new(physicalAddress);
+
+        #region IReadOnlyRecord
+        /// <inheritdoc/>
+        public readonly ref RecordInfo InfoRef => ref recBase.InfoRef;
+        /// <inheritdoc/>
+        public readonly RecordInfo Info => recBase.Info;
+        /// <inheritdoc/>
+        public readonly SpanByte Key => recBase.Key;
+        /// <inheritdoc/>
+        public readonly SpanByte ValueSpan => Value;
+        /// <inheritdoc/>
+        public readonly IHeapObject ValueObject => throw new TsavoriteException("StringLogRecord does not have Object values");
+        /// <inheritdoc/>
+        public readonly int DBId => recBase.GetDBId(ValueLen);
+        /// <inheritdoc/>
+        public readonly long ETag => recBase.GetETag(ValueLen);
+        /// <inheritdoc/>
+        public readonly long Expiration => recBase.GetExpiration(ValueLen);
+        #endregion //IReadOnlyRecord
+
+        /// <summary>The readonly span of the value; may be inline-serialized or out-of-line overflow</summary>
+        public readonly SpanByte Value => *(SpanByte*)recBase.ValueAddress;
+
+        /// <summary>The span of the value; may be inline-serialized or out-of-line overflow</summary>
         public readonly ref SpanByte ValueRef => ref *(SpanByte*)recBase.ValueAddress;
 
-        public readonly int RecordSize => recBase.GetRecordSize(ValueRef.TotalSize);
-        public readonly (int actualSize, int allocatedSize) RecordSizes => recBase.GetRecordSizes(ValueRef.TotalSize);
+        internal readonly int ValueLen => Value.TotalInlineSize;
 
+        public readonly int RecordSize => recBase.GetRecordSize(ValueLen);
+        public readonly (int actualSize, int allocatedSize) RecordSizes => recBase.GetRecordSizes(ValueLen);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TrySetValueLength(int newValueLen)
         {
             // Do nothing if no size change. Growth and extraLen may be negative if shrinking.
-            var growth = newValueLen - ValueRef.TotalSize;
+            var growth = newValueLen - ValueLen;
             if (growth == 0)
                 return true;
 
-            var recordLen = recBase.GetRecordSize(ValueRef.TotalSize);
-            var maxLen = recordLen + recBase.GetFillerLen(ValueRef.TotalSize);
+            var recordLen = recBase.GetRecordSize(ValueLen);
+            var maxLen = recordLen + recBase.GetFillerLen(ValueLen);
             var availableSpace = maxLen - recordLen;
 
             var optLen = recBase.OptionalLength;
-            var optStartAddress = recBase.GetOptionalStartAddress(ValueRef.TotalSize);
-            var fillerLenAddress = recBase.ValueAddress + ValueRef.TotalSize + optLen;
+            var optStartAddress = recBase.GetOptionalStartAddress(ValueLen);
+            var fillerLenAddress = recBase.ValueAddress + ValueLen + optLen;
             var extraLen = availableSpace - growth;
 
             if (growth > 0)
             {
-                // TODO: We're growing. Evaluate whether RecordSize plus ExtraValueLen allows the growth of Value
+                // We're growing. See if there is enough space for the requested growth of Value.
                 if (growth > availableSpace)
                     return false;
 
@@ -88,7 +116,16 @@ namespace Tsavorite.core
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool TrySetValue(SpanByte value)
+        {
+            if (!TrySetValueLength(ValueLen))
+                return false;
+            value.CopyTo(ref ValueRef);
+            return true;
+        }
+
         /// <inheritdoc/>
-        public override readonly string ToString() => recBase.ToString(ValueRef.TotalSize, ValueRef.ToShortString(20));
+        public override readonly string ToString() => recBase.ToString(ValueLen, Value.ToShortString(20));
     }
 }

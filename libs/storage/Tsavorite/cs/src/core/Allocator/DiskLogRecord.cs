@@ -16,7 +16,7 @@ namespace Tsavorite.core
     ///     </list>
     /// This lets us get to the optional fields for comparisons without loading the full record (GetIOSize should cover the space for optionals).
     /// </remarks>
-    public unsafe struct DiskRecord(long physicalAddress)
+    public unsafe struct DiskLogRecord(long physicalAddress)
     {
         /// <summary>The physicalAddress in the log.</summary>
         internal readonly long physicalAddress = physicalAddress;
@@ -63,9 +63,9 @@ namespace Tsavorite.core
         /// for both key and value for this estimate. They prefaced by the full record length and optionals (DBID, ETag, Expiration) which we include in the estimate.</summary>
         public static int GetIOSize(int sectorSize) => RoundUp(RecordInfo.GetLength() + FullRecordLenSize + sizeof(long) * 2 + sizeof(int) * 2 + (1 << LogSettings.kMaxInlineKeySizeBits) * 2, sectorSize);
 
-        internal static SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, SpanByte> ctx) => new DiskRecord((long)ctx.record.GetValidPointer()).Key;
+        internal static SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, SpanByte> ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).Key;
 
-        internal static SpanByte GetContextRecordValue(ref AsyncIOContext<SpanByte, SpanByte> ctx) => new DiskRecord((long)ctx.record.GetValidPointer()).Value;
+        internal static SpanByte GetContextRecordValue(ref AsyncIOContext<SpanByte, SpanByte> ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).Value;
 
         /// <inheritdoc/>
         public override readonly string ToString()

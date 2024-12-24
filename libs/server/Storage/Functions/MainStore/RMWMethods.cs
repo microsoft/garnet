@@ -341,7 +341,7 @@ namespace Garnet.server
                     if (value.MetadataSize != 0)
                     {
                         rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
-                        value.AsSpan().CopyTo(value.AsSpanWithMetadata());
+                        value.AsSpan().CopyTo(value.AsSpan());
                         value.ShrinkSerializedLength(value.Length - value.MetadataSize);
                         value.UnmarkExtraMetadata();
                         rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
@@ -482,7 +482,7 @@ namespace Garnet.server
                         if (persist) // Persist the key
                         {
                             rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
-                            value.AsSpan().CopyTo(value.AsSpanWithMetadata());
+                            value.AsSpan().CopyTo(value.AsSpan());
                             value.ShrinkSerializedLength(value.Length - value.MetadataSize);
                             value.UnmarkExtraMetadata();
                             rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
@@ -678,7 +678,7 @@ namespace Garnet.server
                     oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                     if (oldValue.MetadataSize != 0)
                     {
-                        newValue.AsSpan().CopyTo(newValue.AsSpanWithMetadata());
+                        newValue.AsSpan().CopyTo(newValue.AsSpan());
                         newValue.ShrinkSerializedLength(newValue.Length - newValue.MetadataSize);
                         newValue.UnmarkExtraMetadata();
                         output.SpanByte.AsSpan()[0] = 1;
@@ -798,7 +798,7 @@ namespace Garnet.server
 
                         if (persist) // Persist the key
                         {
-                            newValue.AsSpan().CopyTo(newValue.AsSpanWithMetadata());
+                            newValue.AsSpan().CopyTo(newValue.AsSpan());
                             newValue.ShrinkSerializedLength(newValue.Length - newValue.MetadataSize);
                             newValue.UnmarkExtraMetadata();
                         }

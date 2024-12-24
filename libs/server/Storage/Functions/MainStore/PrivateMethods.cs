@@ -665,7 +665,7 @@ namespace Garnet.server
         /// a. ConcurrentWriter
         /// b. PostSingleWriter
         /// </summary>
-        void WriteLogUpsert(ref SpanByte key, ref RawStringInput input, ref SpanByte value, long version, int sessionId)
+        void WriteLogUpsert(SpanByte key, ref RawStringInput input, ref SpanByte value, long version, int sessionId)
         {
             if (functionsState.StoredProcMode) return;
 

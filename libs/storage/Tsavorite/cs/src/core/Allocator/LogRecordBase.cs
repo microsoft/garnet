@@ -14,17 +14,36 @@ namespace Tsavorite.core
     ///     <item>[RecordInfo][SpanByte key][Value Id or SpanByte][DBId?][ETag?][Expiration?][FillerLen]</item>
     ///     </list>
     /// This lets us get to the key without intermediate computations to account for the optional fields.
+    /// Some methods have both member and static versions for ease of access and possibly performance gains.
     /// </remarks>
-    public unsafe struct LogRecordBase(long physicalAddress)
+    public unsafe struct LogRecordBase
     {
+        /// <summary>Number of bytes required to store a DBId</summary>
+        public const int DBIdSize = sizeof(byte);
+        /// <summary>Number of bytes required to store an ETag</summary>
+        public const int ETagSize = sizeof(long);
+        /// <summary>Number of bytes required to store an Expiration</summary>
+        public const int ExpirationSize = sizeof(long);
+        /// <summary>Number of bytes required to store the FillerLen</summary>
+        internal const int FillerLenSize = sizeof(int);
+
         /// <summary>The physicalAddress in the log.</summary>
-        internal readonly long physicalAddress = physicalAddress;
+        internal readonly long physicalAddress;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public LogRecordBase(long physicalAddress) => this.physicalAddress = physicalAddress;
 
         /// <summary>A ref to the record header</summary>
-        public readonly ref RecordInfo InfoRef => ref Unsafe.AsRef<RecordInfo>((byte*)physicalAddress);
+        public readonly ref RecordInfo InfoRef => ref GetInfoRef(physicalAddress);
+        /// <summary>A ref to the record header</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref Unsafe.AsRef<RecordInfo>((byte*)physicalAddress);
 
         /// <summary>Fast access returning a copy of the record header</summary>
-        public readonly RecordInfo Info => *(RecordInfo*)physicalAddress;
+        public readonly RecordInfo Info => GetInfo(physicalAddress);
+        /// <summary>Fast access returning a copy of the record header</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static RecordInfo GetInfo(long physicalAddress) => *(RecordInfo*)physicalAddress;
 
         /// <summary>The key:
         ///     <list type="bullet">
@@ -33,13 +52,26 @@ namespace Tsavorite.core
         ///     </list>
         /// </summary>
         /// <remarks>Not a ref return as it cannot be changed</remarks>
-        public readonly SpanByte Key => *(SpanByte*)(physicalAddress + RecordInfo.GetLength());
+        public readonly SpanByte Key => GetKey(physicalAddress);
+        /// <summary>The key:
+        ///     <list type="bullet">
+        ///     <item>If serialized, then the key is inline in this record (i.e. is below the overflow size).</item>
+        ///     <item>If not serialized, then it is a pointer to the key in OverflowKeySpace.</item>
+        ///     </list>
+        /// </summary>
+        /// <remarks>Not a ref return as it cannot be changed</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static SpanByte GetKey(long physicalAddress) => *(SpanByte*)(physicalAddress + RecordInfo.GetLength());
 
-        internal readonly int ValueAddress => RecordInfo.GetLength() + Key.TotalInlineSize;
+        /// <summary>The address of the value</summary>
+        internal readonly int ValueAddress => GetValueAddress(physicalAddress);
+        /// <summary>The address of the value</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int GetValueAddress(long physicalAddress) => RecordInfo.GetLength() + GetKey(physicalAddress).TotalInlineSize;
 
-        private readonly int DBIdLen => Info.HasDBId ? 1 : 0;
-        private readonly int ETagLen => Info.HasETag ? Constants.ETagSize : 0;
-        private readonly int ExpirationLen => Info.HasExpiration ? Constants.ExpirationSize : 0;
+        private readonly int DBIdLen => Info.HasDBId ? DBIdSize : 0;
+        private readonly int ETagLen => Info.HasETag ? ETagSize : 0;
+        private readonly int ExpirationLen => Info.HasExpiration ? ExpirationSize : 0;
 
         /// <summary>The total size of the main-log (inline) portion of the record, not including extra value length.</summary>
         public readonly int GetRecordSize(int valueLen) => RecordInfo.GetLength() + Key.TotalInlineSize + valueLen + DBIdLen + ETagLen + ExpirationLen;
@@ -49,19 +81,28 @@ namespace Tsavorite.core
             return (actualSize, actualSize + GetFillerLen(valueLen));
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly long GetOptionalStartAddress(int valueLen) => physicalAddress + RecordInfo.GetLength() + Key.TotalInlineSize + valueLen;
 
         public readonly int OptionalLength => DBIdLen + ETagLen + ExpirationLen;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private readonly long GetDBIdAddress(int valueLen) => GetOptionalStartAddress(valueLen);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private readonly long GetETagAddress(int valueLen) => GetDBIdAddress(valueLen) + DBIdLen;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private readonly long GetExpirationAddress(int valueLen) => GetETagAddress(valueLen) + ETagLen;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private readonly long GetFillerLenAddress(int valueLen) => GetExpirationAddress(valueLen) + ExpirationLen;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly int GetDBId(int valueLen) => Info.HasDBId ? *(byte*)GetDBIdAddress(valueLen) : 0;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetETag(int valueLen) => Info.HasETag ? *(long*)GetETagAddress(valueLen) : 0;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetExpiration(int valueLen) => Info.HasExpiration ? *(long*)GetExpirationAddress(valueLen) : 0;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly int GetFillerLen(int valueLen)
         {
             if (Info.HasFiller)
@@ -72,6 +113,7 @@ namespace Tsavorite.core
             return RoundUp(recSize, Constants.kRecordAlignment) - recSize;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TrySetETag(int valueLen, long newTag)
         {
             if (Info.HasETag)
@@ -81,7 +123,7 @@ namespace Tsavorite.core
             }
 
             // We're adding an ETag where there wasn't one before.
-            const int growth = Constants.ETagSize;
+            const int growth = ETagSize;
             var recordLen = GetRecordSize(valueLen);
             var maxLen = recordLen + GetFillerLen(valueLen);
             var availableSpace = maxLen - recordLen;
@@ -101,31 +143,32 @@ namespace Tsavorite.core
             var expiration = 0L;
             if (Info.HasExpiration)
             {
-                address -= Constants.ExpirationSize;
+                address -= ExpirationSize;
                 expiration = *(long*)address;
             }
             *(long*)address = newTag;
             InfoRef.SetHasETag();
             if (Info.HasExpiration)
             {
-                address += Constants.ETagSize;
+                address += ETagSize;
                 *(long*)address = expiration;
                 address += ExpirationLen;
             }
             //  - Set the new (reduced) ExtraValueLength if there is still space for it.
-            if (extraLen >= Constants.FillerLenSize)
+            if (extraLen >= FillerLenSize)
                 *(int*)address = extraLen;
             else
                 InfoRef.ClearHasFiller();
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void RemoveETag(int valueLen)
         {
             if (!Info.HasETag)
                 return;
 
-            const int growth = -Constants.ETagSize;
+            const int growth = -ETagSize;
             var recordLen = GetRecordSize(valueLen);
             var maxLen = recordLen + GetFillerLen(valueLen);
             var availableSpace = maxLen - recordLen;
@@ -142,22 +185,23 @@ namespace Tsavorite.core
             var expiration = 0L;
             if (Info.HasExpiration)
             {
-                address -= Constants.ExpirationSize;
+                address -= ExpirationSize;
                 expiration = *(long*)address;
                 *(long*)address = 0L;  // To ensure zero-init
             }
-            address -= Constants.ETagSize;
+            address -= ETagSize;
             if (Info.HasExpiration)
             {
                 *(long*)address = expiration;
-                address += Constants.ExpirationSize;
+                address += ExpirationSize;
             }
             InfoRef.ClearHasETag();
             //  - Set the new (increased) ExtraValueLength if there is space for it.
-            if (extraLen >= Constants.FillerLenSize)
+            if (extraLen >= FillerLenSize)
                 *(int*)address = extraLen;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TrySetExpiration(int valueLen, long newExpiration)
         {
             if (Info.HasExpiration)
@@ -167,7 +211,7 @@ namespace Tsavorite.core
             }
 
             // We're adding an Expiration where there wasn't one before.
-            const int growth = Constants.ExpirationSize;
+            const int growth = ExpirationSize;
             var recordLen = GetRecordSize(valueLen);
             var maxLen = recordLen + GetFillerLen(valueLen);
             var availableSpace = maxLen - recordLen;
@@ -187,19 +231,20 @@ namespace Tsavorite.core
             *(long*)address = newExpiration;
             address += ExpirationLen;
             //  - Set the new (reduced) ExtraValueLength if there is still space for it.
-            if (extraLen >= Constants.FillerLenSize)
+            if (extraLen >= FillerLenSize)
                 *(int*)address = extraLen;
             else
                 InfoRef.ClearHasFiller();
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void RemoveExpiration(int valueLen)
         {
             if (!Info.HasExpiration)
                 return;
 
-            const int growth = -Constants.ETagSize;
+            const int growth = -ETagSize;
             var recordLen = GetRecordSize(valueLen);
             var maxLen = recordLen + GetFillerLen(valueLen);
             var availableSpace = maxLen - recordLen;
@@ -213,11 +258,11 @@ namespace Tsavorite.core
             if (Info.HasFiller)
                 *(int*)address = 0;
             //  - Remove Expiration and clear the Expiration bit
-            address -= Constants.ExpirationSize;
+            address -= ExpirationSize;
             *(long*)address = 0;
             InfoRef.ClearHasExpiration();
             //  - Set the new (increased) ExtraValueLength if there is space for it.
-            if (extraLen >= Constants.FillerLenSize)
+            if (extraLen >= FillerLenSize)
                 *(int*)address = extraLen;
         }
 

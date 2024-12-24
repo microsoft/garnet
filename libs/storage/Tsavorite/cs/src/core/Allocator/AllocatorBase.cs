@@ -275,7 +275,7 @@ namespace Tsavorite.core
 
                         while (physicalAddress < endPhysicalAddress)
                         {
-                            ref var info = ref _wrapper.GetInfo(physicalAddress);
+                            ref var info = ref LogRecordBase.GetInfoRef(physicalAddress);
                             var (_, alignedRecordSize) = _wrapper.GetRecordSize(physicalAddress);
                             if (info.Dirty)
                             {
@@ -397,18 +397,18 @@ namespace Tsavorite.core
         /// <summary>Get first valid address</summary>
         public long GetFirstValidLogicalAddress(long page) => page == 0 ? Constants.kFirstValidAddress : page << LogPageSizeBits;
 
-        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref new LogRecordBase(physicalAddress).InfoRef;
+        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref LogRecordBase.GetInfoRef(physicalAddress);
 
         public static unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
 
         // GetKey is used in TracebackForKeyMatch. We do not need GetValue because it is obtained from ObjectLogRecord.
-        public static SpanByte GetKey(long physicalAddress) => new LogRecordBase(physicalAddress).Key;
+        public static SpanByte GetKey(long physicalAddress) => LogRecordBase.GetKey(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long KeyOffset(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long ValueAddress(long physicalAddress) => new LogRecordBase(physicalAddress).ValueAddress;
+        internal long ValueAddress(long physicalAddress) => LogRecordBase.GetValueAddress(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe int KeySize(long physicalAddress) => (*(SpanByte*)KeyOffset(physicalAddress)).TotalSize;
@@ -458,7 +458,7 @@ namespace Tsavorite.core
                                 Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
 
                                 // Clean up temporary bits when applying the delta log
-                                ref var destInfo = ref _wrapper.GetInfo(destination);
+                                ref var destInfo = ref LogRecordBase.GetInfoRef(destination);
                                 destInfo.ClearBitsForDiskImages();
                             }
                             physicalAddress += size;
@@ -1750,7 +1750,7 @@ namespace Tsavorite.core
             try
             {
                 var record = ctx.record.GetValidPointer();
-                int requiredBytes = new DiskRecord((long)record).FullRecordLen;
+                int requiredBytes = new DiskLogRecord((long)record).FullRecordLen;
                 if (ctx.record.available_bytes >= requiredBytes)
                 {
                     Debug.Assert(!_wrapper.GetInfoRefFromBytePointer(record).Invalid, "Invalid records should not be in the hash chain for pending IO");
@@ -1760,7 +1760,7 @@ namespace Tsavorite.core
                         return;
 
                     // If request_key is null we're called from ReadAtAddress, so it is an implicit match.
-                    if (ctx.request_key is not null && !_storeFunctions.KeysEqual(ref ctx.request_key.Get(), ref _wrapper.GetContextRecordKey(ref ctx)))
+                    if (ctx.request_key is not null && !_storeFunctions.KeysEqual(ref ctx.request_key.Get(), ref DiskLogRecord.GetContextRecordKey(ref ctx)))
                     {
                         // Keys don't match so request the previous record in the chain if it is in the range to resolve.
                         ctx.logicalAddress = _wrapper.GetInfoRefFromBytePointer(record).PreviousAddress;
@@ -1905,7 +1905,7 @@ namespace Tsavorite.core
 
                         while (physicalAddress < endPhysicalAddress)
                         {
-                            ref var info = ref _wrapper.GetInfo(physicalAddress);
+                            ref var info = ref LogRecordBase.GetInfoRef(physicalAddress);
                             var (_, alignedRecordSize) = _wrapper.GetRecordSize(physicalAddress);
                             if (info.Dirty)
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic

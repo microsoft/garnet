@@ -15,18 +15,16 @@ namespace Tsavorite.core
     /// Important: AOF header version needs to be updated if this struct's disk representation changes
     /// </summary>
     /// <remarks>
-    /// Format: [4-byte (int) length of payload][[optional 8-byte metadata] payload bytes...]
-    /// First 2 bits of length are used as a mask for properties, so max payload length is 1GB
+    /// Format: [4-byte (int) length of payload][payload bytes...]
+    /// First bit of length is used for the serialization indicator bit, so max payload length is 2GB
     /// </remarks>
     [StructLayout(LayoutKind.Explicit, Pack = 4)]
     public unsafe struct SpanByte
     {
         // Byte #31 is used to denote unserialized (1) or serialized (0) data 
         private const int UnserializedBitMask = 1 << 31;
-        // Byte #30 is used to denote extra metadata present (1) or absent (0) in payload
-        private const int ExtraMetadataBitMask = 1 << 30;
         // Mask for header
-        private const int HeaderMask = 0x3 << 30;
+        private const int HeaderMask = 0x1 << 31;
 
         /// <summary>
         /// Length of the payload
@@ -43,31 +41,13 @@ namespace Tsavorite.core
         internal readonly IntPtr Pointer => payload;
 
         /// <summary>
-        /// Pointer to the beginning of payload, not including metadata if any
+        /// Pointer to the beginning of payload
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public byte* ToPointer()
-        {
-            if (Serialized)
-                return MetadataSize + (byte*)Unsafe.AsPointer(ref payload);
-            else
-                return MetadataSize + (byte*)payload;
-        }
+        public byte* ToPointer() => Serialized ? (byte*)Unsafe.AsPointer(ref payload) : (byte*)payload;
 
         /// <summary>
-        /// Pointer to the beginning of payload, including metadata if any
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public byte* ToPointerWithMetadata()
-        {
-            if (Serialized)
-                return (byte*)Unsafe.AsPointer(ref payload);
-            else
-                return (byte*)payload;
-        }
-
-        /// <summary>
-        /// Length of payload, including metadata if any
+        /// Length of payload
         /// </summary>
         public int Length
         {
@@ -80,7 +60,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Length of payload, not including metadata if any
         /// </summary>
-        public readonly int LengthWithoutMetadata => (length & ~HeaderMask) - MetadataSize;
+        public readonly int LengthWithoutMetadata => (length & ~HeaderMask); // TODO remove
 
         /// <summary>
         /// Format of structure
@@ -88,19 +68,19 @@ namespace Tsavorite.core
         public readonly bool Serialized => (length & UnserializedBitMask) == 0;
 
         /// <summary>
-        /// Total serialized size in bytes, including header and metadata if any
+        /// Total serialized size in bytes, including header if any
         /// </summary>
         public readonly int TotalSize => sizeof(int) + Length;
 
         /// <summary>
-        /// Total serialized size in bytes if serialized (including header and metadata if any), else the combined sizes of the Length field and payload pointer.
+        /// Total serialized size in bytes if serialized (including header if any), else the combined sizes of the Length field and payload pointer.
         /// </summary>
         public readonly int TotalInlineSize => Serialized ? TotalSize : sizeof(int) + sizeof(IntPtr);
 
         /// <summary>
         /// Size of metadata header, if any (returns 0 or 8)
         /// </summary>
-        public readonly int MetadataSize => (length & ExtraMetadataBitMask) >> (30 - 3);
+        public readonly int MetadataSize => 0;  // TODO remove
 
         /// <summary>
         /// Create a <see cref="SpanByte"/> around a given <paramref name="payload"/> pointer and given <paramref name="length"/>
@@ -116,47 +96,11 @@ namespace Tsavorite.core
         /// <summary>
         /// Extra metadata header
         /// </summary>
-        public long ExtraMetadata
+        public long ExtraMetadata   // TODO remove
         {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get
-            {
-                if (Serialized)
-                    return MetadataSize > 0 ? *(long*)Unsafe.AsPointer(ref payload) : 0;
-                else
-                    return MetadataSize > 0 ? *(long*)payload : 0;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set
-            {
-                if (value > 0)
-                {
-                    length |= ExtraMetadataBitMask;
-                    Debug.Assert(Length >= MetadataSize);
-                    if (Serialized)
-                        *(long*)Unsafe.AsPointer(ref payload) = value;
-                    else
-                        *(long*)payload = value;
-                }
-            }
+            get => 0;
+            set { }
         }
-
-        /// <summary>
-        /// Mark <see cref="SpanByte"/> as having 8-byte metadata in header of payload
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void MarkExtraMetadata()
-        {
-            Debug.Assert(Length >= 8);
-            length |= ExtraMetadataBitMask;
-        }
-
-        /// <summary>
-        /// Unmark <see cref="SpanByte"/> as having 8-byte metadata in header of payload
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnmarkExtraMetadata() => length &= ~ExtraMetadataBitMask;
 
         /// <summary>
         /// Check or set struct as invalid
@@ -171,7 +115,7 @@ namespace Tsavorite.core
             {
                 Debug.Assert(value, "Cannot restore an Invalid SpanByte to Valid; must reassign the SpanByte as a full value");
 
-                // Set the actual length to 0; any metadata is no longer available, and a zero length will cause callers' length checks to go
+                // Set the actual length to 0; a zero length will cause callers' length checks to go
                 // through the ConvertToHeap path automatically. Keep the UnserializedBitMask.
                 length = UnserializedBitMask;
                 payload = IntPtr.Zero;
@@ -179,52 +123,22 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Get Span&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (excluding metadata if any)
+        /// Get Span&lt;byte&gt; for this <see cref="SpanByte"/>'s payload
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Span<byte> AsSpan()
-        {
-            if (Serialized)
-                return new Span<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref payload), Length - MetadataSize);
-            else
-                return new Span<byte>(MetadataSize + (byte*)payload, Length - MetadataSize);
-        }
+        public Span<byte> AsSpan() 
+            => Serialized 
+                ? new Span<byte>((byte*)Unsafe.AsPointer(ref payload), Length) 
+                : new Span<byte>((byte*)payload, Length);
 
         /// <summary>
-        /// Get ReadOnlySpan&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (excluding metadata if any)
+        /// Get ReadOnlySpan&lt;byte&gt; for this <see cref="SpanByte"/>'s payload
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ReadOnlySpan<byte> AsReadOnlySpan()
-        {
-            if (Serialized)
-                return new ReadOnlySpan<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref payload), Length - MetadataSize);
-            else
-                return new ReadOnlySpan<byte>(MetadataSize + (byte*)payload, Length - MetadataSize);
-        }
-
-        /// <summary>
-        /// Get Span&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (including metadata if any)
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Span<byte> AsSpanWithMetadata()
-        {
-            if (Serialized)
-                return new Span<byte>((byte*)Unsafe.AsPointer(ref payload), Length);
-            else
-                return new Span<byte>((byte*)payload, Length);
-        }
-
-        /// <summary>
-        /// Get ReadOnlySpan&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (including metadata if any)
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ReadOnlySpan<byte> AsReadOnlySpanWithMetadata()
-        {
-            if (Serialized)
-                return new ReadOnlySpan<byte>((byte*)Unsafe.AsPointer(ref payload), Length);
-            else
-                return new ReadOnlySpan<byte>((byte*)payload, Length);
-        }
+        public ReadOnlySpan<byte> AsReadOnlySpan() 
+            => Serialized
+                ? new ReadOnlySpan<byte>((byte*)Unsafe.AsPointer(ref payload), Length)
+                : new ReadOnlySpan<byte>((byte*)payload, Length);
 
         /// <summary>
         /// If <see cref="SpanByte"/> is in a serialized form, return a non-serialized <see cref="SpanByte"/> wrapper that points to the same payload.
@@ -233,52 +147,26 @@ namespace Tsavorite.core
         /// SAFETY: The resulting <see cref="SpanByte"/> is safe to heap-copy, as long as the underlying payload remains pinned.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public SpanByte Deserialize()
-        {
-            if (!Serialized) return this;
-            return new SpanByte(Length - MetadataSize, (IntPtr)(MetadataSize + (byte*)Unsafe.AsPointer(ref payload)));
-        }
-
-        /// <summary>
-        /// Reinterpret a fixed Span&lt;byte&gt; as a serialized <see cref="SpanByte"/>. Automatically adds Span length to the first 4 bytes.
-        /// </summary>
-        public static ref SpanByte Reinterpret(Span<byte> span)
-        {
-            Debug.Assert(span.Length - sizeof(int) <= ~HeaderMask);
-
-            fixed (byte* ptr = span)
-            {
-                *(int*)ptr = span.Length - sizeof(int);
-                return ref Unsafe.AsRef<SpanByte>(ptr);
-            }
-        }
+        public SpanByte Deserialize() 
+            => !Serialized 
+                ? this 
+                : new SpanByte(Length, (IntPtr)(byte*)Unsafe.AsPointer(ref payload));
 
         /// <summary>
         /// Reinterpret a fixed ReadOnlySpan&lt;byte&gt; as a serialized <see cref="SpanByte"/>, without adding length header
         /// </summary>
-        public static ref SpanByte ReinterpretWithoutLength(ReadOnlySpan<byte> span)
+        public static ref SpanByte ReinterpretWithoutLength(ReadOnlySpan<byte> span)    // TODO: verify correctness at callsite (that span is length-prefixed)
         {
             fixed (byte* ptr = span)
             {
-                return ref Unsafe.AsRef<SpanByte>(ptr);
+                return ref Reinterpret(ptr);
             }
         }
 
         /// <summary>
         /// Reinterpret a fixed pointer as a serialized <see cref="SpanByte"/>
         /// </summary>
-        public static ref SpanByte Reinterpret(byte* ptr)
-        {
-            return ref Unsafe.AsRef<SpanByte>(ptr);
-        }
-
-        /// <summary>
-        /// Reinterpret a fixed ref as a serialized <see cref="SpanByte"/> (user needs to write the payload length to the first 4 bytes)
-        /// </summary>
-        public static ref SpanByte Reinterpret<T>(ref T t)
-        {
-            return ref Unsafe.As<T, SpanByte>(ref t);
-        }
+        public static ref SpanByte Reinterpret(byte* ptr) => ref Unsafe.AsRef<SpanByte>(ptr);
 
         /// <summary>
         /// Create a SpanByte around a pinned memory <paramref name="pointer"/> of given <paramref name="length"/>.
@@ -343,7 +231,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryCopyTo(ref SpanByte dst)
         {
-            if (dst.Length < Length) return false;
+            if (dst.Length < Length) 
+                return false;
             CopyTo(ref dst);
             return true;
         }
@@ -353,42 +242,33 @@ namespace Tsavorite.core
         /// Does not change length of destination.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyTo(ref SpanByte dst, long metadata = 0)
-        {
-            dst.UnmarkExtraMetadata();
-            dst.ExtraMetadata = metadata == 0 ? ExtraMetadata : metadata;
-            AsReadOnlySpan().CopyTo(dst.AsSpan());
-        }
+        public void CopyTo(ref SpanByte dst) => AsReadOnlySpan().CopyTo(dst.AsSpan());
 
         /// <summary>
         /// Try to copy to given pre-allocated <see cref="SpanByte"/>, checking if space permits at destination <see cref="SpanByte"/>
         /// </summary>
         /// <param name="dst">The target of the copy</param>
-        /// <param name="metadata">Optional metadata to add to the destination</param>
         /// <param name="fullDestSize">The size available at the destination (e.g. dst.TotalSize or the log-space Value allocation size)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySafeCopyTo(ref SpanByte dst, int fullDestSize, long metadata = 0)
+        public bool TrySafeCopyTo(ref SpanByte dst, int fullDestSize)    // TODO still needed?
         {
-            // Need to account for extra metadata if current value does not have any.
-            var addMetadata = metadata > 0 && MetadataSize == 0;
-
-            var newTotalSize = addMetadata ? TotalSize + sizeof(long) : TotalSize;
+            var newTotalSize = TotalSize;
             if (fullDestSize < newTotalSize)
                 return false;
 
-            var newLength = addMetadata ? Length + sizeof(long) : Length;
+            var newLength = Length;
             if (dst.Length < newLength)
             {
                 // dst is shorter than src, but we have already verified there is enough extra value space to grow dst to store src.
                 dst.Length = newLength;
-                CopyTo(ref dst, metadata);
+                CopyTo(ref dst);
             }
             else
             {
                 // dst length is equal or longer than src. We can adjust the length header on the serialized log, if we wish (here, we do).
                 // This method will also zero out the extra space to retain log scan correctness.
                 dst.ShrinkSerializedLength(newLength);
-                CopyTo(ref dst, metadata);
+                CopyTo(ref dst);
                 dst.Length = newLength;
             }
             return true;
@@ -399,14 +279,14 @@ namespace Tsavorite.core
         /// Tsavorite hybrid log, pointed to by the given <see cref="SpanByte"/>.
         /// Zeroes out the extra space to retain log scan correctness.
         /// </summary>
-        /// <param name="newLength">New length of payload (including metadata)</param>
+        /// <param name="newLength">New length of payload</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ShrinkSerializedLength(int newLength)
         {
             // Zero-fill extra space - needed so log scan does not see spurious data - *before* setting length to 0.
             if (newLength < Length)
             {
-                Unsafe.InitBlockUnaligned(ToPointerWithMetadata() + newLength, 0, (uint)(Length - newLength));
+                Unsafe.InitBlockUnaligned(ToPointer() + newLength, 0, (uint)(Length - newLength));
                 Length = newLength;
             }
         }
@@ -453,9 +333,8 @@ namespace Tsavorite.core
                     var span = dst.SpanByte.AsSpan();
                     fixed (byte* ptr = span)
                         *(int*)ptr = Length;
-                    dst.SpanByte.ExtraMetadata = ExtraMetadata;
 
-                    AsReadOnlySpan().CopyTo(span.Slice(sizeof(int) + MetadataSize));
+                    AsReadOnlySpan().CopyTo(span.Slice(sizeof(int)));
                     return;
                 }
                 dst.ConvertToHeap();
@@ -465,8 +344,7 @@ namespace Tsavorite.core
             dst.Length = TotalSize;
             fixed (byte* ptr = dst.Memory.Memory.Span)
                 *(int*)ptr = Length;
-            dst.SpanByte.ExtraMetadata = ExtraMetadata;
-            AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span.Slice(sizeof(int) + MetadataSize));
+            AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span.Slice(sizeof(int)));
         }
 
         /// <summary>
@@ -504,7 +382,7 @@ namespace Tsavorite.core
                 return "Invalid";
             var bytes = AsSpan();
             var len = Math.Min(Length, bytes.Length);
-            StringBuilder sb = new($"len: {Length}, mdLen: {MetadataSize}, isSer {Serialized}, ");
+            StringBuilder sb = new($"len: {Length}, isSer {Serialized}, ");
             for (var ii = 0; ii < len; ++ii)
                 sb.Append(bytes[ii].ToString("x2"));
             if (bytes.Length > len)
