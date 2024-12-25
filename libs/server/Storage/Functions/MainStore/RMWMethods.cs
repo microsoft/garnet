@@ -292,15 +292,14 @@ namespace Garnet.server
 
             RespCommand cmd = input.header.cmd;
 
-            bool hasETag = recordInfo.ETag; 
-            int etagMultiplier = Unsafe.As<bool, byte>(ref hasETag);
+            int etagMultiplier = recordInfo.HasETagMultiplier;
 
             // 0 if no etag else EtagSize
             int etagIgnoredOffset = etagMultiplier * Constants.EtagSize;
             // -1 if no etag or oldValue.LengthWithoutMEtada if etag
             int etagIgnoredEnd = etagMultiplier * (value.LengthWithoutMetadata + 1);
             etagIgnoredEnd--;
-            
+
             // 0 if no Etag exists else the first 8 bytes of value
             long oldEtag = etagMultiplier * *(long*)value.ToPointer();
 
@@ -762,8 +761,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool NeedCopyUpdate(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
-            bool hasETag = rmwInfo.RecordInfo.ETag; 
-            int etagMultiplier = Unsafe.As<bool, byte>(ref hasETag);
+            int etagMultiplier = rmwInfo.RecordInfo.HasETagMultiplier;
 
             // 0 if no etag else EtagSize
             int etagIgnoredOffset = etagMultiplier * Constants.EtagSize;
@@ -859,9 +857,7 @@ namespace Garnet.server
             RespCommand cmd = input.header.cmd;
             bool shouldUpdateEtag = true;
 
-            bool hasETag = recordInfo.ETag; 
-            int etagMultiplier = Unsafe.As<bool, byte>(ref hasETag);
-
+            int etagMultiplier = recordInfo.HasETagMultiplier;
             // 0 if no etag else EtagSize
             int etagIgnoredOffset = etagMultiplier * Constants.EtagSize;
             // -1 if no etag else oldValue.LenghWithoutMetadata
@@ -910,8 +906,8 @@ namespace Garnet.server
                 case RespCommand.SETEXXX:
                     var nextUpdateEtagOffset = etagIgnoredOffset;
                     var nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
-
-                    if (!input.header.CheckWithEtagFlag())
+                    bool inputWithEtag = input.header.CheckWithEtagFlag();
+                    if (!inputWithEtag)
                     {
                         // if the user did not explictly asked for retaining the etag we need to ignore the etag if it existed on the previous record
                         nextUpdateEtagOffset = 0;
@@ -944,7 +940,7 @@ namespace Garnet.server
                     newValue.ExtraMetadata = input.arg1;
                     newInputValue.CopyTo(newValue.AsSpan(nextUpdateEtagOffset));
 
-                    if (input.header.CheckWithEtagFlag())
+                    if (inputWithEtag)
                     {
                         shouldUpdateEtag = false;
                         *(long*)newValue.ToPointer() = oldEtag + 1;

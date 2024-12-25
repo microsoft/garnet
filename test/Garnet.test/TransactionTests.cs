@@ -243,7 +243,8 @@ namespace Garnet.test
             res = lightClientRequest.SendCommand("SET key2 value2");
             ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
-            await Task.Run(() => {
+            await Task.Run(() =>
+            {
                 using var lightClientRequestCopy = TestUtils.CreateRequest();
                 string command = "SET key1 value1_updated WITHETAG";
                 lightClientRequestCopy.SendCommand(command);
