@@ -872,48 +872,55 @@ namespace Garnet.server
             if (getValue)
                 input.header.SetSetGetFlag();
 
-            SpanByteAndMemory outputBuffer = default;
-            GarnetStatus status;
-
-            // SETIFMATCH will always hit this conditional and have assign output buffer to the right memory location
             if (getValue || withEtag)
             {
-                // anything with getValue or withEtag writes to the buffer 
-                outputBuffer = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                status = storageApi.SET_Conditional(ref key,
+                // anything with getValue or withEtag always writes to the buffer in the happy path
+                SpanByteAndMemory outputBuffer = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+                GarnetStatus status = storageApi.SET_Conditional(ref key,
                     ref input, ref outputBuffer);
-            }
-            else
-            {
-                // the following debug is the catch any edge case leading to SETIFMATCH skipping the above block
-                Debug.Assert(cmd != RespCommand.SETIFMATCH, "SETIFMATCH should have gone though pointing to right output variable");
 
-                status = storageApi.SET_Conditional(ref key, ref input);
-            }
+                // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
+                bool ok = status != GarnetStatus.NOTFOUND || withEtag;
 
-            switch ((getValue, withEtag, cmd, status))
-            {
-                case (true, _, _, GarnetStatus.OK):
-                case (_, true, _, GarnetStatus.OK or GarnetStatus.NOTFOUND):
+                if (ok)
+                {
                     if (!outputBuffer.IsSpanByte)
                         SendAndReset(outputBuffer.Memory, outputBuffer.Length);
                     else
                         dcurr += outputBuffer.Length;
-                    break;
-
-                case (false, false, RespCommand.SETEXNX, GarnetStatus.NOTFOUND): // SETEXNX is at success if not found and nothign on buffer if no get or withetag so return +OK
-                case (false, false, not RespCommand.SETEXNX, GarnetStatus.OK): // for everything EXCPET SETEXNX if no get, and no etag, then an OK returns +OK response
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-
-                default:
+                }
+                else
+                {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
-                    break;
-            };
+                }
 
-            return true;
+                return true;
+            }
+            else
+            {
+                // the following debug assertion is the catch any edge case leading to SETIFMATCH skipping the above block
+                Debug.Assert(cmd != RespCommand.SETIFMATCH, "SETIFMATCH should have gone though pointing to right output variable");
+
+                GarnetStatus status = storageApi.SET_Conditional(ref key, ref input);
+
+                bool ok = status != GarnetStatus.NOTFOUND;
+
+                if (cmd == RespCommand.SETEXNX)
+                    ok = !ok;
+
+                if (ok)
+                {
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                }
+                return true;
+            }
         }
 
         /// <summary>
