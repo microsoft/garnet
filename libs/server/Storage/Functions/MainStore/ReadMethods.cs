@@ -53,13 +53,15 @@ namespace Garnet.server
                 return ret;
             }
 
+            int start = 0;
+            int end = -1;
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
-            bool isNotEtagCmdAndRecordHasEtag = cmd is not (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH);
-            int isNotEtagCmdAndRecordHasEtagMultiplier = etagMultiplier * Unsafe.As<bool, byte>(ref isNotEtagCmdAndRecordHasEtag);
+            if (cmd is not (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
+            {
+                start = Constants.EtagSize;
+                end = value.LengthWithoutMetadata;
+            }
 
-            int start = isNotEtagCmdAndRecordHasEtagMultiplier * Constants.EtagSize;
-            int end = isNotEtagCmdAndRecordHasEtagMultiplier * (value.LengthWithoutMetadata + 1);
-            end--;
 
             if (cmd == RespCommand.NONE)
                 CopyRespTo(ref value, ref dst, start, end);
@@ -110,13 +112,14 @@ namespace Garnet.server
                 return ret;
             }
 
+            int start = 0;
+            int end = -1;
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
-            bool isNotEtagCmdAndRecordHasEtag = cmd is not (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH);
-            int isNotEtagCmdAndRecordHasEtagMultiplier = etagMultiplier * Unsafe.As<bool, byte>(ref isNotEtagCmdAndRecordHasEtag);
-
-            int start = isNotEtagCmdAndRecordHasEtagMultiplier * Constants.EtagSize;
-            int end = isNotEtagCmdAndRecordHasEtagMultiplier * (value.LengthWithoutMetadata + 1);
-            end--;
+            if (cmd is not (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
+            {
+                start = Constants.EtagSize;
+                end = value.LengthWithoutMetadata;
+            }
 
             if (cmd == RespCommand.NONE)
                 CopyRespTo(ref value, ref dst, start, end);
