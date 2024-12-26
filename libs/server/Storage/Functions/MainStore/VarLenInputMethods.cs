@@ -144,10 +144,12 @@ namespace Garnet.server
             if (input.header.cmd != RespCommand.NONE)
             {
                 var cmd = input.header.cmd;
-                // Branchless OR condition on A && B can be expressed as => 1-(1−A)⋅(1−B)
-                int withEtagOrHasEtag = 1 - (1 - input.header.CheckWithEtagFlagMultiplier) * (1 - Unsafe.As<bool, byte>(ref hasEtag));
 
-                int etagOffset = withEtagOrHasEtag * Constants.EtagSize;
+                int etagOffset = 0;
+                if (hasEtag || input.header.CheckWithEtagFlag())
+                {
+                    etagOffset = Constants.EtagSize;
+                }
 
                 switch (cmd)
                 {
