@@ -103,7 +103,7 @@ namespace Tsavorite.core
         public readonly long GetExpiration(int valueLen) => Info.HasExpiration ? *(long*)GetExpirationAddress(valueLen) : 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetFillerLen(int valueLen)
+        internal readonly int GetFillerLen(int valueLen)
         {
             if (Info.HasFiller)
                 return *(int*)GetFillerLenAddress(valueLen);
@@ -114,11 +114,11 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetETag(int valueLen, long newTag)
+        internal readonly bool TrySetETag(int valueLen, long eTag)
         {
             if (Info.HasETag)
             {
-                *(long*)GetETagAddress(valueLen) = newTag;
+                *(long*)GetETagAddress(valueLen) = eTag;
                 return true;
             }
 
@@ -146,7 +146,7 @@ namespace Tsavorite.core
                 address -= ExpirationSize;
                 expiration = *(long*)address;
             }
-            *(long*)address = newTag;
+            *(long*)address = eTag;
             InfoRef.SetHasETag();
             if (Info.HasExpiration)
             {
@@ -163,7 +163,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void RemoveETag(int valueLen)
+        internal readonly void RemoveETag(int valueLen)
         {
             if (!Info.HasETag)
                 return;
@@ -202,11 +202,11 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetExpiration(int valueLen, long newExpiration)
+        internal readonly bool TrySetExpiration(int valueLen, long expiration)
         {
             if (Info.HasExpiration)
             {
-                *(long*)GetExpirationAddress(valueLen) = newExpiration;
+                *(long*)GetExpirationAddress(valueLen) = expiration;
                 return true;
             }
 
@@ -228,7 +228,7 @@ namespace Tsavorite.core
             if (Info.HasFiller)
                 *(int*)address = 0;
             //  - Set Expiration
-            *(long*)address = newExpiration;
+            *(long*)address = expiration;
             address += ExpirationLen;
             //  - Set the new (reduced) ExtraValueLength if there is still space for it.
             if (extraLen >= FillerLenSize)
@@ -239,7 +239,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void RemoveExpiration(int valueLen)
+        internal readonly void RemoveExpiration(int valueLen)
         {
             if (!Info.HasExpiration)
                 return;

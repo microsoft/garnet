@@ -281,7 +281,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="newLength">New length of payload</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ShrinkSerializedLength(int newLength)
+        public void ShrinkSerializedLength(int newLength)   // TODO remove? (in favor of LogRecord methods, and just setting the length elsewhere)
         {
             // Zero-fill extra space - needed so log scan does not see spurious data - *before* setting length to 0.
             if (newLength < Length)

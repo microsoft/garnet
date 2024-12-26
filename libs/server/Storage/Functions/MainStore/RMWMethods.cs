@@ -45,29 +45,42 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool InitialUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool InitialUpdater(ref LogRecord dstLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
+            var logRecord = dstLogRecord.StringLogRecord;
+            var value = logRecord.Value;
 
+            // Because this is InitialUpdater, the destination length should be set correctly, but test and Debug.Fail to be sure.
             switch (input.header.cmd)
             {
                 case RespCommand.PFADD:
-                    var v = value.ToPointer();
-                    value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input));
-                    HyperLogLog.DefaultHLL.Init(ref input, v, value.Length);
+                    logRecord.RemoveExpiration();
+
+                    if (!logRecord.TrySetValueLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input)))
+                    {
+                        Debug.Fail("Length overflow in PFADD");
+                        return false;
+                    }
+
+                    HyperLogLog.DefaultHLL.Init(ref input, value.ToPointer(), value.Length);
                     *output.SpanByte.ToPointer() = 1;
                     break;
 
                 case RespCommand.PFMERGE:
                     //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy + 4 (skip len size)
                     var sbSrcHLL = input.parseState.GetArgSliceByRef(0).SpanByte;
-                    var length = sbSrcHLL.Length;
+
+                    logRecord.RemoveExpiration();
+
+                    if (!logRecord.TrySetValueLength(sbSrcHLL.Length))
+                    {
+                        Debug.Fail("Length overflow in PFMERGE");
+                        return false;
+                    }
+
                     var srcHLL = sbSrcHLL.ToPointer();
                     var dstHLL = value.ToPointer();
 
-                    value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(length);
                     Buffer.MemoryCopy(srcHLL, dstHLL, value.Length, value.Length);
                     break;
 
@@ -75,18 +88,26 @@ namespace Garnet.server
                 case RespCommand.SETEXNX:
                     // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
-                    value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(newInputValue.Length + metadataSize);
-                    value.ExtraMetadata = input.arg1;
-                    newInputValue.CopyTo(value.AsSpan());
+
+                    if (!logRecord.TrySetValue(SpanByte.FromPinnedSpan(newInputValue)))
+                    {
+                        Debug.Assert(newInputValue.Length <= value.Length, "Length overflow in SETEXNX");
+                        return false;
+                    }
+
+                    // Set or remove expiration
+                    if (input.arg1 == 0)
+                        logRecord.RemoveETag();
+                    else if (!logRecord.TrySetExpiration(input.arg1))
+                    {
+                        Debug.Fail("Could not set expiration in SETEXNX");
+                        return false;
+                    }
                     break;
 
                 case RespCommand.SETKEEPTTL:
-                    // Copy input to value, retain metadata in value
-                    var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    value.ShrinkSerializedLength(value.MetadataSize + setValue.Length);
-                    setValue.CopyTo(value.AsSpan());
+                    // Copy input to value; do not change expiration
+                    _ = logRecord.TrySetValue(input.parseState.GetArgSliceByRef(0).SpanByte);
                     break;
 
                 case RespCommand.SETKEEPTTLXX:
@@ -101,21 +122,33 @@ namespace Garnet.server
                     throw new Exception();
 
                 case RespCommand.SETBIT:
+                    // Set the bit; remove expiration
+                    logRecord.RemoveExpiration();
                     var bOffset = input.parseState.GetLong(0);
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
-                    value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(BitmapManager.Length(bOffset));
+                    if (!logRecord.TrySetValueLength(BitmapManager.Length(bOffset)))
+                    {
+                        Debug.Fail("Length overflow in SETBIT");
+                        return false;
+                    }
 
                     // Always return 0 at initial updater because previous value was 0
-                    BitmapManager.UpdateBitmap(value.ToPointer(), bOffset, bSetVal);
+                    _ = BitmapManager.UpdateBitmap(value.ToPointer(), bOffset, bSetVal);
                     CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
                     break;
 
                 case RespCommand.BITFIELD:
-                    value.UnmarkExtraMetadata();
+                    logRecord.RemoveExpiration();
+
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    value.ShrinkSerializedLength(BitmapManager.LengthFromType(bitFieldArgs));
+
+                    if (!logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs)))
+                    {
+                        Debug.Fail("Length overflow in BitField");
+                        return false;
+                    }
+
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer(), value.Length);
                     if (!overflow)
                         CopyRespNumber(bitfieldReturnValue, ref output);
@@ -128,7 +161,8 @@ namespace Garnet.server
                     var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
                     newValue.CopyTo(value.AsSpan().Slice(offset));
 
-                    CopyValueLengthToOutput(ref value, ref output);
+                    if (!CopyValueLengthToOutput(ref value, ref output))
+                        return false;
                     break;
 
                 case RespCommand.APPEND:
@@ -137,82 +171,112 @@ namespace Garnet.server
                     // Copy value to be appended to the newly allocated value buffer
                     appendValue.ReadOnlySpan.CopyTo(value.AsSpan());
 
-                    CopyValueLengthToOutput(ref value, ref output);
+                    if (!CopyValueLengthToOutput(ref value, ref output))
+                        return false;
                     break;
                 case RespCommand.INCR:
-                    value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(1); // # of digits in "1"
-                    CopyUpdateNumber(1, ref value, ref output);
+                    logRecord.RemoveExpiration();
+
+                    // This is InitialUpdater so set the value to 1 and the length to the # of digits in "1"
+                    if (!logRecord.TrySetValueLength(1))
+                    {
+                        Debug.Fail("Length overflow in INCR");
+                        return false;
+                    }
+                    _ = CopyUpdateNumber(1L, ref value, ref output);
                     break;
                 case RespCommand.INCRBY:
-                    value.UnmarkExtraMetadata();
-                    var fNeg = false;
-                    var incrBy = input.arg1;
-                    var ndigits = NumUtils.NumDigitsInLong(incrBy, ref fNeg);
-                    value.ShrinkSerializedLength(ndigits + (fNeg ? 1 : 0));
-                    CopyUpdateNumber(incrBy, ref value, ref output);
+                    {
+                        logRecord.RemoveExpiration();
+                        var fNeg = false;
+                        var incrBy = input.arg1;
+
+                        var ndigits = NumUtils.NumDigitsInLong(incrBy, ref fNeg);
+                        if (!logRecord.TrySetValueLength(ndigits + (fNeg ? 1 : 0)))
+                        {
+                            Debug.Fail("Length overflow in INCRBY");
+                            return false;
+                        }
+
+                        _ = CopyUpdateNumber(incrBy, ref value, ref output);
+                    }
                     break;
                 case RespCommand.DECR:
-                    value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(2); // # of digits in "-1"
-                    CopyUpdateNumber(-1, ref value, ref output);
+                    logRecord.RemoveExpiration();
+
+                    // This is InitialUpdater so set the value to -1 and the length to the # of digits in "-1"
+                    if (!logRecord.TrySetValueLength(2))
+                    {
+                        Debug.Assert(value.Length >= 2, "Length overflow in DECR");
+                        return false;
+                    }
+                    _ = CopyUpdateNumber(-1, ref value, ref output);
                     break;
                 case RespCommand.DECRBY:
-                    value.UnmarkExtraMetadata();
-                    fNeg = false;
-                    var decrBy = -input.arg1;
-                    ndigits = NumUtils.NumDigitsInLong(decrBy, ref fNeg);
-                    value.ShrinkSerializedLength(ndigits + (fNeg ? 1 : 0));
-                    CopyUpdateNumber(decrBy, ref value, ref output);
+                    {
+                        logRecord.RemoveExpiration();
+                        var fNeg = false;
+                        var decrBy = -input.arg1;
+
+                        var ndigits = NumUtils.NumDigitsInLong(decrBy, ref fNeg);
+                        if (!logRecord.TrySetValueLength(ndigits + (fNeg ? 1 : 0)))
+                        {
+                            Debug.Fail("Length overflow in DECRBY");
+                            return false;
+                        }
+
+                        _ = CopyUpdateNumber(decrBy, ref value, ref output);
+                    }
                     break;
                 case RespCommand.INCRBYFLOAT:
-                    value.UnmarkExtraMetadata();
+                    logRecord.RemoveExpiration();
                     // Check if input contains a valid number
                     if (!input.parseState.TryGetDouble(0, out var incrByFloat))
                     {
                         output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
                         return true;
                     }
-                    CopyUpdateNumber(incrByFloat, ref value, ref output);
+                    if (!CopyUpdateNumber(incrByFloat, ref value, ref output))
+                        return false;
                     break;
                 default:
-                    value.UnmarkExtraMetadata();
+                    logRecord.RemoveExpiration();
 
                     if ((ushort)input.header.cmd >= CustomCommandManager.StartOffset)
                     {
                         var functions = functionsState.customCommands[(ushort)input.header.cmd - CustomCommandManager.StartOffset].functions;
-                        // compute metadata size for result
-                        var expiration = input.arg1;
-                        metadataSize = expiration switch
+                        if (!logRecord.TrySetValueLength(functions.GetInitialLength(ref input)))
                         {
-                            -1 => 0,
-                            0 => 0,
-                            _ => 8,
-                        };
-
-                        value.ShrinkSerializedLength(metadataSize + functions.GetInitialLength(ref input));
-                        if (expiration > 0)
-                            value.ExtraMetadata = expiration;
+                            Debug.Fail("Length overflow in 'default' > StartOffset");
+                            return false;
+                        }
+                        if (input.arg1 > 0 && !logRecord.TrySetExpiration(input.arg1))
+                        {
+                            Debug.Fail("Could not set expiration in 'default' > StartOffset");
+                            return false;
+                        }
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        functions.InitialUpdater(key.AsReadOnlySpan(), ref input, value.AsSpan(), ref outp, ref rmwInfo);
+                        if (!functions.InitialUpdater(logRecord.Key.AsReadOnlySpan(), ref input, value.AsSpan(), ref outp, ref rmwInfo))
+                            return false;
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
                         break;
                     }
 
                     // Copy input to value
-                    var inputValue = input.parseState.GetArgSliceByRef(0);
-                    value.ShrinkSerializedLength(inputValue.Length);
-                    value.ExtraMetadata = input.arg1;
-                    inputValue.ReadOnlySpan.CopyTo(value.AsSpan());
+                    if (!logRecord.TrySetValue(input.parseState.GetArgSliceByRef(0).SpanByte))
+                    {
+                        Debug.Fail("Failed to set value in 'default'");
+                        return false;
+                    }
 
                     // Copy value to output
-                    CopyTo(ref value, ref output, functionsState.memoryPool);
+                    CopyTo(logRecord.Value, ref output, functionsState.memoryPool);
                     break;
             }
 
-            rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
+            // Success if we made it here
             return true;
         }
 

@@ -17,7 +17,7 @@ namespace Tsavorite.core
     /// </remarks>
     public unsafe struct ObjectLogRecord : IReadOnlyLogRecord
     {
-        internal readonly LogRecordBase recBase;
+        public readonly LogRecordBase RecBase;
         KeyOverflowAllocator keyAlloc;
         ObjectIdMap objectIdMap;
 
@@ -25,7 +25,7 @@ namespace Tsavorite.core
 
         // This ctor overload is primarily used for utility calculations.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ObjectLogRecord(long physicalAddress) => recBase = new(physicalAddress);
+        internal ObjectLogRecord(long physicalAddress) => RecBase = new(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ObjectLogRecord(long physicalAddress, KeyOverflowAllocator keyAlloc, ObjectIdMap objectIdMap = null)
@@ -38,24 +38,24 @@ namespace Tsavorite.core
 
         #region IReadOnlyRecord
         /// <inheritdoc/>
-        public readonly ref RecordInfo InfoRef => ref recBase.InfoRef;
+        public readonly ref RecordInfo InfoRef => ref RecBase.InfoRef;
         /// <inheritdoc/>
-        public readonly RecordInfo Info => recBase.Info;
+        public readonly RecordInfo Info => RecBase.Info;
         /// <inheritdoc/>
-        public readonly SpanByte Key => recBase.Key;
+        public readonly SpanByte Key => RecBase.Key;
         /// <inheritdoc/>
         public readonly SpanByte ValueSpan => throw new TsavoriteException("ObjectLogRecord does not have SpanByte values");
         /// <inheritdoc/>
         public readonly IHeapObject ValueObject => GetValue();
         /// <inheritdoc/>
-        public readonly int DBId => recBase.GetDBId(ValueLen);
+        public readonly int DBId => RecBase.GetDBId(ValueLen);
         /// <inheritdoc/>
-        public readonly long ETag => recBase.GetETag(ValueLen);
+        public readonly long ETag => RecBase.GetETag(ValueLen);
         /// <inheritdoc/>
-        public readonly long Expiration => recBase.GetExpiration(ValueLen);
+        public readonly long Expiration => RecBase.GetExpiration(ValueLen);
         #endregion //IReadOnlyRecord
 
-        internal readonly int* ValueIdAddress => (int*)recBase.ValueAddress;
+        internal readonly int* ValueIdAddress => (int*)RecBase.ValueAddress;
 
         /// <summary>The value object id (index into the object values array)</summary>
         internal readonly int ValueId => *ValueIdAddress;
@@ -71,10 +71,10 @@ namespace Tsavorite.core
             objectIdMap.GetRef(*ValueIdAddress) = value;
         }
 
-        public readonly int RecordSize => recBase.GetRecordSize(ValueLen);
-        public readonly (int actualSize, int allocatedSize) RecordSizes => recBase.GetRecordSizes(ValueLen);
+        public readonly int RecordSize => RecBase.GetRecordSize(ValueLen);
+        public readonly (int actualSize, int allocatedSize) RecordSizes => RecBase.GetRecordSizes(ValueLen);
 
-        public readonly int ExtraValueLen => recBase.GetFillerLen(ValueLen);
+        public readonly int ExtraValueLen => RecBase.GetFillerLen(ValueLen);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TrySetValueLength(int newValueLen)
@@ -83,7 +83,19 @@ namespace Tsavorite.core
             return newValueLen == ValueLen;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool TrySetETag(long eTag) => RecBase.TrySetETag(ValueLen, eTag);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void RemoveETag() => RecBase.RemoveETag(ValueLen);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool TrySetExpiration(long expiration) => RecBase.TrySetExpiration(ValueLen, expiration);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void RemoveExpiration() => RecBase.RemoveExpiration(ValueLen);
+
         /// <inheritdoc/>
-        public override readonly string ToString() => recBase.ToString(ValueLen, ValueId.ToString());
+        public override readonly string ToString() => RecBase.ToString(ValueLen, ValueId.ToString());
     }
 }

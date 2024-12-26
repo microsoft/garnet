@@ -14,7 +14,7 @@ namespace Garnet.server
     /// </summary>
     public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
     {
-        static void CopyTo(ref SpanByte src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
+        static void CopyTo(SpanByte src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
             int srcLength = src.LengthWithoutMetadata;
 
@@ -34,7 +34,7 @@ namespace Garnet.server
             src.AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span);
         }
 
-        void CopyRespTo(ref SpanByte src, ref SpanByteAndMemory dst, int start = 0, int end = -1)
+        void CopyRespTo(SpanByte src, ref SpanByteAndMemory dst, int start = 0, int end = -1)
         {
             int srcLength = end == -1 ? src.LengthWithoutMetadata : ((start < end) ? (end - start) : 0);
             if (srcLength == 0)
@@ -476,18 +476,22 @@ namespace Garnet.server
             return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
         }
 
-        static void CopyUpdateNumber(long next, ref SpanByte newValue, ref SpanByteAndMemory output)
+        static bool CopyUpdateNumber(long next, ref SpanByte newValue, ref SpanByteAndMemory output)
         {
-            NumUtils.LongToSpanByte(next, newValue.AsSpan());
+            if (NumUtils.LongToSpanByte(next, newValue.AsSpan()) == 0)
+                return false;
             newValue.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
             output.SpanByte.Length = newValue.LengthWithoutMetadata;
+            return true;
         }
 
-        static void CopyUpdateNumber(double next, ref SpanByte newValue, ref SpanByteAndMemory output)
+        static bool CopyUpdateNumber(double next, ref SpanByte newValue, ref SpanByteAndMemory output)
         {
-            NumUtils.DoubleToSpanByte(next, newValue.AsSpan());
+            if (NumUtils.DoubleToSpanByte(next, newValue.AsSpan()) == 0)
+                return false;
             newValue.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
             output.SpanByte.Length = newValue.LengthWithoutMetadata;
+            return true;
         }
 
         /// <summary>
@@ -497,7 +501,7 @@ namespace Garnet.server
         /// <param name="newValue">New value copying to</param>
         /// <param name="output">Output value</param>
         /// <param name="input">Parsed input value</param>
-        static void TryCopyUpdateNumber(ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, long input)
+        static bool TryCopyUpdateNumber(ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, long input)
         {
             newValue.ExtraMetadata = oldValue.ExtraMetadata;
 
@@ -518,11 +522,11 @@ namespace Garnet.server
             catch
             {
                 output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
-                return;
+                return false;
             }
 
             // Move to tail of the log and update
-            CopyUpdateNumber(val, ref newValue, ref output);
+            return CopyUpdateNumber(val, ref newValue, ref output);
         }
 
         /// <summary>
@@ -532,7 +536,7 @@ namespace Garnet.server
         /// <param name="newValue">New value copying to</param>
         /// <param name="output">Output value</param>
         /// <param name="input">Parsed input value</param>
-        static void TryCopyUpdateNumber(ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, double input)
+        static bool TryCopyUpdateNumber(ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, double input)
         {
             newValue.ExtraMetadata = oldValue.ExtraMetadata;
 
@@ -542,18 +546,18 @@ namespace Garnet.server
                 // Move to tail of the log even when oldValue is alphanumeric
                 // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
                 oldValue.CopyTo(ref newValue);
-                return;
+                return false;
             }
 
             val += input;
             if (!double.IsFinite(val))
             {
                 output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
-                return;
+                return false;
             }
 
             // Move to tail of the log and update
-            CopyUpdateNumber(val, ref newValue, ref output);
+            return CopyUpdateNumber(val, ref newValue, ref output);
         }
 
         /// <summary>
@@ -650,14 +654,21 @@ namespace Garnet.server
         /// <summary>
         /// Copy length of value to output (as ASCII bytes)
         /// </summary>
-        static void CopyValueLengthToOutput(ref SpanByte value, ref SpanByteAndMemory output)
+        static bool CopyValueLengthToOutput(ref SpanByte value, ref SpanByteAndMemory output)
         {
-            int numDigits = NumUtils.NumDigits(value.LengthWithoutMetadata);
-
             Debug.Assert(output.IsSpanByte, "This code assumes it is called in a non-pending context or in a pending context where dst.SpanByte's pointer remains valid");
+
+            var numDigits = NumUtils.NumDigits(value.Length);
+            if (numDigits > output.SpanByte.Length)
+            {
+                Debug.Fail("Output length overflow in CopyValueLengthToOutput");
+                return false;
+            }
+
             var outputPtr = output.SpanByte.ToPointer();
-            NumUtils.IntToBytes(value.LengthWithoutMetadata, numDigits, ref outputPtr);
+            NumUtils.IntToBytes(value.Length, numDigits, ref outputPtr);
             output.SpanByte.Length = numDigits;
+            return true;
         }
 
         /// <summary>
