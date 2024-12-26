@@ -372,7 +372,8 @@ namespace Garnet.server
 
                     var nextUpdateEtagOffset = etagIgnoredOffset;
                     var nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
-                    if (!input.header.CheckWithEtagFlag())
+                    bool inputHeaderHasEtag = input.header.CheckWithEtagFlag();
+                    if (!inputHeaderHasEtag)
                     {
                         // if the user did not explictly asked for retaining the etag we need to ignore the etag even if it existed on the previous record
                         nextUpdateEtagOffset = 0;
@@ -402,7 +403,7 @@ namespace Garnet.server
                         CopyRespTo(ref value, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
 
-                    if (input.header.CheckWithEtagFlag())
+                    if (inputHeaderHasEtag)
                         recordInfo.SetHasETag();
 
                     // Adjust value length
@@ -415,7 +416,7 @@ namespace Garnet.server
                     setValue.ReadOnlySpan.CopyTo(value.AsSpan(nextUpdateEtagOffset));
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
-                    if (input.header.CheckWithEtagFlag())
+                    if (inputHeaderHasEtag)
                     {
                         *(long*)value.ToPointer() = oldEtag + 1;
                         // withetag flag means we need to write etag back to the output buffer
