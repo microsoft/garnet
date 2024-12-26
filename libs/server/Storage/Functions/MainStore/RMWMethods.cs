@@ -752,10 +752,10 @@ namespace Garnet.server
             }
 
             // increment the Etag transparently if in place update happened
-            // if etag needs to be updated set frist 8 bytes to oldEtag + 1 or leave it unchanged
-            long existingDataAtPtr = *(long*)value.ToPointer();
-            *(long*)value.ToPointer() = (etagMultiplier * (oldEtag + 1)) +
-                   ((1 - etagMultiplier) * existingDataAtPtr);
+            if (recordInfo.ETag)
+            {
+                *(long*)value.ToPointer() = oldEtag + 1;
+            }
 
             return true;
         }
@@ -1205,13 +1205,10 @@ namespace Garnet.server
 
             rmwInfo.SetUsedValueLength(ref recordInfo, ref newValue, newValue.TotalSize);
 
-            long existingDataAtPtr = *(long*)newValue.ToPointer();
-            bool hasEtagAndShouldUpdate = recordInfo.ETag && shouldUpdateEtag;
-            long hasEtagAndShouldUpdateMultiplier = Unsafe.As<bool, byte>(ref hasEtagAndShouldUpdate);
-
-            // if etag needs to be updated set frist 8 bytes to oldEtag + 1 or leave it unchanged
-            *(long*)newValue.ToPointer() = (hasEtagAndShouldUpdateMultiplier * (oldEtag + 1)) +
-                   ((1 - hasEtagAndShouldUpdateMultiplier) * existingDataAtPtr);
+            if (recordInfo.ETag && shouldUpdateEtag)
+            {
+                *(long*)newValue.ToPointer() = oldEtag + 1;
+            }
 
             return true;
         }
