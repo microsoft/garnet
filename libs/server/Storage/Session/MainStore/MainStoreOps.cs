@@ -638,7 +638,7 @@ namespace Garnet.server
                                     input.arg1 = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
 
                                     if (withEtag)
-                                        input.header.CheckWithEtagFlag();
+                                        input.header.SetWithEtagFlag();
 
                                     var setStatus = SET_Conditional(ref newKey, ref input, ref context);
 

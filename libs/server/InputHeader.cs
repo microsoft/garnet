@@ -16,6 +16,12 @@ namespace Garnet.server
     public enum RespInputFlags : byte
     {
         /// <summary>
+        /// Flag indicating if a SET operation should either add an etag or respect the etag semantics for a value with an etag already
+        /// This is used for conditional setting.
+        /// </summary>
+        WithEtag = 1,
+
+        /// <summary>
         /// Flag indicating a SET operation that returns the previous value
         /// </summary>
         SetGet = 32,
@@ -27,12 +33,6 @@ namespace Garnet.server
         /// Expired
         /// </summary>
         Expired = 128,
-
-        /// <summary>
-        /// Flag indicating if a SET operation should either add an etag or respect the etag semantics for a value with an etag already
-        /// This is used for conditional setting.
-        /// </summary>
-        WithEtag = 129,
     }
 
     /// <summary>
@@ -139,6 +139,8 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         internal unsafe bool CheckWithEtagFlag() => (flags & RespInputFlags.WithEtag) != 0;
+
+        internal int CheckWithEtagFlagMultiplier => (int)(flags & RespInputFlags.WithEtag);
 
         /// <summary>
         /// Check if record is expired, either deterministically during log replay,

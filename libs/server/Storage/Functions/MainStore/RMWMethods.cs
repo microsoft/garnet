@@ -83,10 +83,10 @@ namespace Garnet.server
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
                     bool withEtag = input.header.CheckWithEtagFlag();
-                    int spaceForEtag = 0;
+                    int spaceForEtag = input.header.CheckWithEtagFlagMultiplier * Constants.EtagSize;
+
                     if (withEtag)
                     {
-                        spaceForEtag = Constants.EtagSize;
                         recordInfo.SetHasETag();
                     }
 

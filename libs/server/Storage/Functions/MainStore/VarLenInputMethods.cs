@@ -69,7 +69,6 @@ namespace Garnet.server
         /// <inheritdoc/>
         public int GetRMWInitialValueLength(ref RawStringInput input)
         {
-            var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
             var cmd = input.header.cmd;
 
             switch (cmd)
@@ -120,6 +119,7 @@ namespace Garnet.server
                     return sizeof(int) + ndigits;
 
                 default:
+                    var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
                         var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
@@ -133,7 +133,7 @@ namespace Garnet.server
                         return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
                     }
 
-                    int allocationForEtag = input.header.CheckWithEtagFlag() ? Constants.EtagSize : 0;
+                    int allocationForEtag = input.header.CheckWithEtagFlagMultiplier * Constants.EtagSize;
                     return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + metadataSize + allocationForEtag;
             }
         }
@@ -144,8 +144,10 @@ namespace Garnet.server
             if (input.header.cmd != RespCommand.NONE)
             {
                 var cmd = input.header.cmd;
-                bool withEtagOrHasEtag = input.header.CheckWithEtagFlag() || hasEtag;
-                int etagOffset = Unsafe.As<bool, byte>(ref withEtagOrHasEtag) * Constants.EtagSize;
+                // Branchless OR condition on A && B can be expressed as => 1-(1−A)⋅(1−B)
+                int withEtagOrHasEtag = 1 - (1 - input.header.CheckWithEtagFlagMultiplier) * (1 - Unsafe.As<bool, byte>(ref hasEtag));
+
+                int etagOffset = withEtagOrHasEtag * Constants.EtagSize;
 
                 switch (cmd)
                 {
