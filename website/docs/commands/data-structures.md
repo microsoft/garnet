@@ -1192,6 +1192,42 @@ Stores the specified range of elements in the sorted set stored at **src** into 
 
 ---
 
+### ZUNION
+
+#### Syntax
+
+```bash
+    ZUNION numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM | MIN | MAX>] [WITHSCORES]
+```
+
+Returns the union of the input sorted sets specified by the keys. The total number of input keys is specified by numkeys.
+
+Keys that do not exist are considered to be empty sets.
+
+#### Resp Reply
+
+Array reply: the result of the union with, optionally, their scores when WITHSCORES is used.
+
+---
+
+### ZUNIONSTORE
+
+#### Syntax
+
+```bash
+    ZUNIONSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM | MIN | MAX>] 
+```
+
+Computes the union of the input sorted sets specified by the keys and stores the result in destination. The total number of input keys is specified by numkeys.
+
+Keys that do not exist are considered to be empty sets.
+
+#### Resp Reply
+
+Integer reply: the number of members in the resulting sorted set at destination.
+
+---
+
 ## Geospatial indices
 
 ### GEOADD
