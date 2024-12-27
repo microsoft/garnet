@@ -56,7 +56,7 @@ namespace Garnet.server
             int start = 0;
             int end = -1;
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
-            if (cmd is not (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
+            if (readInfo.RecordInfo.ETag && cmd is not (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
             {
                 start = Constants.EtagSize;
                 end = value.LengthWithoutMetadata;
@@ -115,7 +115,7 @@ namespace Garnet.server
             int start = 0;
             int end = -1;
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
-            if (cmd is not (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
+            if (recordInfo.ETag && cmd is not (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
             {
                 start = Constants.EtagSize;
                 end = value.LengthWithoutMetadata;
