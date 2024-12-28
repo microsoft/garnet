@@ -470,7 +470,7 @@ namespace Tsavorite.test.Expiration
             }
 
             /// <inheritdoc/>
-            public override int GetRMWModifiedValueLength(ref SpanByte value, ref ExpirationInput input, bool hasEtag) => value.TotalSize;
+            public override int GetRMWModifiedValueLength(ref SpanByte value, ref ExpirationInput input) => value.TotalSize;
 
             /// <inheritdoc/>
             public override int GetRMWInitialValueLength(ref ExpirationInput input) => MinValueLen;

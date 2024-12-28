@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -293,16 +292,12 @@ namespace Garnet.server
 
             RespCommand cmd = input.header.cmd;
 
-            int etagMultiplier = recordInfo.HasETagMultiplier;
+            // Copy Inplace Update worker is the first in the potential pipeline of calling NeedCopyUpdate and CopyUpdater the following line will keep a precomputed values to use after this
+            input.etagOffsetManagementContext = input.etagOffsetManagementContext.CalculateOffsets(recordInfo.ETag, ref value);
 
-            // 0 if no etag else EtagSize
-            int etagIgnoredOffset = etagMultiplier * Constants.EtagSize;
-            // -1 if no etag or oldValue.LengthWithoutMEtada if etag
-            int etagIgnoredEnd = etagMultiplier * (value.LengthWithoutMetadata + 1);
-            etagIgnoredEnd--;
-
-            // 0 if no Etag exists else the first 8 bytes of value
-            long oldEtag = etagMultiplier * *(long*)value.ToPointer();
+            int etagIgnoredOffset = input.etagOffsetManagementContext.EtagIgnoredOffset;
+            int etagIgnoredEnd = input.etagOffsetManagementContext.EtagIgnoredEnd;
+            long oldEtag = input.etagOffsetManagementContext.ExistingEtag;
 
             switch (cmd)
             {
@@ -763,29 +758,15 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool NeedCopyUpdate(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
-            int etagMultiplier = rmwInfo.RecordInfo.HasETagMultiplier;
-
-            // 0 if no etag else EtagSize
-            int etagIgnoredOffset = etagMultiplier * Constants.EtagSize;
-            // -1 if no etag or oldValue.LengthWithoutMEtada if etag
-            int etagIgnoredEnd = etagMultiplier * (oldValue.LengthWithoutMetadata + 1);
-            etagIgnoredEnd--;
+            // offsets are precomputed at inplace updater
+            int etagIgnoredOffset = input.etagOffsetManagementContext.EtagIgnoredOffset;
+            int etagIgnoredEnd = input.etagOffsetManagementContext.EtagIgnoredEnd;
+            long existingEtag = input.etagOffsetManagementContext.ExistingEtag;
 
             switch (input.header.cmd)
             {
                 case RespCommand.SETIFMATCH:
                     long etagToCheckWith = input.parseState.GetLong(1);
-                    // lack of an etag is the same as having a zero'd etag
-                    long existingEtag;
-                    // No Etag is the same as having the base etag
-                    if (rmwInfo.RecordInfo.ETag)
-                    {
-                        existingEtag = *(long*)oldValue.ToPointer();
-                    }
-                    else
-                    {
-                        existingEtag = Constants.BaseEtag;
-                    }
 
                     if (existingEtag != etagToCheckWith)
                     {
@@ -859,14 +840,10 @@ namespace Garnet.server
             RespCommand cmd = input.header.cmd;
             bool shouldUpdateEtag = true;
 
-            int etagMultiplier = recordInfo.HasETagMultiplier;
-            // 0 if no etag else EtagSize
-            int etagIgnoredOffset = etagMultiplier * Constants.EtagSize;
-            // -1 if no etag else oldValue.LenghWithoutMetadata
-            int etagIgnoredEnd = etagMultiplier * (oldValue.LengthWithoutMetadata + 1);
-            etagIgnoredEnd--;
-
-            long oldEtag = etagMultiplier * *(long*)oldValue.ToPointer();
+            // offsets are precomputed at InPlaceUpdater
+            int etagIgnoredOffset = input.etagOffsetManagementContext.EtagIgnoredOffset;
+            int etagIgnoredEnd = input.etagOffsetManagementContext.EtagIgnoredEnd;
+            long oldEtag = input.etagOffsetManagementContext.ExistingEtag;
 
             switch (cmd)
             {

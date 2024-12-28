@@ -867,7 +867,10 @@ namespace Garnet.server
             var input = new RawStringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
             if (withEtag)
+            {
                 input.header.SetWithEtagFlag();
+                input.etagOffsetManagementContext = input.etagOffsetManagementContext.SetEtagOffsetBasedOnInputHeader();
+            }
 
             if (getValue)
                 input.header.SetSetGetFlag();

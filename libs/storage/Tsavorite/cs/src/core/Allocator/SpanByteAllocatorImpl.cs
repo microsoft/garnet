@@ -127,7 +127,7 @@ namespace Tsavorite.core
         {
             // Used by RMW to determine the length of copy destination (taking Input into account), so does not need to get filler length.
             var keySize = key.TotalSize;
-            var size = RecordInfo.GetLength() + RoundUp(keySize, Constants.kRecordAlignment) + varlenInput.GetRMWModifiedValueLength(ref value, ref input, recordInfo.ETag);
+            var size = RecordInfo.GetLength() + RoundUp(keySize, Constants.kRecordAlignment) + varlenInput.GetRMWModifiedValueLength(ref value, ref input);
             return (size, RoundUp(size, Constants.kRecordAlignment), keySize);
         }
 

@@ -320,6 +320,12 @@ namespace Garnet.server
     public struct RawStringInput : IStoreInput
     {
         /// <summary>
+        /// Mutable state we keep around for efficient EtagOffsetManagement, this will be removed when ETag is stored at the record level separately and does not require offset management.
+        /// NOTE: We do not serialize this to disk or read it from disk, it is only used in memory, and a temporary solution to keep track of Etag offsets across method calls.
+        /// </summary>
+        public EtagOffsetManagementContext etagOffsetManagementContext;
+
+        /// <summary>
         /// Common input header for Garnet
         /// </summary>
         public RespInputHeader header;

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -139,17 +138,14 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public int GetRMWModifiedValueLength(ref SpanByte t, ref RawStringInput input, bool hasEtag)
+        public int GetRMWModifiedValueLength(ref SpanByte t, ref RawStringInput input)
         {
             if (input.header.cmd != RespCommand.NONE)
             {
                 var cmd = input.header.cmd;
 
-                int etagOffset = 0;
-                if (hasEtag || input.header.CheckWithEtagFlag())
-                {
-                    etagOffset = Constants.EtagSize;
-                }
+                // use the precomputed value
+                int etagOffset = input.etagOffsetManagementContext.EtagOffsetBasedOnInputHeaderOrRecordInfo;
 
                 switch (cmd)
                 {
