@@ -266,6 +266,21 @@ namespace Tsavorite.core
                 *(int*)address = extraLen;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool HasEnoughSpace(int currentValueLen, int newValueLen, bool withETag, bool withExpiration)
+        {
+            var growth = newValueLen - currentValueLen;
+            if (Info.HasETag != withETag)
+                growth += withETag ? ETagSize : -ETagSize;
+            if (Info.HasExpiration != withExpiration)
+                growth += withExpiration ? ExpirationSize : -ExpirationSize;
+
+            var recordLen = GetRecordSize(currentValueLen);
+            var maxLen = recordLen + GetFillerLen(currentValueLen);
+            var availableSpace = maxLen - recordLen;
+            return availableSpace >= growth;
+        }
+
         public readonly string ToString(int valueLen, string valueString)
         {
             static string bstr(bool value) => value ? "T" : "F";

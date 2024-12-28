@@ -95,6 +95,16 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void RemoveExpiration() => RecBase.RemoveExpiration(ValueLen);
 
+        /// <summary>
+        /// Determine if the record can grow in-place.
+        /// </summary>
+        /// <param name="newValueLen">Length of the new value</param>
+        /// <param name="withETag">Whether an ETag will be set or removed. If the operation does not change the ETag, pass <see cref="RecordInfo.HasETag"/></param>
+        /// <param name="withExpiration">Whether an Expiration will be set or removed. If the operation does not change the Expiration, pass <see cref="RecordInfo.HasExpiration"/></param>
+        /// <returns>True if there is sufficient space (always true if shrinking the total space requirement), else false</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool HasEnoughSpace(int newValueLen, bool withETag, bool withExpiration) => RecBase.HasEnoughSpace(ValueLen, newValueLen, withETag, withExpiration);
+
         /// <inheritdoc/>
         public override readonly string ToString() => RecBase.ToString(ValueLen, ValueId.ToString());
     }

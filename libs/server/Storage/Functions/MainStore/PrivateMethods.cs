@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Diagnostics;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -92,7 +93,7 @@ namespace Garnet.server
                     // This is accomplished by calling ConvertToHeap on the destination SpanByteAndMemory
                     if (isFromPending)
                         dst.ConvertToHeap();
-                    CopyRespTo(ref value, ref dst);
+                    CopyRespTo(value, ref dst);
                     break;
 
                 case RespCommand.MIGRATE:
@@ -241,7 +242,7 @@ namespace Garnet.server
                     var end = input.parseState.GetInt(1);
 
                     (start, end) = NormalizeRange(start, end, len);
-                    CopyRespTo(ref value, ref dst, start, end);
+                    CopyRespTo(value, ref dst, start, end);
                     return;
 
                 case RespCommand.EXPIRETIME:
@@ -259,43 +260,41 @@ namespace Garnet.server
             }
         }
 
-        bool EvaluateExpireInPlace(ExpireOption optionType, bool expiryExists, long newExpiry, ref SpanByte value, ref SpanByteAndMemory output)
+        bool EvaluateExpireInPlace(ref StringLogRecord logRecord, ExpireOption optionType, long newExpiry, ref SpanByteAndMemory output)
         {
+            var expiryExists = logRecord.Info.HasExpiration;
             ObjectOutputHeader* o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
+            o->result1 = 0;
             if (expiryExists)
             {
                 switch (optionType)
                 {
                     case ExpireOption.NX:
-                        o->result1 = 0;
-                        break;
+                        return true;
                     case ExpireOption.XX:
                     case ExpireOption.None:
-                        value.ExtraMetadata = newExpiry;
+                        _ = logRecord.TrySetExpiration(newExpiry);
                         o->result1 = 1;
-                        break;
+                        return true;
                     case ExpireOption.GT:
                     case ExpireOption.XXGT:
-                        var replace = newExpiry < value.ExtraMetadata;
-                        value.ExtraMetadata = replace ? value.ExtraMetadata : newExpiry;
-                        if (replace)
-                            o->result1 = 0;
-                        else
+                        if (newExpiry > logRecord.Expiration)
+                        {
+                            _ = logRecord.TrySetExpiration(newExpiry);
                             o->result1 = 1;
-                        break;
+                        }
+                        return true;
                     case ExpireOption.LT:
                     case ExpireOption.XXLT:
-                        replace = newExpiry > value.ExtraMetadata;
-                        value.ExtraMetadata = replace ? value.ExtraMetadata : newExpiry;
-                        if (replace)
-                            o->result1 = 0;
-                        else
+                        if (newExpiry < logRecord.Expiration)
+                        {
+                            logRecord.TrySetExpiration(newExpiry);
                             o->result1 = 1;
-                        break;
+                        }
+                        return true;
                     default:
                         throw new GarnetException($"EvaluateExpireInPlace exception expiryExists:{expiryExists}, optionType{optionType}");
                 }
-                return true;
             }
             else
             {
@@ -303,13 +302,12 @@ namespace Garnet.server
                 {
                     case ExpireOption.NX:
                     case ExpireOption.None:
-                    case ExpireOption.LT:  // If expiry doesn't exist, LT should treat the current expiration as infinite
-                        return false;
+                    case ExpireOption.LT:  // If expiry doesn't exist, LT should treat the current expiration as infinite, so the new value must be less
+                        return logRecord.TrySetExpiration(newExpiry);
                     case ExpireOption.XX:
-                    case ExpireOption.GT:
+                    case ExpireOption.GT:  // If expiry doesn't exist, GT should treat the current expiration as infinite, so the new value cannot be greater
                     case ExpireOption.XXGT:
                     case ExpireOption.XXLT:
-                        o->result1 = 0;
                         return true;
                     default:
                         throw new GarnetException($"EvaluateExpireInPlace exception expiryExists:{expiryExists}, optionType{optionType}");
@@ -317,62 +315,71 @@ namespace Garnet.server
             }
         }
 
-        void EvaluateExpireCopyUpdate(ExpireOption optionType, bool expiryExists, long newExpiry, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output)
+        bool EvaluateExpireCopyUpdate(ref StringLogRecord logRecord, ExpireOption optionType, long newExpiry, SpanByte newValue, ref SpanByteAndMemory output)
         {
+            var expiryExists = logRecord.Info.HasExpiration;
             ObjectOutputHeader* o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
+            o->result1 = 0;
+
+            if (!logRecord.TrySetValue(newValue))
+            {
+                functionsState.logger?.LogError("Failed to set value in {methodName}", "EvaluateExpireCopyUpdate");
+                return false;
+            }
             if (expiryExists)
             {
+                // Expiration already exists so there is no need to check for space (i.e. failure of TrySetExpiration)
                 switch (optionType)
                 {
                     case ExpireOption.NX:
-                        oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-                        break;
+                        return true;
                     case ExpireOption.XX:
                     case ExpireOption.None:
-                        newValue.ExtraMetadata = newExpiry;
-                        oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
+                        _ = logRecord.TrySetExpiration(newExpiry);
                         o->result1 = 1;
-                        break;
+                        return true;
                     case ExpireOption.GT:
                     case ExpireOption.XXGT:
-                        oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-                        bool replace = newExpiry < oldValue.ExtraMetadata;
-                        newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : newExpiry;
-                        if (replace)
-                            o->result1 = 0;
-                        else
+                        if (newExpiry > logRecord.Expiration)
+                        {
+                            _ = logRecord.TrySetExpiration(newExpiry);
                             o->result1 = 1;
-                        break;
+                        }
+                        return true;
                     case ExpireOption.LT:
                     case ExpireOption.XXLT:
-                        oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-                        replace = newExpiry > oldValue.ExtraMetadata;
-                        newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : newExpiry;
-                        if (replace)
-                            o->result1 = 0;
-                        else
+                        if (newExpiry < logRecord.Expiration)
+                        {
+                            _ = logRecord.TrySetExpiration(newExpiry);
                             o->result1 = 1;
-                        break;
+                        }
+                        return true;
+                    default:
+                        throw new GarnetException($"EvaluateExpireCopyUpdate exception expiryExists:{expiryExists}, optionType{optionType}");
                 }
             }
             else
             {
+                // No expiration yet. Because this is CopyUpdate we should already have verified the space, but check anyway
                 switch (optionType)
                 {
                     case ExpireOption.NX:
                     case ExpireOption.None:
                     case ExpireOption.LT:   // If expiry doesn't exist, LT should treat the current expiration as infinite
-                        newValue.ExtraMetadata = newExpiry;
-                        oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
+                        if (!logRecord.TrySetExpiration(newExpiry))
+                        {
+                            functionsState.logger?.LogError("Failed to add expiration in {methodName}.{caseName}", "EvaluateExpireCopyUpdate", "LT");
+                            return false;
+                        }
                         o->result1 = 1;
-                        break;
+                        return true;
                     case ExpireOption.XX:
                     case ExpireOption.GT:
                     case ExpireOption.XXGT:
                     case ExpireOption.XXLT:
-                        oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-                        o->result1 = 0;
-                        break;
+                        return true;
+                    default:
+                        throw new GarnetException($"EvaluateExpireCopyUpdate exception expiryExists:{expiryExists}, optionType{optionType}");
                 }
             }
         }
@@ -402,48 +409,45 @@ namespace Garnet.server
 
         internal static bool CheckExpiry(ref SpanByte src) => src.ExtraMetadata < DateTimeOffset.UtcNow.Ticks;
 
-        static bool InPlaceUpdateNumber(long val, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        static bool InPlaceUpdateNumber(ref StringLogRecord logRecord, long val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             var fNeg = false;
             var ndigits = NumUtils.NumDigitsInLong(val, ref fNeg);
             ndigits += fNeg ? 1 : 0;
 
-            if (ndigits > value.LengthWithoutMetadata)
+            if (!logRecord.TrySetValueLength(ndigits))
                 return false;
 
-            rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
-            value.ShrinkSerializedLength(ndigits + value.MetadataSize);
-            _ = NumUtils.LongToSpanByte(val, value.AsSpan());
-            rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
+            ref var valueRef = ref logRecord.ValueRef;  // To eliminate redundant length calculations getting to Value
+            _ = NumUtils.LongToSpanByte(val, valueRef.AsSpan());
 
             Debug.Assert(output.IsSpanByte, "This code assumes it is called in-place and did not go pending");
-            value.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
-            output.SpanByte.Length = value.LengthWithoutMetadata;
+            valueRef.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
+            output.SpanByte.Length = valueRef.Length;
             return true;
         }
 
-        static bool InPlaceUpdateNumber(double val, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        static bool InPlaceUpdateNumber(ref StringLogRecord logRecord, double val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             var ndigits = NumUtils.NumOfCharInDouble(val, out var _, out var _, out var _);
 
-            if (ndigits > value.LengthWithoutMetadata)
+            if (!logRecord.TrySetValueLength(ndigits))
                 return false;
 
-            rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
-            value.ShrinkSerializedLength(ndigits + value.MetadataSize);
-            _ = NumUtils.DoubleToSpanByte(val, value.AsSpan());
-            rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
+            ref var valueRef = ref logRecord.ValueRef;  // To reduce redundant length calculations getting to Value
+            _ = NumUtils.DoubleToSpanByte(val, valueRef.AsSpan());
 
             Debug.Assert(output.IsSpanByte, "This code assumes it is called in-place and did not go pending");
-            value.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
-            output.SpanByte.Length = value.LengthWithoutMetadata;
+            valueRef.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
+            output.SpanByte.Length = valueRef.LengthWithoutMetadata;
             return true;
         }
 
-        static bool TryInPlaceUpdateNumber(ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo, long input)
+        static bool TryInPlaceUpdateNumber(ref StringLogRecord logRecord, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, long input)
         {
             // Check if value contains a valid number
-            if (!IsValidNumber(value.LengthWithoutMetadata, value.ToPointer(), output.SpanByte.AsSpan(), out var val))
+            var value = logRecord.Value;  // To reduce redundant length calculations getting to Value
+            if (!IsValidNumber(value.Length, value.ToPointer(), output.SpanByte.AsSpan(), out var val))
                 return true;
 
             try
@@ -456,11 +460,13 @@ namespace Garnet.server
                 return true;
             }
 
-            return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
+            return InPlaceUpdateNumber(ref logRecord, val, ref output, ref rmwInfo);
         }
 
-        static bool TryInPlaceUpdateNumber(ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo, double input)
+        static bool TryInPlaceUpdateNumber(ref StringLogRecord logRecord, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, double input)
         {
+            var value = logRecord.Value;  // To reduce redundant length calculations getting to Value
+
             // Check if value contains a valid number
             if (!IsValidDouble(value.LengthWithoutMetadata, value.ToPointer(), output.SpanByte.AsSpan(), out var val))
                 return true;
@@ -473,45 +479,48 @@ namespace Garnet.server
                 return true;
             }
 
-            return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
+            return InPlaceUpdateNumber(ref logRecord, val, ref output, ref rmwInfo);
         }
 
-        static bool CopyUpdateNumber(long next, ref SpanByte newValue, ref SpanByteAndMemory output)
+        static bool TryCopyUpdateNumber(long next, ref SpanByte newValue, ref SpanByteAndMemory output)
         {
             if (NumUtils.LongToSpanByte(next, newValue.AsSpan()) == 0)
                 return false;
             newValue.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
-            output.SpanByte.Length = newValue.LengthWithoutMetadata;
+            output.SpanByte.Length = newValue.Length;
             return true;
         }
 
-        static bool CopyUpdateNumber(double next, ref SpanByte newValue, ref SpanByteAndMemory output)
+        static bool TryCopyUpdateNumber(double next, ref SpanByte newValue, ref SpanByteAndMemory output)
         {
             if (NumUtils.DoubleToSpanByte(next, newValue.AsSpan()) == 0)
                 return false;
             newValue.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
-            output.SpanByte.Length = newValue.LengthWithoutMetadata;
+            output.SpanByte.Length = newValue.Length;
             return true;
         }
 
         /// <summary>
-        /// Copy update from old value to new value while also validating whether oldValue is a numerical value.
+        /// Copy update from old 'long' value to new value while also validating whether oldValue is a numerical value.
         /// </summary>
-        /// <param name="oldValue">Old value copying from</param>
-        /// <param name="newValue">New value copying to</param>
+        /// <param name="srcLogRecord">The source log record, either in-memory or from disk</param>
+        /// <param name="dstLogRecord">The destination log record</param>
         /// <param name="output">Output value</param>
         /// <param name="input">Parsed input value</param>
-        static bool TryCopyUpdateNumber(ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, long input)
+        static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref StringLogRecord dstLogRecord, ref SpanByteAndMemory output, long input)
+            where TSourceLogRecord : IReadOnlyLogRecord
         {
-            newValue.ExtraMetadata = oldValue.ExtraMetadata;
+            if (!dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
+                return false;
+
+            var srcValue = srcLogRecord.ValueSpan;  // To reduce redundant length calculations getting to ValueSpan
 
             // Check if value contains a valid number
-            if (!IsValidNumber(oldValue.LengthWithoutMetadata, oldValue.ToPointer(), output.SpanByte.AsSpan(), out var val))
+            if (!IsValidNumber(srcValue.LengthWithoutMetadata, srcValue.ToPointer(), output.SpanByte.AsSpan(), out var val))
             {
                 // Move to tail of the log even when oldValue is alphanumeric
                 // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
-                oldValue.CopyTo(ref newValue);
-                return;
+                return dstLogRecord.TrySetValue(srcLogRecord.ValueSpan);
             }
 
             // Check operation overflow
@@ -526,27 +535,30 @@ namespace Garnet.server
             }
 
             // Move to tail of the log and update
-            return CopyUpdateNumber(val, ref newValue, ref output);
+            return TryCopyUpdateNumber(val, ref dstLogRecord.ValueRef, ref output);
         }
 
         /// <summary>
-        /// Copy update from old value to new value while also validating whether oldValue is a numerical value.
+        /// Copy update from old 'double' value to new value while also validating whether oldValue is a numerical value.
         /// </summary>
-        /// <param name="oldValue">Old value copying from</param>
-        /// <param name="newValue">New value copying to</param>
+        /// <param name="srcLogRecord">The source log record, either in-memory or from disk</param>
+        /// <param name="dstLogRecord">The destination log record</param>
         /// <param name="output">Output value</param>
         /// <param name="input">Parsed input value</param>
-        static bool TryCopyUpdateNumber(ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, double input)
+        static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref StringLogRecord dstLogRecord, ref SpanByteAndMemory output, double input)
+            where TSourceLogRecord : IReadOnlyLogRecord
         {
-            newValue.ExtraMetadata = oldValue.ExtraMetadata;
+            if (!dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
+                return false;
+
+            var srcValue = srcLogRecord.ValueSpan;  // To reduce redundant length calculations getting to ValueSpan
 
             // Check if value contains a valid number
-            if (!IsValidDouble(oldValue.LengthWithoutMetadata, oldValue.ToPointer(), output.SpanByte.AsSpan(), out var val))
+            if (!IsValidDouble(srcValue.LengthWithoutMetadata, srcValue.ToPointer(), output.SpanByte.AsSpan(), out var val))
             {
                 // Move to tail of the log even when oldValue is alphanumeric
                 // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
-                oldValue.CopyTo(ref newValue);
-                return false;
+                return dstLogRecord.TrySetValue(srcLogRecord.ValueSpan);
             }
 
             val += input;
@@ -557,7 +569,7 @@ namespace Garnet.server
             }
 
             // Move to tail of the log and update
-            return CopyUpdateNumber(val, ref newValue, ref output);
+            return TryCopyUpdateNumber(val, ref dstLogRecord.ValueRef, ref output);
         }
 
         /// <summary>
@@ -654,7 +666,7 @@ namespace Garnet.server
         /// <summary>
         /// Copy length of value to output (as ASCII bytes)
         /// </summary>
-        static bool CopyValueLengthToOutput(ref SpanByte value, ref SpanByteAndMemory output)
+        static bool CopyValueLengthToOutput(SpanByte value, ref SpanByteAndMemory output)
         {
             Debug.Assert(output.IsSpanByte, "This code assumes it is called in a non-pending context or in a pending context where dst.SpanByte's pointer remains valid");
 
@@ -697,7 +709,7 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW(ref SpanByte key, ref RawStringInput input, long version, int sessionId)
+        void WriteLogRMW(SpanByte key, ref RawStringInput input, long version, int sessionId)
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
@@ -712,7 +724,7 @@ namespace Garnet.server
         ///  a. ConcurrentDeleter
         ///  b. PostSingleDeleter
         /// </summary>
-        void WriteLogDelete(ref SpanByte key, long version, int sessionID)
+        void WriteLogDelete(SpanByte key, long version, int sessionID)
         {
             if (functionsState.StoredProcMode) return;
             SpanByte def = default;

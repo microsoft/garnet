@@ -280,14 +280,14 @@ namespace Tsavorite.core
             set { word = (word & ~kPreviousAddressMaskInWord) | (value & kPreviousAddressMaskInWord); }
         }
 
-        internal bool HasDBId => (word & kHasDBIdBitMask) != 0;
+        public bool HasDBId => (word & kHasDBIdBitMask) != 0;
         public void SetHasDBId() => word |= kHasDBIdBitMask;
 
-        internal bool HasETag => (word & kHasETagBitMask) != 0;
+        public bool HasETag => (word & kHasETagBitMask) != 0;
         public void SetHasETag() => word |= kHasETagBitMask;
         public void ClearHasETag() => word &= ~kHasETagBitMask;
 
-        internal bool HasExpiration => (word & kHasExpirationBitMask) != 0;
+        public bool HasExpiration => (word & kHasExpirationBitMask) != 0;
         public void SetHasExpiration() => word |= kHasExpirationBitMask;
         public void ClearHasExpiration() => word &= ~kHasExpirationBitMask;
 
