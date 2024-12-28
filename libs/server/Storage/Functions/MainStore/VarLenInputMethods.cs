@@ -132,8 +132,7 @@ namespace Garnet.server
                         return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
                     }
 
-                    int allocationForEtag = input.header.CheckWithEtagFlagMultiplier * Constants.EtagSize;
-                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + metadataSize + allocationForEtag;
+                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + metadataSize + input.etagOffsetManagementContext.EtagOffsetForVarlen;
             }
         }
 
@@ -145,7 +144,7 @@ namespace Garnet.server
                 var cmd = input.header.cmd;
 
                 // use the precomputed value
-                int etagOffset = input.etagOffsetManagementContext.EtagOffsetBasedOnInputHeaderOrRecordInfo;
+                int etagOffset = input.etagOffsetManagementContext.EtagOffsetForVarlen;
 
                 switch (cmd)
                 {

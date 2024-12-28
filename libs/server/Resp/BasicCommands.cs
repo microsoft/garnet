@@ -869,7 +869,7 @@ namespace Garnet.server
             if (withEtag)
             {
                 input.header.SetWithEtagFlag();
-                input.etagOffsetManagementContext = input.etagOffsetManagementContext.SetEtagOffsetBasedOnInputHeader();
+                EtagOffsetManagementContext.SetEtagOffsetBasedOnInputHeader(ref input.etagOffsetManagementContext);
             }
 
             if (getValue)

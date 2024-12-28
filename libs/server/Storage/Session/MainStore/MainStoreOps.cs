@@ -638,7 +638,10 @@ namespace Garnet.server
                                     input.arg1 = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
 
                                     if (withEtag)
+                                    {
                                         input.header.SetWithEtagFlag();
+                                        EtagOffsetManagementContext.SetEtagOffsetBasedOnInputHeader(ref input.etagOffsetManagementContext);
+                                    }
 
                                     var setStatus = SET_Conditional(ref newKey, ref input, ref context);
 
@@ -665,7 +668,10 @@ namespace Garnet.server
                                     input.parseState = parseState;
 
                                     if (withEtag)
+                                    {
                                         input.header.SetWithEtagFlag();
+                                        EtagOffsetManagementContext.SetEtagOffsetBasedOnInputHeader(ref input.etagOffsetManagementContext);
+                                    }
 
                                     var setStatus = SET_Conditional(ref newKey, ref input, ref context);
 

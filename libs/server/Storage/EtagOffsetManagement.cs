@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Threading;
 using Tsavorite.core;
 
@@ -12,30 +13,27 @@ namespace Garnet.server
 
         public long ExistingEtag { get; private set; }
 
-        public int EtagOffsetBasedOnInputHeaderOrRecordInfo { get; private set; }
+        public int EtagOffsetForVarlen { get; private set; }
 
-        public EtagOffsetManagementContext SetEtagOffsetBasedOnInputHeader()
+        public static void SetEtagOffsetBasedOnInputHeader(ref EtagOffsetManagementContext context)
         {
-            EtagOffsetBasedOnInputHeaderOrRecordInfo = Constants.EtagSize;
-            return this;
+            context.EtagOffsetForVarlen = Constants.EtagSize;
         }
 
-        public unsafe EtagOffsetManagementContext CalculateOffsets(bool hasEtag, ref SpanByte value)
+        public static unsafe void CalculateOffsets(ref EtagOffsetManagementContext context, bool hasEtag, ref SpanByte value)
         {
             if (hasEtag)
             {
-                EtagOffsetBasedOnInputHeaderOrRecordInfo = EtagIgnoredOffset = Constants.EtagSize;
-                EtagIgnoredEnd = value.LengthWithoutMetadata;
-                ExistingEtag = *(long*)value.ToPointer();
+                context.EtagOffsetForVarlen = context.EtagIgnoredOffset = Constants.EtagSize;
+                context.EtagIgnoredEnd = value.LengthWithoutMetadata;
+                context.ExistingEtag = *(long*)value.ToPointer();
             }
             else
             {
-                EtagIgnoredOffset = 0;
-                EtagIgnoredEnd = -1;
-                ExistingEtag = Constants.BaseEtag;
+                context.EtagOffsetForVarlen = context.EtagIgnoredOffset = 0;
+                context.EtagIgnoredEnd = -1;
+                context.ExistingEtag = Constants.BaseEtag;
             }
- 
-            return this;
         }
     }
 }

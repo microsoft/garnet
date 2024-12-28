@@ -293,7 +293,7 @@ namespace Garnet.server
             RespCommand cmd = input.header.cmd;
 
             // Copy Inplace Update worker is the first in the potential pipeline of calling NeedCopyUpdate and CopyUpdater the following line will keep a precomputed values to use after this
-            input.etagOffsetManagementContext = input.etagOffsetManagementContext.CalculateOffsets(recordInfo.ETag, ref value);
+            EtagOffsetManagementContext.CalculateOffsets(ref input.etagOffsetManagementContext, recordInfo.ETag, ref value);
 
             int etagIgnoredOffset = input.etagOffsetManagementContext.EtagIgnoredOffset;
             int etagIgnoredEnd = input.etagOffsetManagementContext.EtagIgnoredEnd;
