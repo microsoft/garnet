@@ -26,7 +26,6 @@ namespace Garnet.common
         readonly string remoteEndpoint;
         readonly string localEndpoint;
         int closeRequested;
-        readonly bool useTLS;
 
         /// <summary>
         /// Constructor
@@ -40,7 +39,6 @@ namespace Garnet.common
 
             remoteEndpoint = socket.RemoteEndPoint is IPEndPoint remote ? $"{remote.Address}:{remote.Port}" : "";
             localEndpoint = socket.LocalEndPoint is IPEndPoint local ? $"{local.Address}:{local.Port}" : "";
-            this.useTLS = useTLS;
             AllocateNetworkReceiveBuffer();
         }
 
