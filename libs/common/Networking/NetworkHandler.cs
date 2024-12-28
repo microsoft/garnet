@@ -267,38 +267,25 @@ namespace Garnet.networking
             }
         }
 
-        public void OnNetworkReceive(int bytesTransferred)
+        public unsafe void OnNetworkReceiveWithoutTLS(int bytesTransferred)
         {
             networkBytesRead += bytesTransferred;
             transportReceiveBuffer = networkReceiveBuffer;
-            unsafe
-            {
-                transportReceiveBufferPtr = networkReceiveBufferPtr;
-            }
+            transportReceiveBufferPtr = networkReceiveBufferPtr;
             transportBytesRead = networkBytesRead;
 
-            // We do not have an active read task, so we will process on the network thread
+            // Process non-TLS code on the synchronous thread
             Process();
+
             EndTransformNetworkToTransport();
             UpdateNetworkBuffers();
-        }
-
-        private void UpdateNetworkBuffers()
-        {
-            // Shift network buffer after processing is done
-            if (networkReadHead > 0)
-                ShiftNetworkReceiveBuffer();
-
-            // Double network buffer if out of space after processing is complete
-            if (networkBytesRead == networkReceiveBuffer.Length)
-                DoubleNetworkReceiveBuffer();
         }
 
         /// <summary>
         /// On network receive
         /// </summary>
         /// <param name="bytesTransferred">Number of bytes transferred</param>
-        public async ValueTask OnNetworkReceiveWithTLS(int bytesTransferred)
+        public async ValueTask OnNetworkReceiveWithTLSAsync(int bytesTransferred)
         {
             // Wait for SslStream async processing to complete, if any (e.g., authentication phase)
             while (readerStatus == TlsReaderStatus.Active)
@@ -332,6 +319,17 @@ namespace Garnet.networking
 
             Debug.Assert(readerStatus != TlsReaderStatus.Active);
             UpdateNetworkBuffers();
+        }
+
+        void UpdateNetworkBuffers()
+        {
+            // Shift network buffer after processing is done
+            if (networkReadHead > 0)
+                ShiftNetworkReceiveBuffer();
+
+            // Double network buffer if out of space after processing is complete
+            if (networkBytesRead == networkReceiveBuffer.Length)
+                DoubleNetworkReceiveBuffer();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

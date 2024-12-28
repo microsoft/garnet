@@ -22,9 +22,9 @@ namespace BDN.benchmark.Network
         }
 
         [Benchmark]
-        public void InlinePing()
+        public async ValueTask InlinePing()
         {
-            Send(ping);
+            await Send(ping);
         }
     }
 }

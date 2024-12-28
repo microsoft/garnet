@@ -12,8 +12,11 @@ namespace Embedded.server
 {
     internal class EmbeddedNetworkHandler : NetworkHandler<GarnetServerEmbedded, EmbeddedNetworkSender>
     {
+        readonly bool useTLS;
+
         public EmbeddedNetworkHandler(GarnetServerEmbedded serverHook, EmbeddedNetworkSender networkSender, NetworkBufferSettings networkBufferSettings, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer = null, ILogger logger = null) : base(serverHook, networkSender, networkBufferSettings, networkPool, useTLS, messageConsumer, logger)
         {
+            this.useTLS = useTLS;
         }
 
         public override string RemoteEndpointName => throw new NotImplementedException();
@@ -25,12 +28,15 @@ namespace Embedded.server
 
         public override bool TryClose() => throw new NotImplementedException();
 
-        public void Send(Request request)
+        public async ValueTask Send(Request request)
         {
             networkReceiveBuffer = request.buffer;
             unsafe { networkReceiveBufferPtr = request.bufferPtr; }
 
-            OnNetworkReceive(request.buffer.Length);
+            if (useTLS)
+                await OnNetworkReceiveWithTLSAsync(request.buffer.Length);
+            else
+                OnNetworkReceiveWithoutTLS(request.buffer.Length);
 
             Debug.Assert(networkBytesRead == 0);
             Debug.Assert(networkReadHead == 0);

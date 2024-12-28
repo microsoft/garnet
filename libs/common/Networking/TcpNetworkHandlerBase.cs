@@ -53,28 +53,28 @@ namespace Garnet.common
         /// <inheritdoc />
         public override void Start(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
         {
-            Start();
+            Start(tlsOptions != null);
             base.Start(tlsOptions, remoteEndpointName, token);
         }
 
         /// <inheritdoc />
         public override async Task StartAsync(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
         {
-            Start();
+            Start(tlsOptions != null);
             await base.StartAsync(tlsOptions, remoteEndpointName, token).ConfigureAwait(false);
         }
 
         /// <inheritdoc />
         public override void Start(SslClientAuthenticationOptions tlsOptions, string remoteEndpointName = null, CancellationToken token = default)
         {
-            Start();
+            Start(tlsOptions != null);
             base.Start(tlsOptions, remoteEndpointName, token);
         }
 
         /// <inheritdoc />
         public override async Task StartAsync(SslClientAuthenticationOptions tlsOptions, string remoteEndpointName = null, CancellationToken token = default)
         {
-            Start();
+            Start(tlsOptions != null);
             await base.StartAsync(tlsOptions, remoteEndpointName, token).ConfigureAwait(false);
         }
 
@@ -103,17 +103,22 @@ namespace Garnet.common
             return true;
         }
 
-        void Start()
+        void Start(bool useTLS)
         {
             var receiveEventArgs = new SocketAsyncEventArgs { AcceptSocket = socket };
             receiveEventArgs.SetBuffer(networkReceiveBuffer, 0, networkReceiveBuffer.Length);
-            receiveEventArgs.Completed += RecvEventArg_Completed;
+            receiveEventArgs.Completed += useTLS ? RecvEventArgCompletedWithTLS : RecvEventArgCompletedWithoutTLS;
 
             // If the client already have packets, avoid handling it here on the handler so we don't block future accepts.
             try
             {
                 if (!socket.ReceiveAsync(receiveEventArgs))
-                    Task.Run(() => RecvEventArg_Completed(null, receiveEventArgs));
+                {
+                    if (useTLS)
+                        Task.Run(() => RecvEventArgCompletedWithTLS(null, receiveEventArgs));
+                    else
+                        Task.Run(() => RecvEventArgCompletedWithoutTLS(null, receiveEventArgs));
+                }
             }
             catch (Exception ex)
             {
@@ -135,20 +140,13 @@ namespace Garnet.common
             e.Dispose();
         }
 
-        void RecvEventArg_Completed(object sender, SocketAsyncEventArgs e)
-        {
-            // Complete receive event and release thread while we process data async
-            if (this.useTLS)
-            {
-                _ = HandleReceiveAsync(sender, e);
-            }
-            else
-            {
-                HandleReceiveSync(sender, e);
-            }
-        }
+        void RecvEventArgCompletedWithTLS(object sender, SocketAsyncEventArgs e) =>
+            _ = HandleReceiveWithTLSAsync(sender, e);
 
-        private void HandleReceiveSync(object sender, SocketAsyncEventArgs e)
+        void RecvEventArgCompletedWithoutTLS(object sender, SocketAsyncEventArgs e) =>
+            HandleReceiveWithoutTLS(sender, e);
+
+        private void HandleReceiveWithoutTLS(object sender, SocketAsyncEventArgs e)
         {
             try
             {
@@ -160,7 +158,7 @@ namespace Garnet.common
                         Dispose(e);
                         break;
                     }
-                    OnNetworkReceive(e.BytesTransferred);
+                    OnNetworkReceiveWithoutTLS(e.BytesTransferred);
                     e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
                 } while (!e.AcceptSocket.ReceiveAsync(e));
             }
@@ -170,7 +168,7 @@ namespace Garnet.common
             }
         }
 
-        private async ValueTask HandleReceiveAsync(object sender, SocketAsyncEventArgs e)
+        private async ValueTask HandleReceiveWithTLSAsync(object sender, SocketAsyncEventArgs e)
         {
             try
             {
@@ -182,7 +180,7 @@ namespace Garnet.common
                         Dispose(e);
                         break;
                     }
-                    var receiveTask = OnNetworkReceiveWithTLS(e.BytesTransferred);
+                    var receiveTask = OnNetworkReceiveWithTLSAsync(e.BytesTransferred);
                     if (!receiveTask.IsCompletedSuccessfully)
                     {
                         await receiveTask;
