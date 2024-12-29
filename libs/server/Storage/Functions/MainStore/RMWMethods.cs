@@ -81,14 +81,7 @@ namespace Garnet.server
 
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
-                    bool withEtag = input.header.CheckWithEtagFlag();
-                    int spaceForEtag = 0;
-                    if (withEtag)
-                    {
-                        spaceForEtag = Constants.EtagSize;
-                        recordInfo.SetHasETag();
-                    }
-
+                    int spaceForEtag = input.etagOffsetManagementContext.EtagOffsetForVarlen;
 
                     // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -97,8 +90,9 @@ namespace Garnet.server
                     value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
                     value.ExtraMetadata = input.arg1;
                     newInputValue.CopyTo(value.AsSpan(spaceForEtag));
-                    if (withEtag)
+                    if (input.header.CheckWithEtagFlag())
                     {
+                        recordInfo.SetHasETag();
                         // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
                         *(long*)value.ToPointer() = Constants.BaseEtag + 1;
                         // Copy initial etag to output only for SET + WITHETAG and not SET NX or XX 
@@ -107,21 +101,16 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.SETKEEPTTL:
-                    withEtag = input.header.CheckWithEtagFlag();
-                    spaceForEtag = 0;
-                    if (withEtag)
-                    {
-                        spaceForEtag = Constants.EtagSize;
-                        recordInfo.SetHasETag();
-                    }
+                    spaceForEtag = input.etagOffsetManagementContext.EtagOffsetForVarlen;
 
                     // Copy input to value, retain metadata in value
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     value.ShrinkSerializedLength(value.MetadataSize + setValue.Length + spaceForEtag);
                     setValue.CopyTo(value.AsSpan(spaceForEtag));
 
-                    if (withEtag)
+                    if (input.header.CheckWithEtagFlag())
                     {
+                        recordInfo.SetHasETag();
                         *(long*)value.ToPointer() = Constants.BaseEtag + 1;
                         // Copy initial etag to output
                         CopyRespNumber(Constants.BaseEtag + 1, ref output);
@@ -290,8 +279,6 @@ namespace Garnet.server
                 return false;
             }
 
-            RespCommand cmd = input.header.cmd;
-
             // Copy Inplace Update worker is the first in the potential pipeline of calling NeedCopyUpdate and CopyUpdater the following line will keep a precomputed values to use after this
             EtagOffsetManagementContext.CalculateOffsets(ref input.etagOffsetManagementContext, recordInfo.ETag, ref value);
 
@@ -299,6 +286,7 @@ namespace Garnet.server
             int etagIgnoredEnd = input.etagOffsetManagementContext.EtagIgnoredEnd;
             long oldEtag = input.etagOffsetManagementContext.ExistingEtag;
 
+            RespCommand cmd = input.header.cmd;
             switch (cmd)
             {
                 case RespCommand.SETEXNX:
@@ -308,10 +296,9 @@ namespace Garnet.server
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref value, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
-
-                    // when called withetag all output needs to be placed on the buffer
-                    if (input.header.CheckWithEtagFlag())
+                    else if (input.header.CheckWithEtagFlag())
                     {
+                        // when called withetag all output needs to be placed on the buffer
                         // EXX when unsuccesful will write back NIL
                         CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
                     }
@@ -399,9 +386,6 @@ namespace Garnet.server
                         CopyRespTo(ref value, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
 
-                    if (inputHeaderHasEtag)
-                        recordInfo.SetHasETag();
-
                     // Adjust value length
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
                     value.UnmarkExtraMetadata();
@@ -414,6 +398,7 @@ namespace Garnet.server
 
                     if (inputHeaderHasEtag)
                     {
+                        recordInfo.SetHasETag();
                         *(long*)value.ToPointer() = oldEtag + 1;
                         // withetag flag means we need to write etag back to the output buffer
                         CopyRespNumber(oldEtag + 1, ref output);
@@ -429,7 +414,8 @@ namespace Garnet.server
                     // If withEtag is called we return the etag back to the user
                     nextUpdateEtagOffset = etagIgnoredOffset;
                     nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
-                    if (!input.header.CheckWithEtagFlag())
+                    inputHeaderHasEtag = input.header.CheckWithEtagFlag();
+                    if (!inputHeaderHasEtag)
                     {
                         // if the user did not explictly asked for retaining the etag we need to ignore the etag even if it existed on the previous record
                         nextUpdateEtagOffset = 0;
@@ -456,9 +442,6 @@ namespace Garnet.server
                         CopyRespTo(ref value, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
 
-                    if (input.header.CheckWithEtagFlag())
-                        recordInfo.SetHasETag();
-
                     // Adjust value length
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
                     value.ShrinkSerializedLength(setValue.Length + value.MetadataSize + etagIgnoredOffset);
@@ -467,8 +450,9 @@ namespace Garnet.server
                     setValue.ReadOnlySpan.CopyTo(value.AsSpan(etagIgnoredOffset));
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
-                    if (input.header.CheckWithEtagFlag())
+                    if (inputHeaderHasEtag)
                     {
+                        recordInfo.SetHasETag();
                         *(long*)value.ToPointer() = oldEtag + 1;
                         // withetag flag means we need to write etag back to the output buffer
                         CopyRespNumber(oldEtag + 1, ref output);
@@ -759,13 +743,13 @@ namespace Garnet.server
         public bool NeedCopyUpdate(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             // offsets are precomputed at inplace updater
-            int etagIgnoredOffset = input.etagOffsetManagementContext.EtagIgnoredOffset;
-            int etagIgnoredEnd = input.etagOffsetManagementContext.EtagIgnoredEnd;
-            long existingEtag = input.etagOffsetManagementContext.ExistingEtag;
 
             switch (input.header.cmd)
             {
                 case RespCommand.SETIFMATCH:
+                    int etagIgnoredOffset = input.etagOffsetManagementContext.EtagIgnoredOffset;
+                    int etagIgnoredEnd = input.etagOffsetManagementContext.EtagIgnoredEnd;
+                    long existingEtag = input.etagOffsetManagementContext.ExistingEtag;
                     long etagToCheckWith = input.parseState.GetLong(1);
 
                     if (existingEtag != etagToCheckWith)
@@ -784,6 +768,10 @@ namespace Garnet.server
                         rmwInfo.RecordInfo.ClearHasETag();
                         return false;
                     }
+
+
+                    etagIgnoredOffset = input.etagOffsetManagementContext.EtagIgnoredOffset;
+                    etagIgnoredEnd = input.etagOffsetManagementContext.EtagIgnoredEnd;
 
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
@@ -815,7 +803,7 @@ namespace Garnet.server
                     {
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
                         var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
-                            .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(etagIgnoredOffset), ref outp);
+                            .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(input.etagOffsetManagementContext.EtagIgnoredOffset), ref outp);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
                         return ret;

@@ -787,7 +787,7 @@ namespace Garnet.server
 
             bool withEtag = etagOption == EtagOption.WITHETAG;
 
-            var isHighPrecision = expOption == ExpirationOption.PX;
+            bool isHighPrecision = expOption == ExpirationOption.PX;
 
             switch (expOption)
             {
@@ -803,10 +803,10 @@ namespace Garnet.server
                                 : NetworkSET_EX(RespCommand.SET, expOption, expiry, ref sbKey, ref sbVal, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
                             return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey,
-                                getValue, highPrecision: isHighPrecision, withEtag, ref storageApi);
+                                getValue, isHighPrecision, withEtag, ref storageApi);
                         case ExistOptions.NX:
                             return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey,
-                                getValue, highPrecision: isHighPrecision, withEtag, ref storageApi);
+                                getValue, isHighPrecision, withEtag, ref storageApi);
                     }
                     break;
                 case ExpirationOption.KEEPTTL:

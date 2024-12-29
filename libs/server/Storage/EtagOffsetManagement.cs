@@ -1,12 +1,9 @@
-using System.Runtime.CompilerServices;
-using System.Threading;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
     public struct EtagOffsetManagementContext
     {
-        // default values for when no Etag exists on a record
         public int EtagIgnoredOffset { get; private set; }
 
         public int EtagIgnoredEnd { get; private set; }
@@ -30,7 +27,8 @@ namespace Garnet.server
             }
             else
             {
-                context.EtagOffsetForVarlen = context.EtagIgnoredOffset = 0;
+                // default values for when no Etag exists on a record
+                context.EtagIgnoredOffset = 0;
                 context.EtagIgnoredEnd = -1;
                 context.ExistingEtag = Constants.BaseEtag;
             }
