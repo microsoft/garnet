@@ -50,6 +50,42 @@ By default, the reply includes all of the server's commands. You can use the opt
 Array reply: a map, as a flattened array, where each key is a command name, and each value is the documentary information.
 
 ---
+### COMMAND GETKEYS
+#### Syntax
+
+```bash
+COMMAND GETKEYS command-name [arg [arg ...]]
+```
+
+Returns an array of keys that would be accessed by the given command.
+
+* `command-name`: The name of the command to analyze
+* `arg`: The arguments that would be passed to the command
+
+#### Resp Reply
+
+Array reply: a list of keys that the command would access.
+
+---
+### COMMAND GETKEYSANDFLAGS
+#### Syntax
+
+```bash
+COMMAND GETKEYSANDFLAGS command-name [arg [arg ...]]
+```
+
+Returns an array of key names and access flags for keys that would be accessed by the given command.
+
+* `command-name`: The name of the command to analyze
+* `arg`: The arguments that would be passed to the command
+
+#### Resp Reply
+
+Array reply: a nested array where each item contains:
+1. The key name
+2. An array of access flag strings that apply to that key
+
+---
 ### COMMAND INFO
 #### Syntax
 
