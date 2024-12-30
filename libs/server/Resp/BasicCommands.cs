@@ -793,20 +793,35 @@ namespace Garnet.server
             {
                 case ExpirationOption.None:
                 case ExpirationOption.EX:
+                    switch (existOptions)
+                    {
+                        case ExistOptions.None:
+                            return getValue || withEtag
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, getValue,
+                                    false, withEtag, ref storageApi)
+                                : NetworkSET_EX(RespCommand.SET, expOption, expiry, ref sbKey, ref sbVal, ref storageApi); // Can perform a blind update
+                        case ExistOptions.XX:
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey,
+                                getValue, false, withEtag, ref storageApi);
+                        case ExistOptions.NX:
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey,
+                                getValue, false, withEtag, ref storageApi);
+                    }
+                    break;
                 case ExpirationOption.PX:
                     switch (existOptions)
                     {
                         case ExistOptions.None:
                             return getValue || withEtag
                                 ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, getValue,
-                                    isHighPrecision, withEtag, ref storageApi)
+                                    true, withEtag, ref storageApi)
                                 : NetworkSET_EX(RespCommand.SET, expOption, expiry, ref sbKey, ref sbVal, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
                             return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey,
-                                getValue, isHighPrecision, withEtag, ref storageApi);
+                                getValue, true, withEtag, ref storageApi);
                         case ExistOptions.NX:
                             return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey,
-                                getValue, isHighPrecision, withEtag, ref storageApi);
+                                getValue, true, withEtag, ref storageApi);
                     }
                     break;
                 case ExpirationOption.KEEPTTL:

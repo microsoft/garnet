@@ -460,6 +460,7 @@ namespace Garnet.server
 
         internal static bool CheckExpiry(ref SpanByte src) => src.ExtraMetadata < DateTimeOffset.UtcNow.Ticks;
 
+        // HK TODO: SUSPECT INCY IS JUST GETTING SKIPPED
         static bool InPlaceUpdateNumber(long val, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo, int valueOffset)
         {
             var fNeg = false;
