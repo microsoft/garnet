@@ -118,12 +118,11 @@ namespace Garnet.server
                     return sizeof(int) + ndigits;
 
                 default:
-                    var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
                         var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
                         // Compute metadata size for result
-                        metadataSize = input.arg1 switch
+                        int metadataSize = input.arg1 switch
                         {
                             -1 => 0,
                             0 => 0,
@@ -132,7 +131,7 @@ namespace Garnet.server
                         return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
                     }
 
-                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + metadataSize + input.etagOffsetManagementContext.EtagOffsetForVarlen;
+                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + input.arg1 == 0 ? 0 : sizeof(long) + input.etagOffsetManagementContext.EtagOffsetForVarlen;
             }
         }
 
