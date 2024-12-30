@@ -137,22 +137,23 @@ namespace Tsavorite.core
         /// <param name="input">The user input to be used to create the destination record's value</param>
         /// <param name="output">The location where the output of the operation, if any, is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : IReadOnlyLogRecord;
 
         /// <summary>
         /// Called after a record containing an RCU (Read-Copy-Update) for RMW has been successfully inserted at the tail of the log.
         /// </summary>
-        /// <param name="logRecord">The log record that was created</param>
+        /// <param name="srcLogRecord">The source record being copied from</param>
+        /// <param name="dstLogRecord">The destination log record being created</param>
         /// <param name="input">The user input to be used to create the destination record's value</param>
         /// <param name="output">The location where the output of the operation, if any, is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
         /// <returns>This is the only Post* method that returns non-void. The bool functions the same as CopyUpdater; this is because we do not want to modify
         /// objects in-memory until we know the "insert at tail" is successful. Therefore, we allow a false return as a signal to inspect <paramref name="rmwInfo.Action"/>
         /// and handle <see cref="RMWAction.ExpireAndStop"/>.</returns>
-        bool PostCopyUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
+        bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : IReadOnlyLogRecord;
         #endregion CopyUpdater
 
         #region InPlaceUpdater
