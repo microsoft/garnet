@@ -5028,6 +5028,51 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task SetIfMatchACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "SETIFMATCH",
+               [DoSetIfMatchAsync]
+           );
+
+            static async Task DoSetIfMatchAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringResultAsync("SETIFMATCH", ["foo", "rizz", "0"]);
+                ClassicAssert.IsNull(res);
+            }
+        }
+
+        [Test]
+        public async Task GetIfNotMatchACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "GETIFNOTMATCH",
+               [DoGetIfNotMatchAsync]
+           );
+
+            static async Task DoGetIfNotMatchAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringResultAsync("GETIFNOTMATCH", ["foo", "0"]);
+                ClassicAssert.IsNull(res);
+            }
+        }
+
+        [Test]
+        public async Task GetWithEtagACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "GETWITHETAG",
+               [DoGetWithEtagAsync]
+           );
+
+            static async Task DoGetWithEtagAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringResultAsync("GETWITHETAG", ["foo"]);
+                ClassicAssert.IsNull(res);
+            }
+        }
+
+        [Test]
         public async Task SetBitACLsAsync()
         {
             int count = 0;

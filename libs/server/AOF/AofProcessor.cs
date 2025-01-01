@@ -320,6 +320,9 @@ namespace Garnet.server
             // input
             storeInput.DeserializeFrom(curr);
 
+            if (storeInput.header.CheckWithEtagFlag())
+                EtagOffsetManagementContext.SetEtagOffsetBasedOnInputHeader(ref storeInput.etagOffsetManagementContext);
+
             var pbOutput = stackalloc byte[32];
             var output = new SpanByteAndMemory(pbOutput, 32);
 
