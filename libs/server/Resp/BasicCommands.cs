@@ -793,35 +793,20 @@ namespace Garnet.server
             {
                 case ExpirationOption.None:
                 case ExpirationOption.EX:
-                    switch (existOptions)
-                    {
-                        case ExistOptions.None:
-                            return getValue || withEtag
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, getValue,
-                                    false, withEtag, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, expOption, expiry, ref sbKey, ref sbVal, ref storageApi); // Can perform a blind update
-                        case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey,
-                                getValue, false, withEtag, ref storageApi);
-                        case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey,
-                                getValue, false, withEtag, ref storageApi);
-                    }
-                    break;
                 case ExpirationOption.PX:
                     switch (existOptions)
                     {
                         case ExistOptions.None:
                             return getValue || withEtag
                                 ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, getValue,
-                                    true, withEtag, ref storageApi)
+                                    isHighPrecision, withEtag, ref storageApi)
                                 : NetworkSET_EX(RespCommand.SET, expOption, expiry, ref sbKey, ref sbVal, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
                             return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey,
-                                getValue, true, withEtag, ref storageApi);
+                                getValue, isHighPrecision, withEtag, ref storageApi);
                         case ExistOptions.NX:
                             return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey,
-                                getValue, true, withEtag, ref storageApi);
+                                getValue, isHighPrecision, withEtag, ref storageApi);
                     }
                     break;
                 case ExpirationOption.KEEPTTL:
@@ -839,7 +824,6 @@ namespace Garnet.server
                             return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey,
                                 getValue, highPrecision: false, withEtag, ref storageApi);
                     }
-
                     break;
             }
 
@@ -881,17 +865,17 @@ namespace Garnet.server
 
             var input = new RawStringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
-            if (withEtag)
-            {
-                input.header.SetWithEtagFlag();
-                EtagOffsetManagementContext.SetEtagOffsetBasedOnInputHeader(ref input.etagOffsetManagementContext);
-            }
-
-            if (getValue)
-                input.header.SetSetGetFlag();
-
             if (getValue || withEtag)
             {
+                if (withEtag)
+                {
+                    input.header.SetWithEtagFlag();
+                    EtagOffsetManagementContext.SetEtagOffsetBasedOnInputHeader(ref input.etagOffsetManagementContext);
+                }
+
+                if (getValue)
+                    input.header.SetSetGetFlag();
+
                 // anything with getValue or withEtag always writes to the buffer in the happy path
                 SpanByteAndMemory outputBuffer = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                 GarnetStatus status = storageApi.SET_Conditional(ref key,

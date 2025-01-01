@@ -712,7 +712,7 @@ namespace Garnet.server
 
                         var valueLength = value.LengthWithoutMetadata;
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        var ret = functions.InPlaceUpdater(key.AsReadOnlySpan(), ref input, value.AsSpan(etagIgnoredOffset), ref valueLength, ref outp, ref rmwInfo);
+                        var ret = functions.InPlaceUpdater(key.AsReadOnlySpan(), ref input, value.AsSpan(), ref valueLength, ref outp, ref rmwInfo);
                         Debug.Assert(valueLength <= value.LengthWithoutMetadata);
 
                         // Adjust value length if user shrinks it

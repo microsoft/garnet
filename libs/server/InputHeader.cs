@@ -11,15 +11,16 @@ namespace Garnet.server
 {
     /// <summary>
     /// Flags used by append-only file (AOF/WAL)
+    /// The byte representation only use the last 3 bits of the byte since the lower 5 bits of the field used to store the flag stores other data in the case of Object types.
+    /// In the case of a Rawstring, the last 4 bits are used for flags, and the other 4 bits are unused of the byte.
     /// </summary>
     [Flags]
     public enum RespInputFlags : byte
     {
         /// <summary>
-        /// Flag indicating if a SET operation should either add an etag or respect the etag semantics for a value with an etag already
-        /// This is used for conditional setting.
+        /// Flag indicating an operation intending to add an etag for a RAWSTRING command 
         /// </summary>
-        WithEtag = 1,
+        WithEtag = 16,
 
         /// <summary>
         /// Flag indicating a SET operation that returns the previous value
@@ -45,6 +46,9 @@ namespace Garnet.server
         /// Size of header
         /// </summary>
         public const int Size = 3;
+
+        // Since we know WithEtag is not used with any Object types, we keep the flag mask to work with the last 3 bits as flags,
+        // and the other 5 bits for storing object associated flags. However, in the case of Rawstring we use the last 4 bits for flags, and let the others remain unused.
         internal const byte FlagMask = (byte)RespInputFlags.SetGet - 1;
 
         [FieldOffset(0)]
@@ -130,17 +134,15 @@ namespace Garnet.server
         internal unsafe void SetSetGetFlag() => flags |= RespInputFlags.SetGet;
 
         /// <summary>
-        /// Set "WithEtag" flag, used to update the old etag of a key after conditionally setting it
+        /// Set "WithEtag" flag for the input header
         /// </summary>
-        internal unsafe void SetWithEtagFlag() => flags |= RespInputFlags.WithEtag;
+        internal void SetWithEtagFlag() => flags |= RespInputFlags.WithEtag;
 
         /// <summary>
         /// Check if the WithEtag flag is set
         /// </summary>
         /// <returns></returns>
-        internal unsafe bool CheckWithEtagFlag() => (flags & RespInputFlags.WithEtag) != 0;
-
-        internal int CheckWithEtagFlagMultiplier => (int)(flags & RespInputFlags.WithEtag);
+        internal bool CheckWithEtagFlag() => (flags & RespInputFlags.WithEtag) != 0;
 
         /// <summary>
         /// Check if record is expired, either deterministically during log replay,

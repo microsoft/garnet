@@ -131,7 +131,7 @@ namespace Garnet.server
                         return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
                     }
 
-                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + input.arg1 == 0 ? 0 : sizeof(long) + input.etagOffsetManagementContext.EtagOffsetForVarlen;
+                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + (input.arg1 == 0 ? 0 : sizeof(long)) + input.etagOffsetManagementContext.EtagOffsetForVarlen;
             }
         }
 
