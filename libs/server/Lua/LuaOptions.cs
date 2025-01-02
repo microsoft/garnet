@@ -75,7 +75,7 @@ namespace Garnet.server
         /// 
         /// Limits are inexactly applied due to native memory allocation overhead.
         /// </summary>
-        LimittedNative = 1,
+        Tracked = 1,
 
         /// <summary>
         /// Places allocations on the POH using a naive, free-list based, allocator.

@@ -21,6 +21,7 @@ namespace Garnet.server
     {
         private const int LUA_MINSTACK = 20;
 
+        private readonly ILuaAllocator customAllocator;
         private readonly LuaAlloc allocFunc;
         private readonly LuaFunction panicFunc;
         private readonly ILogger logger;
@@ -28,8 +29,6 @@ namespace Garnet.server
         private readonly Lua state;
 
         private int curStackSize;
-
-        private ILuaAllocator customAllocator;
 
         internal LuaStateWrapper(LuaMemoryManagementMode memMode, int? memLimitBytes, ILogger logger)
         {
@@ -46,19 +45,25 @@ namespace Garnet.server
                 case LuaMemoryManagementMode.Managed:
                     if (memLimitBytes != null)
                     {
-                        customAllocator = new LuaLimittedPOHAllocator(memLimitBytes.Value);
-                        allocFunc = LuaAllocateBytes;
-                        state = new Lua(allocFunc, 0);
+                        // And impose a limit
+                        customAllocator = new LuaLimitedManagedAllocator(memLimitBytes.Value);
                     }
                     else
                     {
-                        throw new NotImplementedException();
+                        // But no limit
+                        customAllocator = new LuaManagedAllocator();
                     }
+                    allocFunc = LuaAllocateBytes;
+                    state = new Lua(allocFunc, 0);
+
                     break;
 
                 // Still native, but inform .NET and impose limits
-                case LuaMemoryManagementMode.LimittedNative:
-                    throw new NotImplementedException();
+                case LuaMemoryManagementMode.Tracked:
+                    customAllocator = new LuaTrackedAllocator(memLimitBytes);
+                    allocFunc = LuaAllocateBytes;
+                    state = new Lua(allocFunc, 0);
+                    break;
 
                 default:
                     logger?.LogCritical("Unexpected LuaMemoryManagementMode: {memMode}", memMode);
@@ -135,7 +140,7 @@ namespace Garnet.server
         /// <param name="ptr">Either null (if new alloc) or pointer to existing allocation being resized or freed.</param>
         /// <param name="osize">If <paramref name="ptr"/> is not null, the <paramref name="nsize"/> value passed when allocation was obtained or resized.</param>
         /// <param name="nsize">The desired size of the allocation, in bytes.</param>
-        private unsafe nint LuaAllocateBytes(nint udPtr, nint ptr, nuint osize, nuint nsize)
+        private readonly unsafe nint LuaAllocateBytes(nint udPtr, nint ptr, nuint osize, nuint nsize)
         {
             // See: https://www.lua.org/manual/5.4/manual.html#lua_Alloc
 

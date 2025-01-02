@@ -19,7 +19,7 @@ namespace Garnet.server
     /// 
     /// The hope is that Lua's GC keeps the actual use of this down substantially.
     /// </remarks>
-    internal sealed class LuaLimittedPOHAllocator : ILuaAllocator
+    internal sealed class LuaLimitedManagedAllocator : ILuaAllocator
     {
         /// <summary>
         /// Minimum size we'll round all Lua allocs up to.
@@ -27,8 +27,6 @@ namespace Garnet.server
         /// Based on largest "normal" type Lua will allocate.
         /// </summary>
         private const int LuaAllocMinSizeBytes = 8;
-
-        // TODO: Probably just use pointers, don't work in indexes
 
         /// <summary>
         /// Represents a block of memory in this mapper.
@@ -278,7 +276,7 @@ namespace Garnet.server
             }
         }
 
-        internal LuaLimittedPOHAllocator(int backingArraySize)
+        internal LuaLimitedManagedAllocator(int backingArraySize)
         {
             Debug.Assert(backingArraySize >= LuaAllocMinSizeBytes + sizeof(int), "Too small to ever allocate");
 
@@ -293,6 +291,198 @@ namespace Garnet.server
             firstBlock.SizeBytesRaw = backingArraySize - sizeof(int);
             firstBlock.NextFreeBlockIndexRaw = -1;
             firstBlock.PrevFreeBlockIndexRaw = -1;
+        }
+
+        /// <summary>
+        /// Allocate a new chunk which can fit at least <paramref name="sizeBytes"/> of data.
+        /// 
+        /// Sets <paramref name="failed"/> to true if the allocation failed.
+        /// 
+        /// If the allocation failes, the returned ref will be null.
+        /// </summary>
+        public ref byte AllocateNew(int sizeBytes, out bool failed)
+        {
+            ref var dataStartRef = ref GetDataStartRef();
+
+            if (sizeBytes == 0)
+            {
+                // Special case 0 size allocations
+                failed = false;
+                return ref dataStartRef;
+            }
+
+            var actualSizeBytes = RoundToMinAlloc(sizeBytes);
+
+            var firstAttempt = true;
+
+        tryAgain:
+            ref var freeList = ref GetFreeList(ref dataStartRef);
+            if (Unsafe.IsNullRef(ref freeList))
+            {
+                // No free space at all
+                failed = true;
+                return ref Unsafe.NullRef<byte>();
+            }
+
+            ref var cur = ref freeList;
+            while (!Unsafe.IsNullRef(ref cur))
+            {
+                Debug.Assert(cur.IsFree, "Free list corrupted");
+
+                if (cur.SizeBytes < actualSizeBytes)
+                {
+                    // Couldn't fit in the block, move on
+                    cur = ref cur.GetNextFreeBlockRef(ref dataStartRef);
+                    continue;
+                }
+
+                if (ShouldSplit(ref cur, actualSizeBytes))
+                {
+                    SplitFreeBlock(ref cur, actualSizeBytes);
+                    Debug.Assert(cur.IsFree && cur.SizeBytes == actualSizeBytes, "Split produced unexpected block");
+                }
+
+                // Cur will work, so remove it from the free list, mark it, and return it
+                RemoveFromFreeList(ref cur);
+                cur.MarkInUse();
+
+                AllocatedBytes += cur.SizeBytes;
+
+                failed = false;
+                return ref cur.DataReference;
+            }
+
+            // Expensively compact if we're going to fail anyway
+            if (firstAttempt)
+            {
+                firstAttempt = false;
+                if (TryCoalesceAllFreeBlocks())
+                {
+                    goto tryAgain;
+                }
+            }
+
+            // Even after compaction we failed to find a large enough block
+            failed = true;
+            return ref Unsafe.NullRef<byte>();
+        }
+
+        /// <summary>
+        /// Return a chunk of memory previously acquired by <see cref="AllocateNew"/> or
+        /// <see cref="ResizeAllocation"/>.
+        /// </summary>
+        /// <param name="start">Previously returned (non-null) value.</param>
+        /// <param name="sizeBytes">Size passed to last <see cref="AllocateNew"/> or <see cref="ResizeAllocation"/> call.</param>
+        public void Free(ref byte start, int sizeBytes)
+        {
+            ref var dataStartRef = ref GetDataStartRef();
+            if (sizeBytes == 0)
+            {
+                // Special casing 0 size allocations
+                Debug.Assert(Unsafe.AreSame(ref dataStartRef, ref start), "Expected all zero size allocs to be the same");
+
+                return;
+            }
+
+            ref var blockRef = ref GetBlockRef(ref dataStartRef, ref start);
+            Debug.Assert(blockRef.IsInUse, "Should be in use");
+
+            AllocatedBytes -= blockRef.SizeBytes;
+
+            blockRef.MarkFree();
+            AddToFreeList(ref dataStartRef, ref blockRef);
+        }
+
+        /// <summary>
+        /// Akin to <see cref="AllocateNew(int, out bool)"/>, except reuses the original allocation given in <paramref name="start"/> if possible.
+        /// </summary>
+        public ref byte ResizeAllocation(ref byte start, int oldSizeBytes, int newSizeBytes, out bool failed)
+        {
+            ref var dataStartRef = ref GetDataStartRef();
+            if (oldSizeBytes == 0)
+            {
+                // Special casing 0 size allocations
+                Debug.Assert(Unsafe.AreSame(ref dataStartRef, ref start), "Expected all zero size allocs to be the same");
+
+                return ref AllocateNew(newSizeBytes, out failed);
+            }
+
+            ref var curBlock = ref GetBlockRef(ref dataStartRef, ref start);
+
+            // For everything else, move things up to a reasonable multiple
+            var actualSizeBytes = RoundToMinAlloc(newSizeBytes);
+
+            if (curBlock.SizeBytes >= newSizeBytes)
+            {
+                // Existing allocation is large enough
+
+                if (ShouldSplit(ref curBlock, actualSizeBytes))
+                {
+                    SplitInUseBlock(ref curBlock, actualSizeBytes);
+                }
+
+                failed = false;
+                return ref start;
+            }
+
+            // Attempt to grow the allocation in place
+            var keepInPlace = false;
+
+            while (TryCoalesceSingleBlock(ref curBlock))
+            {
+                if (curBlock.SizeBytes >= actualSizeBytes)
+                {
+                    keepInPlace = true;
+                    break;
+                }
+            }
+
+            if (keepInPlace)
+            {
+                // We built a big enough block, so use it
+                if (ShouldSplit(ref curBlock, actualSizeBytes))
+                {
+                    // We coalesced such that there's a lot of empty space at the end of this block, peel it off for later reuse
+                    SplitInUseBlock(ref curBlock, actualSizeBytes);
+                    Debug.Assert(curBlock.IsInUse && curBlock.SizeBytes == actualSizeBytes, "Split produced unexpected block");
+                }
+
+                failed = false;
+                return ref start;
+            }
+
+            // We couldn't resize in place, so we need to copy into a new alloc
+            ref var newAlloc = ref AllocateNew(newSizeBytes, out failed);
+            if (failed)
+            {
+                // Couldn't get a new allocation - per spec this leaves the old allocation alone
+                return ref Unsafe.NullRef<byte>();
+            }
+
+            // Copy the data over
+            var copyLen = newSizeBytes < oldSizeBytes ? newSizeBytes : oldSizeBytes;
+
+            var copyFrom = MemoryMarshal.CreateReadOnlySpan(ref curBlock.DataReference, copyLen);
+            var copyInto = MemoryMarshal.CreateSpan(ref newAlloc, copyLen);
+
+            copyFrom.CopyTo(copyInto);
+
+            // Free the old alloc now that data is copied out
+            Free(ref start, oldSizeBytes);
+
+            return ref newAlloc;
+        }
+
+        /// <summary>
+        /// Returns true if this reference might have been handed out by this allocator.
+        /// </summary>
+        internal bool ContainsRef(ref byte startRef)
+        {
+            ref var dataStartRef = ref GetDataStartRef();
+
+            var delta = Unsafe.ByteOffset(ref dataStartRef, ref startRef);
+
+            return delta >= 0 && delta < data.Length;
         }
 
         /// <summary>
@@ -445,169 +635,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Allocate a new chunk which can fit at least <paramref name="sizeBytes"/> of data.
-        /// 
-        /// Sets <paramref name="failed"/> to true if the allocation failed.
-        /// 
-        /// If the allocation failes, the returned ref will be null.
-        /// </summary>
-        public ref byte AllocateNew(int sizeBytes, out bool failed)
-        {
-            ref var dataStartRef = ref GetDataStartRef();
-
-            if (sizeBytes == 0)
-            {
-                // Special case 0 size allocations
-                failed = false;
-                return ref dataStartRef;
-            }
-
-            var actualSizeBytes = RoundToMinAlloc(sizeBytes);
-
-            ref var freeList = ref GetFreeList(ref dataStartRef);
-            if (Unsafe.IsNullRef(ref freeList))
-            {
-                // No free space at all
-                failed = true;
-                return ref Unsafe.NullRef<byte>();
-            }
-
-            ref var cur = ref freeList;
-            while (!Unsafe.IsNullRef(ref cur))
-            {
-                Debug.Assert(cur.IsFree, "Free list corrupted");
-
-                if (cur.SizeBytes < actualSizeBytes)
-                {
-                    // Couldn't fit in the block, move on
-                    cur = ref cur.GetNextFreeBlockRef(ref dataStartRef);
-                    continue;
-                }
-
-                if (ShouldSplit(ref cur, actualSizeBytes))
-                {
-                    SplitFreeBlock(ref cur, actualSizeBytes);
-                    Debug.Assert(cur.IsFree && cur.SizeBytes == actualSizeBytes, "Split produced unexpected block");
-                }
-
-                // Cur will work, so remove it from the free list, mark it, and return it
-                RemoveFromFreeList(ref cur);
-                cur.MarkInUse();
-
-                AllocatedBytes += cur.SizeBytes;
-
-                failed = false;
-                return ref cur.DataReference;
-            }
-
-            // TODO: Try and compact before giving up
-            failed = true;
-            return ref Unsafe.NullRef<byte>();
-        }
-
-        /// <summary>
-        /// Return a chunk of memory previously acquired by <see cref="AllocateNew"/> or
-        /// <see cref="ResizeAllocation"/>.
-        /// </summary>
-        /// <param name="start">Previously returned (non-null) value.</param>
-        /// <param name="sizeBytes">Size passed to last <see cref="AllocateNew"/> or <see cref="ResizeAllocation"/> call.</param>
-        public void Free(ref byte start, int sizeBytes)
-        {
-            ref var dataStartRef = ref GetDataStartRef();
-            if (sizeBytes == 0)
-            {
-                // Special casing 0 size allocations
-                Debug.Assert(Unsafe.AreSame(ref dataStartRef, ref start), "Expected all zero size allocs to be the same");
-
-                return;
-            }
-
-            ref var blockRef = ref GetBlockRef(ref dataStartRef, ref start);
-            Debug.Assert(blockRef.IsInUse, "Should be in use");
-
-            AllocatedBytes -= blockRef.SizeBytes;
-
-            blockRef.MarkFree();
-            AddToFreeList(ref dataStartRef, ref blockRef);
-        }
-
-        /// <summary>
-        /// Akin to <see cref="AllocateNew(int, out bool)"/>, except reuses the original allocation given in <paramref name="start"/> if possible.
-        /// </summary>
-        public ref byte ResizeAllocation(ref byte start, int oldSizeBytes, int newSizeBytes, out bool failed)
-        {
-            ref var dataStartRef = ref GetDataStartRef();
-            if (oldSizeBytes == 0)
-            {
-                // Special casing 0 size allocations
-                Debug.Assert(Unsafe.AreSame(ref dataStartRef, ref start), "Expected all zero size allocs to be the same");
-
-                return ref AllocateNew(newSizeBytes, out failed);
-            }
-
-            ref var curBlock = ref GetBlockRef(ref dataStartRef, ref start);
-
-            if (curBlock.SizeBytes >= newSizeBytes)
-            {
-                // TODO: shrink the allocation sometimes?
-
-                // Existing allocation is large enough
-                failed = false;
-                return ref start;
-            }
-
-            // For everything else, move things up to a reasonable multiple
-            var actualSizeBytes = RoundToMinAlloc(newSizeBytes);
-
-            // Attempt to grow the allocation in place
-            var keepInPlace = false;
-
-            while (TryCoalesceSingleBlock(ref curBlock))
-            {
-                if (curBlock.SizeBytes >= actualSizeBytes)
-                {
-                    keepInPlace = true;
-                    break;
-                }
-            }
-
-            if (keepInPlace)
-            {
-                // We built a big enough block, so use it
-                if (ShouldSplit(ref curBlock, actualSizeBytes))
-                {
-                    // We coalesced such that there's a lot of empty space at the end of this block, peel it off for later reuse
-                    SplitInUseBlock(ref curBlock, actualSizeBytes);
-                    Debug.Assert(curBlock.IsInUse && curBlock.SizeBytes == actualSizeBytes, "Split produced unexpected block");
-                }
-
-                failed = false;
-                return ref start;
-            }
-
-            // We couldn't resize in place, so we need to copy into a new alloc
-            ref var newAlloc = ref AllocateNew(newSizeBytes, out failed);
-            if (failed)
-            {
-                // Couldn't get a new allocation - per spec this leaves the old allocation alone
-                return ref Unsafe.NullRef<byte>();
-            }
-
-            // Copy the data over
-            var copyLen = newSizeBytes < oldSizeBytes ? newSizeBytes : oldSizeBytes;
-
-            var copyFrom = MemoryMarshal.CreateReadOnlySpan(ref curBlock.DataReference, copyLen);
-            var copyInto = MemoryMarshal.CreateSpan(ref newAlloc, copyLen);
-
-            copyFrom.CopyTo(copyInto);
-
-            // Free the old alloc now that data is copied out
-            Free(ref start, oldSizeBytes);
-
-            return ref newAlloc;
-        }
-
-        /// <summary>
         /// Add a the given free block to the free list.
         /// </summary>
         private void AddToFreeList(ref byte dataStartRef, ref BlockHeader block)
@@ -756,7 +783,7 @@ namespace Garnet.server
             var oldSizeBytes = curBlock.SizeBytes;
 
             ref var dataStartRef = ref GetDataStartRef();
-            ref var newBlock = ref SplitCommon(ref dataStartRef, ref curBlock, curBlockUpdateSizeBytes);
+            ref var newBlock = ref SplitCommon(ref curBlock, curBlockUpdateSizeBytes);
 
             // New block needs to be placed in free list
             AddToFreeList(ref dataStartRef, ref newBlock);
@@ -776,7 +803,7 @@ namespace Garnet.server
             ref var dataStartRef = ref GetDataStartRef();
             ref var oldNextBlock = ref curBlock.GetNextFreeBlockRef(ref dataStartRef);
 
-            ref var newBlock = ref SplitCommon(ref dataStartRef, ref curBlock, curBlockUpdateSizeBytes);
+            ref var newBlock = ref SplitCommon(ref curBlock, curBlockUpdateSizeBytes);
 
             var curBlockIndex = curBlock.GetDataIndex(ref dataStartRef);
 
@@ -842,7 +869,12 @@ namespace Garnet.server
             return ref punned;
         }
 
-        private static ref BlockHeader SplitCommon(ref byte dataStartRef, ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
+        /// <summary>
+        /// Common logic for splitting blocks.
+        /// 
+        /// Block here can either be free or in use, so don't make any assumptionsin here.
+        /// </summary>
+        private static ref BlockHeader SplitCommon(ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
         {
             Debug.Assert(curBlockUpdateSizeBytes >= LuaAllocMinSizeBytes, "Shouldn't split an existing block to be this small");
 
@@ -870,12 +902,13 @@ namespace Garnet.server
             return ref newBlock;
         }
 
-        // Determine if a block should be split before being claimed
+        /// <summary>
+        /// Check if a block should be split if it's used to serve a claim of the given size.
+        /// </summary>
         private static bool ShouldSplit(ref BlockHeader block, int claimedBytes)
         {
             var unusedBytes = block.SizeBytes - claimedBytes;
 
-            // TODO: do we want to be more sophisiticated here?
             return unusedBytes >= BlockHeader.StructSizeBytes;
         }
 

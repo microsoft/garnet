@@ -137,7 +137,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public unsafe void LuaLimittedPOH()
+        public unsafe void LuaLimittedManaged()
         {
             const int Iters = 20;
             const int TotalAllocSizeBytes = 1_024 * 1_024;
@@ -146,7 +146,7 @@ namespace Garnet.test
 
             // Special cases
             {
-                var luaAlloc = new LuaLimittedPOHAllocator(TotalAllocSizeBytes);
+                var luaAlloc = new LuaLimitedManagedAllocator(TotalAllocSizeBytes);
                 luaAlloc.CheckCorrectness();
 
                 // 0 sized should work, and return the same thing each time
@@ -172,7 +172,7 @@ namespace Garnet.test
 
             // Fill whole allocation
             {
-                var luaAlloc = new LuaLimittedPOHAllocator(TotalAllocSizeBytes);
+                var luaAlloc = new LuaLimitedManagedAllocator(TotalAllocSizeBytes);
                 var freeSpace = luaAlloc.FirstBlockSizeBytes;
 
                 for (var i = 0; i < Iters; i++)
@@ -221,7 +221,7 @@ namespace Garnet.test
 
             // Repeated realloc preserves data and doesn't move.
             {
-                var luaAlloc = new LuaLimittedPOHAllocator(TotalAllocSizeBytes);
+                var luaAlloc = new LuaLimitedManagedAllocator(TotalAllocSizeBytes);
                 var freeSpace = luaAlloc.FirstBlockSizeBytes;
 
                 for (var i = 0; i < Iters; i++)
@@ -287,7 +287,7 @@ namespace Garnet.test
             {
                 const int AllocSize = 16;
 
-                var luaAlloc = new LuaLimittedPOHAllocator(TotalAllocSizeBytes);
+                var luaAlloc = new LuaLimitedManagedAllocator(TotalAllocSizeBytes);
                 var freeSpace = luaAlloc.FirstBlockSizeBytes;
 
                 for (var i = 0; i < Iters; i++)
@@ -348,7 +348,7 @@ namespace Garnet.test
 
             // Random operations with variable sized allocs
             {
-                var luaAlloc = new LuaLimittedPOHAllocator(TotalAllocSizeBytes);
+                var luaAlloc = new LuaLimitedManagedAllocator(TotalAllocSizeBytes);
                 var freeSpace = luaAlloc.FirstBlockSizeBytes;
 
                 for (var i = 0; i < Iters; i++)
