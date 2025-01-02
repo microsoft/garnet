@@ -45,7 +45,7 @@ namespace Garnet.server
 
             if(MemoryManagementMode == LuaMemoryManagementMode.Native)
             {
-                logger?.LogWarning("Lua script memory limit is ignored when mode = {0}", MemoryManagementMode);
+                logger?.LogWarning("Lua script memory limit is ignored when mode = {MemoryManagementMode}", MemoryManagementMode);
                 return null;
             }
 

@@ -301,8 +301,7 @@ end
             compileTrampoline = CompileTrampoline;
             preambleTrampoline = RunPreambleTrampoline;
 
-            // TODO: custom allocator?
-            state = new LuaStateWrapper(this.logger, true);
+            state = new LuaStateWrapper(options, this.logger);
 
             if (txnMode)
             {

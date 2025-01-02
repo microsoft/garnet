@@ -2,15 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Garnet.server
 {
@@ -33,29 +30,33 @@ namespace Garnet.server
         private int curStackSize;
 
         private LuaAllocMapper allocMapper;
-        private bool lastAllocFailed;
-        private bool abortOOM;
-        private List<byte[]> oomAllocations;
 
-        internal LuaStateWrapper(ILogger logger, bool useCustomAllocator)
+        internal LuaStateWrapper(LuaOptions options, ILogger logger)
         {
             this.logger = logger;
 
-            if (useCustomAllocator)
+            switch (options.MemoryManagementMode)
             {
-                allocMapper = new LuaAllocMapper(1024 * 1024);
+                // Default Lua mode
+                case LuaMemoryManagementMode.Native:
+                    state = new Lua(openLibs: false);
+                    break;
 
-                unsafe
-                {
-                    Debug.WriteLine($"allocMapper start = {(nint)Unsafe.AsPointer(ref allocMapper.AllocateNew(0, out _)):X}");
-                }
+                // Map everything onto the POH
+                case LuaMemoryManagementMode.Managed:
+                    // TODO: POH with no limit?
+                    allocMapper = new LuaAllocMapper((int)options.GetMemoryLimitBytes().Value);
+                    allocFunc = LuaAllocateBytes;
+                    state = new Lua(allocFunc, 0);
+                    break;
 
-                allocFunc = LuaAllocateBytes;
-                state = new Lua(allocFunc, 0);
-            }
-            else
-            {
-                state = new Lua(openLibs: false);
+                // Still native, but inform .NET and impose limits
+                case LuaMemoryManagementMode.LimittedNative:
+                    throw new NotImplementedException();
+
+                default:
+                    logger?.LogCritical("Unexpected LuaMemoryManagementMode: {MemoryManagementMode}", options.MemoryManagementMode);
+                    break;
             }
 
             state.OpenLibs();
@@ -117,8 +118,6 @@ namespace Garnet.server
             return 0;
         }
 
-        private int memOp = 0;
-
         /// <summary>
         /// Provides data for Lua allocations.
         /// 
@@ -134,8 +133,6 @@ namespace Garnet.server
         {
             // See: https://www.lua.org/manual/5.4/manual.html#lua_Alloc
 
-            memOp++;
-
             try
             {
                 if (ptr != IntPtr.Zero)
@@ -146,8 +143,6 @@ namespace Garnet.server
 
                     if (nsize == 0)
                     {
-                        //Debug.WriteLine($"[{memOp:000000}] [Free, Success] ({udPtr:x}, {ptr:x}, {(int)osize}, {(int)nsize})");
-
                         allocMapper.Free(ref dataRef, (int)osize);
 
                         return 0;
@@ -161,8 +156,6 @@ namespace Garnet.server
                         }
 
                         var retPtr = (nint)Unsafe.AsPointer(ref ret);
-
-                        //Debug.WriteLine($"[{memOp:000000}] [ReAlloc, Success] ({udPtr:x}, {ptr:x}, {(int)osize}, {(int)nsize}) => {retPtr:x}");
 
                         return retPtr;
                     }
@@ -178,8 +171,6 @@ namespace Garnet.server
                     }
 
                     var retPtr = (nint)Unsafe.AsPointer(ref ret);
-
-                    //Debug.WriteLine($"[{memOp:000000}] [Alloc, Success] ({udPtr:x}, {ptr:x}, {(int)osize}, {(int)nsize}) => {retPtr:x}");
 
                     return retPtr;
                 }
@@ -617,6 +608,7 @@ namespace Garnet.server
             ClearStack();
 
             var b = Encoding.UTF8.GetBytes(msg);
+            PushBuffer(b);
             return RaiseErrorFromStack();
         }
 
