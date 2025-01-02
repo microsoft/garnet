@@ -157,10 +157,10 @@ return returnValue
             server = new EmbeddedRespServer(new GarnetServerOptions() { EnableLua = true, QuietMode = true });
 
             session = server.GetRespSession();
-            paramsRunner = new LuaRunner("return nil");
+            paramsRunner = new LuaRunner(new(), "return nil");
 
-            smallCompileRunner = new LuaRunner(SmallScript);
-            largeCompileRunner = new LuaRunner(LargeScript);
+            smallCompileRunner = new LuaRunner(new(), SmallScript);
+            largeCompileRunner = new LuaRunner(new(), LargeScript);
         }
 
         [GlobalCleanup]
@@ -194,13 +194,13 @@ return returnValue
         [Benchmark]
         public void ConstructSmall()
         {
-            using var runner = new LuaRunner(SmallScript);
+            using var runner = new LuaRunner(new(), SmallScript);
         }
 
         [Benchmark]
         public void ConstructLarge()
         {
-            using var runner = new LuaRunner(LargeScript);
+            using var runner = new LuaRunner(new(), LargeScript);
         }
 
         [Benchmark]

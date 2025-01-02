@@ -10,7 +10,6 @@ using System.Text;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Garnet.server
 {
@@ -222,6 +221,8 @@ end
 
         private static readonly ReadOnlyMemory<byte> LoaderBlockBytes = Encoding.UTF8.GetBytes(LoaderBlock);
 
+        readonly LuaOptions options;
+
         // Rooted to keep function pointer alive
         readonly LuaFunction garnetCall;
 
@@ -279,8 +280,10 @@ end
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public LuaRunner(ReadOnlyMemory<byte> source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
+        public LuaRunner(LuaOptions options, ReadOnlyMemory<byte> source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
         {
+            this.options = options;
+
             this.source = source;
             this.txnMode = txnMode;
             this.respServerSession = respServerSession;
@@ -374,8 +377,8 @@ end
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public LuaRunner(string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
-            : this(Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, logger)
+        public LuaRunner(LuaOptions options, string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
+            : this(options, Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, logger)
         {
         }
 
@@ -403,7 +406,7 @@ end
                 case 1: CompileCommon(ref runnerAdapter); break;
                 default:
                     logger?.LogCritical("Unexpected adapter mode {adapterMode}", adapterMode);
-                    _ = state.RaiseError("Unexpected adapter mode {adapterMode}");
+                    _ = state.RaiseError("Unexpected adapter mode");
                     break;
             }
 
@@ -426,7 +429,6 @@ end
                 var res = state.PCall(0, 0);
                 if (res == LuaStatus.OK)
                 {
-
                     var resp = runnerAdapter.Response;
                     var respStart = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(resp));
                     var respEnd = respStart + resp.Length;

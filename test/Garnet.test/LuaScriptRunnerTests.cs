@@ -20,7 +20,7 @@ namespace Garnet.test
         public void CannotRunUnsafeScript()
         {
             // Try to load an assembly
-            using (var runner = new LuaRunner("luanet.load_assembly('mscorlib')"))
+            using (var runner = new LuaRunner(new(), "luanet.load_assembly('mscorlib')"))
             {
                 runner.CompileForRunner();
                 var ex = Assert.Throws<GarnetException>(() => runner.RunForRunner());
@@ -28,7 +28,7 @@ namespace Garnet.test
             }
 
             // Try to call a OS function
-            using (var runner = new LuaRunner("os = require('os'); return os.time();"))
+            using (var runner = new LuaRunner(new(), "os = require('os'); return os.time();"))
             {
                 runner.CompileForRunner();
                 var ex = Assert.Throws<GarnetException>(() => runner.RunForRunner());
@@ -36,7 +36,7 @@ namespace Garnet.test
             }
 
             // Try to execute the input stream
-            using (var runner = new LuaRunner("dofile();"))
+            using (var runner = new LuaRunner(new(), "dofile();"))
             {
                 runner.CompileForRunner();
                 var ex = Assert.Throws<GarnetException>(() => runner.RunForRunner());
@@ -44,7 +44,7 @@ namespace Garnet.test
             }
 
             // Try to call a windows executable
-            using (var runner = new LuaRunner("require \"notepad\""))
+            using (var runner = new LuaRunner(new(), "require \"notepad\""))
             {
                 runner.CompileForRunner();
                 var ex = Assert.Throws<GarnetException>(() => runner.RunForRunner());
@@ -52,7 +52,7 @@ namespace Garnet.test
             }
 
             // Try to call an OS function
-            using (var runner = new LuaRunner("os.exit();"))
+            using (var runner = new LuaRunner(new(), "os.exit();"))
             {
                 runner.CompileForRunner();
                 var ex = Assert.Throws<GarnetException>(() => runner.RunForRunner());
@@ -60,7 +60,7 @@ namespace Garnet.test
             }
 
             // Try to include a new .net library
-            using (var runner = new LuaRunner("import ('System.Diagnostics');"))
+            using (var runner = new LuaRunner(new(), "import ('System.Diagnostics');"))
             {
                 runner.CompileForRunner();
                 var ex = Assert.Throws<GarnetException>(() => runner.RunForRunner());
@@ -72,14 +72,14 @@ namespace Garnet.test
         public void CanLoadScript()
         {
             // Code with error
-            using (var runner = new LuaRunner("local;"))
+            using (var runner = new LuaRunner(new(), "local;"))
             {
                 var ex = Assert.Throws<GarnetException>(runner.CompileForRunner);
                 ClassicAssert.AreEqual("Compilation error: [string \"local;\"]:1: <name> expected near ';'", ex.Message);
             }
 
             // Code without error
-            using (var runner = new LuaRunner("local list; list = 1; return list;"))
+            using (var runner = new LuaRunner(new(), "local list; list = 1; return list;"))
             {
                 runner.CompileForRunner();
             }
@@ -92,7 +92,7 @@ namespace Garnet.test
             string[] args = ["arg1", "arg2", "arg3"];
 
             // Run code without errors
-            using (var runner = new LuaRunner("local list; list = ARGV[1] ; return list;"))
+            using (var runner = new LuaRunner(new(), "local list; list = ARGV[1] ; return list;"))
             {
                 runner.CompileForRunner();
                 var res = runner.RunForRunner(keys, args);
@@ -100,7 +100,7 @@ namespace Garnet.test
             }
 
             // Run code with errors
-            using (var runner = new LuaRunner("local list; list = ; return list;"))
+            using (var runner = new LuaRunner(new(), "local list; list = ; return list;"))
             {
                 var ex = Assert.Throws<GarnetException>(runner.CompileForRunner);
                 ClassicAssert.AreEqual("Compilation error: [string \"local list; list = ; return list;\"]:1: unexpected symbol near ';'", ex.Message);
@@ -110,7 +110,7 @@ namespace Garnet.test
         [Test]
         public void KeysAndArgsCleared()
         {
-            using (var runner = new LuaRunner("return { KEYS[1], ARGV[1], KEYS[2], ARGV[2] }"))
+            using (var runner = new LuaRunner(new(), "return { KEYS[1], ARGV[1], KEYS[2], ARGV[2] }"))
             {
                 runner.CompileForRunner();
                 var res1 = runner.RunForRunner(["hello", "world"], ["fizz", "buzz"]);
