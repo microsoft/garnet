@@ -221,8 +221,6 @@ end
 
         private static readonly ReadOnlyMemory<byte> LoaderBlockBytes = Encoding.UTF8.GetBytes(LoaderBlock);
 
-        readonly LuaOptions options;
-
         // Rooted to keep function pointer alive
         readonly LuaFunction garnetCall;
 
@@ -280,10 +278,8 @@ end
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public LuaRunner(LuaOptions options, ReadOnlyMemory<byte> source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
+        public LuaRunner(LuaMemoryManagementMode memMode, int? memLimitBytes, ReadOnlyMemory<byte> source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
         {
-            this.options = options;
-
             this.source = source;
             this.txnMode = txnMode;
             this.respServerSession = respServerSession;
@@ -301,7 +297,7 @@ end
             compileTrampoline = CompileTrampoline;
             preambleTrampoline = RunPreambleTrampoline;
 
-            state = new LuaStateWrapper(options, this.logger);
+            state = new LuaStateWrapper(memMode, memLimitBytes, this.logger);
 
             if (txnMode)
             {
@@ -377,7 +373,7 @@ end
         /// Creates a new runner with the source of the script
         /// </summary>
         public LuaRunner(LuaOptions options, string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
-            : this(options, Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, logger)
+            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, logger)
         {
         }
 

@@ -36,20 +36,27 @@ namespace Garnet.server
         /// <summary>
         /// Get the memory limit, if any, for each script invocation.
         /// </summary>
-        internal long? GetMemoryLimitBytes()
+        internal int? GetMemoryLimitBytes()
         {
             if (string.IsNullOrEmpty(MemoryLimit))
             {
                 return null;
             }
 
-            if(MemoryManagementMode == LuaMemoryManagementMode.Native)
+            if (MemoryManagementMode == LuaMemoryManagementMode.Native)
             {
                 logger?.LogWarning("Lua script memory limit is ignored when mode = {MemoryManagementMode}", MemoryManagementMode);
                 return null;
             }
 
-            return GarnetServerOptions.ParseSize(MemoryLimit);
+            var ret = GarnetServerOptions.ParseSize(MemoryLimit);
+            if (ret is > int.MaxValue or < 1_024)
+            {
+                logger?.LogWarning("Lua script memory limit is out of range [1K, 2GB] = {MemoryLimit} and will be ignored", MemoryLimit);
+                return null;
+            }
+
+            return (int)ret;
         }
     }
 

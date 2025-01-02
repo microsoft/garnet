@@ -29,13 +29,13 @@ namespace Garnet.server
 
         private int curStackSize;
 
-        private LuaAllocMapper allocMapper;
+        private ILuaAllocator customAllocator;
 
-        internal LuaStateWrapper(LuaOptions options, ILogger logger)
+        internal LuaStateWrapper(LuaMemoryManagementMode memMode, int? memLimitBytes, ILogger logger)
         {
             this.logger = logger;
 
-            switch (options.MemoryManagementMode)
+            switch (memMode)
             {
                 // Default Lua mode
                 case LuaMemoryManagementMode.Native:
@@ -44,10 +44,16 @@ namespace Garnet.server
 
                 // Map everything onto the POH
                 case LuaMemoryManagementMode.Managed:
-                    // TODO: POH with no limit?
-                    allocMapper = new LuaAllocMapper((int)options.GetMemoryLimitBytes().Value);
-                    allocFunc = LuaAllocateBytes;
-                    state = new Lua(allocFunc, 0);
+                    if (memLimitBytes != null)
+                    {
+                        customAllocator = new LuaLimittedPOHAllocator(memLimitBytes.Value);
+                        allocFunc = LuaAllocateBytes;
+                        state = new Lua(allocFunc, 0);
+                    }
+                    else
+                    {
+                        throw new NotImplementedException();
+                    }
                     break;
 
                 // Still native, but inform .NET and impose limits
@@ -55,7 +61,7 @@ namespace Garnet.server
                     throw new NotImplementedException();
 
                 default:
-                    logger?.LogCritical("Unexpected LuaMemoryManagementMode: {MemoryManagementMode}", options.MemoryManagementMode);
+                    logger?.LogCritical("Unexpected LuaMemoryManagementMode: {memMode}", memMode);
                     break;
             }
 
@@ -133,38 +139,21 @@ namespace Garnet.server
         {
             // See: https://www.lua.org/manual/5.4/manual.html#lua_Alloc
 
-            try
+            if (ptr != IntPtr.Zero)
             {
-                if (ptr != IntPtr.Zero)
+                // Now osize is the size used to (re)allocate ptr last
+
+                ref var dataRef = ref Unsafe.AsRef<byte>((void*)ptr);
+
+                if (nsize == 0)
                 {
-                    // Now osize is the size used to (re)allocate ptr last
+                    customAllocator.Free(ref dataRef, (int)osize);
 
-                    ref var dataRef = ref Unsafe.AsRef<byte>((void*)ptr);
-
-                    if (nsize == 0)
-                    {
-                        allocMapper.Free(ref dataRef, (int)osize);
-
-                        return 0;
-                    }
-                    else
-                    {
-                        ref var ret = ref allocMapper.ResizeAllocation(ref dataRef, (int)osize, (int)nsize, out var failed);
-                        if (failed)
-                        {
-                            return 0;
-                        }
-
-                        var retPtr = (nint)Unsafe.AsPointer(ref ret);
-
-                        return retPtr;
-                    }
+                    return 0;
                 }
                 else
                 {
-                    // Now osize is the size of the object being allocated, but nsize is the desired size
-
-                    ref var ret = ref allocMapper.AllocateNew((int)nsize, out var failed);
+                    ref var ret = ref customAllocator.ResizeAllocation(ref dataRef, (int)osize, (int)nsize, out var failed);
                     if (failed)
                     {
                         return 0;
@@ -175,9 +164,19 @@ namespace Garnet.server
                     return retPtr;
                 }
             }
-            finally
+            else
             {
-                allocMapper.AssertCheckCorrectness();
+                // Now osize is the size of the object being allocated, but nsize is the desired size
+
+                ref var ret = ref customAllocator.AllocateNew((int)nsize, out var failed);
+                if (failed)
+                {
+                    return 0;
+                }
+
+                var retPtr = (nint)Unsafe.AsPointer(ref ret);
+
+                return retPtr;
             }
         }
 

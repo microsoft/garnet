@@ -2,11 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
-using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
-using System.Runtime.ConstrainedExecution;
 using System.Runtime.InteropServices;
 
 namespace Garnet.server
@@ -21,7 +19,7 @@ namespace Garnet.server
     /// 
     /// The hope is that Lua's GC keeps the actual use of this down substantially.
     /// </remarks>
-    internal struct LuaAllocMapper
+    internal sealed class LuaLimittedPOHAllocator : ILuaAllocator
     {
         /// <summary>
         /// Minimum size we'll round all Lua allocs up to.
@@ -237,12 +235,12 @@ namespace Garnet.server
         /// 
         /// This is how many bytes we've handed out, not the size of the backing array on the POH.
         /// </summary>
-        internal int AllocatedBytes { readonly get; private set; }
+        internal int AllocatedBytes { get; private set; }
 
         /// <summary>
         /// For testing purposes, the number of blocks tracked in the free list.
         /// </summary>
-        internal readonly int FreeBlockCount
+        internal int FreeBlockCount
         {
             get
             {
@@ -268,7 +266,7 @@ namespace Garnet.server
         /// 
         /// Does not care if the block is free or allocated.
         /// </summary>
-        internal readonly int FirstBlockSizeBytes
+        internal int FirstBlockSizeBytes
         {
             get
             {
@@ -280,7 +278,7 @@ namespace Garnet.server
             }
         }
 
-        internal LuaAllocMapper(int backingArraySize)
+        internal LuaLimittedPOHAllocator(int backingArraySize)
         {
             Debug.Assert(backingArraySize >= LuaAllocMinSizeBytes + sizeof(int), "Too small to ever allocate");
 
@@ -299,9 +297,10 @@ namespace Garnet.server
 
         /// <summary>
         /// Validate the allocator.
+        /// 
+        /// For testing purposes only.
         /// </summary>
-        [Conditional("DEBUG")]
-        internal readonly void AssertCheckCorrectness()
+        internal void CheckCorrectness()
         {
             ref var dataStartRef = ref GetDataStartRef();
 
@@ -328,7 +327,7 @@ namespace Garnet.server
                         freeFast = ref freeFast.GetNextFreeBlockRef(ref dataStartRef);
                     }
 
-                    Debug.Assert(!Unsafe.AreSame(ref freeSlow, ref freeFast), "Cycle exists in free list");
+                    Check(!Unsafe.AreSame(ref freeSlow, ref freeFast), "Cycle exists in free list");
                 }
             }
 
@@ -341,23 +340,23 @@ namespace Garnet.server
                 ref var curFree = ref GetFreeList(ref dataStartRef);
                 while (!Unsafe.IsNullRef(ref curFree))
                 {
-                    Debug.Assert(curFree.IsFree, "Allocated block in free list");
+                    Check(curFree.IsFree, "Allocated block in free list");
 
                     var dataIndex = curFree.GetDataIndex(ref dataStartRef);
 
-                    Debug.Assert(dataIndex < data.Length, "Free block not in managed bounds");
-                    Debug.Assert(dataIndex + sizeof(int) + curFree.SizeBytes <= data.Length, "Free block end not in managed bounds");
+                    Check(dataIndex < data.Length, "Free block not in managed bounds");
+                    Check(dataIndex + sizeof(int) + curFree.SizeBytes <= data.Length, "Free block end not in managed bounds");
 
                     walkFreeBlocks++;
 
-                    Debug.Assert(curFree.SizeBytes > 0, "Illegal size for a free block");
+                    Check(curFree.SizeBytes > 0, "Illegal size for a free block");
 
                     walkFreeBytes += curFree.SizeBytes;
 
                     if (!Unsafe.IsNullRef(ref prevFree))
                     {
                         ref var prevFromCur = ref curFree.GetPrevFreeBlockRef(ref dataStartRef);
-                        Debug.Assert(Unsafe.AreSame(ref prevFree, ref prevFromCur), "Prev link invalid");
+                        Check(Unsafe.AreSame(ref prevFree, ref prevFromCur), "Prev link invalid");
                     }
 
                     prevFree = ref curFree;
@@ -377,8 +376,8 @@ namespace Garnet.server
                 {
                     var dataIndex = cur.GetDataIndex(ref dataStartRef);
 
-                    Debug.Assert(dataIndex < data.Length, "Block not in managed bounds");
-                    Debug.Assert(dataIndex + sizeof(int) + cur.SizeBytes <= data.Length, "Block end not in managed bounds");
+                    Check(dataIndex < data.Length, "Block not in managed bounds");
+                    Check(dataIndex + sizeof(int) + cur.SizeBytes <= data.Length, "Block end not in managed bounds");
 
                     if (cur.IsFree)
                     {
@@ -387,7 +386,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        Debug.Assert(cur.IsInUse, "Illegal block state");
+                        Check(cur.IsInUse, "Illegal block state");
 
                         scanAllocatedBlocks++;
                         scanAllocatedBytes += cur.SizeBytes;
@@ -397,10 +396,10 @@ namespace Garnet.server
                 }
             }
 
-            Debug.Assert(scanFreeBlocks == walkFreeBlocks, "Free block mismatch");
-            Debug.Assert(scanFreeBytes == walkFreeBytes, "Free bytes mismatch");
+            Check(scanFreeBlocks == walkFreeBlocks, "Free block mismatch");
+            Check(scanFreeBytes == walkFreeBytes, "Free bytes mismatch");
 
-            Debug.Assert(scanAllocatedBytes == AllocatedBytes, "Allocated bytes mismatch");
+            Check(scanAllocatedBytes == AllocatedBytes, "Allocated bytes mismatch");
 
             var totalBlocks = scanAllocatedBlocks + scanFreeBlocks;
             var totalBytes = scanAllocatedBytes + scanFreeBytes;
@@ -408,7 +407,18 @@ namespace Garnet.server
             var expectedOverhead = totalBlocks * sizeof(int);
 
             var allBytes = totalBytes + expectedOverhead;
-            Debug.Assert(allBytes == data.Length, "Bytes unaccounted for");
+            Check(allBytes == data.Length, "Bytes unaccounted for");
+
+            // Throws if shouldBe is false
+            static void Check(bool shouldBe, string errorMsg, [CallerArgumentExpression(nameof(shouldBe))] string shouldBeExpr = null)
+            {
+                if (shouldBe)
+                {
+                    return;
+                }
+
+                throw new InvalidOperationException($"Check failed: {errorMsg} ({shouldBeExpr})");
+            }
         }
 
         /// <summary>
@@ -441,7 +451,7 @@ namespace Garnet.server
         /// 
         /// If the allocation failes, the returned ref will be null.
         /// </summary>
-        internal ref byte AllocateNew(int sizeBytes, out bool failed)
+        public ref byte AllocateNew(int sizeBytes, out bool failed)
         {
             ref var dataStartRef = ref GetDataStartRef();
 
@@ -501,7 +511,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="start">Previously returned (non-null) value.</param>
         /// <param name="sizeBytes">Size passed to last <see cref="AllocateNew"/> or <see cref="ResizeAllocation"/> call.</param>
-        internal void Free(ref byte start, int sizeBytes)
+        public void Free(ref byte start, int sizeBytes)
         {
             ref var dataStartRef = ref GetDataStartRef();
             if (sizeBytes == 0)
@@ -524,7 +534,7 @@ namespace Garnet.server
         /// <summary>
         /// Akin to <see cref="AllocateNew(int, out bool)"/>, except reuses the original allocation given in <paramref name="start"/> if possible.
         /// </summary>
-        internal ref byte ResizeAllocation(ref byte start, int oldSizeBytes, int newSizeBytes, out bool failed)
+        public ref byte ResizeAllocation(ref byte start, int oldSizeBytes, int newSizeBytes, out bool failed)
         {
             ref var dataStartRef = ref GetDataStartRef();
             if (oldSizeBytes == 0)
@@ -759,7 +769,7 @@ namespace Garnet.server
         /// <summary>
         /// Split a free block such that the current block ends up with a size equal to <paramref name="curBlockUpdateSizeBytes"/>.
         /// </summary>
-        private readonly void SplitFreeBlock(ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
+        private void SplitFreeBlock(ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
         {
             Debug.Assert(curBlock.IsFree, "Only valid for free blocks");
 
@@ -796,13 +806,13 @@ namespace Garnet.server
         /// <summary>
         /// Grab the start of the managed memory we're allocating out of.
         /// </summary>
-        private readonly ref byte GetDataStartRef()
+        private ref byte GetDataStartRef()
         => ref MemoryMarshal.GetReference(data.Span);
 
         /// <summary>
         /// Turn a reference obtained from <see cref="BlockHeader.DataReference"/> back into a <see cref="BlockHeader"/> reference.
         /// </summary>
-        private readonly ref BlockHeader GetBlockRef(ref byte dataStartRef, ref byte userDataRef)
+        private ref BlockHeader GetBlockRef(ref byte dataStartRef, ref byte userDataRef)
         {
             Debug.Assert(!Unsafe.AreSame(ref dataStartRef, ref userDataRef), "User data is actually 0 size alloc, that doesn't make sense");
 
@@ -819,7 +829,7 @@ namespace Garnet.server
         /// 
         /// If the free list is empty, returns a null ref.
         /// </summary>
-        private readonly ref BlockHeader GetFreeList(ref byte dataStartRef)
+        private ref BlockHeader GetFreeList(ref byte dataStartRef)
         {
             if (freeListStartIndex == -1)
             {

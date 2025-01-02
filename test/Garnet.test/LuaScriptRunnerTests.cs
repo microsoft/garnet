@@ -137,7 +137,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public unsafe void LuaAllocMapperFunctions()
+        public unsafe void LuaLimittedPOH()
         {
             const int Iters = 20;
             const int TotalAllocSizeBytes = 1_024 * 1_024;
@@ -146,8 +146,8 @@ namespace Garnet.test
 
             // Special cases
             {
-                var luaAlloc = new LuaAllocMapper(TotalAllocSizeBytes);
-                luaAlloc.AssertCheckCorrectness();
+                var luaAlloc = new LuaLimittedPOHAllocator(TotalAllocSizeBytes);
+                luaAlloc.CheckCorrectness();
 
                 // 0 sized should work, and return the same thing each time
                 ref var zero0 = ref luaAlloc.AllocateNew(0, out var failed0);
@@ -167,12 +167,12 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(failedLarge);
                 ClassicAssert.IsTrue(Unsafe.IsNullRef(ref failedRef));
 
-                luaAlloc.AssertCheckCorrectness();
+                luaAlloc.CheckCorrectness();
             }
 
             // Fill whole allocation
             {
-                var luaAlloc = new LuaAllocMapper(TotalAllocSizeBytes);
+                var luaAlloc = new LuaLimittedPOHAllocator(TotalAllocSizeBytes);
                 var freeSpace = luaAlloc.FirstBlockSizeBytes;
 
                 for (var i = 0; i < Iters; i++)
@@ -196,7 +196,7 @@ namespace Garnet.test
 
                             toFree.Add((nint)Unsafe.AsPointer(ref newData));
                         }
-                        luaAlloc.AssertCheckCorrectness();
+                        luaAlloc.CheckCorrectness();
 
                         for (var j = 0; j < toFree.Count; j++)
                         {
@@ -207,12 +207,12 @@ namespace Garnet.test
 
                             luaAlloc.Free(ref Unsafe.AsRef<byte>((void*)ptr), size);
                         }
-                        luaAlloc.AssertCheckCorrectness();
+                        luaAlloc.CheckCorrectness();
 
                         ClassicAssert.AreEqual(0, luaAlloc.AllocatedBytes);
 
                         _ = luaAlloc.TryCoalesceAllFreeBlocks();
-                        luaAlloc.AssertCheckCorrectness();
+                        luaAlloc.CheckCorrectness();
 
                         ClassicAssert.AreEqual(freeSpace, luaAlloc.FirstBlockSizeBytes);
                     }
@@ -221,7 +221,7 @@ namespace Garnet.test
 
             // Repeated realloc preserves data and doesn't move.
             {
-                var luaAlloc = new LuaAllocMapper(TotalAllocSizeBytes);
+                var luaAlloc = new LuaLimittedPOHAllocator(TotalAllocSizeBytes);
                 var freeSpace = luaAlloc.FirstBlockSizeBytes;
 
                 for (var i = 0; i < Iters; i++)
@@ -266,7 +266,7 @@ namespace Garnet.test
                             size = newSize;
                             curData = ref newData;
                         }
-                        luaAlloc.AssertCheckCorrectness();
+                        luaAlloc.CheckCorrectness();
 
                         // Check final correctness
                         var finalData = MemoryMarshal.CreateReadOnlySpan(ref curData, size);
@@ -278,7 +278,7 @@ namespace Garnet.test
                         ClassicAssert.AreEqual(0, luaAlloc.AllocatedBytes);
                         ClassicAssert.AreEqual(freeSpace, luaAlloc.FirstBlockSizeBytes);
 
-                        luaAlloc.AssertCheckCorrectness();
+                        luaAlloc.CheckCorrectness();
                     }
                 }
             }
@@ -287,7 +287,7 @@ namespace Garnet.test
             {
                 const int AllocSize = 16;
 
-                var luaAlloc = new LuaAllocMapper(TotalAllocSizeBytes);
+                var luaAlloc = new LuaLimittedPOHAllocator(TotalAllocSizeBytes);
                 var freeSpace = luaAlloc.FirstBlockSizeBytes;
 
                 for (var i = 0; i < Iters; i++)
@@ -311,7 +311,7 @@ namespace Garnet.test
 
                         toFree.Add((nint)Unsafe.AsPointer(ref newData));
                     }
-                    luaAlloc.AssertCheckCorrectness();
+                    luaAlloc.CheckCorrectness();
 
                     // Each block should be served out of a split, so free list should stay at 1
                     ClassicAssert.AreEqual(1, luaAlloc.FreeBlockCount);
@@ -334,7 +334,7 @@ namespace Garnet.test
 
                         luaAlloc.Free(ref asData, AllocSize);
                     }
-                    luaAlloc.AssertCheckCorrectness();
+                    luaAlloc.CheckCorrectness();
 
                     // Check that all free's didn't corrupt anything
                     ClassicAssert.AreEqual(0, luaAlloc.AllocatedBytes);
@@ -342,13 +342,13 @@ namespace Garnet.test
                     // Check that all memory is reclaimable
                     _ = luaAlloc.TryCoalesceAllFreeBlocks();
                     ClassicAssert.AreEqual(freeSpace, luaAlloc.FirstBlockSizeBytes);
-                    luaAlloc.AssertCheckCorrectness();
+                    luaAlloc.CheckCorrectness();
                 }
             }
 
             // Random operations with variable sized allocs
             {
-                var luaAlloc = new LuaAllocMapper(TotalAllocSizeBytes);
+                var luaAlloc = new LuaLimittedPOHAllocator(TotalAllocSizeBytes);
                 var freeSpace = luaAlloc.FirstBlockSizeBytes;
 
                 for (var i = 0; i < Iters; i++)
@@ -466,9 +466,9 @@ namespace Garnet.test
                                 ClassicAssert.Fail("Unexpected operation");
                                 break;
                         }
-                        luaAlloc.AssertCheckCorrectness();
+                        luaAlloc.CheckCorrectness();
                     }
-                    luaAlloc.AssertCheckCorrectness();
+                    luaAlloc.CheckCorrectness();
 
                     // Validate and free everything that's left
                     foreach (var (ptr, expected, size) in toFree)
@@ -480,7 +480,7 @@ namespace Garnet.test
 
                         luaAlloc.Free(ref asData, size);
                     }
-                    luaAlloc.AssertCheckCorrectness();
+                    luaAlloc.CheckCorrectness();
 
                     // Check that all free's didn't corrupt anything
                     ClassicAssert.AreEqual(0, luaAlloc.AllocatedBytes);
@@ -489,7 +489,7 @@ namespace Garnet.test
                     _ = luaAlloc.TryCoalesceAllFreeBlocks();
                     ClassicAssert.AreEqual(freeSpace, luaAlloc.FirstBlockSizeBytes);
 
-                    luaAlloc.AssertCheckCorrectness();
+                    luaAlloc.CheckCorrectness();
                 }
             }
         }
