@@ -125,13 +125,13 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="functions">**FUNCTIONS**</span> | FCALL | ➖ |  |
 |  | FCALL_RO | ➖ |  |
 |  | DELETE | ➖ |
-|  | DUMP | ➖ |
+|  | DUMP | ➖ |  |
 |  | FLUSH | ➖ |
 |  | HELP | ➖ |
 |  | KILL | ➖ |
 |  | LIST | ➖ |
 |  | LOAD | ➖ |
-|  | RESTORE | ➖ |
+|  | RESTORE | ➖ |  |
 |  | STATS | ➖ |
 | <span id="generic">**GENERIC**</span> | [PERSIST](generic-commands.md#persist) | ➕ |  |
 |  | [PEXPIRE](generic-commands.md#pexpire) | ➕ |  |
@@ -141,7 +141,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | RANDOMKEY | ➖ |  |
 |  | [RENAME](generic-commands.md#rename) | ➕ |  |
 |  | [RENAMENX](generic-commands.md#renamenx) | ➕ |  |
-|  | RESTORE | ➖ |  |
+|  | [RESTORE](generic-commands.md#restore) | ➕ |
 |  | [SCAN](generic-commands.md#scan) | ➕ |  |
 |  | SORT | ➖ |  |
 |  | SORT_RO | ➖ |  |
@@ -193,7 +193,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | PFSELFTEST | ➖ | Internal command |
 | <span id="keys">**KEYS**</span> | COPY | ➖ |  |
 |  | [DEL](generic-commands.md#del) | ➕ |  |
-|  | DUMP | ➖ |  |
+|  | [DUMP](generic-commands.md#dump) | ➕ |
 |  | [EXISTS](generic-commands.md#exists) | ➕ |  |
 |  | [EXPIRE](generic-commands.md#expire) | ➕ |  |
 |  | [EXPIREAT](generic-commands.md#expireat) | ➕ |  |

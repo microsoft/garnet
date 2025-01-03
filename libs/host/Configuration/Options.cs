@@ -499,6 +499,10 @@ namespace Garnet
         [OptionValidation]
         [Option("fail-on-recovery-error", Default = false, Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
         public bool? FailOnRecoveryError { get; set; }
+        
+        [OptionValidation]
+        [Option("skip-checksum-validation", Default = false, Required = false, HelpText = "Skip checksum validation")]
+        public bool? SkipChecksumValidation { get; set; }
 
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
@@ -708,7 +712,8 @@ namespace Garnet
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
                 LoadModuleCS = LoadModuleCS,
-                FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault()
+                FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
+                SkipChecksumValidation = SkipChecksumValidation.GetValueOrDefault(),
             };
         }
 

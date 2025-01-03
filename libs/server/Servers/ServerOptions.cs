@@ -97,6 +97,11 @@ namespace Garnet.server
         /// Server bootup should fail if errors happen during bootup of AOF and checkpointing.
         /// </summary>
         public bool FailOnRecoveryError = false;
+        
+        /// <summary>
+        /// Skip checksum validation
+        /// </summary>
+        public bool SkipChecksumValidation = false;
 
         /// <summary>
         /// Logger
