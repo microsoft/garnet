@@ -461,7 +461,7 @@ return redis.status_reply("OK")
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            for (int i = 0; i < 10; i++)
+            for (var i = 0; i < 10; i++)
             {
                 var response1 = (string[])db.ScriptEvaluate(script1, ["key1", "key2"]);
                 ClassicAssert.AreEqual(2, response1.Length);
@@ -634,8 +634,8 @@ return redis.status_reply("OK")
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            db.StringSet("2", "hello");
-            db.StringSet("2.1", "world");
+            _ = db.StringSet("2", "hello");
+            _ = db.StringSet("2.1", "world");
 
             var res = (string)db.ScriptEvaluate("return redis.call('GET', 2.1)");
             ClassicAssert.AreEqual("world", res);
@@ -700,14 +700,15 @@ return redis.status_reply("OK")
                 {
                     if (i != 1)
                     {
-                        tableDepth.Append(", ");
+                        _ = tableDepth.Append(", ");
                     }
-                    tableDepth.Append("{ ");
-                    tableDepth.Append(i);
+                    _ = tableDepth.Append("{ ");
+                    _ = tableDepth.Append(i);
                 }
+
                 for (var i = 1; i <= Depth; i++)
                 {
-                    tableDepth.Append(" }");
+                    _ = tableDepth.Append(" }");
                 }
 
                 var script = "return " + tableDepth.ToString();

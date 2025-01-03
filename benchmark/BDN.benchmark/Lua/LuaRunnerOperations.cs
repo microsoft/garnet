@@ -139,9 +139,13 @@ return returnValue
         /// Lua parameters provider
         /// </summary>
         public IEnumerable<LuaParams> LuaParamsProvider()
-        {
-            yield return new();
-        }
+        => [
+            new(LuaMemoryManagementMode.Native, false),
+            new(LuaMemoryManagementMode.Tracked, false),
+            new(LuaMemoryManagementMode.Tracked, true),
+            new(LuaMemoryManagementMode.Managed, false),
+            new(LuaMemoryManagementMode.Managed, true),
+        ];
 
         private EmbeddedRespServer server;
         private RespServerSession session;
@@ -151,16 +155,20 @@ return returnValue
         private LuaRunner smallCompileRunner;
         private LuaRunner largeCompileRunner;
 
+        private LuaOptions opts;
+
         [GlobalSetup]
         public void GlobalSetup()
         {
-            server = new EmbeddedRespServer(new GarnetServerOptions() { EnableLua = true, QuietMode = true });
+            opts = Params.CreateOptions();
+
+            server = new EmbeddedRespServer(new GarnetServerOptions() { EnableLua = true, QuietMode = true, LuaOptions = opts });
 
             session = server.GetRespSession();
-            paramsRunner = new LuaRunner(new(), "return nil");
+            paramsRunner = new LuaRunner(opts, "return nil");
 
-            smallCompileRunner = new LuaRunner(new(), SmallScript);
-            largeCompileRunner = new LuaRunner(new(), LargeScript);
+            smallCompileRunner = new LuaRunner(opts, SmallScript);
+            largeCompileRunner = new LuaRunner(opts, LargeScript);
         }
 
         [GlobalCleanup]
@@ -194,13 +202,13 @@ return returnValue
         [Benchmark]
         public void ConstructSmall()
         {
-            using var runner = new LuaRunner(new(), SmallScript);
+            using var runner = new LuaRunner(opts, SmallScript);
         }
 
         [Benchmark]
         public void ConstructLarge()
         {
-            using var runner = new LuaRunner(new(), LargeScript);
+            using var runner = new LuaRunner(opts, LargeScript);
         }
 
         [Benchmark]

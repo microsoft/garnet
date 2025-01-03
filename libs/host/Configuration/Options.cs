@@ -505,6 +505,7 @@ namespace Garnet
         public LuaMemoryManagementMode LuaMemoryManagementMode { get; set; }
 
         [MemorySizeValidation(false)]
+        [ForbiddenWithOption(nameof(LuaMemoryManagementMode), nameof(LuaMemoryManagementMode.Native))]
         [Option("lua-script-memory-limit", Default = null, HelpText = "Memory limit for a Lua instances while running a script, lua-memory-management-mode must be set to something other than Native to use this flag")]
         public string LuaScriptMemoryLimit { get; set; }
 

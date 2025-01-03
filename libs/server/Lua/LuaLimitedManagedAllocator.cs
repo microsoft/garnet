@@ -338,12 +338,12 @@ namespace Garnet.server
 
                 if (ShouldSplit(ref cur, actualSizeBytes))
                 {
-                    SplitFreeBlock(ref cur, actualSizeBytes);
+                    SplitFreeBlock(ref dataStartRef, ref cur, actualSizeBytes);
                     Debug.Assert(cur.IsFree && cur.SizeBytes == actualSizeBytes, "Split produced unexpected block");
                 }
 
                 // Cur will work, so remove it from the free list, mark it, and return it
-                RemoveFromFreeList(ref cur);
+                RemoveFromFreeList(ref dataStartRef, ref cur);
                 cur.MarkInUse();
 
                 AllocatedBytes += cur.SizeBytes;
@@ -418,7 +418,18 @@ namespace Garnet.server
 
                 if (ShouldSplit(ref curBlock, actualSizeBytes))
                 {
-                    SplitInUseBlock(ref curBlock, actualSizeBytes);
+                    // Move the unused space into a new block
+
+                    SplitInUseBlock(ref dataStartRef, ref curBlock, actualSizeBytes);
+
+                    // And try and coalesce that new block into the largest possible one
+                    ref var nextBlock = ref curBlock.GetNextAdjacentBlockRef(ref dataStartRef, data.Length);
+                    if (!Unsafe.IsNullRef(ref nextBlock))
+                    {
+                        while (TryCoalesceSingleBlock(ref dataStartRef, ref nextBlock))
+                        {
+                        }
+                    }
                 }
 
                 failed = false;
@@ -428,7 +439,7 @@ namespace Garnet.server
             // Attempt to grow the allocation in place
             var keepInPlace = false;
 
-            while (TryCoalesceSingleBlock(ref curBlock))
+            while (TryCoalesceSingleBlock(ref dataStartRef, ref curBlock))
             {
                 if (curBlock.SizeBytes >= actualSizeBytes)
                 {
@@ -443,7 +454,7 @@ namespace Garnet.server
                 if (ShouldSplit(ref curBlock, actualSizeBytes))
                 {
                     // We coalesced such that there's a lot of empty space at the end of this block, peel it off for later reuse
-                    SplitInUseBlock(ref curBlock, actualSizeBytes);
+                    SplitInUseBlock(ref dataStartRef, ref curBlock, actualSizeBytes);
                     Debug.Assert(curBlock.IsInUse && curBlock.SizeBytes == actualSizeBytes, "Split produced unexpected block");
                 }
 
@@ -623,7 +634,7 @@ namespace Garnet.server
             while (!Unsafe.IsNullRef(ref cur))
             {
                 // Coalesce this block repeatedly, so runs of free blocks are collapsed into one
-                while (TryCoalesceSingleBlock(ref cur))
+                while (TryCoalesceSingleBlock(ref dataStartRef, ref cur))
                 {
                     madeProgress = true;
                 }
@@ -663,12 +674,10 @@ namespace Garnet.server
         /// <summary>
         /// Removes the given block from the free list.
         /// </summary>
-        private void RemoveFromFreeList(ref BlockHeader block)
+        private void RemoveFromFreeList(ref byte dataStartRef, ref BlockHeader block)
         {
             Debug.Assert(freeListStartIndex != -1, "Shouldn't be removing from free list if free list is empty");
             Debug.Assert(block.IsFree, "Only valid for free blocks");
-
-            ref var dataStartRef = ref GetDataStartRef();
 
             var blockIndex = block.GetDataIndex(ref dataStartRef);
 
@@ -743,17 +752,15 @@ namespace Garnet.server
         /// <paramref name="block"/> can be free or allocated, but coalescing will only succeed
         /// if the adjacent block is free.
         /// </summary>
-        private bool TryCoalesceSingleBlock(ref BlockHeader block)
+        private bool TryCoalesceSingleBlock(ref byte dataStartRef, ref BlockHeader block)
         {
-            ref var dataStartRef = ref GetDataStartRef();
-
             ref var nextBlock = ref block.GetNextAdjacentBlockRef(ref dataStartRef, data.Length);
             if (Unsafe.IsNullRef(ref nextBlock) || !nextBlock.IsFree)
             {
                 return false;
             }
 
-            RemoveFromFreeList(ref nextBlock);
+            RemoveFromFreeList(ref dataStartRef, ref nextBlock);
             var newBlockSizeBytes = nextBlock.SizeBytes + block.SizeBytes + sizeof(int);
 
             if (block.IsFree)
@@ -776,13 +783,12 @@ namespace Garnet.server
         /// <summary>
         /// Split an in use block, such that the current block ends up with a size equal to <paramref name="curBlockUpdateSizeBytes"/>.
         /// </summary>
-        private void SplitInUseBlock(ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
+        private void SplitInUseBlock(ref byte dataStartRef, ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
         {
             Debug.Assert(curBlock.IsInUse, "Only valid for in use blocks");
 
             var oldSizeBytes = curBlock.SizeBytes;
 
-            ref var dataStartRef = ref GetDataStartRef();
             ref var newBlock = ref SplitCommon(ref curBlock, curBlockUpdateSizeBytes);
 
             // New block needs to be placed in free list
@@ -796,11 +802,10 @@ namespace Garnet.server
         /// <summary>
         /// Split a free block such that the current block ends up with a size equal to <paramref name="curBlockUpdateSizeBytes"/>.
         /// </summary>
-        private void SplitFreeBlock(ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
+        private void SplitFreeBlock(ref byte dataStartRef, ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
         {
             Debug.Assert(curBlock.IsFree, "Only valid for free blocks");
 
-            ref var dataStartRef = ref GetDataStartRef();
             ref var oldNextBlock = ref curBlock.GetNextFreeBlockRef(ref dataStartRef);
 
             ref var newBlock = ref SplitCommon(ref curBlock, curBlockUpdateSizeBytes);

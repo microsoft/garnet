@@ -15,6 +15,8 @@ namespace BDN.benchmark.Operations
     [MemoryDiagnoser]
     public unsafe class ScriptOperations : OperationsBase
     {
+        // TODO: Need to get LuaParams here in again
+
         // Small script that does 1 operation and no logic
         const string SmallScriptText = @"return redis.call('GET', KEYS[1]);";
 
