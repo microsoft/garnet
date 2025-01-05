@@ -24,16 +24,6 @@ namespace Tsavorite.core
         public IHeapContainer<TKey> request_key;
 
         /// <summary>
-        /// Retrieved key
-        /// </summary>
-        public TKey key;
-
-        /// <summary>
-        /// Retrieved value
-        /// </summary>
-        public TValue value;
-
-        /// <summary>
         /// Logical address
         /// </summary>
         public long logicalAddress;

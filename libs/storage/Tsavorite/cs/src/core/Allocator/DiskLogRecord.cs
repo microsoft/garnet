@@ -12,20 +12,37 @@ namespace Tsavorite.core
     /// <summary>The record on the disk: header, optional fields, key, value</summary>
     /// <remarks>The space is laid out as:
     ///     <list>
-    ///     <item>[RecordInfo][FullRecordLength][DBId?][ETag?][Expiration?][key SpanByte][value SpanByte]</item>
+    ///     <item>[RecordInfo][FullRecordLength][ETag?][Expiration?][key SpanByte][value SpanByte]</item>
     ///     </list>
     /// This lets us get to the optional fields for comparisons without loading the full record (GetIOSize should cover the space for optionals).
     /// </remarks>
-    public unsafe struct DiskLogRecord(long physicalAddress)
+    public unsafe struct DiskLogRecord : IReadOnlyLogRecord
     {
         /// <summary>The physicalAddress in the log.</summary>
-        internal readonly long physicalAddress = physicalAddress;
+        internal readonly long physicalAddress;
 
-        /// <summary>A ref to the record header</summary>
+        /// <summary>The deserialized ValueObject if this is a disk record for the Object Store.</summary>
+        internal IHeapObject valueObject;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal DiskLogRecord(long physicalAddress) => this.physicalAddress = physicalAddress;
+
+        #region IReadOnlyRecord
+        /// <inheritdoc/>
         public readonly ref RecordInfo InfoRef => ref Unsafe.AsRef<RecordInfo>((byte*)physicalAddress);
-
-        /// <summary>Fast access returning a copy of the record header</summary>
+        /// <inheritdoc/>
         public readonly RecordInfo Info => *(RecordInfo*)physicalAddress;
+        /// <inheritdoc/>
+        public readonly SpanByte Key => *(SpanByte*)(physicalAddress + RecordInfo.GetLength() + FullRecordLenSize + ETagLen + ExpirationLen);
+        /// <inheritdoc/>
+        public readonly SpanByte ValueSpan => throw new TsavoriteException("ObjectLogRecord does not have SpanByte values");
+        /// <inheritdoc/>
+        public readonly IHeapObject ValueObject => ValueObject;
+        /// <inheritdoc/>
+        public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : 0;
+        /// <inheritdoc/>
+        public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
+        #endregion //IReadOnlyRecord
 
         const int FullRecordLenSize = sizeof(int);
 
@@ -34,11 +51,7 @@ namespace Tsavorite.core
         /// <summary>The used length of the record rounded up to record-alignment boundary</summary>
         public readonly int AlignedFullRecordLen => RoundUp(FullRecordLen, Constants.kRecordAlignment);
 
-        readonly long KeyAddress => physicalAddress + RecordInfo.GetLength() + FullRecordLenSize + DBIdLen + ETagLen + ExpirationLen;
-
-        /// <summary>The key; unlike in-memory, this is always an inline serialized spanbyte.</summary>
-        /// <remarks>Not a ref return as it cannot be changed</remarks>
-        public readonly SpanByte Key => *(SpanByte*)(physicalAddress + RecordInfo.GetLength() + FullRecordLenSize + DBIdLen + ETagLen + ExpirationLen);
+        readonly long KeyAddress => physicalAddress + RecordInfo.GetLength() + FullRecordLenSize + ETagLen + ExpirationLen;
 
         internal readonly long ValueAddress => KeyAddress + Key.TotalInlineSize;
 
@@ -47,20 +60,14 @@ namespace Tsavorite.core
         /// <remarks>Not a ref return as it cannot be changed</remarks>
         public readonly SpanByte Value => new(FullRecordLen - (int)(ValueAddress - physicalAddress), (IntPtr)ValueAddress);
 
-        private readonly int DBIdLen => Info.HasDBId ? 1 : 0;
-        private readonly int ETagLen => Info.HasETag ? Constants.ETagSize : 0;
-        private readonly int ExpirationLen => Info.HasExpiration ? Constants.ExpirationSize : 0;
+        private readonly int ETagLen => Info.HasETag ? LogRecord.ETagSize : 0;
+        private readonly int ExpirationLen => Info.HasExpiration ? LogRecord.ExpirationSize : 0;
 
-        private readonly long GetDBIdAddress() => physicalAddress + RecordInfo.GetLength() + FullRecordLenSize;
-        private readonly long GetETagAddress() => GetDBIdAddress() + DBIdLen + ETagLen + ExpirationLen;
-        private readonly long GetExpirationAddress() => GetETagAddress() + ETagLen + ExpirationLen;
-
-        public readonly int GetDBId() => Info.HasDBId ? *(byte*)GetDBIdAddress() : 0;
-        public readonly long GetETag() => Info.HasETag ? *(long*)GetETagAddress() : 0;
-        public readonly long GetExpiration() => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
+        private readonly long GetETagAddress() => physicalAddress + RecordInfo.GetLength() + FullRecordLenSize;
+        private readonly long GetExpirationAddress() => GetETagAddress() + ETagLen;
 
         /// <summary>The size to IO from disk when reading a record. Keys and Values are SpanByte on disk and we reuse the max inline key size
-        /// for both key and value for this estimate. They prefaced by the full record length and optionals (DBID, ETag, Expiration) which we include in the estimate.</summary>
+        /// for both key and value for this estimate. They prefaced by the full record length and optionals (ETag, Expiration) which we include in the estimate.</summary>
         public static int GetIOSize(int sectorSize) => RoundUp(RecordInfo.GetLength() + FullRecordLenSize + sizeof(long) * 2 + sizeof(int) * 2 + (1 << LogSettings.kMaxInlineKeySizeBits) * 2, sectorSize);
 
         internal static SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, SpanByte> ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).Key;
@@ -72,7 +79,7 @@ namespace Tsavorite.core
         {
             static string bstr(bool value) => value ? "T" : "F";
 
-            return $"ri {Info} | key {Key.ToShortString(20)} | val {Value.ToShortString(20)} | HasDBId {bstr(Info.HasDBId)}:{GetDBId()} | HasETag {bstr(Info.HasETag)}:{GetETag()} | HasExpiration {bstr(Info.HasExpiration)}:{GetExpiration()}";
+            return $"ri {Info} | key {Key.ToShortString(20)} | val {Value.ToShortString(20)} | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpiration {bstr(Info.HasExpiration)}:{Expiration}";
         }
     }
 }

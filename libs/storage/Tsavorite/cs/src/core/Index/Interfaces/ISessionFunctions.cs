@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// <typeparam name="TInput"></typeparam>
     /// <typeparam name="TOutput"></typeparam>
     /// <typeparam name="TContext"></typeparam>
-    public interface ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
+    public interface ISessionFunctions<TKey, TValue, TInput, TOutput, TContext> : IVariableLengthInput<TValue, TInput>
     {
         #region Reads
         /// <summary>
@@ -57,9 +57,8 @@ namespace Tsavorite.core
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
         /// <param name="reason">The operation for which this write is being done</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool SingleWriter(ref LogRecord dstLogRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo);
+        bool SingleWriter(ref LogRecord dstLogRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
 
         /// <summary>
         /// Called after SingleWriter when a record containing an upsert of a new key has been successfully inserted at the tail of the log.
@@ -104,9 +103,8 @@ namespace Tsavorite.core
         /// <param name="input">The user input to be used to create the destination record's value</param>
         /// <param name="output">The location where the output of the operation, if any, is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool InitialUpdater(ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
+        bool InitialUpdater(ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
 
         /// <summary>
         /// Called after a record containing an initial update for RMW has been successfully inserted at the tail of the log.
@@ -169,23 +167,6 @@ namespace Tsavorite.core
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
         bool InPlaceUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
         #endregion InPlaceUpdater
-
-        #region Variable-length value size
-        /// <summary>
-        /// Length of resulting value object when performing RMW modification of value using given input
-        /// </summary>
-        int GetRMWModifiedValueLength(ref TValue value, ref TInput input);
-
-        /// <summary>
-        /// Initial expected length of value object when populated by RMW using given input
-        /// </summary>
-        int GetRMWInitialValueLength(ref TInput input);
-
-        /// <summary>
-        /// Length of resulting value object when performing Upsert of value using given input
-        /// </summary>
-        int GetUpsertValueLength(ref TValue value, ref TInput input);
-        #endregion Variable-length value size
 
         /// <summary>
         /// RMW completion

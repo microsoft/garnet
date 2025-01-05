@@ -258,7 +258,7 @@ namespace Tsavorite.core
             var (actualSize, allocatedSize, keySize) = hlog.GetRecordSize(ref key, ref value);
 
             // We know the existing record cannot be elided; it must point to a valid record; otherwise InternalDelete would have returned NOTFOUND.
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, new AllocateOptions() { Recycle = true },
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, new AllocateOptions() { recycle = true },
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 

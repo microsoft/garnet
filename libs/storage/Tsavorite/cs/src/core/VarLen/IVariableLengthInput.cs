@@ -8,24 +8,14 @@ namespace Tsavorite.core
     /// </summary>
     public interface IVariableLengthInput<TValue, TInput>
     {
-        /// <summary>
-        /// Length of resulting value object when performing RMW modification of value using given input
-        /// </summary>
-        int GetRMWModifiedValueLength(ref TValue value, ref TInput input);
+        /// <summary>Length of resulting value object when performing RMW modification of value using given input</summary>
+        RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input)
+            where TSourceLogRecord : IReadOnlyLogRecord;
 
-        /// <summary>
-        /// Initial expected length of value object when populated by RMW using given input
-        /// </summary>
-        /// <param name="input"></param>
-        /// <returns></returns>
-        int GetRMWInitialValueLength(ref TInput input);
+        /// <summary>Initial expected length of value object when populated by RMW using given input</summary>
+        RecordFieldInfo GetRMWInitialFieldInfo(ref TInput input);
 
-        /// <summary>
-        /// Length of value object, when populated by Upsert using given value and input
-        /// </summary>
-        /// <param name="value"></param>
-        /// <param name="input"></param>
-        /// <returns></returns>
-        int GetUpsertValueLength(ref TValue value, ref TInput input);
+        /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
+        RecordFieldInfo GetUpsertFieldInfo(TValue value, ref TInput input);
     }
 }

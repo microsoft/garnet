@@ -321,7 +321,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Copy to given <see cref="SpanByteAndMemory"/> (header and payload copied to actual span/memory)
+        /// Copy to given <see cref="SpanByteAndMemory"/> (header and payload copied to actual span/memory) // TODO remove? Is this needed for other than Expiration?
         /// </summary>
         public void CopyWithHeaderTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {

@@ -12,31 +12,31 @@ namespace Garnet.server
     {
         /// <inheritdoc />
         public bool SingleWriter(ref LogRecord logRecord, ref RawStringInput input, SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-            => logRecord.StringLogRecord.TrySetValue(srcValue);
+            => logRecord.TrySetValueSpan(srcValue);
 
         /// <inheritdoc />
         public void PostSingleWriter(ref LogRecord logRecord, ref RawStringInput input, ref SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (reason == WriteReason.Upsert && functionsState.appendOnlyFile != null)
-                WriteLogUpsert(logRecord.StringLogRecord.Key, ref input, ref srcValue, upsertInfo.Version, upsertInfo.SessionID);
+                WriteLogUpsert(logRecord.Key, ref input, ref srcValue, upsertInfo.Version, upsertInfo.SessionID);
         }
 
         /// <inheritdoc />
         public bool ConcurrentWriter(ref LogRecord logRecord, ref RawStringInput input, SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
         {
-            if (ConcurrentWriterWorker(ref logRecord.StringLogRecord, srcValue, ref input, ref upsertInfo, ref recordInfo))
+            if (ConcurrentWriterWorker(ref logRecord, srcValue, ref input, ref upsertInfo, ref recordInfo))
             {
-                if (!logRecord.StringLogRecord.Info.Modified)
+                if (!logRecord.Info.Modified)
                     functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
                 if (functionsState.appendOnlyFile != null)
-                    WriteLogUpsert(logRecord.StringLogRecord.Key, ref input, ref srcValue, upsertInfo.Version, upsertInfo.SessionID);
+                    WriteLogUpsert(logRecord.Key, ref input, ref srcValue, upsertInfo.Version, upsertInfo.SessionID);
                 return true;
             }
             return false;
         }
 
-        static bool ConcurrentWriterWorker(ref StringLogRecord logRecord, SpanByte srcValue, ref RawStringInput input, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
-            => logRecord.TrySetValue(srcValue);
+        static bool ConcurrentWriterWorker(ref LogRecord logRecord, SpanByte srcValue, ref RawStringInput input, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+            => logRecord.TrySetValueSpan(srcValue);
     }
 }

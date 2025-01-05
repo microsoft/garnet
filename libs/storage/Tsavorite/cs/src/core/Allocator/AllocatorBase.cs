@@ -275,7 +275,7 @@ namespace Tsavorite.core
 
                         while (physicalAddress < endPhysicalAddress)
                         {
-                            ref var info = ref LogRecordBase.GetInfoRef(physicalAddress);
+                            ref var info = ref LogRecord.GetInfoRef(physicalAddress);
                             var (_, alignedRecordSize) = _wrapper.GetRecordSize(physicalAddress);
                             if (info.Dirty)
                             {
@@ -397,24 +397,15 @@ namespace Tsavorite.core
         /// <summary>Get first valid address</summary>
         public long GetFirstValidLogicalAddress(long page) => page == 0 ? Constants.kFirstValidAddress : page << LogPageSizeBits;
 
-        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref LogRecordBase.GetInfoRef(physicalAddress);
+        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref LogRecord.GetInfoRef(physicalAddress);
 
         public static unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
 
-        // GetKey is used in TracebackForKeyMatch. We do not need GetValue because it is obtained from ObjectLogRecord.
-        public static SpanByte GetKey(long physicalAddress) => LogRecordBase.GetKey(physicalAddress);
+        // GetKey is used in TracebackForKeyMatch. TODO remove in favor of the direct LogRecord call
+        public static SpanByte GetKey(long physicalAddress) => LogRecord.GetKey(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long KeyOffset(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long ValueAddress(long physicalAddress) => LogRecordBase.GetValueAddress(physicalAddress);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe int KeySize(long physicalAddress) => (*(SpanByte*)KeyOffset(physicalAddress)).TotalSize;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe void SerializeKey(ref SpanByte src, long physicalAddress) => src.CopyTo((byte*)KeyOffset(physicalAddress));
+        public static unsafe void SerializeKey(ref SpanByte key, long physicalAddress) => key.CopyTo(ref LogRecord.GetKeyRef(physicalAddress));
 
         #endregion LogRecord functions
 
@@ -458,7 +449,7 @@ namespace Tsavorite.core
                                 Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
 
                                 // Clean up temporary bits when applying the delta log
-                                ref var destInfo = ref LogRecordBase.GetInfoRef(destination);
+                                ref var destInfo = ref LogRecord.GetInfoRef(destination);
                                 destInfo.ClearBitsForDiskImages();
                             }
                             physicalAddress += size;
@@ -1905,7 +1896,7 @@ namespace Tsavorite.core
 
                         while (physicalAddress < endPhysicalAddress)
                         {
-                            ref var info = ref LogRecordBase.GetInfoRef(physicalAddress);
+                            ref var info = ref LogRecord.GetInfoRef(physicalAddress);
                             var (_, alignedRecordSize) = _wrapper.GetRecordSize(physicalAddress);
                             if (info.Dirty)
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic

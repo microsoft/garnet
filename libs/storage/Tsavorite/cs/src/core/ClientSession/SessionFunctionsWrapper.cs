@@ -26,38 +26,45 @@ namespace Tsavorite.core
 
         #region Reads
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo)
-            => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
+        public bool SingleReader(long logicalAddress, long physicalAddress, ref TInput input, ref TOutput dst, ref ReadInfo readInfo)
+        {
+            var logRecord = _clientSession.store.hlog.CreateLogRecord(logicalAddress, physicalAddress);
+            return _clientSession.functions.SingleReader(ref logRecord, ref input, ref dst, ref readInfo);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-            => _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo, ref recordInfo);
+        public bool ConcurrentReader(long logicalAddress, long physicalAddress, ref TInput input, ref TOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        {
+            var logRecord = _clientSession.store.hlog.CreateLogRecord(logicalAddress, physicalAddress);
+            return _clientSession.functions.ConcurrentReader(ref logRecord, ref input, ref dst, ref readInfo, ref recordInfo);
+        }
 
-        public void ReadCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata)
-            => _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
+        public void ReadCompletionCallback(long logicalAddress, long physicalAddress, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata)
+        {
+            var logRecord = _clientSession.store.hlog.CreateLogRecord(logicalAddress, physicalAddress);
+            _clientSession.functions.ReadCompletionCallback(ref logRecord, ref input, ref output, ctx, status, recordMetadata);
+        }
 
         #endregion Reads
 
         #region Upserts
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-            => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
+        public bool SingleWriter(ref LogRecord logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            => _clientSession.functions.SingleWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo, reason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostSingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+        public void PostSingleWriter(ref LogRecord logRecord, ref TInput input, TValue srcValue, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
-            recordInfo.SetDirtyAndModified();
-            _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
+            logRecord.InfoRef.SetDirtyAndModified();
+            _clientSession.functions.PostSingleWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo, reason);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(long physicalAddress, ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+        public bool ConcurrentWriter(long physicalAddress, ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo)
         {
-            (upsertInfo.UsedValueLength, upsertInfo.FullValueLength, _) = _clientSession.store.GetRecordLengths(physicalAddress, ref dst, ref recordInfo);
-            if (!_clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, ref recordInfo))
+            if (!_clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo))
                 return false;
-            _clientSession.store.SetExtraValueLength(ref dst, ref recordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
-            recordInfo.SetDirtyAndModified();
+            logRecord.InfoRef.SetDirtyAndModified();
             return true;
         }
         #endregion Upserts
@@ -69,31 +76,34 @@ namespace Tsavorite.core
             => _clientSession.functions.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-            => _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
+        public bool InitialUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            => _clientSession.functions.InitialUpdater(ref logRecord, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostInitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public void PostInitialUpdater(ref LogRecord logRecord, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             recordInfo.SetDirtyAndModified();
-            _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+            _clientSession.functions.PostInitialUpdater(ref logRecord, ref input, ref value, ref output, ref rmwInfo);
         }
         #endregion InitialUpdater
 
         #region CopyUpdater
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool NeedCopyUpdate(ref TKey key, ref TInput input, ref TValue oldValue, ref TOutput output, ref RMWInfo rmwInfo)
-            => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output, ref rmwInfo);
+        public bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : IReadOnlyLogRecord
+            => _clientSession.functions.NeedCopyUpdate(ref srcLogRecord, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-            => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo, ref recordInfo);
+        public bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : IReadOnlyLogRecord
+            => _clientSession.functions.CopyUpdater(ref srcLogRecord, ref dstLogRecord, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool PostCopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : IReadOnlyLogRecord
         {
-            recordInfo.SetDirtyAndModified();
-            return _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
+            dstLogRecord.InfoRef.SetDirtyAndModified();
+            return _clientSession.functions.PostCopyUpdater(ref srcLogRecord, ref dstLogRecord, ref input, ref output, ref rmwInfo);
         }
         #endregion CopyUpdater
 
@@ -101,12 +111,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceUpdater(long physicalAddress, ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, out OperationStatus status, ref RecordInfo recordInfo)
         {
-            (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, _) = _clientSession.store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
-
+            // This wraps the ISessionFunctions call to provide expiration logic.
             if (_clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo))
             {
                 rmwInfo.Action = RMWAction.Default;
-                _clientSession.store.SetExtraValueLength(ref value, ref recordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                 recordInfo.SetDirtyAndModified();
 
                 // MarkPage is done in InternalRMW
@@ -192,13 +200,13 @@ namespace Tsavorite.core
 
         #region Internal utilities
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetRMWInitialValueLength(ref TInput input) => _clientSession.functions.GetRMWInitialValueLength(ref input);
+        public RecordFieldInfo GetRMWInitialFieldInfo(ref TInput input) => _clientSession.functions.GetRMWInitialValueLength(ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetRMWModifiedValueLength(ref TValue t, ref TInput input) => _clientSession.functions.GetRMWModifiedValueLength(ref t, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetUpsertValueLength(ref TValue t, ref TInput input) => _clientSession.functions.GetUpsertValueLength(ref t, ref input);
+        public int GetUpsertFieldInfo(ref TValue t, ref TInput input) => _clientSession.functions.GetUpsertValueLength(ref t, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public IHeapContainer<TInput> GetHeapContainer(ref TInput input)
@@ -206,6 +214,12 @@ namespace Tsavorite.core
             if (typeof(TInput) == typeof(SpanByte))
                 return new SpanByteHeapContainer(ref Unsafe.As<TInput, SpanByte>(ref input), _clientSession.store.hlogBase.bufferPool) as IHeapContainer<TInput>;
             return new StandardHeapContainer<TInput>(ref input);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void DisposeRecord(DisposeReason reason)
+        {
+            // TODO: If ObjectLogRecord, get IHeapObject Value and call StoreFunctions.DisposeObjectValue(value);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

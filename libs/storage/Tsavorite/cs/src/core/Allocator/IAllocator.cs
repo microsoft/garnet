@@ -18,19 +18,20 @@ namespace Tsavorite.core
         void InitializeValue(long physicalAddress, long endPhysicalAddress);
 
         /// <summary>Get copy destination size for RMW, taking Input into account</summary>
-        (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref TKey key, ref TInput input, ref TValue value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
+        RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+            where TSourceLogRecord : IReadOnlyLogRecord
             where TVariableLengthInput : IVariableLengthInput<TValue, TInput>;
 
         /// <summary>Get initial record size for RMW, given the <paramref name="key"/> and <paramref name="input"/></summary>
-        (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : IVariableLengthInput<TValue, TInput>;
+        RecordSizeInfo GetRMWInitialRecordSize<TInput, TVariableLengthInput>(TKey key, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<TValue, TInput>;
 
         /// <summary>Get record size required for the given <paramref name="key"/>, <paramref name="value"/>, and <paramref name="input"/></summary>
-        (int actualSize, int allocatedSize, int keySize) GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref TKey key, ref TValue value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : IVariableLengthInput<TValue, TInput>;
+        RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(TKey key, ref TValue value, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<TValue, TInput>;
 
         /// <summary>Get record size required for the given <paramref name="key"/> and <paramref name="value"/></summary>
-        (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref TKey key, ref TValue value);
+        (int actualSize, int allocatedSize, int keySize) GetRecordSize(TKey key, ref TValue value);
 
         /// <summary>Mark the page that contains <paramref name="logicalAddress"/> as dirty</summary>
         void MarkPage(long logicalAddress, long version);
@@ -39,9 +40,15 @@ namespace Tsavorite.core
         void MarkPageAtomic(long logicalAddress, long version);
 
         /// <summary>Get segment offsets</summary>
-        long[] GetSegmentOffsets();
+        long[] GetSegmentOffsets(); // TODO remove
 
         /// <summary>Serialize key to log</summary>
-        void SerializeKey(ref TKey key, long physicalAddress);
+        void SerializeKey(ref TKey key, long physicalAddress);  // TODO remove
+
+        /// <summary>Return the <see cref="LogRecord"/> for the allocator page at <paramref name="physicalAddress"/></summary>
+        LogRecord CreateLogRecord(long logicalAddress, long physicalAddress);   // TODO remove in favor of SpanByteAllocator- or ObjectAllocator-specific call
+
+        /// <summary>Return the <see cref="OverflowAllocator"/> for the in-memory page containing <paramref name="logicalAddress"/></summary>
+        OverflowAllocator GetOverflowAllocator(long logicalAddress);
     }
 }

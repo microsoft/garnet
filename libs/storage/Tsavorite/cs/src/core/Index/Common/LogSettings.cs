@@ -28,6 +28,9 @@ namespace Tsavorite.core
         /// <summary>Maximum number of bits for the size of an inline (not overflow) key</summary>
         public const int kMaxInlineKeySizeBits = 7;
 
+        /// <summary>Maximum number of bits for the size of an inline (not overflow) value, for <see cref="SpanByteAllocator{TStoreFunctions}"/></summary>
+        public const int kMaxInlineValueSizeBits = 20;
+
         /// <summary>
         /// Device used for main hybrid log
         /// </summary>
@@ -85,13 +88,20 @@ namespace Tsavorite.core
         public bool PreallocateLog = false;
 
         /// <summary>
-        /// Size of the page used for in-memory Keys larger than <see cref="MaxInlineKeySizeBits"/>
+        /// Size of the page used for in-memory Keys larger than <see cref="MaxInlineKeySizeBits"/>, or for <see cref="SpanByteAllocator{TStoreFunctions}"/>,
+        /// values larger than <see cref="MaxInlineValueSizeBits"/>
         /// </summary>
-        public int KeyOverflowPageSizeBits = 20;
+        public int OverflowPageSizeBits = 20;
 
         /// <summary>
-        /// Maximum size of a key stored inline in the in-memory portion of the main log.
+        /// Maximum size of a key stored inline in the in-memory portion of the main log for both allocators.
         /// </summary>
         public int MaxInlineKeySizeBits = kMaxInlineKeySizeBits;
+
+
+        /// <summary>
+        /// Maximum size of a valuie stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>.
+        /// </summary>
+        public int MaxInlineValueSizeBits = kMaxInlineKeySizeBits;
     }
 }

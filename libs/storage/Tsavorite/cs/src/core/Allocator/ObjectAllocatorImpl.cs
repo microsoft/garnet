@@ -21,11 +21,25 @@ namespace Tsavorite.core
         /// <remarks>The long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation more easily</remarks>
         long* pagePointers;
 
-        /// <summary>For each in-memory page of this allocator we have an ObjectIdMap to contain the Object values (for GC) and mapping index.</summary>
-        ObjectIdMap[] values;
+        /// <summary>For each in-memory page of this allocator we have an <see cref="OverflowAllocator"/> for keys that are too large to fit inline into the main log,
+        /// and an ObjectIdMap to contain the Object values (needed for GC) and mapping index.</summary>
+        struct ObjectPage
+        {
+            internal readonly OverflowAllocator overflowAllocator { get; init; }
+            internal readonly ObjectIdMap objectIdMap { get; init; }
+
+            internal readonly void Clear()
+            {
+                overflowAllocator.Clear();
+                objectIdMap.Clear();
+            }
+        }
+
+        ObjectPage[] values;
 
         readonly int maxInlineKeySize;
-        readonly KeyOverflowAllocator keyOverflowAllocator;
+        readonly int overflowAllocatorPageSize;
+        readonly int overflowAllocatorOversizeLimit;
 
         // Size of object chunks being written to storage
         private readonly int objectBlockSize = 100 * (1 << 20);
@@ -36,25 +50,26 @@ namespace Tsavorite.core
         /// <summary>Minimum size of a record: header, key (length and 4 bytes), and Value Id. Does not include optional fields such as DBId, ETag, Expiration, or FillerLen.</summary>
         private static int MinRecordSize => RecordInfo.GetLength() + (sizeof(int) * 2) + ObjectIdMap.ObjectIdSize;
 
-        private readonly OverflowPool<PageUnit<ObjectIdMap>> overflowPagePool;
+        private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
 
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
-            values = new ObjectIdMap[BufferSize];
+            values = new ObjectPage[BufferSize];
 
-            // TODO: Verify LogSettings.MaxInlineKeySizeBits and .KeyOverflowPageSizeBits are in range. Do we need config for AverageKeySizeBits?
+            // TODO: Verify LogSettings.MaxInlineKeySizeBits and .OverflowPageSizeBits are in range. Do we need config for OversizeLimit?
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
-            keyOverflowAllocator = new(1 << settings.LogSettings.KeyOverflowPageSizeBits, 1 << (settings.LogSettings.MaxInlineKeySizeBits - 1));
+            overflowAllocatorPageSize = 1 << settings.LogSettings.OverflowPageSizeBits;
+            overflowAllocatorOversizeLimit = overflowAllocatorPageSize - maxInlineKeySize * 4;
 
-            overflowPagePool = new OverflowPool<PageUnit<ObjectIdMap>>(4, p => { });
+            freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, p => { });
 
             var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
             pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
             NativeMemory.Clear(pagePointers, bufferSizeInBytes);
         }
 
-        internal int OverflowPageCount => overflowPagePool.Count;
+        internal int OverflowPageCount => freePagePool.Count;
 
         public override void Reset()
         {
@@ -72,7 +87,7 @@ namespace Tsavorite.core
         {
             IncrementAllocatedPageCount();
 
-            if (overflowPagePool.TryGet(out var item))
+            if (freePagePool.TryGet(out var item))
             {
                 pagePointers[index] = item.pointer;
                 values[index] = item.value;
@@ -80,7 +95,11 @@ namespace Tsavorite.core
             }
 
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
-            values[index] = new(PageSize / MinRecordSize);
+            values[index] = new()
+            {
+                overflowAllocator = new (overflowAllocatorPageSize, overflowAllocatorOversizeLimit),
+                objectIdMap = new (PageSize / MinRecordSize)
+            };
         }
 
         void ReturnPage(int index)
@@ -88,7 +107,7 @@ namespace Tsavorite.core
             Debug.Assert(index < BufferSize);
             if (pagePointers[index] != default)
             {
-                _ = overflowPagePool.TryAdd(new ()
+                _ = freePagePool.TryAdd(new ()
                 {
                     pointer = pagePointers[index],
                     value = values[index]
@@ -98,19 +117,34 @@ namespace Tsavorite.core
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        int GetPageIndex(long logicalAddress) => (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress)   // TODO: replace in favor of SpanByteAllocator- or ObjectAllocator-specific call
+        {
+            return new LogRecord(physicalAddress, values[GetPageIndex(logicalAddress)].objectIdMap);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)].overflowAllocator;
+
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InitializeValue(long physicalAddress, long _ /* endAddress */) => *(new ObjectLogRecord(physicalAddress).ValueIdAddress) = 0;
+        public static void InitializeValue(long physicalAddress, long _ /* endAddress */) => *LogRecord.GetValueObjectIdAddress(physicalAddress) = 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref SpanByte key, ref TInput input, ref IHeapObject value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
+        public (int actualSize, int allocatedSize, int keySize) GetRMWCopyRecordSize<TInput, TVariableLengthInput>(ref SpanByte key, ref TInput input, ref IHeapObject value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
             => GetRecordSize(ref key);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : IVariableLengthInput<SpanByte, TInput>
+            => GetRecordSize(ref key);
+
+        internal (int actualSize, int allocatedSize, int keySize) GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref IHeapObject value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
             => GetRecordSize(ref key);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -127,9 +161,6 @@ namespace Tsavorite.core
             return (size, RoundUp(size, Constants.kRecordAlignment), keySize);
         }
 
-        internal (int actualSize, int allocatedSize, int keySize) GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref IHeapObject value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
-            => GetRecordSize(ref key);
-
         /// <summary>
         /// Dispose memory allocator
         /// </summary>
@@ -140,7 +171,7 @@ namespace Tsavorite.core
             {
                 foreach (var value in localValues)
                     value.Clear();
-                overflowPagePool.Dispose();
+                freePagePool.Dispose();
                 base.Dispose();
             }
         }
@@ -872,6 +903,7 @@ namespace Tsavorite.core
         /// <summary>Retrieve objects from object log</summary>
         internal bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte, IHeapObject> ctx)
         {
+            // TODO: take also a ref DiskLogRecord, populating it from ctx.record and deserializing its valueObject
 #if READ_WRITE
             if (!KeyHasObjects())
                 ctx.key = Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(record).key;

@@ -18,19 +18,34 @@ namespace Tsavorite.core
         /// <remarks>The long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation more easily</remarks>
         long* pagePointers;
 
-        private readonly OverflowPool<PageUnit<int>> overflowPagePool;
+        /// <summary>For each in-memory page of this allocator we have an <see cref="OverflowAllocator"/> for keys and values that are too large to fit inline 
+        /// into the main log.</summary>
+        OverflowAllocator[] values;
+
+        private readonly OverflowPool<PageUnit<OverflowAllocator>> freePagePool;
+
+        readonly int maxInlineKeySize;
+        readonly int maxInlineValueSize;
+        readonly int overflowAllocatorPageSize;
+        readonly int overflowAllocatorOversizeLimit;
 
         public SpanByteAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, SpanByteAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
-            overflowPagePool = new OverflowPool<PageUnit<int>>(4, p => { });
+            // TODO: Verify LogSettings.MaxInlineKeySizeBits, .MaxInlineValueSizeBits, and .OverflowPageSizeBits are in range. Do we need config for OversizeLimit?
+            maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
+            maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
+            overflowAllocatorPageSize = 1 << settings.LogSettings.OverflowPageSizeBits;
+            overflowAllocatorOversizeLimit = overflowAllocatorPageSize - maxInlineKeySize * 4;  // TODO should this be adjusted for the Key vs. Value space?
+
+            freePagePool = new OverflowPool<PageUnit<OverflowAllocator>>(4, p => { });
 
             var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
             pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
             NativeMemory.Clear(pagePointers, bufferSizeInBytes);
         }
 
-        internal int OverflowPageCount => overflowPagePool.Count;
+        internal int OverflowPageCount => freePagePool.Count;
 
         public override void Reset()
         {
@@ -51,7 +66,7 @@ namespace Tsavorite.core
         {
             IncrementAllocatedPageCount();
 
-            if (overflowPagePool.TryGet(out var item))
+            if (freePagePool.TryGet(out var item))
             {
                 pagePointers[index] = item.pointer;
                 // unused: _ = item.value;
@@ -59,6 +74,7 @@ namespace Tsavorite.core
             }
 
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
+            values[index] = new(overflowAllocatorPageSize, overflowAllocatorOversizeLimit);
         }
 
         void ReturnPage(int index)
@@ -66,7 +82,7 @@ namespace Tsavorite.core
             Debug.Assert(index < BufferSize);
             if (pagePointers[index] != default)
             {
-                _ = overflowPagePool.TryAdd(new()
+                _ = freePagePool.TryAdd(new()
                 {
                     pointer = pagePointers[index],
                     value = default
@@ -76,49 +92,67 @@ namespace Tsavorite.core
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        int GetPageIndex(long logicalAddress) => (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord(physicalAddress);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)];
+
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitializeValue(long physicalAddress, long endAddress)
         {
             // Initialize the SpanByte to the length of the entire value space, less the length of the int size prefix.
-            var src = (byte*)ValueAddress(physicalAddress);
+            var src = (byte*)LogRecord.GetValueAddress(physicalAddress);
             *(int*)src = (int)((byte*)endAddress - src) - sizeof(int);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int ValueSize(long physicalAddress) => (*(SpanByte*)ValueAddress(physicalAddress)).TotalSize;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetValueLength(ref SpanByte value) => value.TotalSize;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref SpanByte key, ref TInput input, ref SpanByte value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
+        public RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
+            where TSourceLogRecord : IReadOnlyLogRecord
             where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
         {
             // Used by RMW to determine the length of copy destination (taking Input into account), so does not need to get filler length.
-            // TODO: Adjust for key overflowing and thus taking only 12 bytes inline
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetRMWModifiedFieldInfo(ref srcLogRecord, ref input) };
+            PopulateRecordSizeInfo(srcLogRecord.Key, ref sizeInfo);
+            return sizeInfo;
+        }
+        public RecordSizeInfo GetRMWInitialRecordSize<TInput, TVariableLengthInput>(SpanByte key, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
+        {
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetRMWInitialFieldInfo(ref input) };
+            PopulateRecordSizeInfo(key, ref sizeInfo);
+            return sizeInfo;
+        }
+
+        public RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(SpanByte key, SpanByte value, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
+        {
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(value, ref input) };
+            PopulateRecordSizeInfo(key, ref sizeInfo);
+            return sizeInfo;
+        }
+
+        public void PopulateRecordSizeInfo(SpanByte key, ref RecordSizeInfo sizeInfo)
+        {
             var keySize = key.TotalSize;
-            var size = RecordInfo.GetLength() + RoundUp(keySize, Constants.kRecordAlignment) + varlenInput.GetRMWModifiedValueLength(ref value, ref input);
-            return (size, RoundUp(size, Constants.kRecordAlignment), keySize);
-        }
-
-        public (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : IVariableLengthInput<SpanByte, TInput>
-        {
-            // TODO: Adjust for key overflowing and thus taking only 12 bytes inline
-            int keySize = key.TotalSize;
-            var actualSize = RecordInfo.GetLength() + RoundUp(keySize, Constants.kRecordAlignment) + sessionFunctions.GetRMWInitialValueLength(ref input);
-            return (actualSize, RoundUp(actualSize, Constants.kRecordAlignment), keySize);
-        }
-
-        public (int actualSize, int allocatedSize, int keySize) GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref SpanByte value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : IVariableLengthInput<SpanByte, TInput>
-        {
-            // TODO: Adjust for key overflowing and thus taking only 12 bytes inline
-            int keySize = key.TotalSize;
-            var actualSize = RecordInfo.GetLength() + RoundUp(keySize, Constants.kRecordAlignment) + sessionFunctions.GetUpsertValueLength(ref value, ref input);
-            return (actualSize, RoundUp(actualSize, Constants.kRecordAlignment), keySize);
+            if (keySize > maxInlineKeySize)
+            {
+                keySize = Constants.kUnserializedSpanByteSize;
+                sizeInfo.KeyIsOverflow = true;
+            }
+            var valueSize = sizeInfo.FieldInfo.ValueSize;
+            if (valueSize > maxInlineValueSize)
+            {
+                valueSize = Constants.kUnserializedSpanByteSize;
+                sizeInfo.ValueIsOverflow = true;
+            }
+            sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;
+            sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
         }
 
         public (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref SpanByte key, ref SpanByte value)
@@ -135,7 +169,7 @@ namespace Tsavorite.core
         public override void Dispose()
         {
             base.Dispose();
-            overflowPagePool.Dispose();
+            freePagePool.Dispose();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -145,7 +179,7 @@ namespace Tsavorite.core
             var offset = (int)(logicalAddress & ((1L << LogPageSizeBits) - 1));
 
             // Index of page within the circular buffer
-            var pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
+            var pageIndex = GetPageIndex(logicalAddress);
             return *(pagePointers + pageIndex) + offset;
         }
 

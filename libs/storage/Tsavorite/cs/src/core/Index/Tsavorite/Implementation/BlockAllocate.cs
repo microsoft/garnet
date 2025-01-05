@@ -39,15 +39,15 @@ namespace Tsavorite.core
         internal struct AllocateOptions
         {
             /// <summary>If true, use the non-revivification recycling of records that failed to CAS and are carried in PendingContext through RETRY.</summary>
-            internal bool Recycle;
+            internal bool recycle;
 
             /// <summary>If true, the source record is elidable so we can try to elide from the tag chain (and transfer it to the FreeList if we're doing Revivification).</summary>
-            internal bool ElideSourceRecord;
+            internal bool elideSourceRecord;
         };
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool TryAllocateRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                                                       ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, int actualSize, ref int allocatedSize, int newKeySize, AllocateOptions options,
+                                                       ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordSizeInfo sizeInfo, AllocateOptions options,
                                                        out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -57,11 +57,11 @@ namespace Tsavorite.core
             var minMutableAddress = GetMinRevivifiableAddress();
             var minRevivAddress = minMutableAddress;
 
-            if (options.Recycle && pendingContext.retryNewLogicalAddress != Constants.kInvalidAddress && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, ref allocatedSize, newKeySize, out newLogicalAddress, out newPhysicalAddress))
+            if (options.recycle && pendingContext.retryNewLogicalAddress != Constants.kInvalidAddress && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, ref allocatedSize, newKeySize, out newLogicalAddress, out newPhysicalAddress))
                 return true;
             if (RevivificationManager.UseFreeRecordPool)
             {
-                if (!options.ElideSourceRecord && stackCtx.hei.Address >= minMutableAddress)
+                if (!options.elideSourceRecord && stackCtx.hei.Address >= minMutableAddress)
                     minRevivAddress = stackCtx.hei.Address;
                 if (sessionFunctions.Ctx.IsInV1)
                 {
@@ -93,7 +93,7 @@ namespace Tsavorite.core
 
                 // In-memory source dropped below HeadAddress during BlockAllocate. Save the record for retry if we can.
                 ref var newRecordInfo = ref hlog.GetInfo(newPhysicalAddress);
-                if (options.Recycle)
+                if (options.recycle)
                 {
                     ref var newValue = ref hlog.GetValue(newPhysicalAddress);
                     _ = hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);

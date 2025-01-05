@@ -7,17 +7,22 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe class KeyOverflowAllocator(int pageSize, int expectedAverageKeySize)
+    /// <summary>
+    /// A class to manage Keys (and SpanByte values) that are too large to be inline in the main log page.
+    /// </summary>
+    /// <param name="pageSize">The size of a page in this allocator</param>
+    /// <param name="oversizeLimit">If an allocation request is greater than this, an individual allocation is made for it. Must be less than or equal to pageSize.</param>
+    public unsafe class OverflowAllocator(int pageSize, int oversizeLimit)
     {
         private const int InitialPageCount = 1024;
 
-        private int OverflowSizeLimit = pageSize - expectedAverageKeySize * 2;
+        private readonly int pageSize = pageSize;
+        private readonly int oversizeLimit = oversizeLimit;
 
         // We use a separate array so we do not take cacheline space for a linked-list pointer (as oversizeList does).
         // The pages array itself does not need to be cache-aligned because only the intra-page pointers are accessed.
         private byte*[] pages;
         private int pageCount = 0;
-        private int pageSize = pageSize;
 
         // The linked list of oversize allocations.
         private nuint oversizeList;
@@ -28,8 +33,9 @@ namespace Tsavorite.core
         public SpanByte Allocate(int size)
         {
             System.Diagnostics.Debug.Assert(size > 0, "Cannot have negative allocation size");
+            System.Diagnostics.Debug.Assert(oversizeLimit > 0 && pageSize >= oversizeLimit, "OversizeLimit must be greater than zero and within pageSize");
 
-            if (size > OverflowSizeLimit)
+            if (size > oversizeLimit)
                 return AllocateOversize(size);
 
             while (true)
@@ -84,8 +90,8 @@ namespace Tsavorite.core
             return new(size, (IntPtr)(page + sizeof(nuint)));
         }
 
-        /// <inheritdoc/>
-        public void Dispose()
+        /// <summary>Clears and frees all allocations and prepares for reuse</summary>
+        public void Clear()
         {
             // Free the oversize list.
             nuint nextPage = (nuint)null;
@@ -94,9 +100,13 @@ namespace Tsavorite.core
                 nextPage = *(nuint*)page;
                 NativeMemory.AlignedFree((nuint*)page);
             }
+            oversizeList = (nuint)null;
 
             for (var ii = 0; ii < tailPageOffset.Page; ++ii)
+            { 
                 NativeMemory.AlignedFree((nuint*)pages[ii]);
+                pages[ii] = null;
+            }
 
             // Prep for reuse
             tailPageOffset = new() { Page = -1, Offset = pageSize + 1 };

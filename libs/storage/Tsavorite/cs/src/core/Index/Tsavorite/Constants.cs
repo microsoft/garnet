@@ -76,5 +76,7 @@ namespace Tsavorite.core
         public const long kTempInvalidAddress = 1;
         public const long kUnknownAddress = 2;
         public const int kFirstValidAddress = 64;
+
+        public const int kUnserializedSpanByteSize = 12; // sizeof(int) for length plus sizeof payload
     }
 }

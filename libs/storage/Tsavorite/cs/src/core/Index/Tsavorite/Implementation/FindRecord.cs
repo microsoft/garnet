@@ -139,8 +139,8 @@ namespace Tsavorite.core
             {
                 foundPhysicalAddress = hlog.GetPhysicalAddress(foundLogicalAddress);
 
-                ref var recordInfo = ref hlog.GetInfo(foundPhysicalAddress);
-                if (IsValidTracebackRecord(recordInfo) && storeFunctions.KeysEqual(ref key, ref hlog.GetKey(foundPhysicalAddress)))
+                ref var recordInfo = ref hlog.GetInfoRef(foundPhysicalAddress);
+                if (IsValidTracebackRecord(recordInfo) && storeFunctions.KeysEqual(ref key, hlog.GetKey(foundPhysicalAddress)))
                     return true;
 
                 foundLogicalAddress = recordInfo.PreviousAddress;

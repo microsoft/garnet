@@ -85,23 +85,6 @@ namespace Tsavorite.core
             return (usedValueLength, fullValueLength, allocatedSize);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private (int usedValueLength, int fullValueLength) GetNewValueLengths(int actualSize, int allocatedSize, long newPhysicalAddress, ref TValue recordValue)
-        {
-            // Called after a new record is allocated
-            if (RevivificationManager.IsFixedLength)
-                return (RevivificationManager<TKey, TValue, TStoreFunctions, TAllocator>.FixedValueLength, RevivificationManager<TKey, TValue, TStoreFunctions, TAllocator>.FixedValueLength);
-
-            int valueOffset = GetValueOffset(newPhysicalAddress, ref recordValue);
-            int usedValueLength = actualSize - valueOffset;
-            int fullValueLength = allocatedSize - valueOffset;
-            Debug.Assert(usedValueLength >= 0, $"GetNewValueLengths: usedValueLength {usedValueLength}");
-            Debug.Assert(fullValueLength >= 0, $"GetNewValueLengths: fullValueLength {fullValueLength}");
-            Debug.Assert(fullValueLength >= RoundUp(usedValueLength, sizeof(int)), $"GetNewValueLengths: usedValueLength {usedValueLength} cannot be > fullValueLength {fullValueLength}");
-
-            return (usedValueLength, fullValueLength);
-        }
-
         // A "free record" is one on the FreeList.
         #region FreeRecords
 
