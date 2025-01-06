@@ -1485,6 +1485,50 @@
             "ArgumentFlags": "Optional, Multiple"
           }
         ]
+      },
+      {
+        "Command": "COMMAND_GETKEYS",
+        "Name": "COMMAND|GETKEYS",
+        "Summary": "Extracts the key names from an arbitrary command.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of arguments to the command",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COMMAND",
+            "DisplayText": "command",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ARG",
+            "DisplayText": "arg",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "COMMAND_GETKEYSANDFLAGS",
+        "Name": "COMMAND|GETKEYSANDFLAGS",
+        "Summary": "Extracts the key names and access flags for an arbitrary command.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of arguments to the command",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COMMAND",
+            "DisplayText": "command",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ARG",
+            "DisplayText": "arg",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
       }
     ]
   },
