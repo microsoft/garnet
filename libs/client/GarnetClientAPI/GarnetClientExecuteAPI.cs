@@ -1078,10 +1078,8 @@ namespace Garnet.client
         /// <param name="param3"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public void ExecuteFireAndForgetWithNoResponse(Memory<byte> op, Memory<byte> param1, Memory<byte> param2, Memory<byte> param3, CancellationToken token = default)
-        {
-            InternalExecuteFireAndForgetWithNoResponse(op, param1, param2, param3, token);
-        }
+        public void ExecuteNoResponse(Memory<byte> op, ReadOnlySpan<byte> param1, ref Span<byte> param2, ref Span<byte> param3, CancellationToken token = default)
+            => InternalExecuteNoResponse(ref op, ref param1, ref param2, ref param3, token);
         #endregion
 
         void TokenRegistrationLongCallback(object s) => ((TaskCompletionSource<long>)s).TrySetCanceled();

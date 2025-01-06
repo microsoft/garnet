@@ -275,9 +275,10 @@ namespace Garnet.cluster
         /// <summary>
         /// Send a CLUSTER PUBLISH message to another remote node
         /// </summary>
+        /// <param name="cmd"></param>
         /// <param name="channel"></param>
         /// <param name="message"></param>
-        public void TryClusterPublish(RespCommand cmd, Memory<byte> channel, Memory<byte> message)
-            => gc.ClusterPublish(cmd, channel, message);
+        public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
+            => gc.ClusterPublish(cmd, ref channel, ref message);
     }
 }
