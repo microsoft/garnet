@@ -2,6 +2,10 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Offset acounting done to prevent the need for recalculation at different methods. This is passed as context along with RawStringInput.
+    /// Making it a struct makes sure the values are embedded as a part of RawStringInput.
+    /// </summary>
     public struct EtagOffsetManagementContext
     {
         public int EtagIgnoredOffset { get; private set; }

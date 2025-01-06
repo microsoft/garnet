@@ -13,12 +13,13 @@ namespace Garnet.server
     /// Flags used by append-only file (AOF/WAL)
     /// The byte representation only use the last 3 bits of the byte since the lower 5 bits of the field used to store the flag stores other data in the case of Object types.
     /// In the case of a Rawstring, the last 4 bits are used for flags, and the other 4 bits are unused of the byte.
+    /// NOTE: This will soon be expanded as a part of a breaking change to make WithEtag bit compatible with object store as well.
     /// </summary>
     [Flags]
     public enum RespInputFlags : byte
     {
         /// <summary>
-        /// Flag indicating an operation intending to add an etag for a RAWSTRING command 
+        /// Flag indicating an operation intending to add an etag for a RAWSTRING command.
         /// </summary>
         WithEtag = 16,
 
@@ -323,7 +324,8 @@ namespace Garnet.server
     {
         /// <summary>
         /// Mutable state we keep around for efficient EtagOffsetManagement, this will be removed when ETag is stored at the record level separately and does not require offset management.
-        /// NOTE: We do not serialize this to disk or read it from disk, it is only used in memory, and a temporary solution to keep track of Etag offsets across method calls.
+        /// NOTE: We do not serialize this to disk or read it from disk, it is only kept in volatile memory. The WITHETAG flag that may or may not be stored in the header is used to conditionally
+        /// initialize the values for this field.
         /// </summary>
         public EtagOffsetManagementContext etagOffsetManagementContext;
 

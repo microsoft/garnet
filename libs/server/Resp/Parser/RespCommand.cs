@@ -434,10 +434,10 @@ namespace Garnet.server
 
         /// <summary>
         /// Turns any not-quite-a-real-command entries in <see cref="RespCommand"/> into the equivalent command
-        /// for ACL'ing purposes.
+        /// for ACL'ing purposes and reading command info purposes
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static RespCommand NormalizeForACLs(this RespCommand cmd)
+        public static RespCommand Normalize(this RespCommand cmd)
         {
             return
                 cmd switch
@@ -452,7 +452,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Reverses <see cref="NormalizeForACLs(RespCommand)"/>, producing all the equivalent <see cref="RespCommand"/>s which are covered by <paramref name="cmd"/>.
+        /// Reverses <see cref="Normalize(RespCommand)"/>, producing all the equivalent <see cref="RespCommand"/>s which are covered by <paramref name="cmd"/>.
         /// </summary>
         public static ReadOnlySpan<RespCommand> ExpandForACLs(this RespCommand cmd)
         {

@@ -1506,9 +1506,21 @@
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "Fast, String, Read",
-    "Tips": null,
-    "KeySpecifications": null,
-    "SubCommands": null
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
   },
   {
     "Command": "GETRANGE",
@@ -1570,9 +1582,21 @@
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "Fast, String, Read",
-    "Tips": null,
-    "KeySpecifications": null,
-    "SubCommands": null
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
   },
   {
     "Command": "HDEL",
@@ -3504,19 +3528,6 @@
     ]
   },
   {
-    "Command": "SETEXNX",
-    "Name": "SETEXNX",
-    "Arity": -3,
-    "Flags": "NONE",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Fast, String, Write, Transaction",
-    "Tips": null,
-    "KeySpecifications": null,
-    "SubCommands": null
-  },
-  {
     "Command": "SETIFMATCH",
     "Name": "SETIFMATCH",
     "IsInternal": false,
@@ -3525,10 +3536,22 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Fast, String, Write",
-    "Tips": null,
-    "KeySpecifications": null,
-    "SubCommands": null
+    "AclCategories": "Slow, String, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Access, Update, VariableFlags"
+      }
+    ]
   },
   {
     "Command": "SETRANGE",

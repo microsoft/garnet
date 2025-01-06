@@ -19,7 +19,6 @@ namespace Garnet.server
         {
             switch (input.header.cmd)
             {
-                case RespCommand.SETIFMATCH:
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.PERSIST:
                 case RespCommand.EXPIRE:
@@ -29,6 +28,7 @@ namespace Garnet.server
                 case RespCommand.GETDEL:
                 case RespCommand.GETEX:
                     return false;
+                case RespCommand.SETIFMATCH:
                 case RespCommand.SETEXXX:
                     // when called withetag all output needs to be placed on the buffer
                     if (input.header.CheckWithEtagFlag())
