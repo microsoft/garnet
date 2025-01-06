@@ -826,7 +826,7 @@ namespace Garnet.server
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref newValue, newValue.TotalSize);
 
             RespCommand cmd = input.header.cmd;
-            bool shouldUpdateEtag = true;
+            bool shouldUpdateEtag = recordInfo.ETag;
 
             // offsets are precomputed at InPlaceUpdater
             int etagIgnoredOffset = input.etagOffsetManagementContext.EtagIgnoredOffset;
@@ -1170,7 +1170,7 @@ namespace Garnet.server
 
             rmwInfo.SetUsedValueLength(ref recordInfo, ref newValue, newValue.TotalSize);
 
-            if (recordInfo.ETag && shouldUpdateEtag)
+            if (shouldUpdateEtag)
             {
                 *(long*)newValue.ToPointer() = oldEtag + 1;
             }
