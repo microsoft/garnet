@@ -318,7 +318,7 @@ namespace Garnet.test
             {
                 var randPostFix = rnd.Next(1, 1000);
                 valueKey = $"{valueKey}{randPostFix}";
-                
+
                 var r = lightClientRequest.SendCommand($"EVALSHA {sha1SetScript} 1 {nameKey}{randPostFix} {valueKey}", 1);
                 // Check for error reply
                 ClassicAssert.IsTrue(r[0] != '-');
@@ -804,6 +804,39 @@ return redis.status_reply("OK")
             ClassicAssert.AreEqual("bar", (string)ret[2]);
             ClassicAssert.AreEqual("jkl", (string)ret[3]);
             ClassicAssert.AreEqual("def", (string)ret[4]);
+        }
+
+        [Test]
+        public void IntentionalOOM()
+        {
+            if (string.IsNullOrEmpty(limitBytes))
+            {
+                ClassicAssert.Ignore("No memory limit enabled");
+                return;
+            }
+
+            const string ScriptOOMText = @"
+local foo = 'abcdefghijklmnopqrstuvwxyz'
+if @Ctrl == 'OOM' then
+    for i = 1, 10000000 do
+        foo = foo .. foo
+    end
+end
+
+return foo";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var scriptOOM = LuaScript.Prepare(ScriptOOMText);
+            var loadedScriptOOM = scriptOOM.Load(redis.GetServers()[0]);
+
+            // OOM actually happens and is reported
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(loadedScriptOOM, new { Ctrl = "OOM" }));
+            ClassicAssert.AreEqual("ERR Lua encountered an error: not enough memory", exc.Message);
+
+            // We can still run the script without issue (with non-crashing args) afterwards
+            var res = db.ScriptEvaluate(loadedScriptOOM, new { Ctrl = "Safe" });
+            ClassicAssert.AreEqual("abcdefghijklmnopqrstuvwxyz", (string)res);
         }
     }
 }

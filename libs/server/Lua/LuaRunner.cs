@@ -1336,7 +1336,14 @@ end
                     {
                         if (state.CheckBuffer(1, out var errBuf))
                         {
-                            while (!RespWriteUtils.WriteError(errBuf, ref resp.BufferCur, resp.BufferEnd))
+                            // Lua errors aren't very descriptive, so get them into a nicer response
+                            while (!RespWriteUtils.WriteDirect("-ERR Lua encountered an error: "u8, ref resp.BufferCur, resp.BufferEnd))
+                                resp.SendAndReset();
+
+                            while (!RespWriteUtils.WriteDirect(errBuf, ref resp.BufferCur, resp.BufferEnd))
+                                resp.SendAndReset();
+
+                            while (!RespWriteUtils.WriteDirect("\r\n"u8, ref resp.BufferCur, resp.BufferEnd))
                                 resp.SendAndReset();
                         }
 
