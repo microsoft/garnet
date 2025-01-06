@@ -162,7 +162,7 @@ namespace Garnet.client
             this.maxOutstandingTasks = maxOutstandingTasks;
             this.sslOptions = tlsOptions;
             this.disposed = 0;
-            this.tcsArray = new TcsWrapper[maxOutstandingTasks];
+            this.tcsArray = GC.AllocateArray<TcsWrapper>(maxOutstandingTasks, pinned: true);
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
             this.logger = logger;
             this.latency = recordLatency ? new LongHistogram(1, TimeStamp.Seconds(100), 2) : null;
@@ -817,6 +817,7 @@ namespace Garnet.client
                 #region scheduleSend
                 var shortTaskId = taskId & (maxOutstandingTasks - 1);
                 tcsArray[shortTaskId].LoadFrom(TaskType.NoResponse, taskId);
+
                 if (Disposed)
                 {
                     DisposeOffset(shortTaskId);
