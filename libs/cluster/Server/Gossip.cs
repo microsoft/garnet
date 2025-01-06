@@ -221,9 +221,6 @@ namespace Garnet.cluster
             var conf = CurrentConfig;
             var created = false;
 
-            var _channel = channel.ToArray();
-            var _message = message.ToArray();
-
             // Ensure we calculate the list of nodeIds only once for every update in the configuration
             if (lastConfig == null || conf != lastConfig)
             {
@@ -251,7 +248,7 @@ namespace Garnet.cluster
                     gsn.Initialize();
 
                     // Publish to remote nodes
-                    gsn.TryClusterPublish(cmd, _channel, _message);
+                    gsn.TryClusterPublish(cmd, ref channel, ref message);
 
                     if (created && !clusterConnectionStore.AddConnection(gsn))
                         gsn.Dispose();

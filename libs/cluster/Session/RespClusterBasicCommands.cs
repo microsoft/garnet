@@ -487,9 +487,6 @@ namespace Garnet.cluster
             *(int*)valPtr = vSize;
 
             var numClients = clusterProvider.storeWrapper.subscribeBroker.PublishNow(keyPtr, valPtr, vSize + sizeof(int), true);
-
-            while (!RespWriteUtils.WriteInteger(numClients, ref dcurr, dend))
-                SendAndReset();
             return true;
         }
     }

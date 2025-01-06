@@ -744,9 +744,8 @@ namespace Garnet.client
             return;
         }
 
-        void InternalExecuteFireAndForgetWithNoResponse(Memory<byte> op, Memory<byte> subop, Memory<byte> param1, Memory<byte> param2, CancellationToken token = default)
+        void InternalExecuteNoResponse(ref Memory<byte> op, ref ReadOnlySpan<byte> subop, ref Span<byte> param1, ref Span<byte> param2, CancellationToken token = default)
         {
-            var tcs = new TcsWrapper { taskType = TaskType.LongAsync, longTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var totalLen = 0;
             var arraySize = 4;
 
@@ -800,9 +799,6 @@ namespace Garnet.client
                     }
                 }
 
-                // Console.WriteLine($"Allocated {taskId} @ {address}");
-                tcs.nextTaskId = taskId;
-
                 unsafe
                 {
                     var curr = (byte*)networkWriter.GetPhysicalAddress(address);
@@ -810,39 +806,17 @@ namespace Garnet.client
 
                     RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
                     RespWriteUtils.WriteDirect(op.Span, ref curr, end);
-                    RespWriteUtils.WriteBulkString(subop.Span, ref curr, end);
-                    RespWriteUtils.WriteBulkString(param1.Span, ref curr, end);
-                    RespWriteUtils.WriteBulkString(param2.Span, ref curr, end);
+                    RespWriteUtils.WriteBulkString(subop, ref curr, end);
+                    RespWriteUtils.WriteBulkString(param1, ref curr, end);
+                    RespWriteUtils.WriteBulkString(param2, ref curr, end);
 
                     Debug.Assert(curr == end);
                 }
                 #endregion
 
-                #region waitForEmptySlot
+                #region scheduleSend
                 var shortTaskId = taskId & (maxOutstandingTasks - 1);
-                var oldTcs = tcsArray[shortTaskId];
-                //1. if taskType != None, we are waiting for previous task to finish
-                //2. if taskType == None and my taskId is not the next in line wait for previous task to acquire slot
-                if (oldTcs.taskType != TaskType.None || !oldTcs.IsNext(taskId))
-                {
-                    // Console.WriteLine($"Before filling slot {taskId & (maxOutstandingTasks - 1)} for task {taskId} @ {address} : {tcs.taskType}");
-                    networkWriter.epoch.ProtectAndDrain();
-                    networkWriter.DoAggressiveShiftReadOnly();
-                    try
-                    {
-                        networkWriter.epoch.Suspend();
-                        AwaitPreviousTaskAsync(taskId).ConfigureAwait(false).GetAwaiter().GetResult(); // does not take token, as task is not cancelable at this point
-                    }
-                    finally
-                    {
-                        networkWriter.epoch.Resume();
-                    }
-                }
-                #endregion
-
-                #region scheduleAwaitForResponse
-                // Console.WriteLine($"Filled slot {taskId & (maxOutstandingTasks - 1)} for task {taskId} @ {address} : {tcs.taskType}");
-                tcsArray[shortTaskId].LoadFrom(tcs);
+                tcsArray[shortTaskId].LoadFrom(TaskType.NoResponse, taskId);
                 if (Disposed)
                 {
                     DisposeOffset(shortTaskId);

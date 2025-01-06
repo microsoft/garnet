@@ -19,12 +19,12 @@ namespace Garnet.client
         /// <summary>
         /// PUBLISH resp formatted
         /// </summary>
-        public static readonly Memory<byte> PUBLISH = "PUBLISH"u8.ToArray();
+        public static ReadOnlySpan<byte> PUBLISH => "PUBLISH"u8;
 
         /// <summary>
         /// PUBLISH resp formatted
         /// </summary>
-        public static readonly Memory<byte> SPUBLISH = "SPUBLISH"u8.ToArray();
+        public static ReadOnlySpan<byte> SPUBLISH => "SPUBLISH"u8;
 
         /// <summary>
         /// Issue cluster failover command to replica node
