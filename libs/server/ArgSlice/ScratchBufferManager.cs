@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 
@@ -230,20 +231,20 @@ namespace Garnet.server
         public void StartCommand(ReadOnlySpan<byte> cmd, int argCount)
         {
             if (scratchBuffer == null)
-                ExpandScratchBuffer(64);
+                ExpandScratchBuffer(64, alwaysCopy: false);
 
             var ptr = scratchBufferHead + scratchBufferOffset;
 
             while (!RespWriteUtils.WriteArrayLength(argCount + 1, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
-                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ExpandScratchBuffer(scratchBuffer.Length + 1, alwaysCopy: false);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
             scratchBufferOffset = (int)(ptr - scratchBufferHead);
 
             while (!RespWriteUtils.WriteBulkString(cmd, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
-                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ExpandScratchBuffer(scratchBuffer.Length + 1, alwaysCopy: false);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
             scratchBufferOffset = (int)(ptr - scratchBufferHead);
@@ -258,7 +259,7 @@ namespace Garnet.server
 
             while (!RespWriteUtils.WriteNull(ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
-                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ExpandScratchBuffer(scratchBuffer.Length + 1, alwaysCopy: false);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
 
@@ -274,7 +275,7 @@ namespace Garnet.server
 
             while (!RespWriteUtils.WriteBulkString(arg, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
-                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ExpandScratchBuffer(scratchBuffer.Length + 1, alwaysCopy: false);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
 
@@ -294,18 +295,24 @@ namespace Garnet.server
         void ExpandScratchBufferIfNeeded(int newLength)
         {
             if (scratchBuffer == null || newLength > scratchBuffer.Length - scratchBufferOffset)
-                ExpandScratchBuffer(scratchBufferOffset + newLength);
+                ExpandScratchBuffer(scratchBufferOffset + newLength, alwaysCopy: false);
         }
 
-        void ExpandScratchBuffer(int newLength)
+        void ExpandScratchBuffer(int newLength, bool alwaysCopy)
         {
             if (newLength < 64) newLength = 64;
             else newLength = (int)BitOperations.RoundUpToPowerOf2((uint)newLength + 1);
 
             var _scratchBuffer = GC.AllocateArray<byte>(newLength, true);
-            var _scratchBufferHead = (byte*)Unsafe.AsPointer(ref _scratchBuffer[0]);
-            if (scratchBufferOffset > 0)
+            var _scratchBufferHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_scratchBuffer));
+            if (alwaysCopy)
+            {
+                scratchBuffer.AsSpan().CopyTo(new Span<byte>(_scratchBufferHead, scratchBuffer.Length));
+            }
+            else if (scratchBufferOffset > 0)
+            {
                 new ReadOnlySpan<byte>(scratchBufferHead, scratchBufferOffset).CopyTo(new Span<byte>(_scratchBufferHead, scratchBufferOffset));
+            }
             scratchBuffer = _scratchBuffer;
             scratchBufferHead = _scratchBufferHead;
         }
@@ -327,15 +334,15 @@ namespace Garnet.server
         /// <summary>
         /// Force backing buffer to grow.
         /// </summary>
-        public void GrowBuffer()
+        public void GrowBuffer(bool alwayCopy)
         {
             if (scratchBuffer == null)
             {
-                ExpandScratchBuffer(64);
+                ExpandScratchBuffer(64, alwaysCopy: false);
             }
             else
             {
-                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ExpandScratchBuffer(scratchBuffer.Length + 1, alwayCopy);
             }
         }
     }

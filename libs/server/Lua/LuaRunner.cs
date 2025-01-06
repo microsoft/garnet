@@ -116,7 +116,10 @@ namespace Garnet.server
                 var len = (int)(curHead - origin);
 
                 // We don't actually send anywhere, we grow the backing array
-                bufferManager.GrowBuffer();
+                //
+                // Since we're managing the start/end pointers outside of the buffer
+                // we need to signal that the buffer has data to copy
+                bufferManager.GrowBuffer(alwayCopy: true);
 
                 var scratchSpace = bufferManager.FullBuffer();
 
@@ -1336,15 +1339,26 @@ end
                     {
                         if (state.CheckBuffer(1, out var errBuf))
                         {
-                            // Lua errors aren't very descriptive, so get them into a nicer response
-                            while (!RespWriteUtils.WriteDirect("-ERR Lua encountered an error: "u8, ref resp.BufferCur, resp.BufferEnd))
-                                resp.SendAndReset();
+                            if (errBuf.Length >= 4 && MemoryMarshal.Read<int>("ERR "u8) == Unsafe.As<byte, int>(ref MemoryMarshal.GetReference(errBuf)))
+                            {
+                                // Response came back with a ERR, already - just pass it along
+                                while (!RespWriteUtils.WriteError(errBuf, ref resp.BufferCur, resp.BufferEnd))
+                                    resp.SendAndReset();
+                            }
+                            else
+                            {
+                                // Otherwise, this is probably a Lua error - and those aren't very descriptive
+                                // So slap some more information in
 
-                            while (!RespWriteUtils.WriteDirect(errBuf, ref resp.BufferCur, resp.BufferEnd))
-                                resp.SendAndReset();
+                                while (!RespWriteUtils.WriteDirect("-ERR Lua encountered an error: "u8, ref resp.BufferCur, resp.BufferEnd))
+                                    resp.SendAndReset();
 
-                            while (!RespWriteUtils.WriteDirect("\r\n"u8, ref resp.BufferCur, resp.BufferEnd))
-                                resp.SendAndReset();
+                                while (!RespWriteUtils.WriteDirect(errBuf, ref resp.BufferCur, resp.BufferEnd))
+                                    resp.SendAndReset();
+
+                                while (!RespWriteUtils.WriteDirect("\r\n"u8, ref resp.BufferCur, resp.BufferEnd))
+                                    resp.SendAndReset();
+                            }
                         }
 
                         state.Pop(1);
