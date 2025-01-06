@@ -13,7 +13,7 @@ namespace Garnet.server
     /// <summary>
     /// Provides a mapping of Lua allocations on to the POH.
     /// 
-    /// Unlike <see cref="LuaLimitedManagedAllocator"/>, allocations are not capped.
+    /// Unlike <see cref="LuaLimitedManagedAllocator"/>, allocations are not limited.
     /// </summary>
     /// <remarks>
     /// This is implemented in terms of <see cref="LuaLimitedManagedAllocator"/> because

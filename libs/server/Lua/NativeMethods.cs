@@ -2,15 +2,15 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using KeraLua;
 using charptr_t = nint;
 using intptr_t = nint;
+using lua_CFunction = nint;
 using lua_State = nint;
 using size_t = nuint;
-using lua_CFunction = nint;
-using System.Diagnostics;
 
 namespace Garnet.server
 {
@@ -544,7 +544,7 @@ namespace Garnet.server
         {
             Debug.Assert(nullTerminatedName[^1] == 0, "Global name must be null terminated");
 
-            fixed(byte* ptr = nullTerminatedName)
+            fixed (byte* ptr = nullTerminatedName)
             {
                 return (LuaType)lua_getglobal(luaState, (nint)ptr);
             }
