@@ -200,7 +200,7 @@ return returnValue
             {
                 QuietMode = true,
                 EnableLua = true,
-                LuaOptions = new(Params.Mode, Params.MemoryLimit ? "10m" : ""),
+                LuaOptions = Params.CreateOptions(),
             };
 
             server = new EmbeddedRespServer(opts);

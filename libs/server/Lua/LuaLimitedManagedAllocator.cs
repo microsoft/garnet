@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -18,15 +19,17 @@ namespace Garnet.server
     /// This is a really naive allocator, just has a free list tracked with pointers in block headers.
     /// 
     /// The hope is that Lua's GC keeps the actual use of this down substantially.
+    /// 
+    /// A small optimization is trying to keep a big free block at the head of the free list.
     /// </remarks>
     internal sealed class LuaLimitedManagedAllocator : ILuaAllocator
     {
         /// <summary>
         /// Minimum size we'll round all Lua allocs up to.
         /// 
-        /// Based on largest "normal" type Lua will allocate.
+        /// Based on largest "normal" type Lua will allocate and the needs of <see cref="BlockHeader"/>.
         /// </summary>
-        private const int LuaAllocMinSizeBytes = 8;
+        private const int LuaAllocMinSizeBytes = 16;
 
         /// <summary>
         /// Represents a block of memory in this mapper.
@@ -37,36 +40,46 @@ namespace Garnet.server
         ///  - if free, <see cref="SizeBytesRaw"/> will be positive.
         ///  - if in use, <see cref="SizeBytesRaw"/> will be negative.
         ///  
-        /// If free
+        /// If free, the block is in a doublely linked list of free blocks.
+        ///  - <see cref="NextFreeBlockRefRaw"/> is undefined if block is in use, 0 if block is tail of list, and ref (as long) to next block otherwise
+        ///  - <see cref="PrevFreeBlockRefRaw"/> is undefined if block is in use, 0 if block is head of list, and ref (as long) to previous block otherwise
         /// </summary>
         [StructLayout(LayoutKind.Explicit, Size = StructSizeBytes)]
         private struct BlockHeader
         {
-            public const int StructSizeBytes = sizeof(int) + LuaAllocMinSizeBytes;
+            public const int DataOffset = sizeof(int);
+            public const int StructSizeBytes = DataOffset + LuaAllocMinSizeBytes;
 
             /// <summary>
             /// Size of the block - always valid.
             /// 
             /// If negative, block is in use.
+            /// 
+            /// If you don't already know the state of the block, use <see cref="SizeBytes"/>.
+            /// If you do, use this as it elides a conditional.
             /// </summary>
-            [FieldOffset(0 * sizeof(int))]
+            [FieldOffset(0)]
             public int SizeBytesRaw;
 
             /// <summary>
-            /// Index of previous block if this block is in the free list.
+            /// Ref of previous block if this block is in the free list.
             /// 
             /// Only valid if the block is free.
+            /// 
+            /// Most reads should go through <see cref="PrevFreeBlockRef"/> or <see cref="GetPrevFreeBlockRef"/>.
             /// </summary>
-            [FieldOffset(1 * sizeof(int))]
-            public int PrevFreeBlockIndexRaw;
+            [FieldOffset(sizeof(int))]
+            public long PrevFreeBlockRefRaw;
 
             /// <summary>
-            /// Index of next block if this block is in the free list.
+            /// Ref of next block if this block is in the free list.
             /// 
             /// Only valid if block is free.
+            /// 
+            /// Most reads should go through <see cref="NextFreeBlockRef"/> or <see cref="GetNextFreeBlockRef"/>.
             /// </summary>
-            [FieldOffset(2 * sizeof(int))]
-            public int NextFreeBlockIndexRaw;
+            [FieldOffset(sizeof(int) + sizeof(long))]
+            public long NextFreeBlockRefRaw;
 
             /// <summary>
             /// True if block is free.
@@ -89,42 +102,42 @@ namespace Garnet.server
             {
                 get
                 {
+                    Debug.Assert(IsFree || IsInUse, "Illegal state, neither free nor in use");
+
                     if (IsFree)
                     {
                         return SizeBytesRaw;
                     }
                     else
                     {
-                        Debug.Assert(IsInUse, "In illegal state");
-
                         return -SizeBytesRaw;
                     }
                 }
             }
 
             /// <summary>
-            /// Index of the next block in the free list, if any.
+            /// Ref (as a long) of the next block in the free list, if any.
             /// </summary>
-            public readonly int NextFreeBlockIndex
+            public readonly long NextFreeBlockRef
             {
                 get
                 {
                     Debug.Assert(IsFree, "Can't be in free list if allocated");
 
-                    return NextFreeBlockIndexRaw;
+                    return NextFreeBlockRefRaw;
                 }
             }
 
             /// <summary>
-            /// Index of the previous block in the free list, if any.
+            /// Ref of the previous block in the free list, if any.
             /// </summary>
-            public readonly int PrevFreeBlockIndex
+            public readonly long PrevFreeBlockRef
             {
                 get
                 {
                     Debug.Assert(IsFree, "Can't be in free list if allocated");
 
-                    return PrevFreeBlockIndexRaw;
+                    return PrevFreeBlockRefRaw;
                 }
             }
 
@@ -133,7 +146,7 @@ namespace Garnet.server
             /// </summary>
             [UnscopedRef]
             public ref byte DataReference
-            => ref Unsafe.AddByteOffset(ref Unsafe.As<BlockHeader, byte>(ref this), sizeof(int));
+            => ref Unsafe.AddByteOffset(ref Unsafe.As<BlockHeader, byte>(ref this), DataOffset);
 
             /// <summary>
             /// For debugging purposes, all the data covered by this block.
@@ -156,7 +169,7 @@ namespace Garnet.server
             /// <summary>
             /// Mark block in use.
             /// 
-            /// After this, the <see cref="NextFreeBlockIndex"/> and <see cref="PrevFreeBlockIndex"/> properties cannot be accessed.
+            /// After this, the <see cref="NextFreeBlockRef"/> and <see cref="PrevFreeBlockRef"/> properties cannot be accessed.
             /// </summary>
             public void MarkInUse()
             {
@@ -166,74 +179,71 @@ namespace Garnet.server
             }
 
             /// <summary>
-            /// Get a reference to the next block in the free list, or a null ref.
+            /// Get a reference to the next block in the free list, or a reference BEFORE <see cref="GetDataStartRef"/>.
             /// </summary>
-            public readonly ref BlockHeader GetNextFreeBlockRef(ref byte dataStartRef)
-            {
-                var ix = NextFreeBlockIndex;
-                if (ix == -1)
-                {
-                    return ref Unsafe.NullRef<BlockHeader>();
-                }
-
-                ref var asByte = ref Unsafe.Add(ref dataStartRef, ix);
-                return ref Unsafe.As<byte, BlockHeader>(ref asByte);
-            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public readonly unsafe ref BlockHeader GetNextFreeBlockRef()
+            => ref Unsafe.AsRef<BlockHeader>((void*)NextFreeBlockRef);
 
             /// <summary>
-            /// Get a reference to the prev block in the free list, or a null ref.
+            /// Get a reference to the prev block in the free list, or a reference BEFORE <see cref="GetDataStartRef"/>.
             /// </summary>
-            public readonly ref BlockHeader GetPrevFreeBlockRef(ref byte dataStartRef)
-            {
-                var ix = PrevFreeBlockIndex;
-                if (ix == -1)
-                {
-                    return ref Unsafe.NullRef<BlockHeader>();
-                }
-
-                ref var asByte = ref Unsafe.Add(ref dataStartRef, ix);
-                return ref Unsafe.As<byte, BlockHeader>(ref asByte);
-            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public readonly unsafe ref BlockHeader GetPrevFreeBlockRef()
+            => ref Unsafe.AsRef<BlockHeader>((void*)PrevFreeBlockRef);
 
             /// <summary>
             /// Get the block the comes after this one in data.
             /// 
-            /// If we're at the end of data, returns a null ref.
+            /// If we're at the end of data, returns a a ref BEFORE <paramref name="dataStartRef"/>.
             /// </summary>
+            [UnscopedRef]
             public ref BlockHeader GetNextAdjacentBlockRef(ref byte dataStartRef, int finalOffset)
             {
-                var curOffset = GetDataIndex(ref dataStartRef);
-                var nextOffset = curOffset + sizeof(int) + SizeBytes;
+                ref var selfRef = ref Unsafe.As<BlockHeader, byte>(ref this);
+                ref var nextRef = ref Unsafe.Add(ref selfRef, DataOffset + SizeBytes);
 
-                ref var asByte = ref Unsafe.AddByteOffset(ref dataStartRef, nextOffset);
+                var nextOffset = Unsafe.ByteOffset(ref dataStartRef, ref nextRef);
 
                 if (nextOffset >= finalOffset)
                 {
-                    return ref Unsafe.NullRef<BlockHeader>();
+                    // For symmetry with GetXXXFreeBlockRef return of (void*)0
+                    unsafe
+                    {
+                        return ref Unsafe.AsRef<BlockHeader>((void*)0);
+                    }
                 }
 
-                return ref Unsafe.As<byte, BlockHeader>(ref asByte);
+                return ref Unsafe.As<byte, BlockHeader>(ref nextRef);
             }
 
             /// <summary>
-            /// Get the index of this <see cref="BlockHeader"/> in the containing managed array.
+            /// Get a value that can be stashed in <see cref="PrevFreeBlockRefRaw"/> or <see cref="NextFreeBlockRefRaw"/>
+            /// that refers to this block.
             /// </summary>
-            public int GetDataIndex(ref byte dataStartRef)
-            => (int)Unsafe.ByteOffset(ref dataStartRef, ref Unsafe.As<BlockHeader, byte>(ref this));
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public unsafe long GetRefVal()
+            => (long)Unsafe.AsPointer(ref this);
         }
 
         // Very basic allocation story, we just keep block metadata and 
         // a free list in the array.
         private readonly Memory<byte> data;
 
-        private int freeListStartIndex;
+        private unsafe void* dataStartPtr;
+        private unsafe void* freeListStartPtr;
+
+        private int debugAllocatedBytes;
 
         /// <summary>
         /// For testing purposes, how many bytes are allocated to Lua at the moment.
         /// 
         /// This is how many bytes we've handed out, not the size of the backing array on the POH.
+        /// 
+        /// Only available in DEBUG to avoid updating this in RELEASE builds.
         /// </summary>
-        internal int AllocatedBytes { get; private set; }
+        internal int AllocatedBytes
+        => debugAllocatedBytes;
 
         /// <summary>
         /// For testing purposes, the number of blocks tracked in the free list.
@@ -244,15 +254,15 @@ namespace Garnet.server
             {
                 ref var dataStartRef = ref GetDataStartRef();
 
-                ref var cur = ref GetFreeList(ref dataStartRef);
+                ref var cur = ref GetFreeList();
 
                 var ret = 0;
 
-                while (!Unsafe.IsNullRef(ref cur))
+                while (IsValidBlockRef(ref cur))
                 {
                     ret++;
 
-                    cur = ref cur.GetNextFreeBlockRef(ref dataStartRef);
+                    cur = ref cur.GetNextFreeBlockRef();
                 }
 
                 return ret;
@@ -278,19 +288,26 @@ namespace Garnet.server
 
         internal LuaLimitedManagedAllocator(int backingArraySize)
         {
-            Debug.Assert(backingArraySize >= LuaAllocMinSizeBytes + sizeof(int), "Too small to ever allocate");
+            Debug.Assert(backingArraySize >= BlockHeader.StructSizeBytes, "Too small to ever allocate");
 
             // Pinned because Lua is oblivious to .NET's GC
             data = GC.AllocateUninitializedArray<byte>(backingArraySize, pinned: true);
+            unsafe
+            {
+                dataStartPtr = Unsafe.AsPointer(ref MemoryMarshal.GetReference(data.Span));
+            }
 
             ref var dataStartRef = ref GetDataStartRef();
 
             // Initialize the first block as a free block covering the whole allocation
-            freeListStartIndex = 0;
-            ref var firstBlock = ref GetFreeList(ref dataStartRef);
-            firstBlock.SizeBytesRaw = backingArraySize - sizeof(int);
-            firstBlock.NextFreeBlockIndexRaw = -1;
-            firstBlock.PrevFreeBlockIndexRaw = -1;
+            unsafe
+            {
+                freeListStartPtr = Unsafe.AsPointer(ref dataStartRef);
+            }
+            ref var firstBlock = ref GetFreeList();
+            firstBlock.SizeBytesRaw = backingArraySize - BlockHeader.DataOffset;
+            firstBlock.NextFreeBlockRefRaw = 0;
+            firstBlock.PrevFreeBlockRefRaw = 0;
         }
 
         /// <summary>
@@ -304,49 +321,51 @@ namespace Garnet.server
         {
             ref var dataStartRef = ref GetDataStartRef();
 
-            if (sizeBytes == 0)
-            {
-                // Special case 0 size allocations
-                failed = false;
-                return ref dataStartRef;
-            }
-
             var actualSizeBytes = RoundToMinAlloc(sizeBytes);
 
             var firstAttempt = true;
 
         tryAgain:
-            ref var freeList = ref GetFreeList(ref dataStartRef);
-            if (Unsafe.IsNullRef(ref freeList))
-            {
-                // No free space at all
-                failed = true;
-                return ref Unsafe.NullRef<byte>();
-            }
-
+            ref var freeList = ref GetFreeList();
             ref var cur = ref freeList;
-            while (!Unsafe.IsNullRef(ref cur))
+            while (IsValidBlockRef(ref cur))
             {
                 Debug.Assert(cur.IsFree, "Free list corrupted");
 
-                if (cur.SizeBytes < actualSizeBytes)
+                // We know this block is free, so touch size directly
+                var freeBlockSize = cur.SizeBytesRaw;
+
+                if (freeBlockSize < actualSizeBytes)
                 {
                     // Couldn't fit in the block, move on
-                    cur = ref cur.GetNextFreeBlockRef(ref dataStartRef);
+                    cur = ref cur.GetNextFreeBlockRef();
                     continue;
                 }
 
                 if (ShouldSplit(ref cur, actualSizeBytes))
                 {
-                    SplitFreeBlock(ref dataStartRef, ref cur, actualSizeBytes);
+                    ref var newBlock = ref SplitFreeBlock(ref dataStartRef, ref cur, actualSizeBytes);
                     Debug.Assert(cur.IsFree && cur.SizeBytes == actualSizeBytes, "Split produced unexpected block");
+
+                    freeBlockSize = actualSizeBytes;
+
+                    // We know both these blocks are free, so use size directly
+                    if (!Unsafe.AreSame(ref cur, ref freeList) && newBlock.SizeBytesRaw > freeList.SizeBytesRaw)
+                    {
+                        // Move the split block to the head of the list if it's large enough AND we had to traverse
+                        // the free list at all
+                        //
+                        // Idea is to keep bigger things towards the front of the free list if we're spending any time
+                        // chasing pointers
+                        MoveToHeadOfFreeList(ref dataStartRef, ref freeList, ref newBlock);
+                    }
                 }
 
                 // Cur will work, so remove it from the free list, mark it, and return it
                 RemoveFromFreeList(ref dataStartRef, ref cur);
                 cur.MarkInUse();
 
-                AllocatedBytes += cur.SizeBytes;
+                UpdateDebugAllocatedBytes(freeBlockSize);
 
                 failed = false;
                 return ref cur.DataReference;
@@ -376,21 +395,17 @@ namespace Garnet.server
         public void Free(ref byte start, int sizeBytes)
         {
             ref var dataStartRef = ref GetDataStartRef();
-            if (sizeBytes == 0)
-            {
-                // Special casing 0 size allocations
-                Debug.Assert(Unsafe.AreSame(ref dataStartRef, ref start), "Expected all zero size allocs to be the same");
-
-                return;
-            }
-
+           
             ref var blockRef = ref GetBlockRef(ref dataStartRef, ref start);
-            Debug.Assert(blockRef.IsInUse, "Should be in use");
 
-            AllocatedBytes -= blockRef.SizeBytes;
+            Debug.Assert(blockRef.IsInUse, "Should be in use");
 
             blockRef.MarkFree();
             AddToFreeList(ref dataStartRef, ref blockRef);
+            Debug.Assert(blockRef.IsFree, "Should be free by this point");
+
+            // We know the block is free, so touch size directly
+            UpdateDebugAllocatedBytes(-blockRef.SizeBytesRaw);
         }
 
         /// <summary>
@@ -399,20 +414,15 @@ namespace Garnet.server
         public ref byte ResizeAllocation(ref byte start, int oldSizeBytes, int newSizeBytes, out bool failed)
         {
             ref var dataStartRef = ref GetDataStartRef();
-            if (oldSizeBytes == 0)
-            {
-                // Special casing 0 size allocations
-                Debug.Assert(Unsafe.AreSame(ref dataStartRef, ref start), "Expected all zero size allocs to be the same");
-
-                return ref AllocateNew(newSizeBytes, out failed);
-            }
-
+            
             ref var curBlock = ref GetBlockRef(ref dataStartRef, ref start);
+            Debug.Assert(curBlock.IsInUse, "Shouldn't be resizing an allocation that isn't in use");
 
             // For everything else, move things up to a reasonable multiple
             var actualSizeBytes = RoundToMinAlloc(newSizeBytes);
 
-            if (curBlock.SizeBytes >= newSizeBytes)
+            // We know the block is in use, so use raw size directly
+            if (-curBlock.SizeBytesRaw >= newSizeBytes)
             {
                 // Existing allocation is large enough
 
@@ -424,9 +434,9 @@ namespace Garnet.server
 
                     // And try and coalesce that new block into the largest possible one
                     ref var nextBlock = ref curBlock.GetNextAdjacentBlockRef(ref dataStartRef, data.Length);
-                    if (!Unsafe.IsNullRef(ref nextBlock))
+                    if (IsValidBlockRef(ref nextBlock))
                     {
-                        while (TryCoalesceSingleBlock(ref dataStartRef, ref nextBlock))
+                        while (TryCoalesceSingleBlock(ref dataStartRef, ref nextBlock, out _))
                         {
                         }
                     }
@@ -439,9 +449,9 @@ namespace Garnet.server
             // Attempt to grow the allocation in place
             var keepInPlace = false;
 
-            while (TryCoalesceSingleBlock(ref dataStartRef, ref curBlock))
+            while (TryCoalesceSingleBlock(ref dataStartRef, ref curBlock, out var updatedCurBlockSizeBytes))
             {
-                if (curBlock.SizeBytes >= actualSizeBytes)
+                if (updatedCurBlockSizeBytes >= actualSizeBytes)
                 {
                     keepInPlace = true;
                     break;
@@ -454,8 +464,16 @@ namespace Garnet.server
                 if (ShouldSplit(ref curBlock, actualSizeBytes))
                 {
                     // We coalesced such that there's a lot of empty space at the end of this block, peel it off for later reuse
-                    SplitInUseBlock(ref dataStartRef, ref curBlock, actualSizeBytes);
+                    ref var newBlock = ref SplitInUseBlock(ref dataStartRef, ref curBlock, actualSizeBytes);
                     Debug.Assert(curBlock.IsInUse && curBlock.SizeBytes == actualSizeBytes, "Split produced unexpected block");
+
+                    ref var freeList = ref GetFreeList();
+
+                    // We know freeList is valid and both blocks are free, so check size directly
+                    if (!Unsafe.AreSame(ref newBlock, ref freeList) && newBlock.SizeBytesRaw > freeList.SizeBytesRaw)
+                    {
+                        MoveToHeadOfFreeList(ref dataStartRef, ref freeList, ref newBlock);
+                    }
                 }
 
                 failed = false;
@@ -512,20 +530,20 @@ namespace Garnet.server
                 //   - freeFast moves forward 2 links at a time
                 //   - if freeSlow == freeFast then we have a cycle
 
-                ref var freeSlow = ref GetFreeList(ref dataStartRef);
+                ref var freeSlow = ref GetFreeList();
                 ref var freeFast = ref freeSlow;
-                if (!Unsafe.IsNullRef(ref freeFast))
+                if (IsValidBlockRef(ref freeFast))
                 {
-                    freeFast = ref freeFast.GetNextFreeBlockRef(ref dataStartRef);
+                    freeFast = ref freeFast.GetNextFreeBlockRef();
                 }
 
-                while (!Unsafe.IsNullRef(ref freeSlow) && !Unsafe.IsNullRef(ref freeFast))
+                while (IsValidBlockRef(ref freeSlow) && IsValidBlockRef(ref freeFast))
                 {
-                    freeSlow = ref freeSlow.GetNextFreeBlockRef(ref dataStartRef);
-                    freeFast = ref freeFast.GetNextFreeBlockRef(ref dataStartRef);
-                    if (!Unsafe.IsNullRef(ref freeFast))
+                    freeSlow = ref freeSlow.GetNextFreeBlockRef();
+                    freeFast = ref freeFast.GetNextFreeBlockRef();
+                    if (IsValidBlockRef(ref freeFast))
                     {
-                        freeFast = ref freeFast.GetNextFreeBlockRef(ref dataStartRef);
+                        freeFast = ref freeFast.GetNextFreeBlockRef();
                     }
 
                     Check(!Unsafe.AreSame(ref freeSlow, ref freeFast), "Cycle exists in free list");
@@ -538,15 +556,11 @@ namespace Garnet.server
             // Walk the free list, counting and check that pointer make sense
             {
                 ref var prevFree = ref Unsafe.NullRef<BlockHeader>();
-                ref var curFree = ref GetFreeList(ref dataStartRef);
-                while (!Unsafe.IsNullRef(ref curFree))
+                ref var curFree = ref GetFreeList();
+                while (IsValidBlockRef(ref curFree))
                 {
                     Check(curFree.IsFree, "Allocated block in free list");
-
-                    var dataIndex = curFree.GetDataIndex(ref dataStartRef);
-
-                    Check(dataIndex < data.Length, "Free block not in managed bounds");
-                    Check(dataIndex + sizeof(int) + curFree.SizeBytes <= data.Length, "Free block end not in managed bounds");
+                    Check(ContainsRef(ref Unsafe.As<BlockHeader, byte>(ref curFree)), "Free block not in managed bounds");
 
                     walkFreeBlocks++;
 
@@ -554,14 +568,14 @@ namespace Garnet.server
 
                     walkFreeBytes += curFree.SizeBytes;
 
-                    if (!Unsafe.IsNullRef(ref prevFree))
+                    if (IsValidBlockRef(ref prevFree))
                     {
-                        ref var prevFromCur = ref curFree.GetPrevFreeBlockRef(ref dataStartRef);
+                        ref var prevFromCur = ref curFree.GetPrevFreeBlockRef();
                         Check(Unsafe.AreSame(ref prevFree, ref prevFromCur), "Prev link invalid");
                     }
 
                     prevFree = ref curFree;
-                    curFree = ref curFree.GetNextFreeBlockRef(ref dataStartRef);
+                    curFree = ref curFree.GetNextFreeBlockRef();
                 }
             }
 
@@ -573,12 +587,9 @@ namespace Garnet.server
             // Scan the whole array, counting free and allocated blocks
             {
                 ref var cur = ref Unsafe.As<byte, BlockHeader>(ref dataStartRef);
-                while (!Unsafe.IsNullRef(ref cur))
+                while (IsValidBlockRef(ref cur))
                 {
-                    var dataIndex = cur.GetDataIndex(ref dataStartRef);
-
-                    Check(dataIndex < data.Length, "Block not in managed bounds");
-                    Check(dataIndex + sizeof(int) + cur.SizeBytes <= data.Length, "Block end not in managed bounds");
+                    Check(ContainsRef(ref Unsafe.As<BlockHeader, byte>(ref cur)), "Free block not in managed bounds");
 
                     if (cur.IsFree)
                     {
@@ -600,12 +611,12 @@ namespace Garnet.server
             Check(scanFreeBlocks == walkFreeBlocks, "Free block mismatch");
             Check(scanFreeBytes == walkFreeBytes, "Free bytes mismatch");
 
-            Check(scanAllocatedBytes == AllocatedBytes, "Allocated bytes mismatch");
+            DebugCheck(scanAllocatedBytes == AllocatedBytes, "Allocated bytes mismatch");
 
             var totalBlocks = scanAllocatedBlocks + scanFreeBlocks;
             var totalBytes = scanAllocatedBytes + scanFreeBytes;
 
-            var expectedOverhead = totalBlocks * sizeof(int);
+            var expectedOverhead = totalBlocks * BlockHeader.DataOffset;
 
             var allBytes = totalBytes + expectedOverhead;
             Check(allBytes == data.Length, "Bytes unaccounted for");
@@ -620,6 +631,11 @@ namespace Garnet.server
 
                 throw new InvalidOperationException($"Check failed: {errorMsg} ({shouldBeExpr})");
             }
+
+            // Throws if shouldBe is false, but only in DEBUG builds
+            [Conditional("DEBUG")]
+            static void DebugCheck(bool shouldBe, string errorMsg, [CallerArgumentExpression(nameof(shouldBe))] string shouldBeExpr = null)
+            => Check(shouldBe, errorMsg, shouldBeExpr);
         }
 
         /// <summary>
@@ -630,16 +646,16 @@ namespace Garnet.server
             ref var dataStartRef = ref GetDataStartRef();
 
             var madeProgress = false;
-            ref var cur = ref GetFreeList(ref dataStartRef);
-            while (!Unsafe.IsNullRef(ref cur))
+            ref var cur = ref GetFreeList();
+            while (IsValidBlockRef(ref cur))
             {
                 // Coalesce this block repeatedly, so runs of free blocks are collapsed into one
-                while (TryCoalesceSingleBlock(ref dataStartRef, ref cur))
+                while (TryCoalesceSingleBlock(ref dataStartRef, ref cur, out _))
                 {
                     madeProgress = true;
                 }
 
-                cur = ref cur.GetNextFreeBlockRef(ref dataStartRef);
+                cur = ref cur.GetNextFreeBlockRef();
             }
 
             return madeProgress;
@@ -652,22 +668,65 @@ namespace Garnet.server
         {
             Debug.Assert(block.IsFree, "Can only add free blocks to list");
 
-            var oldFreeListStartIndex = freeListStartIndex;
-
-            var blockIx = block.GetDataIndex(ref dataStartRef);
-
-            block.NextFreeBlockIndexRaw = freeListStartIndex;
-            block.PrevFreeBlockIndexRaw = -1;
-
-            freeListStartIndex = blockIx;
-
-            if (oldFreeListStartIndex != -1)
+            ref var freeListStartRef = ref GetFreeList();
+            if (!IsValidBlockRef(ref freeListStartRef))
             {
-                // Update back pointer in previous block
-                ref var oldFreeListHeader = ref Unsafe.As<byte, BlockHeader>(ref Unsafe.Add(ref dataStartRef, oldFreeListStartIndex));
-                Debug.Assert(oldFreeListHeader.PrevFreeBlockIndex == -1, "Free list corrupted");
+                // Free list is empty
 
-                oldFreeListHeader.PrevFreeBlockIndexRaw = blockIx;
+                block.PrevFreeBlockRefRaw = 0;
+                block.NextFreeBlockRefRaw = 0;
+
+                unsafe
+                {
+                    freeListStartPtr = Unsafe.AsPointer(ref block);
+                }
+            }
+            else
+            {
+                Debug.Assert(freeListStartRef.IsFree, "Free list is corrupted");
+
+                // Free list isn't empty - block can go in either the head position
+                // or the one-past-the-head position depending on if block is bigger
+                // than the free list head
+
+                var freeListStartRefVal = freeListStartRef.GetRefVal();
+                var blockRefVal = block.GetRefVal();
+
+                // We know both blocks are free, so use size directly
+                if (block.SizeBytesRaw >= freeListStartRef.SizeBytesRaw)
+                {
+                    // Block is larger, prefer allocating out of it
+
+                    // Move block to head of list, and old head to immediately after block
+                    freeListStartRef.PrevFreeBlockRefRaw = blockRefVal;
+                    block.NextFreeBlockRefRaw = freeListStartRefVal;
+                    block.PrevFreeBlockRefRaw = 0;
+
+                    // Block is new head of free list
+                    unsafe
+                    {
+                        freeListStartPtr = Unsafe.AsPointer(ref block);
+                    }
+                }
+                else
+                {
+                    // Block is smaller, it's a second choice for allocations
+
+                    ref var oldFreeListNextBlock = ref freeListStartRef.GetNextFreeBlockRef();
+
+                    // Move block to right after free list head
+                    block.PrevFreeBlockRefRaw = freeListStartRefVal;
+                    block.NextFreeBlockRefRaw = freeListStartRef.NextFreeBlockRef;
+                    freeListStartRef.NextFreeBlockRefRaw = blockRefVal;
+
+                    if (IsValidBlockRef(ref oldFreeListNextBlock))
+                    {
+                        // Update back-pointer in next block to point to block
+                        oldFreeListNextBlock.PrevFreeBlockRefRaw = blockRefVal;
+                    }
+
+                    // Head of free list is unchanged
+                }
             }
         }
 
@@ -676,73 +735,131 @@ namespace Garnet.server
         /// </summary>
         private void RemoveFromFreeList(ref byte dataStartRef, ref BlockHeader block)
         {
-            Debug.Assert(freeListStartIndex != -1, "Shouldn't be removing from free list if free list is empty");
+            Debug.Assert(IsValidBlockRef(ref GetFreeList()), "Shouldn't be removing from free list if free list is empty");
             Debug.Assert(block.IsFree, "Only valid for free blocks");
 
-            var blockIndex = block.GetDataIndex(ref dataStartRef);
+            var blockRefVal = block.GetRefVal();
 
-            ref var prevFreeBlock = ref block.GetPrevFreeBlockRef(ref dataStartRef);
-            ref var nextFreeBlock = ref block.GetNextFreeBlockRef(ref dataStartRef);
+            ref var prevFreeBlock = ref block.GetPrevFreeBlockRef();
+            ref var nextFreeBlock = ref block.GetNextFreeBlockRef();
 
             // We've got a few different states we could be in here:
             //   1. block is the only thing in the free list
-            //      => freeListStartIndex == blockIndex, prevFreeBlock == null, nextFreeBlock == null
+            //      => freeList == block, prevFreeBlock == null, nextFreeBlock == null
             //   2. block is the first thing in the free list, but not the only thing
-            //      => freeListStartIndex == blockIndex, prevFreeBlock == null, nextFreeBlock != null, nextFreeBLock.prev == blockIndex
+            //      => freeList == block, prevFreeBlock == null, nextFreeBlock != null, nextFreeBLock.prev == block
             //   3. block is the last thing in the free list, but not the first
-            //      => freeListStartIndex != -1, freeListStartIndex != blockIndex, prevFreeBlock != null, prevFreeBlock.next == blockIndex, nextFreeBlock == null
+            //      => freeList is valid, freeListStart != block, prevFreeBlock != null, prevFreeBlock.next == block, nextFreeBlock == null
             //   4. block is in the middle of the list somewhere
-            //      => freeListStartIndex != -1, freeListStartIndex != blockIndex, prevFreeBlock != null, prefFreeBlock.next == blockIndex, nextFreeBlock != null, nextFreeBlock.prev = next
+            //      => freeList is valid, freeListStart != block, prevFreeBlock != null, prefFreeBlock.next == block, nextFreeBlock != null, nextFreeBlock.prev = next
 
-            if (freeListStartIndex == blockIndex)
+            ref var freeList = ref GetFreeList();
+
+            if (Unsafe.AreSame(ref freeList, ref block))
             {
-                Debug.Assert(Unsafe.IsNullRef(ref prevFreeBlock), "Should be no prev pointer if block is head of free list");
+                Debug.Assert(!IsValidBlockRef(ref prevFreeBlock), "Should be no prev pointer if block is head of free list");
 
-                if (Unsafe.IsNullRef(ref nextFreeBlock))
+                if (!IsValidBlockRef(ref nextFreeBlock))
                 {
                     // We're in state #1 - block is the only thing in the free list
 
                     // Remove this last block from the free list, leaving it empty
-                    freeListStartIndex = -1;
+                    unsafe
+                    {
+                        // For simplicity, treat empty free lists the same way we do end of the free list
+                        freeListStartPtr = (void*)0;
+                    }
                     return;
                 }
                 else
                 {
                     // We're in state #2 - block is first thing in the free list, but not the last
-                    Debug.Assert(nextFreeBlock.PrevFreeBlockIndex == blockIndex, "Broken chain in free list");
+                    Debug.Assert(nextFreeBlock.PrevFreeBlockRef == blockRefVal, "Broken chain in free list");
 
                     // NextFreeBlock is new head, it needs to prev point now
-                    nextFreeBlock.PrevFreeBlockIndexRaw = -1;
-                    freeListStartIndex = block.NextFreeBlockIndex;
+                    nextFreeBlock.PrevFreeBlockRefRaw = 0;
+                    unsafe
+                    {
+                        freeListStartPtr = (void*)block.NextFreeBlockRef;
+                    }
                     return;
                 }
             }
             else
             {
-                Debug.Assert(!Unsafe.IsNullRef(ref prevFreeBlock), "Should always have a prev pointer if not head of free list");
+                Debug.Assert(IsValidBlockRef(ref prevFreeBlock), "Should always have a prev pointer if not head of free list");
 
-                if (Unsafe.IsNullRef(ref nextFreeBlock))
+                if (!IsValidBlockRef(ref nextFreeBlock))
                 {
                     // We're in state #3 - block is last thing in the free list, but not the first
-                    Debug.Assert(prevFreeBlock.NextFreeBlockIndex == blockIndex, "Broken chain in free list");
+                    Debug.Assert(prevFreeBlock.NextFreeBlockRef == blockRefVal, "Broken chain in free list");
 
                     // Remove pointer to this block from it's preceeding block
-                    prevFreeBlock.NextFreeBlockIndexRaw = -1;
+                    prevFreeBlock.NextFreeBlockRefRaw = 0;
                     return;
                 }
                 else
                 {
                     // We're in state #4 - block is just in the middle of the free list somewhere, but not last or first
-                    Debug.Assert(prevFreeBlock.NextFreeBlockIndex == blockIndex, "Broken chain in free list");
-                    Debug.Assert(nextFreeBlock.PrevFreeBlockIndex == blockIndex, "Broken chain in free list");
+                    Debug.Assert(prevFreeBlock.NextFreeBlockRef == blockRefVal, "Broken chain in free list");
+                    Debug.Assert(nextFreeBlock.PrevFreeBlockRef == blockRefVal, "Broken chain in free list");
 
                     // Prev needs to skip this block when going forward
-                    prevFreeBlock.NextFreeBlockIndexRaw = block.NextFreeBlockIndex;
+                    prevFreeBlock.NextFreeBlockRefRaw = block.NextFreeBlockRef;
 
                     // Next needs to skip this block when going back
-                    nextFreeBlock.PrevFreeBlockIndexRaw = block.PrevFreeBlockIndex;
+                    nextFreeBlock.PrevFreeBlockRefRaw = block.PrevFreeBlockRef;
                     return;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Move this given block to the head of the free list.
+        /// 
+        /// This assumes that <paramref name="block"/> is not already at the head of the free list, and <paramref name="freeList"/> is not
+        /// empty.
+        /// </summary>
+        private void MoveToHeadOfFreeList(ref byte dataStartRef, ref BlockHeader freeList, ref BlockHeader block)
+        {
+            Debug.Assert(block.IsFree, "Should be free");
+            Debug.Assert(freeList.IsFree, "Free list corrupted");
+            Debug.Assert(!IsValidBlockRef(ref freeList.GetPrevFreeBlockRef()), "Free list corrupted");
+            Debug.Assert(IsValidBlockRef(ref freeList.GetNextFreeBlockRef()), "Free list corrupted");
+
+            // Because block is not head of the free list, we have two cases here
+            //   1. Block is in the middle of the list somewhere
+            //   2. Block is the tail of the list
+
+            ref var prevBlock = ref block.GetPrevFreeBlockRef();
+            Debug.Assert(IsValidBlockRef(ref prevBlock), "Block shouldn't be head of free list");
+
+            ref var nextBlock = ref block.GetNextFreeBlockRef();
+            if (IsValidBlockRef(ref nextBlock))
+            {
+                // Case 1 - block is in the middle of the list
+
+                // Update prev.next so it points to block.next and next.prev so it points to block.prev
+                prevBlock.NextFreeBlockRefRaw = block.NextFreeBlockRef;
+                nextBlock.PrevFreeBlockRefRaw = block.PrevFreeBlockRef;
+            }
+            else
+            {
+                // Case 2 - block is at the end of the list
+
+                // Remove prev's pointer to block
+                prevBlock.NextFreeBlockRefRaw = 0;
+            }
+
+            // Move block to the head of the list
+            freeList.PrevFreeBlockRefRaw = block.GetRefVal();
+            block.NextFreeBlockRefRaw = freeList.GetRefVal();
+            block.PrevFreeBlockRefRaw = 0;
+
+            // Update freeListStartPtr to refer to block
+            unsafe
+            {
+                freeListStartPtr = Unsafe.AsPointer(ref block);
             }
         }
 
@@ -751,30 +868,40 @@ namespace Garnet.server
         /// 
         /// <paramref name="block"/> can be free or allocated, but coalescing will only succeed
         /// if the adjacent block is free.
+        /// 
+        /// <paramref name="newBlockSizeBytes"/> is set only if the return is true.
         /// </summary>
-        private bool TryCoalesceSingleBlock(ref byte dataStartRef, ref BlockHeader block)
+        private bool TryCoalesceSingleBlock(ref byte dataStartRef, ref BlockHeader block, out int newBlockSizeBytes)
         {
             ref var nextBlock = ref block.GetNextAdjacentBlockRef(ref dataStartRef, data.Length);
-            if (Unsafe.IsNullRef(ref nextBlock) || !nextBlock.IsFree)
+            if (!IsValidBlockRef(ref nextBlock) || !nextBlock.IsFree)
             {
+                Unsafe.SkipInit(out newBlockSizeBytes);
                 return false;
             }
 
+            // We know nextBlock is free, so touch size directly
+            var nextBlockSizeBytes = nextBlock.SizeBytesRaw;
+
             RemoveFromFreeList(ref dataStartRef, ref nextBlock);
-            var newBlockSizeBytes = nextBlock.SizeBytes + block.SizeBytes + sizeof(int);
 
             if (block.IsFree)
             {
+                newBlockSizeBytes = nextBlockSizeBytes + block.SizeBytesRaw + BlockHeader.DataOffset;
+
                 block.SizeBytesRaw = newBlockSizeBytes;
             }
             else
             {
                 // Because we merged a free block into an allocated one we need to update the allocated byte total
-                AllocatedBytes -= block.SizeBytes;
+
+                // We know the block is in use, so block.SizeBytesRaw is -SizeBytes
+                newBlockSizeBytes = nextBlockSizeBytes - block.SizeBytesRaw + BlockHeader.DataOffset;
+                UpdateDebugAllocatedBytes(block.SizeBytesRaw);
 
                 block.SizeBytesRaw = -newBlockSizeBytes;
 
-                AllocatedBytes += block.SizeBytes;
+                UpdateDebugAllocatedBytes(newBlockSizeBytes);
             }
 
             return true;
@@ -782,12 +909,15 @@ namespace Garnet.server
 
         /// <summary>
         /// Split an in use block, such that the current block ends up with a size equal to <paramref name="curBlockUpdateSizeBytes"/>.
+        /// 
+        /// Returns a reference to the NEW free block.
         /// </summary>
-        private void SplitInUseBlock(ref byte dataStartRef, ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
+        private ref BlockHeader SplitInUseBlock(ref byte dataStartRef, ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
         {
             Debug.Assert(curBlock.IsInUse, "Only valid for in use blocks");
 
-            var oldSizeBytes = curBlock.SizeBytes;
+            // We know the block is in use, so touch size bytes directly
+            var oldSizeBytes = -curBlock.SizeBytesRaw;
 
             ref var newBlock = ref SplitCommon(ref curBlock, curBlockUpdateSizeBytes);
 
@@ -795,51 +925,67 @@ namespace Garnet.server
             AddToFreeList(ref dataStartRef, ref newBlock);
 
             // Because we split some bytes out of an allocated block, that means we need to remove those from allocation tracking
-            AllocatedBytes -= oldSizeBytes;
-            AllocatedBytes += curBlock.SizeBytes;
+            UpdateDebugAllocatedBytes(-oldSizeBytes);
+
+            // We know the block is in use, so -SizeBytesRaw will be SizeBytes (unconditionally)
+            UpdateDebugAllocatedBytes(-curBlock.SizeBytesRaw);
+
+            return ref newBlock;
         }
 
         /// <summary>
         /// Split a free block such that the current block ends up with a size equal to <paramref name="curBlockUpdateSizeBytes"/>.
+        /// 
+        /// Returns a reference to the NEW block.
         /// </summary>
-        private void SplitFreeBlock(ref byte dataStartRef, ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
+        private ref BlockHeader SplitFreeBlock(ref byte dataStartRef, ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
         {
             Debug.Assert(curBlock.IsFree, "Only valid for free blocks");
 
-            ref var oldNextBlock = ref curBlock.GetNextFreeBlockRef(ref dataStartRef);
+            ref var oldNextBlock = ref curBlock.GetNextFreeBlockRef();
 
             ref var newBlock = ref SplitCommon(ref curBlock, curBlockUpdateSizeBytes);
 
-            var curBlockIndex = curBlock.GetDataIndex(ref dataStartRef);
+            var curBlockRefVal = curBlock.GetRefVal();
 
             // Update newBlock
-            newBlock.PrevFreeBlockIndexRaw = curBlockIndex;
-            newBlock.NextFreeBlockIndexRaw = curBlock.NextFreeBlockIndex;
+            newBlock.PrevFreeBlockRefRaw = curBlockRefVal;
+            newBlock.NextFreeBlockRefRaw = curBlock.NextFreeBlockRef;
             Debug.Assert(newBlock.IsFree, "New block shoud be free");
-            Debug.Assert(newBlock.GetDataIndex(ref dataStartRef) < data.Length, "New block out of managed memory");
-            Debug.Assert(newBlock.GetDataIndex(ref dataStartRef) + sizeof(int) + newBlock.SizeBytes <= data.Length, "New block out of managed memory");
+            Debug.Assert(ContainsRef(ref Unsafe.As<BlockHeader, byte>(ref newBlock)), "New block out of managed memory");
 
-            var newBlockIndex = newBlock.GetDataIndex(ref dataStartRef);
+            var newBlockRefVal = newBlock.GetRefVal();
 
             // Update curBlock
-            curBlock.NextFreeBlockIndexRaw = newBlockIndex;
+            curBlock.NextFreeBlockRefRaw = newBlockRefVal;
             Debug.Assert(curBlock.IsFree, "New block shoud be free");
-            Debug.Assert(curBlock.GetDataIndex(ref dataStartRef) < data.Length, "Split block out of managed memory");
-            Debug.Assert(curBlock.GetDataIndex(ref dataStartRef) + sizeof(int) + curBlock.SizeBytes <= data.Length, "Split block out of managed memory");
+            Debug.Assert(ContainsRef(ref Unsafe.As<BlockHeader, byte>(ref curBlock)), "Split block out of managed memory");
 
             // Update the old next block if it exists
-            if (!Unsafe.IsNullRef(ref oldNextBlock))
+            if (IsValidBlockRef(ref oldNextBlock))
             {
                 Debug.Assert(oldNextBlock.IsFree, "Should have been in free list");
-                oldNextBlock.PrevFreeBlockIndexRaw = newBlockIndex;
+                oldNextBlock.PrevFreeBlockRefRaw = newBlockRefVal;
             }
+
+            return ref newBlock;
         }
 
         /// <summary>
         /// Grab the start of the managed memory we're allocating out of.
         /// </summary>
-        private ref byte GetDataStartRef()
-        => ref MemoryMarshal.GetReference(data.Span);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe ref byte GetDataStartRef()
+        => ref Unsafe.AsRef<byte>(dataStartPtr);
+
+        /// <summary>
+        /// Get the start of the free list.
+        /// 
+        /// If the free list is empty, returns a null ref.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe ref BlockHeader GetFreeList()
+        => ref Unsafe.AsRef<BlockHeader>(freeListStartPtr);
 
         /// <summary>
         /// Turn a reference obtained from <see cref="BlockHeader.DataReference"/> back into a <see cref="BlockHeader"/> reference.
@@ -848,7 +994,7 @@ namespace Garnet.server
         {
             Debug.Assert(!Unsafe.AreSame(ref dataStartRef, ref userDataRef), "User data is actually 0 size alloc, that doesn't make sense");
 
-            ref var blockStartByteRef = ref Unsafe.Add(ref userDataRef, -sizeof(int));
+            ref var blockStartByteRef = ref Unsafe.Add(ref userDataRef, -BlockHeader.DataOffset);
 
             Debug.Assert(!Unsafe.IsAddressLessThan(ref blockStartByteRef, ref dataStartRef), "User data is before managed memory");
             Debug.Assert(!Unsafe.IsAddressGreaterThan(ref blockStartByteRef, ref Unsafe.Add(ref dataStartRef, data.Length - 1)), "User data is after managed memory");
@@ -857,22 +1003,11 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get the start of the free list.
-        /// 
-        /// If the free list is empty, returns a null ref.
+        /// In DEBUG builds, keep track of how many bytes we've allocated for testing purposes.
         /// </summary>
-        private ref BlockHeader GetFreeList(ref byte dataStartRef)
-        {
-            if (freeListStartIndex == -1)
-            {
-                return ref Unsafe.NullRef<BlockHeader>();
-            }
-
-            ref var freeListStart = ref Unsafe.Add(ref dataStartRef, freeListStartIndex);
-            ref var punned = ref Unsafe.As<byte, BlockHeader>(ref freeListStart);
-
-            return ref punned;
-        }
+        [Conditional("DEBUG")]
+        private void UpdateDebugAllocatedBytes(int by)
+        => debugAllocatedBytes += by;
 
         /// <summary>
         /// Common logic for splitting blocks.
@@ -883,26 +1018,33 @@ namespace Garnet.server
         {
             Debug.Assert(curBlockUpdateSizeBytes >= LuaAllocMinSizeBytes, "Shouldn't split an existing block to be this small");
 
-            var newBlockSizeBytes = curBlock.SizeBytes - sizeof(int) - curBlockUpdateSizeBytes;
-
-            Debug.Assert(newBlockSizeBytes >= LuaAllocMinSizeBytes, "Shouldn't create a new block this small");
-
             ref var curBlockData = ref curBlock.DataReference;
             ref var newBlockStartByteRef = ref Unsafe.AddByteOffset(ref curBlockData, curBlockUpdateSizeBytes);
             ref var newBlock = ref Unsafe.As<byte, BlockHeader>(ref newBlockStartByteRef);
 
-            // The new block is always free, so assign directly
-            newBlock.SizeBytesRaw = newBlockSizeBytes;
-
+            int newBlockSizeBytes;
             if (curBlock.IsFree)
             {
+                // We know curBlock is free, so touch SizeBytesRaw directly
+                newBlockSizeBytes = curBlock.SizeBytesRaw - BlockHeader.DataOffset - curBlockUpdateSizeBytes;
+
                 curBlock.SizeBytesRaw = curBlockUpdateSizeBytes;
             }
             else
             {
                 Debug.Assert(curBlock.IsInUse, "Invalid block state");
+
+                // We know curBlock is is inuse, so touch SizeBytesRaw directly
+                newBlockSizeBytes = -curBlock.SizeBytesRaw - BlockHeader.DataOffset - curBlockUpdateSizeBytes;
+
                 curBlock.SizeBytesRaw = -curBlockUpdateSizeBytes;
             }
+
+            Debug.Assert(newBlockSizeBytes >= LuaAllocMinSizeBytes, "Shouldn't create a new block this small");
+
+            // The new block is always free, so positive size
+            newBlock.SizeBytesRaw = newBlockSizeBytes;
+
 
             return ref newBlock;
         }
@@ -922,17 +1064,25 @@ namespace Garnet.server
         /// </summary>
         private static int RoundToMinAlloc(int sizeBytes)
         {
-            var steps = sizeBytes / LuaAllocMinSizeBytes;
-            if ((sizeBytes % LuaAllocMinSizeBytes) != 0)
-            {
-                steps++;
-            }
+            Debug.Assert(BitOperations.IsPow2(LuaAllocMinSizeBytes), "Assumes min allocation is a power of 2");
 
-            var ret = steps * LuaAllocMinSizeBytes;
+            // To avoid special casing 0, we can reserve up to an extra LuaAllocMinSizeBytes
+            var ret = (sizeBytes + LuaAllocMinSizeBytes) & ~(LuaAllocMinSizeBytes - 1);
 
-            Debug.Assert(ret >= sizeBytes, "Rounding logic invalid");
+            Debug.Assert(ret > 0, "Rounding logic invalid - not positive");
+            Debug.Assert(ret >= sizeBytes, "Rounding logic invalid - did not round up");
+            Debug.Assert(ret % LuaAllocMinSizeBytes == 0, "Rounding logic invalid - not a whole multiple of step size");
 
             return ret;
         }
+
+        /// <summary>
+        /// Check if <paramref name="blockRef"/> is valid.
+        /// 
+        /// Pulled out to indicate intent, it's basically just a null check
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe bool IsValidBlockRef(ref BlockHeader blockRef)
+        => Unsafe.AsPointer(ref blockRef) != (void*)0;
     }
 }

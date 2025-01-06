@@ -75,12 +75,6 @@ namespace Garnet.server
                 {
                     alloc.Free(ref start, sizeBytes);
 
-                    // If this free left a whole allocator unused, let the GC clean it up
-                    if (alloc.AllocatedBytes == 0 && subAllocators.Count > 1)
-                    {
-                        subAllocators.RemoveAt(i);
-                    }
-
                     return;
                 }
             }
