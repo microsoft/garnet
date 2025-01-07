@@ -222,6 +222,33 @@ Bulk string reply: the value of the key after the increment.
 
 ---
 
+### LCS
+
+#### Syntax
+
+```bash
+    LCS key1 key2 [LEN] [IDX] [MINMATCHLEN len] [WITHMATCHLEN]
+```
+
+Returns the longest common subsequence of the values stored at key1 and key2.
+
+The LCS command supports a set of options that modify its behavior:
+
+* LEN -- Return the length of the longest common subsequence.
+* IDX -- Return the match positions of the longest common subsequence.
+* MINMATCHLEN len -- Return only matches of length greater than or equal to len.
+* WITHMATCHLEN -- Return the lengths of matches.
+
+#### Resp Reply
+
+One of the following:
+
+* Bulk string reply: the longest common subsequence of the values stored at key1 and key2.
+* Integer reply: the length of the longest common subsequence (if LEN is specified).
+* Array reply: the match positions of the longest common subsequence (if IDX is specified).
+
+---
+
 ### MGET
 
 #### Syntax
