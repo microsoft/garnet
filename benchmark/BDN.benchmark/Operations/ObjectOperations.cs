@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using BenchmarkDotNet.Attributes;
+using Embedded.server;
 
 namespace BDN.benchmark.Operations
 {
@@ -12,23 +13,21 @@ namespace BDN.benchmark.Operations
     public unsafe class ObjectOperations : OperationsBase
     {
         static ReadOnlySpan<byte> ZADDREM => "*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nc\r\n*3\r\n$4\r\nZREM\r\n$1\r\nc\r\n$1\r\nc\r\n"u8;
-        byte[] zAddRemRequestBuffer;
-        byte* zAddRemRequestBufferPointer;
+        Request zAddRem;
 
         static ReadOnlySpan<byte> LPUSHPOP => "*3\r\n$5\r\nLPUSH\r\n$1\r\nd\r\n$1\r\ne\r\n*2\r\n$4\r\nLPOP\r\n$1\r\nd\r\n"u8;
-        byte[] lPushPopRequestBuffer;
-        byte* lPushPopRequestBufferPointer;
+        Request lPushPop;
 
         static ReadOnlySpan<byte> SADDREM => "*3\r\n$4\r\nSADD\r\n$1\r\ne\r\n$1\r\na\r\n*3\r\n$4\r\nSREM\r\n$1\r\ne\r\n$1\r\na\r\n"u8;
-        byte[] sAddRemRequestBuffer;
-        byte* sAddRemRequestBufferPointer;
+        Request sAddRem;
 
         public override void GlobalSetup()
         {
             base.GlobalSetup();
-            SetupOperation(ref zAddRemRequestBuffer, ref zAddRemRequestBufferPointer, ZADDREM);
-            SetupOperation(ref lPushPopRequestBuffer, ref lPushPopRequestBufferPointer, LPUSHPOP);
-            SetupOperation(ref sAddRemRequestBuffer, ref sAddRemRequestBufferPointer, SADDREM);
+
+            SetupOperation(ref zAddRem, ZADDREM);
+            SetupOperation(ref lPushPop, LPUSHPOP);
+            SetupOperation(ref sAddRem, SADDREM);
 
             // Pre-populate data
             SlowConsumeMessage("*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nd\r\n"u8);
@@ -39,19 +38,19 @@ namespace BDN.benchmark.Operations
         [Benchmark]
         public void ZAddRem()
         {
-            _ = session.TryConsumeMessages(zAddRemRequestBufferPointer, zAddRemRequestBuffer.Length);
+            Send(zAddRem);
         }
 
         [Benchmark]
         public void LPushPop()
         {
-            _ = session.TryConsumeMessages(lPushPopRequestBufferPointer, lPushPopRequestBuffer.Length);
+            Send(lPushPop);
         }
 
         [Benchmark]
         public void SAddRem()
         {
-            _ = session.TryConsumeMessages(sAddRemRequestBufferPointer, sAddRemRequestBuffer.Length);
+            Send(sAddRem);
         }
     }
 }

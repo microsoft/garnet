@@ -32,7 +32,7 @@ and responds in one of the following ways:
 
 - If the slot is owned by the receiving node, it performs the actual operation as expected from standalone Garnet.
 - If the slot is owned by the another node, it responds with -MOVED \<slot\> \<address\> \<port\>
-- If the receiving node is a replica, it will serve only read requests to the slots owned by its primaruy and redirect any write requests to the primary using -MOVED message.
+- If the receiving node is a replica, it will serve only read requests to the slots owned by its primary and redirect any write requests to the primary using -MOVED message.
 - If the slot is owned by the receiving node and that slot is migrating then:
 	- If the key exists, then read requests are served as normal while write requests return -MIGRATING.
 	- If the key does not exist, then read and write requests return -ASK \<slot\> \<address\> \<port\>.

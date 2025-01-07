@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using BenchmarkDotNet.Attributes;
+using Embedded.server;
 
 namespace BDN.benchmark.Network
 {
@@ -9,61 +10,51 @@ namespace BDN.benchmark.Network
     /// Benchmark for RawStringOperations
     /// </summary>
     [MemoryDiagnoser]
-    public unsafe class RawStringOperations : NetworkBase
+    public class RawStringOperations : NetworkBase
     {
         static ReadOnlySpan<byte> SET => "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\na\r\n"u8;
-        byte[] setRequestBuffer;
-        byte* setRequestBufferPointer;
+        Request set;
 
         static ReadOnlySpan<byte> SETEX => "*4\r\n$5\r\nSETEX\r\n$1\r\nd\r\n$1\r\n9\r\n$1\r\nd\r\n"u8;
-        byte[] setexRequestBuffer;
-        byte* setexRequestBufferPointer;
+        Request setex;
 
         static ReadOnlySpan<byte> SETNX => "*4\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\na\r\n$2\r\nNX\r\n"u8;
-        byte[] setnxRequestBuffer;
-        byte* setnxRequestBufferPointer;
+        Request setnx;
 
         static ReadOnlySpan<byte> SETXX => "*4\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\na\r\n$2\r\nXX\r\n"u8;
-        byte[] setxxRequestBuffer;
-        byte* setxxRequestBufferPointer;
+        Request setxx;
 
         static ReadOnlySpan<byte> GETNF => "*2\r\n$3\r\nGET\r\n$1\r\nb\r\n"u8;
-        byte[] getnfRequestBuffer;
-        byte* getnfRequestBufferPointer;
+        Request getnf;
 
         static ReadOnlySpan<byte> GETF => "*2\r\n$3\r\nGET\r\n$1\r\na\r\n"u8;
-        byte[] getfRequestBuffer;
-        byte* getfRequestBufferPointer;
+        Request getf;
 
         static ReadOnlySpan<byte> INCR => "*2\r\n$4\r\nINCR\r\n$1\r\ni\r\n"u8;
-        byte[] incrRequestBuffer;
-        byte* incrRequestBufferPointer;
+        Request incr;
 
         static ReadOnlySpan<byte> DECR => "*2\r\n$4\r\nDECR\r\n$1\r\nj\r\n"u8;
-        byte[] decrRequestBuffer;
-        byte* decrRequestBufferPointer;
+        Request decr;
 
         static ReadOnlySpan<byte> INCRBY => "*3\r\n$6\r\nINCRBY\r\n$1\r\nk\r\n$10\r\n1234567890\r\n"u8;
-        byte[] incrbyRequestBuffer;
-        byte* incrbyRequestBufferPointer;
+        Request incrby;
 
         static ReadOnlySpan<byte> DECRBY => "*3\r\n$6\r\nDECRBY\r\n$1\r\nl\r\n$10\r\n1234567890\r\n"u8;
-        byte[] decrbyRequestBuffer;
-        byte* decrbyRequestBufferPointer;
+        Request decrby;
 
         public override void GlobalSetup()
         {
             base.GlobalSetup();
-            SetupOperation(ref setRequestBuffer, ref setRequestBufferPointer, SET);
-            SetupOperation(ref setexRequestBuffer, ref setexRequestBufferPointer, SETEX);
-            SetupOperation(ref setnxRequestBuffer, ref setnxRequestBufferPointer, SETNX);
-            SetupOperation(ref setxxRequestBuffer, ref setxxRequestBufferPointer, SETXX);
-            SetupOperation(ref getfRequestBuffer, ref getfRequestBufferPointer, GETF);
-            SetupOperation(ref getnfRequestBuffer, ref getnfRequestBufferPointer, GETNF);
-            SetupOperation(ref incrRequestBuffer, ref incrRequestBufferPointer, INCR);
-            SetupOperation(ref decrRequestBuffer, ref decrRequestBufferPointer, DECR);
-            SetupOperation(ref incrbyRequestBuffer, ref incrbyRequestBufferPointer, INCRBY);
-            SetupOperation(ref decrbyRequestBuffer, ref decrbyRequestBufferPointer, DECRBY);
+            SetupOperation(ref set, SET);
+            SetupOperation(ref setex, SETEX);
+            SetupOperation(ref setnx, SETNX);
+            SetupOperation(ref setxx, SETXX);
+            SetupOperation(ref getf, GETF);
+            SetupOperation(ref getnf, GETNF);
+            SetupOperation(ref incr, INCR);
+            SetupOperation(ref decr, DECR);
+            SetupOperation(ref incrby, INCRBY);
+            SetupOperation(ref decrby, DECRBY);
 
             // Pre-populate data
             SlowConsumeMessage("*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\na\r\n"u8);
@@ -74,63 +65,63 @@ namespace BDN.benchmark.Network
         }
 
         [Benchmark]
-        public void Set()
+        public async ValueTask Set()
         {
-            Send(setRequestBuffer, setRequestBufferPointer, setRequestBuffer.Length);
+            await Send(set);
         }
 
         [Benchmark]
-        public void SetEx()
+        public async ValueTask SetEx()
         {
-            Send(setexRequestBuffer, setexRequestBufferPointer, setexRequestBuffer.Length);
+            await Send(setex);
         }
 
         [Benchmark]
-        public void SetNx()
+        public async ValueTask SetNx()
         {
-            Send(setnxRequestBuffer, setnxRequestBufferPointer, setnxRequestBuffer.Length);
+            await Send(setnx);
         }
 
         [Benchmark]
-        public void SetXx()
+        public async ValueTask SetXx()
         {
-            Send(setxxRequestBuffer, setxxRequestBufferPointer, setxxRequestBuffer.Length);
+            await Send(setxx);
         }
 
         [Benchmark]
-        public void GetFound()
+        public async ValueTask GetFound()
         {
-            Send(getfRequestBuffer, getfRequestBufferPointer, getfRequestBuffer.Length);
+            await Send(getf);
         }
 
         [Benchmark]
-        public void GetNotFound()
+        public async ValueTask GetNotFound()
         {
-            Send(getnfRequestBuffer, getnfRequestBufferPointer, getnfRequestBuffer.Length);
+            await Send(getnf);
         }
 
         [Benchmark]
-        public void Increment()
+        public async ValueTask Increment()
         {
-            Send(incrRequestBuffer, incrRequestBufferPointer, incrRequestBuffer.Length);
+            await Send(incr);
         }
 
         [Benchmark]
-        public void Decrement()
+        public async ValueTask Decrement()
         {
-            Send(decrRequestBuffer, decrRequestBufferPointer, decrRequestBuffer.Length);
+            await Send(decr);
         }
 
         [Benchmark]
-        public void IncrementBy()
+        public async ValueTask IncrementBy()
         {
-            Send(incrbyRequestBuffer, incrbyRequestBufferPointer, incrbyRequestBuffer.Length);
+            await Send(incrby);
         }
 
         [Benchmark]
-        public void DecrementBy()
+        public async ValueTask DecrementBy()
         {
-            Send(decrbyRequestBuffer, decrbyRequestBufferPointer, decrbyRequestBuffer.Length);
+            await Send(decrby);
         }
     }
 }
