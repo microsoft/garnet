@@ -43,7 +43,7 @@ jobs:
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
         # temp changes to make my testing loop faster
-        test: [ 'Operations.RawStringOperations', 'Network.RawStringOperations' ]
+        test: [ 'Operations.RawStringOperations' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4

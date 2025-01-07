@@ -865,7 +865,31 @@ namespace Garnet.server
 
             var input = new RawStringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
-            if (getValue || withEtag)
+            if (!getValue && !withEtag)
+            {
+                // the following debug assertion is the catch any edge case leading to SETIFMATCH skipping the above block
+                Debug.Assert(cmd != RespCommand.SETIFMATCH, "SETIFMATCH should have gone though pointing to right output variable");
+
+                GarnetStatus status = storageApi.SET_Conditional(ref key, ref input);
+
+                bool ok = status != GarnetStatus.NOTFOUND;
+
+                if (cmd == RespCommand.SETEXNX)
+                    ok = !ok;
+
+                if (ok)
+                {
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                }
+                return true;
+            }
+            else
             {
                 if (withEtag)
                     input.header.SetWithEtagFlag();
@@ -894,30 +918,6 @@ namespace Garnet.server
                         SendAndReset();
                 }
 
-                return true;
-            }
-            else
-            {
-                // the following debug assertion is the catch any edge case leading to SETIFMATCH skipping the above block
-                Debug.Assert(cmd != RespCommand.SETIFMATCH, "SETIFMATCH should have gone though pointing to right output variable");
-
-                GarnetStatus status = storageApi.SET_Conditional(ref key, ref input);
-
-                bool ok = status != GarnetStatus.NOTFOUND;
-
-                if (cmd == RespCommand.SETEXNX)
-                    ok = !ok;
-
-                if (ok)
-                {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
-                }
                 return true;
             }
         }
