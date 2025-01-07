@@ -295,6 +295,41 @@ namespace Garnet.server
                 return false;
             }
 
+            RespCommand cmd = input.header.cmd;
+
+            // EXPEMENTING: placing this outside of the Switch statement to not let NX command get affected, if this doesnt reduce NX overhead I need to look elsewhere
+            if (cmd == RespCommand.SETEXNX)
+            {
+                if (input.header.NotSetGetNorCheckWithEtag())
+                    return true;
+
+                if (input.header.CheckSetGetFlag())
+                {
+                    int etagAccountedOffset = 0;
+                    int etagAccountedEnd= -1;
+                    long existingEtag = Constants.BaseEtag;
+                    if (recordInfo.ETag)
+                    {
+                        // used in varlen
+                        etagAccountedOffset = Constants.EtagSize;
+                        etagAccountedEnd = value.LengthWithoutMetadata;
+                        existingEtag = *(long*)value.ToPointer();
+                        // if something is going to go past this into copy we need to provide offset management for its varlen during allocation
+                        this.functionsState.etagOffsetForVarlen = Constants.EtagSize;
+                    }
+                    // Copy value to output for the GET part of the command.
+                    CopyRespTo(ref value, ref output, etagAccountedOffset, etagAccountedEnd);
+                }
+                else
+                {
+                    // when called withetag all output needs to be placed on the buffer
+                    // EXX when unsuccesful will write back NIL
+                    CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                }
+                // Nothing is set because being in this block means NX was already violated
+                return true;
+            }
+
             int etagIgnoredOffset = 0;
             int etagIgnoredEnd = -1;
             long oldEtag = Constants.BaseEtag;
@@ -310,26 +345,9 @@ namespace Garnet.server
                 this.functionsState.etagOffsetForVarlen = Constants.EtagSize;
             }
 
-            RespCommand cmd = input.header.cmd;
             switch (cmd)
             {
                 case RespCommand.SETEXNX:
-                    if (input.header.NotSetGetNorCheckWithEtag())
-                        return true;
-
-                    if (input.header.CheckSetGetFlag())
-                    {
-                        // Copy value to output for the GET part of the command.
-                        CopyRespTo(ref value, ref output, etagIgnoredOffset, etagIgnoredEnd);
-                    }
-                    else
-                    {
-                        // when called withetag all output needs to be placed on the buffer
-                        // EXX when unsuccesful will write back NIL
-                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
-                    }
-                    // Nothing is set because being in this block means NX was already violated
-                    return true;
                 case RespCommand.SETIFMATCH:
                     long etagFromClient = input.parseState.GetLong(1);
 
