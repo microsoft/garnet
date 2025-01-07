@@ -47,6 +47,7 @@ namespace Garnet.server
                         output.Length = outp.Length;
                         return ret;
                     }
+                    this.functionsState.etagOffsetManagementContext.SetEtagOffsetBasedOnInputHeader(input.header.CheckWithEtagFlag());
                     return true;
             }
         }
@@ -81,7 +82,7 @@ namespace Garnet.server
 
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
-                    int spaceForEtag = input.etagOffsetManagementContext.EtagOffsetForVarlen;
+                    int spaceForEtag = this.functionsState.etagOffsetManagementContext.EtagOffsetForVarlen;
 
                     // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -90,32 +91,40 @@ namespace Garnet.server
                     value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
                     value.ExtraMetadata = input.arg1;
                     newInputValue.CopyTo(value.AsSpan(spaceForEtag));
-                    if (input.header.CheckWithEtagFlag())
+
+                    if (!input.header.CheckWithEtagFlag())
+                        break;
+                    else
                     {
                         recordInfo.SetHasETag();
                         // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
                         *(long*)value.ToPointer() = Constants.BaseEtag + 1;
                         // Copy initial etag to output only for SET + WITHETAG and not SET NX or XX 
                         CopyRespNumber(Constants.BaseEtag + 1, ref output);
+                        break;
+
                     }
-                    break;
 
                 case RespCommand.SETKEEPTTL:
-                    spaceForEtag = input.etagOffsetManagementContext.EtagOffsetForVarlen;
+                    spaceForEtag = this.functionsState.etagOffsetManagementContext.EtagOffsetForVarlen;
 
                     // Copy input to value, retain metadata in value
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     value.ShrinkSerializedLength(value.MetadataSize + setValue.Length + spaceForEtag);
                     setValue.CopyTo(value.AsSpan(spaceForEtag));
 
-                    if (input.header.CheckWithEtagFlag())
+                    if (!input.header.CheckWithEtagFlag())
+                    {
+                        break;
+                    }
+                    else
                     {
                         recordInfo.SetHasETag();
                         *(long*)value.ToPointer() = Constants.BaseEtag + 1;
                         // Copy initial etag to output
                         CopyRespNumber(Constants.BaseEtag + 1, ref output);
+                        break;
                     }
-                    break;
 
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETEXXX:
@@ -280,11 +289,12 @@ namespace Garnet.server
             }
 
             // Copy Inplace Update worker is the first in the potential pipeline of calling NeedCopyUpdate and CopyUpdater the following line will keep a precomputed values to use after this
-            EtagOffsetManagementContext.CalculateOffsets(ref input.etagOffsetManagementContext, recordInfo.ETag, ref value);
+            this.functionsState.etagOffsetManagementContext.SetEtagOffsetBasedOnInputHeader(input.header.CheckWithEtagFlag());
+            this.functionsState.etagOffsetManagementContext.CalculateOffsets(recordInfo.ETag, ref value);
 
-            int etagIgnoredOffset = input.etagOffsetManagementContext.EtagIgnoredOffset;
-            int etagIgnoredEnd = input.etagOffsetManagementContext.EtagIgnoredEnd;
-            long oldEtag = input.etagOffsetManagementContext.ExistingEtag;
+            int etagIgnoredOffset = this.functionsState.etagOffsetManagementContext.EtagIgnoredOffset;
+            int etagIgnoredEnd = this.functionsState.etagOffsetManagementContext.EtagIgnoredEnd;
+            long oldEtag = this.functionsState.etagOffsetManagementContext.ExistingEtag;
 
             RespCommand cmd = input.header.cmd;
             switch (cmd)
@@ -356,6 +366,7 @@ namespace Garnet.server
                     var nextUpdateEtagOffset = etagIgnoredOffset;
                     var nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
                     bool inputHeaderHasEtag = input.header.CheckWithEtagFlag();
+
                     if (!inputHeaderHasEtag)
                     {
                         // if the user did not explictly asked for retaining the etag we need to ignore the etag even if it existed on the previous record
@@ -396,17 +407,19 @@ namespace Garnet.server
                     setValue.ReadOnlySpan.CopyTo(value.AsSpan(nextUpdateEtagOffset));
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
-                    if (inputHeaderHasEtag)
+                    if (!inputHeaderHasEtag)
+                    {
+                        break;
+                    }
+                    else
                     {
                         recordInfo.SetHasETag();
                         *(long*)value.ToPointer() = oldEtag + 1;
                         // withetag flag means we need to write etag back to the output buffer
                         CopyRespNumber(oldEtag + 1, ref output);
-                        // early return since we already updated etag
+                        // return since we already updated etag
                         return true;
                     }
-
-                    break;
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
                     // If the user calls withetag then we need to either update an existing etag and set the value
@@ -450,7 +463,11 @@ namespace Garnet.server
                     setValue.ReadOnlySpan.CopyTo(value.AsSpan(etagIgnoredOffset));
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
-                    if (inputHeaderHasEtag)
+                    if (!inputHeaderHasEtag)
+                    {
+                        break;
+                    }
+                    else
                     {
                         recordInfo.SetHasETag();
                         *(long*)value.ToPointer() = oldEtag + 1;
@@ -460,7 +477,6 @@ namespace Garnet.server
                         return true;
                     }
 
-                    break;
 
                 case RespCommand.PEXPIRE:
                 case RespCommand.EXPIRE:
@@ -747,18 +763,21 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.SETIFMATCH:
-                    int etagIgnoredOffset = input.etagOffsetManagementContext.EtagIgnoredOffset;
-                    int etagIgnoredEnd = input.etagOffsetManagementContext.EtagIgnoredEnd;
-                    long existingEtag = input.etagOffsetManagementContext.ExistingEtag;
+                    int etagIgnoredOffset = this.functionsState.etagOffsetManagementContext.EtagIgnoredOffset;
+                    int etagIgnoredEnd = this.functionsState.etagOffsetManagementContext.EtagIgnoredEnd;
+                    long existingEtag = this.functionsState.etagOffsetManagementContext.ExistingEtag;
                     long etagToCheckWith = input.parseState.GetLong(1);
 
-                    if (existingEtag != etagToCheckWith)
+                    if (existingEtag == etagToCheckWith)
+                    {
+                        return true;
+                    }
+                    else
                     {
                         CopyRespToWithInput(ref input, ref oldValue, ref output, isFromPending: false, etagIgnoredOffset, etagIgnoredEnd, hasEtagInVal: rmwInfo.RecordInfo.ETag);
                         return false;
                     }
 
-                    return true;
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
                     // ExpireAndResume ensures that we set as new value, since it does not exist
@@ -769,9 +788,8 @@ namespace Garnet.server
                         return false;
                     }
 
-
-                    etagIgnoredOffset = input.etagOffsetManagementContext.EtagIgnoredOffset;
-                    etagIgnoredEnd = input.etagOffsetManagementContext.EtagIgnoredEnd;
+                    etagIgnoredOffset = this.functionsState.etagOffsetManagementContext.EtagIgnoredOffset;
+                    etagIgnoredEnd = this.functionsState.etagOffsetManagementContext.EtagIgnoredEnd;
 
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
@@ -803,7 +821,7 @@ namespace Garnet.server
                     {
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
                         var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
-                            .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(input.etagOffsetManagementContext.EtagIgnoredOffset), ref outp);
+                            .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(this.functionsState.etagOffsetManagementContext.EtagIgnoredOffset), ref outp);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
                         return ret;
@@ -829,9 +847,9 @@ namespace Garnet.server
             bool shouldUpdateEtag = recordInfo.ETag;
 
             // offsets are precomputed at InPlaceUpdater
-            int etagIgnoredOffset = input.etagOffsetManagementContext.EtagIgnoredOffset;
-            int etagIgnoredEnd = input.etagOffsetManagementContext.EtagIgnoredEnd;
-            long oldEtag = input.etagOffsetManagementContext.ExistingEtag;
+            int etagIgnoredOffset = this.functionsState.etagOffsetManagementContext.EtagIgnoredOffset;
+            int etagIgnoredEnd = this.functionsState.etagOffsetManagementContext.EtagIgnoredEnd;
+            long oldEtag = this.functionsState.etagOffsetManagementContext.ExistingEtag;
 
             switch (cmd)
             {

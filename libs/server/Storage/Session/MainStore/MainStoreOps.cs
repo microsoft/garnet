@@ -640,7 +640,6 @@ namespace Garnet.server
                                     if (withEtag)
                                     {
                                         input.header.SetWithEtagFlag();
-                                        EtagOffsetManagementContext.SetEtagOffsetBasedOnInputHeader(ref input.etagOffsetManagementContext);
                                     }
 
                                     var setStatus = SET_Conditional(ref newKey, ref input, ref context);
@@ -670,7 +669,6 @@ namespace Garnet.server
                                     if (withEtag)
                                     {
                                         input.header.SetWithEtagFlag();
-                                        EtagOffsetManagementContext.SetEtagOffsetBasedOnInputHeader(ref input.etagOffsetManagementContext);
                                     }
 
                                     var setStatus = SET_Conditional(ref newKey, ref input, ref context);

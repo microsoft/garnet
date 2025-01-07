@@ -6,7 +6,7 @@ namespace Garnet.server
 {
     internal static class Constants
     {
-        public const int EtagSize = sizeof(long);
+        public const byte EtagSize = sizeof(long);
 
         public const int BaseEtag = 0;
     }
