@@ -116,7 +116,6 @@ namespace Garnet.server
                     ndigits = NumUtils.NumOfCharInDouble(incrByFloat, out var _, out var _, out var _);
 
                     return sizeof(int) + ndigits;
-
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -131,7 +130,7 @@ namespace Garnet.server
                         return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
                     }
 
-                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + (input.arg1 == 0 ? 0 : sizeof(long)) + this.functionsState.etagOffsetManagementContext.EtagOffsetForVarlen;
+                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + (input.arg1 == 0 ? 0 : sizeof(long)) + this.functionsState.etagOffsetForVarlen;
             }
         }
 
@@ -142,8 +141,7 @@ namespace Garnet.server
             {
                 var cmd = input.header.cmd;
 
-                // use the precomputed value
-                int etagOffset = this.functionsState.etagOffsetManagementContext.EtagOffsetForVarlen;
+                int etagOffset = this.functionsState.etagOffsetForVarlen;
 
                 switch (cmd)
                 {

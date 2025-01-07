@@ -19,7 +19,7 @@ namespace Garnet.server
         public readonly CacheSizeTracker objectStoreSizeTracker;
         public readonly GarnetObjectSerializer garnetObjectSerializer;
         public bool StoredProcMode;
-        public readonly EtagOffsetManagementContext etagOffsetManagementContext;
+        public byte etagOffsetForVarlen;
 
         public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
             MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, GarnetObjectSerializer garnetObjectSerializer)
@@ -30,7 +30,6 @@ namespace Garnet.server
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
             this.objectStoreSizeTracker = objectStoreSizeTracker;
             this.garnetObjectSerializer = garnetObjectSerializer;
-            this.etagOffsetManagementContext = new EtagOffsetManagementContext();
         }
 
         public CustomRawStringFunctions GetCustomCommandFunctions(int id)

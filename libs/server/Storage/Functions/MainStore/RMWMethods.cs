@@ -33,16 +33,24 @@ namespace Garnet.server
                     // when called withetag all output needs to be placed on the buffer
                     if (input.header.CheckWithEtagFlag())
                     {
-                        // EXX when unsuccesful will write back NIL
+                        // XX when unsuccesful will write back NIL
                         CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
                     }
                     return false;
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
                 case RespCommand.SETKEEPTTL:
-                    this.functionsState.etagOffsetManagementContext.SetEtagOffsetBasedOnInputHeader(input.header.CheckWithEtagFlag());
+                    if (input.header.CheckWithEtagFlag())
+                    {
+                        this.functionsState.etagOffsetForVarlen = Constants.EtagSize;
+                    }
+                    else
+                    {
+                        this.functionsState.etagOffsetForVarlen = 0;
+                    }
                     return true;
                 default:
+                    this.functionsState.etagOffsetForVarlen = 0;
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
@@ -87,7 +95,7 @@ namespace Garnet.server
 
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
-                    int spaceForEtag = this.functionsState.etagOffsetManagementContext.EtagOffsetForVarlen;
+                    int spaceForEtag = this.functionsState.etagOffsetForVarlen;
 
                     // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -97,8 +105,7 @@ namespace Garnet.server
                     value.ExtraMetadata = input.arg1;
                     newInputValue.CopyTo(value.AsSpan(spaceForEtag));
 
-                    // HK TODO maybe cache this calc in etagOffsetManagementContext
-                    if (input.header.CheckWithEtagFlag())
+                    if (spaceForEtag != 0)
                     {
                         recordInfo.SetHasETag();
                         // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
@@ -109,14 +116,14 @@ namespace Garnet.server
 
                     break;
                 case RespCommand.SETKEEPTTL:
-                    spaceForEtag = this.functionsState.etagOffsetManagementContext.EtagOffsetForVarlen;
+                    spaceForEtag = this.functionsState.etagOffsetForVarlen;
 
                     // Copy input to value, retain metadata in value
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     value.ShrinkSerializedLength(value.MetadataSize + setValue.Length + spaceForEtag);
                     setValue.CopyTo(value.AsSpan(spaceForEtag));
 
-                    if (input.header.CheckWithEtagFlag())
+                    if (spaceForEtag != 0)
                     {
                         recordInfo.SetHasETag();
                         *(long*)value.ToPointer() = Constants.BaseEtag + 1;
@@ -288,12 +295,20 @@ namespace Garnet.server
                 return false;
             }
 
-            this.functionsState.etagOffsetManagementContext.SetEtagOffsetBasedOnInputHeader(input.header.CheckWithEtagFlag());
-            this.functionsState.etagOffsetManagementContext.CalculateOffsets(recordInfo.ETag, ref value);
-
-            int etagIgnoredOffset = this.functionsState.etagOffsetManagementContext.EtagIgnoredOffset;
-            int etagIgnoredEnd = this.functionsState.etagOffsetManagementContext.EtagIgnoredEnd;
-            long oldEtag = this.functionsState.etagOffsetManagementContext.ExistingEtag;
+            int etagIgnoredOffset = 0;
+            int etagIgnoredEnd = -1;
+            long oldEtag = Constants.BaseEtag;
+            this.functionsState.etagOffsetForVarlen = 0;
+            bool shouldUpdateEtag = recordInfo.ETag;
+            if (shouldUpdateEtag)
+            {
+                // used in varlen
+                etagIgnoredOffset = Constants.EtagSize;
+                etagIgnoredEnd = value.LengthWithoutMetadata;
+                oldEtag = *(long*)value.ToPointer();
+                // if something is going to go past this into copy we need to provide offset management for its varlen during allocation
+                this.functionsState.etagOffsetForVarlen = Constants.EtagSize;
+            }
 
             RespCommand cmd = input.header.cmd;
             switch (cmd)
@@ -302,7 +317,6 @@ namespace Garnet.server
                     if (input.header.NotSetGetNorCheckWithEtag())
                         return true;
 
-                    // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
@@ -314,7 +328,6 @@ namespace Garnet.server
                         // EXX when unsuccesful will write back NIL
                         CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
                     }
-
                     // Nothing is set because being in this block means NX was already violated
                     return true;
                 case RespCommand.SETIFMATCH:
@@ -361,27 +374,33 @@ namespace Garnet.server
                     return true;
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
-                    // If the user calls withetag then we need to either update an existing etag and set the value
-                    // or set the value with an initial etag and increment it.
-                    // If withEtag is called we return the etag back to the user
-
-                    var nextUpdateEtagOffset = etagIgnoredOffset;
-                    var nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
+                    // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
                     bool inputHeaderHasEtag = input.header.CheckWithEtagFlag();
 
-                    if (!inputHeaderHasEtag)
+                    int nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
+                    int nextUpdateEtagOffset = etagIgnoredOffset;
+
+                    // only when both are not false && false or true and true, do we need to readjust
+                    if (inputHeaderHasEtag != shouldUpdateEtag)
                     {
-                        // if the user did not explictly asked for retaining the etag we need to ignore the etag even if it existed on the previous record
-                        nextUpdateEtagOffset = 0;
-                        nextUpdateEtagIgnoredEnd = -1;
-                        recordInfo.ClearHasETag();
-                    }
-                    else if (!recordInfo.ETag)
-                    {
-                        // this is the case where we have withetag option and no etag from before
-                        nextUpdateEtagOffset = Constants.EtagSize;
-                        nextUpdateEtagIgnoredEnd = value.LengthWithoutMetadata;
-                        oldEtag = Constants.BaseEtag;
+                        // in the common path the above condition is skipped
+                        if (inputHeaderHasEtag)
+                        {
+                            // nextUpdate will add etag but currently there is no etag
+                            nextUpdateEtagOffset = Constants.EtagSize;
+                            nextUpdateEtagIgnoredEnd = value.LengthWithoutMetadata;
+                            shouldUpdateEtag = true;
+                            // if something is going to go past this into copy we need to provide offset management for its varlen during allocation
+                            this.functionsState.etagOffsetForVarlen = Constants.EtagSize;
+                        }
+                        else
+                        {
+                            // nextUpdate will remove etag but currentyly there is an etag
+                            nextUpdateEtagOffset = 0;
+                            nextUpdateEtagIgnoredEnd = -1;
+                            this.functionsState.etagOffsetForVarlen = 0;
+                            recordInfo.ClearHasETag();
+                        }
                     }
 
                     ArgSlice setValue = input.parseState.GetArgSliceByRef(0);
@@ -409,13 +428,14 @@ namespace Garnet.server
                     setValue.ReadOnlySpan.CopyTo(value.AsSpan(nextUpdateEtagOffset));
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
+                    // If withEtag is called we return the etag back in the response
                     if (inputHeaderHasEtag)
                     {
                         recordInfo.SetHasETag();
                         *(long*)value.ToPointer() = oldEtag + 1;
                         // withetag flag means we need to write etag back to the output buffer
                         CopyRespNumber(oldEtag + 1, ref output);
-                        // return since we already updated etag
+                        // early return since we already updated etag
                         return true;
                     }
 
@@ -425,21 +445,32 @@ namespace Garnet.server
                     // If the user calls withetag then we need to either update an existing etag and set the value
                     // or set the value with an initial etag and increment it.
                     // If withEtag is called we return the etag back to the user
-                    nextUpdateEtagOffset = etagIgnoredOffset;
-                    nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
                     inputHeaderHasEtag = input.header.CheckWithEtagFlag();
-                    if (!inputHeaderHasEtag)
+
+                    nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
+                    nextUpdateEtagOffset = etagIgnoredOffset;
+
+                    // only when both are not false && false or true and true, do we need to readjust
+                    if (inputHeaderHasEtag != shouldUpdateEtag)
                     {
-                        // if the user did not explictly asked for retaining the etag we need to ignore the etag even if it existed on the previous record
-                        nextUpdateEtagOffset = 0;
-                        nextUpdateEtagIgnoredEnd = -1;
-                        recordInfo.ClearHasETag();
-                    }
-                    else if (!recordInfo.ETag)
-                    {
-                        // this is the case where we have withetag option and no etag from before
-                        nextUpdateEtagOffset = Constants.EtagSize;
-                        nextUpdateEtagIgnoredEnd = value.LengthWithoutMetadata;
+                        // in the common path the above condition is skipped
+                        if (inputHeaderHasEtag)
+                        {
+                            // nextUpdate will add etag but currently there is no etag
+                            nextUpdateEtagOffset = Constants.EtagSize;
+                            nextUpdateEtagIgnoredEnd = value.LengthWithoutMetadata;
+                            shouldUpdateEtag = true;
+                            // if something is going to go past this into copy we need to provide offset management for its varlen during allocation
+                            this.functionsState.etagOffsetForVarlen = Constants.EtagSize;
+                        }
+                        else
+                        {
+                            // nextUpdate will remove etag but currentyly there is an etag
+                            nextUpdateEtagOffset = 0;
+                            nextUpdateEtagIgnoredEnd = -1;
+                            this.functionsState.etagOffsetForVarlen = 0;
+                            recordInfo.ClearHasETag();
+                        }
                     }
 
                     setValue = input.parseState.GetArgSliceByRef(0);
@@ -744,7 +775,7 @@ namespace Garnet.server
             }
 
             // increment the Etag transparently if in place update happened
-            if (recordInfo.ETag)
+            if (shouldUpdateEtag)
             {
                 *(long*)value.ToPointer() = oldEtag + 1;
             }
@@ -760,9 +791,16 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.SETIFMATCH:
-                    int etagIgnoredOffset = this.functionsState.etagOffsetManagementContext.EtagIgnoredOffset;
-                    int etagIgnoredEnd = this.functionsState.etagOffsetManagementContext.EtagIgnoredEnd;
-                    long existingEtag = this.functionsState.etagOffsetManagementContext.ExistingEtag;
+                    int etagIgnoredOffset = 0;
+                    int etagIgnoredEnd = -1;
+                    long existingEtag = Constants.BaseEtag;
+                    if (rmwInfo.RecordInfo.ETag)
+                    {
+                        existingEtag = *(long*)oldValue.ToPointer();
+                        etagIgnoredOffset = Constants.EtagSize;
+                        etagIgnoredEnd = oldValue.LengthWithoutMetadata;
+                    }
+
                     long etagToCheckWith = input.parseState.GetLong(1);
 
                     if (existingEtag == etagToCheckWith)
@@ -790,8 +828,14 @@ namespace Garnet.server
                     if (input.header.NotSetGetNorCheckWithEtag())
                         return false;
 
-                    etagIgnoredOffset = this.functionsState.etagOffsetManagementContext.EtagIgnoredOffset;
-                    etagIgnoredEnd = this.functionsState.etagOffsetManagementContext.EtagIgnoredEnd;
+                    etagIgnoredOffset = 0;
+                    etagIgnoredEnd = -1;
+                    if (rmwInfo.RecordInfo.ETag)
+                    {
+                        etagIgnoredOffset = Constants.EtagSize;
+                        etagIgnoredEnd = oldValue.LengthWithoutMetadata;
+                    }
+
 
                     if (input.header.CheckSetGetFlag())
                     {
@@ -818,12 +862,12 @@ namespace Garnet.server
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
+                        etagIgnoredOffset = !rmwInfo.RecordInfo.ETag ? 0 : Constants.EtagSize;
                         var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
-                            .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(this.functionsState.etagOffsetManagementContext.EtagIgnoredOffset), ref outp);
+                            .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(etagIgnoredOffset), ref outp);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
                         return ret;
-
                     }
                     return true;
             }
@@ -844,10 +888,16 @@ namespace Garnet.server
             RespCommand cmd = input.header.cmd;
             bool shouldUpdateEtag = recordInfo.ETag;
 
-            // offsets are precomputed at InPlaceUpdater
-            int etagIgnoredOffset = this.functionsState.etagOffsetManagementContext.EtagIgnoredOffset;
-            int etagIgnoredEnd = this.functionsState.etagOffsetManagementContext.EtagIgnoredEnd;
-            long oldEtag = this.functionsState.etagOffsetManagementContext.ExistingEtag;
+            int etagIgnoredOffset = 0;
+            int etagIgnoredEnd = -1;
+            long oldEtag = Constants.BaseEtag;
+
+            if (shouldUpdateEtag)
+            {
+                etagIgnoredOffset = Constants.EtagSize;
+                etagIgnoredEnd = newValue.LengthWithoutMetadata;
+                oldEtag = *(long*)oldValue.ToPointer();
+            }
 
             switch (cmd)
             {
@@ -887,34 +937,25 @@ namespace Garnet.server
                     var nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
                     bool inputWithEtag = input.header.CheckWithEtagFlag();
 
-                    // Common case
-                    if (!inputWithEtag)
+                    // only when both are not false && false or true and true, do we need to readjust
+                    if (inputWithEtag != shouldUpdateEtag)
                     {
-                        // if the user did not explictly asked for retaining the etag we need to ignore the etag if it existed on the previous record
-                        nextUpdateEtagOffset = 0;
-                        nextUpdateEtagIgnoredEnd = -1;
-                        recordInfo.ClearHasETag();
-                    }
-                    else if (!recordInfo.ETag)
-                    {
-                        // this is the case where we have withetag option and no etag from before
-                        nextUpdateEtagOffset = Constants.EtagSize;
-                        nextUpdateEtagIgnoredEnd = oldValue.LengthWithoutMetadata;
-                        recordInfo.SetHasETag();
-                        shouldUpdateEtag = true;
-                        // removes the need for branching in common path at the end
+                        // in the common path the above condition is skipped
                         if (inputWithEtag)
                         {
+                            // nextUpdate will add etag but currently there is no etag
+                            nextUpdateEtagOffset = Constants.EtagSize;
+                            nextUpdateEtagIgnoredEnd = newValue.LengthWithoutMetadata;
                             shouldUpdateEtag = true;
-                            // withetag flag means we need to write etag back to the output buffer
-                            CopyRespNumber(oldEtag + 1, ref output);
+                            recordInfo.SetHasETag();
                         }
-                    }
-                    else
-                    {
-                        shouldUpdateEtag = true;
-                        // removes the need for branching in common path at the end
-                        CopyRespNumber(oldEtag + 1, ref output);
+                        else
+                        {
+                            // nextUpdate will remove etag but currentyly there is an etag
+                            nextUpdateEtagOffset = 0;
+                            nextUpdateEtagIgnoredEnd = -1;
+                            recordInfo.ClearHasETag();
+                        }
                     }
 
                     // Check if SetGet flag is set
@@ -935,6 +976,11 @@ namespace Garnet.server
                     newValue.ExtraMetadata = input.arg1;
                     newInputValue.CopyTo(newValue.AsSpan(nextUpdateEtagOffset));
 
+                    if (inputWithEtag)
+                    {
+                        CopyRespNumber(oldEtag + 1, ref output);
+                    }
+
                     break;
 
                 case RespCommand.SETKEEPTTLXX:
@@ -942,29 +988,26 @@ namespace Garnet.server
                     nextUpdateEtagOffset = etagIgnoredOffset;
                     nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
                     inputWithEtag = input.header.CheckWithEtagFlag();
-                    if (!inputWithEtag)
+
+                    // only when both are not false && false or true and true, do we need to readjust
+                    if (inputWithEtag != shouldUpdateEtag)
                     {
-                        // if the user did not explictly asked for retaining the etag we need to ignore the etag if it existed on the previous record
-                        nextUpdateEtagOffset = 0;
-                        nextUpdateEtagIgnoredEnd = -1;
-                    }
-                    else if (!recordInfo.ETag)
-                    {
-                        // this is the case where we have withetag option and no etag from before
-                        nextUpdateEtagOffset = Constants.EtagSize;
-                        nextUpdateEtagIgnoredEnd = oldValue.LengthWithoutMetadata;
-                        recordInfo.SetHasETag();
+                        // in the common path the above condition is skipped
                         if (inputWithEtag)
                         {
+                            // nextUpdate will add etag but currently there is no etag
+                            nextUpdateEtagOffset = Constants.EtagSize;
+                            nextUpdateEtagIgnoredEnd = newValue.LengthWithoutMetadata;
                             shouldUpdateEtag = true;
-                            CopyRespNumber(oldEtag + 1, ref output);
+                            recordInfo.SetHasETag();
                         }
-                    }
-                    else
-                    {
-                        shouldUpdateEtag = true;
-                        // withetag flag means we need to write etag back to the output buffer
-                        CopyRespNumber(oldEtag + 1, ref output);
+                        else
+                        {
+                            // nextUpdate will remove etag but currentyly there is an etag
+                            nextUpdateEtagOffset = 0;
+                            nextUpdateEtagIgnoredEnd = -1;
+                            recordInfo.ClearHasETag();
+                        }
                     }
 
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -982,6 +1025,11 @@ namespace Garnet.server
                     // Copy input to value, retain metadata of oldValue
                     newValue.ExtraMetadata = oldValue.ExtraMetadata;
                     setValue.CopyTo(newValue.AsSpan(nextUpdateEtagOffset));
+
+                    if (inputWithEtag)
+                    {
+                        CopyRespNumber(oldEtag + 1, ref output);
+                    }
 
                     break;
 
