@@ -798,9 +798,7 @@ namespace Garnet.server
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref oldValue, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
-
-                    // when called withetag all output needs to be placed on the buffer
-                    if (input.header.CheckWithEtagFlag())
+                    else if (input.header.CheckWithEtagFlag())
                     {
                         // EXX when unsuccesful will write back NIL
                         CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
@@ -854,6 +852,7 @@ namespace Garnet.server
             switch (cmd)
             {
                 case RespCommand.SETIFMATCH:
+                    shouldUpdateEtag = true;
                     // Copy input to value
                     Span<byte> dest = newValue.AsSpan(Constants.EtagSize);
                     ReadOnlySpan<byte> src = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -887,6 +886,8 @@ namespace Garnet.server
                     var nextUpdateEtagOffset = etagIgnoredOffset;
                     var nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
                     bool inputWithEtag = input.header.CheckWithEtagFlag();
+
+                    // Common case
                     if (!inputWithEtag)
                     {
                         // if the user did not explictly asked for retaining the etag we need to ignore the etag if it existed on the previous record
@@ -900,6 +901,20 @@ namespace Garnet.server
                         nextUpdateEtagOffset = Constants.EtagSize;
                         nextUpdateEtagIgnoredEnd = oldValue.LengthWithoutMetadata;
                         recordInfo.SetHasETag();
+                        shouldUpdateEtag = true;
+                        // removes the need for branching in common path at the end
+                        if (inputWithEtag)
+                        {
+                            shouldUpdateEtag = true;
+                            // withetag flag means we need to write etag back to the output buffer
+                            CopyRespNumber(oldEtag + 1, ref output);
+                        }
+                    }
+                    else
+                    {
+                        shouldUpdateEtag = true;
+                        // removes the need for branching in common path at the end
+                        CopyRespNumber(oldEtag + 1, ref output);
                     }
 
                     // Check if SetGet flag is set
@@ -920,21 +935,14 @@ namespace Garnet.server
                     newValue.ExtraMetadata = input.arg1;
                     newInputValue.CopyTo(newValue.AsSpan(nextUpdateEtagOffset));
 
-                    if (inputWithEtag)
-                    {
-                        shouldUpdateEtag = false;
-                        *(long*)newValue.ToPointer() = oldEtag + 1;
-                        // withetag flag means we need to write etag back to the output buffer
-                        CopyRespNumber(oldEtag + 1, ref output);
-                    }
-
                     break;
 
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
                     nextUpdateEtagOffset = etagIgnoredOffset;
                     nextUpdateEtagIgnoredEnd = etagIgnoredEnd;
-                    if (!input.header.CheckWithEtagFlag())
+                    inputWithEtag = input.header.CheckWithEtagFlag();
+                    if (!inputWithEtag)
                     {
                         // if the user did not explictly asked for retaining the etag we need to ignore the etag if it existed on the previous record
                         nextUpdateEtagOffset = 0;
@@ -946,6 +954,17 @@ namespace Garnet.server
                         nextUpdateEtagOffset = Constants.EtagSize;
                         nextUpdateEtagIgnoredEnd = oldValue.LengthWithoutMetadata;
                         recordInfo.SetHasETag();
+                        if (inputWithEtag)
+                        {
+                            shouldUpdateEtag = true;
+                            CopyRespNumber(oldEtag + 1, ref output);
+                        }
+                    }
+                    else
+                    {
+                        shouldUpdateEtag = true;
+                        // withetag flag means we need to write etag back to the output buffer
+                        CopyRespNumber(oldEtag + 1, ref output);
                     }
 
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -963,13 +982,6 @@ namespace Garnet.server
                     // Copy input to value, retain metadata of oldValue
                     newValue.ExtraMetadata = oldValue.ExtraMetadata;
                     setValue.CopyTo(newValue.AsSpan(nextUpdateEtagOffset));
-                    if (input.header.CheckWithEtagFlag())
-                    {
-                        shouldUpdateEtag = false;
-                        *(long*)newValue.ToPointer() = oldEtag + 1;
-                        // withetag flag means we need to write etag back to the output buffer
-                        CopyRespNumber(oldEtag + 1, ref output);
-                    }
 
                     break;
 
