@@ -34,6 +34,8 @@ namespace Tsavorite.core
         /// <summary>The ObjectIdMap if this is a record in the object log.</summary>
         readonly ObjectIdMap objectIdMap;
 
+        internal bool IsSet => physicalAddress != 0;
+
         public readonly bool IsObjectRecord => objectIdMap is not null;
 
         private readonly int ValueLen => IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalInlineSize;

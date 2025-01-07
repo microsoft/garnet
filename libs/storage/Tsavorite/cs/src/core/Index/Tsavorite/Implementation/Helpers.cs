@@ -85,7 +85,7 @@ namespace Tsavorite.core
             // If the record is in memory, check if it has the new version bit set
             if (entry.Address < hlogBase.HeadAddress)
                 return false;
-            return hlog.GetInfo(hlog.GetPhysicalAddress(entry.Address)).IsInNewVersion;
+            return LogRecord.GetInfo(hlog.GetPhysicalAddress(entry.Address)).IsInNewVersion;
         }
 
         // Can only elide the record if it is the tail of the tag chain (i.e. is the record in the hash bucket entry) and its
@@ -163,8 +163,7 @@ namespace Tsavorite.core
         {
             // This is called on exception recovery for a newly-inserted record.
             var localLog = IsReadCache(logicalAddress) ? readcache : hlog;
-            ref var recordInfo = ref localLog.GetInfo(localLog.GetPhysicalAddress(AbsoluteAddress(logicalAddress)));
-            recordInfo.SetInvalid();
+            LogRecord.GetInfoRef(localLog.GetPhysicalAddress(AbsoluteAddress(logicalAddress))).SetInvalid();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -179,11 +178,11 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostCopyToTail(ref TKey key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
-            => PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo, stackCtx.hei.Address);
+        private void PostCopyToTail(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
+            => PostCopyToTail(key, ref stackCtx, ref srcRecordInfo, stackCtx.hei.Address);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostCopyToTail(ref TKey key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, long highestReadCacheAddressChecked)
+        private void PostCopyToTail(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, long highestReadCacheAddressChecked)
         {
             // Nothing required here if not using ReadCache
             if (!UseReadCache)
@@ -199,7 +198,7 @@ namespace Tsavorite.core
                 // We did not have a readcache source, so while we spliced a new record into the readcache/mainlog gap a competing readcache record may have been inserted at the tail.
                 // If so, invalidate it. highestReadCacheAddressChecked is hei.Address unless we are from ConditionalCopyToTail, which may have skipped the readcache before this.
                 // See "Consistency Notes" in TryCopyToReadCache for a discussion of why there ie no "momentary inconsistency" possible here.
-                ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei, highestReadCacheAddressChecked);
+                ReadCacheCheckTailAfterSplice(key, ref stackCtx.hei, highestReadCacheAddressChecked);
             }
         }
 
@@ -222,13 +221,14 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindOrCreateTagAndTryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
+        private bool FindOrCreateTagAndTryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            // Ephemeral must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
+            // Ephemeral must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us.
+            // Manual locking already automatically locks the bucket. hei already has the key's hashcode.
             FindOrCreateTag(ref stackCtx.hei, hlogBase.BeginAddress);
-            if (!TryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
+            if (!TryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out internalStatus))
                 return false;
 
             // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
@@ -238,13 +238,14 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindTagAndTryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
+        private bool FindTagAndTryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            // Ephemeral must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
+            // Ephemeral must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us.
+            // Manual locking already automatically locks the bucket. hei already has the key's hashcode.
             internalStatus = OperationStatus.NOTFOUND;
-            if (!FindTag(ref stackCtx.hei) || !TryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
+            if (!FindTag(ref stackCtx.hei) || !TryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out internalStatus))
                 return false;
 
             // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
@@ -254,13 +255,14 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
+        private bool FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            // Ephemeral must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
+            // Ephemeral must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us.
+            // Manual locking already automatically locks the bucket. hei already has the key's hashcode.
             internalStatus = OperationStatus.NOTFOUND;
-            if (!FindTag(ref stackCtx.hei) || !TryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
+            if (!FindTag(ref stackCtx.hei) || !TryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out internalStatus))
                 return false;
 
             // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.

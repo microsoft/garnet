@@ -218,7 +218,7 @@ namespace Tsavorite.core
             while (entry.ReadCache && (entry.Address > untilEntry.Address || !untilEntry.ReadCache))
             {
                 var physicalAddress = readcache.GetPhysicalAddress(entry.AbsoluteAddress);
-                ref RecordInfo recordInfo = ref readcache.GetInfo(physicalAddress);
+                ref var recordInfo = ref readcache.GetInfoRef(physicalAddress);
                 if (!recordInfo.Invalid && storeFunctions.KeysEqual(key, readcache.GetKey(physicalAddress)))
                 {
                     recordInfo.SetInvalidAtomic();
