@@ -146,6 +146,11 @@ namespace Garnet.server
         internal bool CheckWithEtagFlag() => (flags & RespInputFlags.WithEtag) != 0;
 
         /// <summary>
+        /// Check that neither SetGet nor WithEtag flag is set
+        /// </summary>
+        internal bool NotSetGetNorCheckWithEtag() => (flags & (RespInputFlags.SetGet | RespInputFlags.WithEtag)) == 0;
+
+        /// <summary>
         /// Check if record is expired, either deterministically during log replay,
         /// or based on current time in normal operation.
         /// </summary>
