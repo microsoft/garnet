@@ -6,13 +6,12 @@ namespace Tsavorite.core
     /// <summary>
     /// Optional functions to be called during compaction.
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
     /// <typeparam name="TValue"></typeparam>
-    public interface ICompactionFunctions<TKey, TValue>
+    public interface ICompactionFunctions<TValue>
     {
         /// <summary>
         /// Checks if record in the Tsavorite log is logically deleted.
-        /// If the record was deleted via <see cref="BasicContext{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}.Delete(ref Key, Context)"/>
+        /// If the record was deleted via <see cref="BasicContext{TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}.Delete(SpanByte, TContext)"/>
         /// then this function is not called for such a record.
         /// </summary>
         /// <remarks>
@@ -25,11 +24,11 @@ namespace Tsavorite.core
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        bool IsDeleted(ref TKey key, ref TValue value);
+        bool IsDeleted(SpanByte key, TValue value);
     }
 
-    internal struct DefaultCompactionFunctions<TKey, TValue> : ICompactionFunctions<TKey, TValue>
+    internal struct DefaultCompactionFunctions<TValue> : ICompactionFunctions<TValue>
     {
-        public bool IsDeleted(ref TKey key, ref TValue value) => false;
+        public bool IsDeleted(SpanByte key, TValue value) => false;
     }
 }

@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Async IO context for PMM
     /// </summary>
-    public unsafe struct AsyncIOContext<TKey, TValue>
+    public unsafe struct AsyncIOContext<TValue>
     {
         /// <summary>
         /// Id
@@ -21,7 +21,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Key
         /// </summary>
-        public IHeapContainer<TKey> request_key;
+        public IHeapContainer<SpanByte> request_key;
 
         /// <summary>
         /// Logical address
@@ -46,22 +46,22 @@ namespace Tsavorite.core
         /// <summary>
         /// Callback queue
         /// </summary>
-        public AsyncQueue<AsyncIOContext<TKey, TValue>> callbackQueue;
+        public AsyncQueue<AsyncIOContext<TValue>> callbackQueue;
 
         /// <summary>
         /// Async Operation ValueTask backer
         /// </summary>
-        public TaskCompletionSource<AsyncIOContext<TKey, TValue>> asyncOperation;
+        public TaskCompletionSource<AsyncIOContext<TValue>> asyncOperation;
 
         /// <summary>
         /// Synchronous completion event
         /// </summary>
-        internal AsyncIOContextCompletionEvent<TKey, TValue> completionEvent;
+        internal AsyncIOContextCompletionEvent<TValue> completionEvent;
 
         /// <summary>
         /// Indicates whether this is a default instance with no pending operation
         /// </summary>
-        public bool IsDefault() => callbackQueue is null && asyncOperation is null && completionEvent is null;
+        public readonly bool IsDefault() => callbackQueue is null && asyncOperation is null && completionEvent is null;
 
         /// <summary>
         /// Dispose
@@ -75,11 +75,11 @@ namespace Tsavorite.core
     }
 
     // Wrapper class so we can communicate back the context.record even if it has to retry due to incomplete records.
-    internal sealed class AsyncIOContextCompletionEvent<TKey, TValue> : IDisposable
+    internal sealed class AsyncIOContextCompletionEvent<TValue> : IDisposable
     {
         internal SemaphoreSlim semaphore;
         internal Exception exception;
-        internal AsyncIOContext<TKey, TValue> request;
+        internal AsyncIOContext<TValue> request;
 
         internal AsyncIOContextCompletionEvent()
         {
@@ -89,7 +89,7 @@ namespace Tsavorite.core
             request.completionEvent = this;
         }
 
-        internal void Prepare(IHeapContainer<TKey> request_key, long logicalAddress)
+        internal void Prepare(IHeapContainer<SpanByte> request_key, long logicalAddress)
         {
             request.Dispose();
             request.request_key = request_key;
@@ -97,12 +97,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Set(ref AsyncIOContext<TKey, TValue> ctx)
+        internal void Set(ref AsyncIOContext<TValue> ctx)
         {
             request.Dispose();
             request = ctx;
             exception = null;
-            semaphore.Release(1);
+            _ = semaphore.Release(1);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -111,7 +111,7 @@ namespace Tsavorite.core
             request.Dispose();
             request = default;
             exception = ex;
-            semaphore.Release(1);
+            _ = semaphore.Release(1);
         }
 
         internal void Wait(CancellationToken token = default) => semaphore.Wait(token);

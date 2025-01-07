@@ -5,11 +5,11 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    internal struct RevivificationManager<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal struct RevivificationManager<TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
-        internal FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> FreeRecordPool;
+        internal FreeRecordPool<TValue, TStoreFunctions, TAllocator> FreeRecordPool;
         internal readonly bool UseFreeRecordPool => FreeRecordPool is not null;
 
         internal RevivificationStats stats = new();
@@ -23,7 +23,7 @@ namespace Tsavorite.core
 
         internal double revivifiableFraction;
 
-        public RevivificationManager(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, bool isFixedLen, RevivificationSettings revivSettings, LogSettings logSettings)
+        public RevivificationManager(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, bool isFixedLen, RevivificationSettings revivSettings, LogSettings logSettings)
         {
             IsFixedLength = isFixedLen;
             revivifiableFraction = revivSettings is null || revivSettings.RevivifiableFraction == RevivificationSettings.DefaultRevivifiableFraction
@@ -39,7 +39,7 @@ namespace Tsavorite.core
             IsEnabled = true;
             if (revivSettings.FreeRecordBins?.Length > 0)
             {
-                FreeRecordPool = new FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator>(store, revivSettings, IsFixedLength ? store.hlog.GetAverageRecordSize() : -1);
+                FreeRecordPool = new FreeRecordPool<TValue, TStoreFunctions, TAllocator>(store, revivSettings, IsFixedLength ? store.hlog.GetAverageRecordSize() : -1);
                 restoreDeletedRecordsIfBinIsFull = revivSettings.RestoreDeletedRecordsIfBinIsFull;
                 useFreeRecordPoolForCTT = revivSettings.UseFreeRecordPoolForCopyToTail;
             }

@@ -4,61 +4,103 @@
 #pragma warning disable 1591
 
 using System;
+using System.Diagnostics;
 
 namespace Tsavorite.core
 {
     /// <summary>
     /// Default empty functions base class to make it easy for users to provide their own implementation of ISessionFunctions
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
-    /// <typeparam name="TValue"></typeparam>
-    /// <typeparam name="TInput"></typeparam>
-    /// <typeparam name="TOutput"></typeparam>
-    /// <typeparam name="TContext"></typeparam>
-    public abstract class SessionFunctionsBase<TKey, TValue, TInput, TOutput, TContext> : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
+    public abstract class SessionFunctionsBase<TValue, TInput, TOutput, TContext> : ISessionFunctions<TValue, TInput, TOutput, TContext>
     {
         /// <inheritdoc/>
-        public virtual bool ConcurrentReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo) => true;
+        public virtual bool ConcurrentReader(ref LogRecord logRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo) => true;
         /// <inheritdoc/>
-        public virtual bool SingleReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo) => true;
+        public virtual bool SingleReader(ref LogRecord logRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo) => true;
 
         /// <inheritdoc/>
-        public virtual bool ConcurrentWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) { dst = src; return true; }
+        public virtual bool ConcurrentWriter(ref LogRecord logRecord, ref TInput input, SpanByte srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        {
+            Debug.Assert(!logRecord.IsObjectRecord, "SpanByte form of ConcurrentWriter should not be called for Object LogRecord");
+            return logRecord.TrySetValueSpan(srcValue);
+        }
         /// <inheritdoc/>
-        public virtual bool SingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo) { dst = src; return true; }
+        public virtual bool ConcurrentWriter(ref LogRecord logRecord, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        {
+            Debug.Assert(logRecord.IsObjectRecord, "IHeapObject form of ConcurrentWriter should not be called for String LogRecord");
+            return logRecord.TrySetValueObject(srcValue);
+        }
         /// <inheritdoc/>
-        public virtual void PostSingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+        public virtual bool ConcurrentWriter(ref LogRecord logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        {
+            Debug.Fail("Generic form of ConcurrentWriter should not be called");
+            return false;
+        }
 
         /// <inheritdoc/>
-        public virtual bool InitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
+        public virtual bool SingleWriter(ref LogRecord logRecord, ref TInput input, SpanByte srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        {
+            Debug.Assert(logRecord.IsObjectRecord, "IHeapObject form of SingleWriter should not be called for String LogRecord");
+            return logRecord.TrySetValueSpan(srcValue);
+        }
         /// <inheritdoc/>
-        public virtual void PostInitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo) { }
+        public virtual bool SingleWriter(ref LogRecord logRecord, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        {
+            Debug.Assert(logRecord.IsObjectRecord, "IHeapObject form of SingleWriter should not be called for String LogRecord");
+            return logRecord.TrySetValueObject(srcValue);
+        }
         /// <inheritdoc/>
-        public virtual bool NeedInitialUpdate(ref TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
-        /// <inheritdoc/>
-        public virtual bool NeedCopyUpdate(ref TKey key, ref TInput input, ref TValue oldValue, ref TOutput output, ref RMWInfo rmwInfo) => true;
-        /// <inheritdoc/>
-        public virtual bool CopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
-        /// <inheritdoc/>
-        public virtual bool PostCopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo) => true;
-        /// <inheritdoc/>
-        public virtual bool InPlaceUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
+        public virtual bool SingleWriter(ref LogRecord logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        {
+            Debug.Fail("Generic form of SingleWriter should not be called");
+            return false;
+        }
 
         /// <inheritdoc/>
-        public virtual bool SingleDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) { value = default; return true; }
-        public virtual void PostSingleDeleter(ref TKey key, ref DeleteInfo deleteInfo) { }
-        public virtual bool ConcurrentDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
-
-        public virtual void ReadCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
-        /// <inheritdoc/>
-        public virtual void RMWCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
+        public virtual void PostSingleWriter(ref LogRecord logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 
         /// <inheritdoc/>
-        public virtual int GetRMWModifiedValueLength(ref TValue value, ref TInput input) => throw new TsavoriteException("GetRMWModifiedValueLength is only available for SpanByte Functions");
+        public virtual bool InitialUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
         /// <inheritdoc/>
-        public virtual int GetRMWInitialValueLength(ref TInput input) => throw new TsavoriteException("GetRMWInitialValueLength is only available for SpanByte Functions");
+        public virtual void PostInitialUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) { }
         /// <inheritdoc/>
-        public virtual int GetUpsertValueLength(ref TValue value, ref TInput input) => throw new TsavoriteException("GetUpsertValueLength is only available for SpanByte Functions");
+        public virtual bool NeedInitialUpdate(SpanByte key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
+
+        /// <inheritdoc/>
+        public virtual bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : IReadOnlyLogRecord
+            => true;
+        /// <inheritdoc/>
+        public virtual bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : IReadOnlyLogRecord
+            => true;
+        /// <inheritdoc/>
+        public virtual bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) 
+            where TSourceLogRecord : IReadOnlyLogRecord
+            => true;
+        /// <inheritdoc/>
+        public virtual bool InPlaceUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
+
+        /// <inheritdoc/>
+        public virtual bool SingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+        {
+            _ = logRecord.IsObjectRecord ? logRecord.TrySetValueObject(default) : logRecord.TrySetValueSpan(default);
+            return true;
+        }
+        public virtual void PostSingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) { }
+        public virtual bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) => true;
+
+        public virtual void ReadCompletionCallback(ref LogRecord logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
+        /// <inheritdoc/>
+        public virtual void RMWCompletionCallback(ref LogRecord logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
+
+        // *FieldInfo require an implementation that knows what is in IInput
+        /// <inheritdoc/>
+        public abstract RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input) where TSourceLogRecord : IReadOnlyLogRecord;
+        /// <inheritdoc/>
+        public abstract RecordFieldInfo GetRMWInitialFieldInfo(ref TInput input);
+        /// <inheritdoc/>
+        public abstract RecordFieldInfo GetUpsertFieldInfo(TValue value, ref TInput input);
 
         /// <inheritdoc/>
         public virtual void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
@@ -67,21 +109,37 @@ namespace Tsavorite.core
     /// <summary>
     /// Default empty functions base class to make it easy for users to provide their own implementation of FunctionsBase
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
     /// <typeparam name="TValue"></typeparam>
     /// <typeparam name="TContext"></typeparam>
-    public class SimpleSessionFunctions<TKey, TValue, TContext> : SessionFunctionsBase<TKey, TValue, TValue, TValue, TContext>
+    public class SimpleSessionFunctions<TValue, TContext> : SessionFunctionsBase<TValue, TValue, TValue, TContext>
     {
         private readonly Func<TValue, TValue, TValue> merger;
         public SimpleSessionFunctions() => merger = (l, r) => l;
         public SimpleSessionFunctions(Func<TValue, TValue, TValue> merger) => this.merger = merger;
 
         /// <inheritdoc/>
-        public override bool ConcurrentReader(ref TKey key, ref TValue input, ref TValue value, ref TValue dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        public virtual bool ConcurrentReader(ref LogRecord logRecord, ref SpanByte input, ref SpanByte output, ref ReadInfo readInfo)
         {
-            dst = value;
+            Debug.Assert(!logRecord.IsObjectRecord, "IHeapObject form of ConcurrentReader should not be called for SpanByte LogRecord");
+            return logRecord.ValueSpan.TryCopyTo(ref output);
+        }
+        /// <inheritdoc/>
+        public virtual bool ConcurrentReader(ref LogRecord logRecord, ref IHeapObject input, ref IHeapObject output, ref ReadInfo readInfo)
+        {
+            Debug.Assert(logRecord.IsObjectRecord, "SpanByte form of ConcurrentReader should not be called for Object LogRecord");
+            output = logRecord.ValueObject;
             return true;
         }
+        /// <inheritdoc/>
+        public override bool ConcurrentReader(ref LogRecord logRecord, ref TValue input, ref TValue output, ref ReadInfo readInfo)
+        {
+            Debug.Fail("Generic form of ConcurrentReader should not be called");
+            return false;
+        }
+
+
+
+
 
         /// <inheritdoc/>
         public override bool SingleReader(ref TKey key, ref TValue input, ref TValue value, ref TValue dst, ref ReadInfo readInfo)

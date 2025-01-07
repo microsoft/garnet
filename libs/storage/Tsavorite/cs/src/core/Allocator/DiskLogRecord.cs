@@ -33,11 +33,11 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly RecordInfo Info => *(RecordInfo*)physicalAddress;
         /// <inheritdoc/>
-        public readonly SpanByte Key => *(SpanByte*)(physicalAddress + RecordInfo.GetLength() + FullRecordLenSize + ETagLen + ExpirationLen);
+        public readonly SpanByte Key => *(SpanByte*)KeyAddress;
         /// <inheritdoc/>
-        public readonly SpanByte ValueSpan => throw new TsavoriteException("ObjectLogRecord does not have SpanByte values");
+        public readonly SpanByte ValueSpan => valueObject is not null ? throw new TsavoriteException("Object LogRecord does not have SpanByte values") : *(SpanByte*)ValueAddress;
         /// <inheritdoc/>
-        public readonly IHeapObject ValueObject => ValueObject;
+        public readonly IHeapObject ValueObject => valueObject;
         /// <inheritdoc/>
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : 0;
         /// <inheritdoc/>
@@ -70,9 +70,9 @@ namespace Tsavorite.core
         /// for both key and value for this estimate. They prefaced by the full record length and optionals (ETag, Expiration) which we include in the estimate.</summary>
         public static int GetIOSize(int sectorSize) => RoundUp(RecordInfo.GetLength() + FullRecordLenSize + sizeof(long) * 2 + sizeof(int) * 2 + (1 << LogSettings.kMaxInlineKeySizeBits) * 2, sectorSize);
 
-        internal static SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, SpanByte> ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).Key;
+        internal static SpanByte GetContextRecordKey<TValue>(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).Key;
 
-        internal static SpanByte GetContextRecordValue(ref AsyncIOContext<SpanByte, SpanByte> ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).Value;
+        internal static SpanByte GetContextRecordValueT<TValue>(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).Value;
 
         /// <inheritdoc/>
         public override readonly string ToString()

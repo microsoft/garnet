@@ -8,15 +8,15 @@ using System.Runtime.InteropServices;
 namespace Tsavorite.core
 {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public struct AllocatorRecord<TKey, TValue>
+    public struct AllocatorRecord<TValue>
     {
         public RecordInfo info;
-        public TKey key;
+        public SpanByte key;    // TODO need to replace this with a different kind of allocator record but keep it for now (GenericFrame too)
         public TValue value;
 
         public override string ToString()
         {
-            var keyString = key?.ToString() ?? "null";
+            var keyString = key.ToString();
             if (keyString.Length > 20)
                 keyString = keyString.Substring(0, 20) + "...";
             var valueString = value?.ToString() ?? "null"; ;

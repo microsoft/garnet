@@ -14,9 +14,9 @@ namespace Tsavorite.core
     /// <summary>
     /// Base class for hybrid log memory allocator. Contains utility methods, some of which are not performance-critical so can be virtual.
     /// </summary>
-    public abstract partial class AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> : IDisposable
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public abstract partial class AllocatorBase<TValue, TStoreFunctions, TAllocator> : IDisposable
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         /// <summary>The epoch we are operating with</summary>
         protected readonly LightEpoch epoch;
@@ -173,13 +173,13 @@ namespace Tsavorite.core
         private readonly ErrorList errorList = new();
 
         /// <summary>Observer for records entering read-only region</summary>
-        internal IObserver<ITsavoriteScanIterator<TKey, TValue>> OnReadOnlyObserver;
+        internal IObserver<ITsavoriteScanIterator<TValue>> OnReadOnlyObserver;
 
         /// <summary>Observer for records getting evicted from memory (page closed)</summary>
-        internal IObserver<ITsavoriteScanIterator<TKey, TValue>> OnEvictionObserver;
+        internal IObserver<ITsavoriteScanIterator<TValue>> OnEvictionObserver;
 
         /// <summary>Observer for records brought into memory by deserializing pages</summary>
-        internal IObserver<ITsavoriteScanIterator<TKey, TValue>> OnDeserializationObserver;
+        internal IObserver<ITsavoriteScanIterator<TValue>> OnDeserializationObserver;
 
         /// <summary>The "event" to be waited on for flush completion by the initiator of an operation</summary>
         internal CompletionEvent FlushEvent;
@@ -206,7 +206,7 @@ namespace Tsavorite.core
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress);
 
         /// <summary>Read objects to memory (async)</summary>
-        protected abstract unsafe void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<TKey, TValue> context, SectorAlignedMemory result = default);
+        protected abstract unsafe void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<TValue> context, SectorAlignedMemory result = default);
 
         /// <summary>Read page from device (async)</summary>
         protected abstract void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length, DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice);
@@ -276,7 +276,7 @@ namespace Tsavorite.core
                         while (physicalAddress < endPhysicalAddress)
                         {
                             ref var info = ref LogRecord.GetInfoRef(physicalAddress);
-                            var (_, alignedRecordSize) = _wrapper.GetRecordSize(physicalAddress);
+                            var (_, alignedRecordSize) = _wrapper.GetFullRecordSizes(physicalAddress);
                             if (info.Dirty)
                             {
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
@@ -441,7 +441,7 @@ namespace Tsavorite.core
                                 var destination = _wrapper.GetPhysicalAddress(address);
 
                                 // Clear extra space (if any) in old record
-                                var oldSize = _wrapper.GetRecordSize(destination).Item2;
+                                var oldSize = _wrapper.GetFullRecordSizes(destination).allocatedSize;
                                 if (oldSize > size)
                                     new Span<byte>((byte*)(destination + size), oldSize - size).Clear();
 
@@ -1426,7 +1426,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Invoked by users to obtain a record from disk. It uses sector aligned memory to read the record efficiently into memory.</summary>
-        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext<TKey, TValue> context)
+        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext<TValue> context)
         {
             var fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             var alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -1439,7 +1439,7 @@ namespace Tsavorite.core
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
             record.required_bytes = numBytes;
 
-            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<TKey, TValue>>);
+            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<TValue>>);
             asyncResult.context = context;
             asyncResult.context.record = record;
             device.ReadAsync(alignedFileOffset,
@@ -1713,7 +1713,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal void AsyncGetFromDisk(long fromLogical, int numBytes, AsyncIOContext<TKey, TValue> context, SectorAlignedMemory result = default)
+        internal void AsyncGetFromDisk(long fromLogical, int numBytes, AsyncIOContext<TValue> context, SectorAlignedMemory result = default)
         {
             if (epoch.ThisInstanceProtected()) // Do not spin for unprotected IO threads
             {
@@ -1736,12 +1736,13 @@ namespace Tsavorite.core
             if (errorCode != 0)
                 logger?.LogError("AsyncGetFromDiskCallback error: {0}", errorCode);
 
-            var result = (AsyncGetFromDiskResult<AsyncIOContext<TKey, TValue>>)context;
+            var result = (AsyncGetFromDiskResult<AsyncIOContext<TValue>>)context;
             var ctx = result.context;
             try
             {
                 var record = ctx.record.GetValidPointer();
-                int requiredBytes = new DiskLogRecord((long)record).FullRecordLen;
+                var diskLogRecord = new DiskLogRecord((long)record);
+                int requiredBytes = diskLogRecord.FullRecordLen;
                 if (ctx.record.available_bytes >= requiredBytes)
                 {
                     Debug.Assert(!_wrapper.GetInfoRefFromBytePointer(record).Invalid, "Invalid records should not be in the hash chain for pending IO");
@@ -1751,7 +1752,7 @@ namespace Tsavorite.core
                         return;
 
                     // If request_key is null we're called from ReadAtAddress, so it is an implicit match.
-                    if (ctx.request_key is not null && !_storeFunctions.KeysEqual(ref ctx.request_key.Get(), ref DiskLogRecord.GetContextRecordKey(ref ctx)))
+                    if (ctx.request_key is not null && !_storeFunctions.KeysEqual(ctx.request_key.Get(), diskLogRecord.Key))
                     {
                         // Keys don't match so request the previous record in the chain if it is in the range to resolve.
                         ctx.logicalAddress = _wrapper.GetInfoRefFromBytePointer(record).PreviousAddress;
@@ -1897,7 +1898,7 @@ namespace Tsavorite.core
                         while (physicalAddress < endPhysicalAddress)
                         {
                             ref var info = ref LogRecord.GetInfoRef(physicalAddress);
-                            var (_, alignedRecordSize) = _wrapper.GetRecordSize(physicalAddress);
+                            var (_, alignedRecordSize) = _wrapper.GetFullRecordSizes(physicalAddress);
                             if (info.Dirty)
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
                             physicalAddress += alignedRecordSize;

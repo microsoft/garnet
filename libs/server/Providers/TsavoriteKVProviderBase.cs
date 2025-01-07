@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using Garnet.common;
 using Garnet.networking;
 using Tsavorite.core;
 
@@ -11,16 +10,16 @@ namespace Garnet.server
     /// Abstract session provider for TsavoriteKV store based on
     /// [K, V, I, O, F, P]
     /// </summary>
-    public abstract class TsavoriteKVProviderBase<TKey, TValue, TInput, TOutput, TSessionFunctions, TStoreFunctions, TAllocator, TParameterSerializer> : ISessionProvider
-        where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, long>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
-        where TParameterSerializer : IServerSerializer<TKey, TValue, TInput, TOutput>
+    public abstract class TsavoriteKVProviderBase<TValue, TInput, TOutput, TSessionFunctions, TStoreFunctions, TAllocator, TParameterSerializer> : ISessionProvider
+        where TSessionFunctions : ISessionFunctions<TValue, TInput, TOutput, long>
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
+        where TParameterSerializer : IServerSerializer<TValue, TInput, TOutput>
     {
         /// <summary>
         /// Store
         /// </summary>
-        protected readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
+        protected readonly TsavoriteKV<TValue, TStoreFunctions, TAllocator> store;
 
         /// <summary>
         /// Serializer
@@ -30,7 +29,7 @@ namespace Garnet.server
         /// <summary>
         /// Broker
         /// </summary>
-        protected readonly SubscribeBroker<TKey, TValue, IKeySerializer<TKey>> broker;
+        protected readonly SubscribeBroker<TValue, IKeySerializer> broker;
 
         /// <summary>
         /// Size settings
@@ -45,8 +44,8 @@ namespace Garnet.server
         /// <param name="broker"></param>
         /// <param name="recoverStore"></param>
         /// <param name="maxSizeSettings"></param>
-        public TsavoriteKVProviderBase(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, TParameterSerializer serializer,
-                SubscribeBroker<TKey, TValue, IKeySerializer<TKey>> broker = null, bool recoverStore = false, MaxSizeSettings maxSizeSettings = default)
+        public TsavoriteKVProviderBase(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, TParameterSerializer serializer,
+                SubscribeBroker<TValue, IKeySerializer> broker = null, bool recoverStore = false, MaxSizeSettings maxSizeSettings = default)
         {
             this.store = store;
             if (recoverStore)

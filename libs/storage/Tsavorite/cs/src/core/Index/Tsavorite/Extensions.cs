@@ -15,35 +15,34 @@ namespace Tsavorite.core
         /// <summary>
         /// Create observable of log records
         /// </summary>
-        /// <typeparam name="TKey"></typeparam>
         /// <typeparam name="TValue"></typeparam>
         /// <param name="source"></param>
         /// <returns></returns>
-        public static IObservable<AllocatorRecord<TKey, TValue>> ToRecordObservable<TKey, TValue>(this IObservable<ITsavoriteScanIterator<TKey, TValue>> source)
+        public static IObservable<AllocatorRecord<TValue>> ToRecordObservable<TValue>(this IObservable<ITsavoriteScanIterator<TValue>> source)
         {
-            return new RecordObservable<TKey, TValue>(source);
+            return new RecordObservable<TValue>(source);
         }
 
-        internal sealed class RecordObservable<TKey, TValue> : IObservable<AllocatorRecord<TKey, TValue>>
+        internal sealed class RecordObservable<TValue> : IObservable<AllocatorRecord<TValue>>
         {
-            readonly IObservable<ITsavoriteScanIterator<TKey, TValue>> o;
+            readonly IObservable<ITsavoriteScanIterator<TValue>> o;
 
-            public RecordObservable(IObservable<ITsavoriteScanIterator<TKey, TValue>> o)
+            public RecordObservable(IObservable<ITsavoriteScanIterator<TValue>> o)
             {
                 this.o = o;
             }
 
-            public IDisposable Subscribe(IObserver<AllocatorRecord<TKey, TValue>> observer)
+            public IDisposable Subscribe(IObserver<AllocatorRecord<TValue>> observer)
             {
-                return o.Subscribe(new RecordObserver<TKey, TValue>(observer));
+                return o.Subscribe(new RecordObserver<TValue>(observer));
             }
         }
 
-        internal sealed class RecordObserver<TKey, TValue> : IObserver<ITsavoriteScanIterator<TKey, TValue>>
+        internal sealed class RecordObserver<TValue> : IObserver<ITsavoriteScanIterator<TValue>>
         {
-            private readonly IObserver<AllocatorRecord<TKey, TValue>> observer;
+            private readonly IObserver<AllocatorRecord<TValue>> observer;
 
-            public RecordObserver(IObserver<AllocatorRecord<TKey, TValue>> observer)
+            public RecordObserver(IObserver<AllocatorRecord<TValue>> observer)
             {
                 this.observer = observer;
             }
@@ -58,11 +57,11 @@ namespace Tsavorite.core
                 observer.OnError(error);
             }
 
-            public void OnNext(ITsavoriteScanIterator<TKey, TValue> v)
+            public void OnNext(ITsavoriteScanIterator<TValue> v)
             {
                 while (v.GetNext(out RecordInfo info, out TKey key, out TValue value))
                 {
-                    observer.OnNext(new AllocatorRecord<TKey, TValue> { info = info, key = key, value = value });
+                    observer.OnNext(new AllocatorRecord<TValue> { info = info, key = key, value = value });
                 }
             }
         }

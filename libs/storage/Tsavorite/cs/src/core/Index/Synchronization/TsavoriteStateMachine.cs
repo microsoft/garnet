@@ -10,9 +10,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         // The current system state, defined as the combination of a phase and a version number. This value
         // is observed by all sessions and a state machine communicates its progress to sessions through
@@ -22,8 +22,8 @@ namespace Tsavorite.core
         private volatile int stateMachineActive = 0;
         // The current state machine in the system. The value could be stale and point to the previous state machine
         // if no state machine is active at this time.
-        private ISynchronizationStateMachine<TKey, TValue, TStoreFunctions, TAllocator> currentSyncStateMachine;
-        private List<IStateMachineCallback<TKey, TValue, TStoreFunctions, TAllocator>> callbacks = new();
+        private ISynchronizationStateMachine<TValue, TStoreFunctions, TAllocator> currentSyncStateMachine;
+        private List<IStateMachineCallback<TValue, TStoreFunctions, TAllocator>> callbacks = new();
         internal long lastVersion;
 
         /// <summary>
@@ -69,14 +69,14 @@ namespace Tsavorite.core
         /// may slow or halt state machine execution. For advanced users only. 
         /// </summary>
         /// <param name="callback"> callback to register </param>
-        public void UnsafeRegisterCallback(IStateMachineCallback<TKey, TValue, TStoreFunctions, TAllocator> callback) => callbacks.Add(callback);
+        public void UnsafeRegisterCallback(IStateMachineCallback<TValue, TStoreFunctions, TAllocator> callback) => callbacks.Add(callback);
 
         /// <summary>
         /// Attempt to start the given state machine in the system if no other state machine is active.
         /// </summary>
         /// <param name="stateMachine">The state machine to start</param>
         /// <returns>true if the state machine has started, false otherwise</returns>
-        private bool StartStateMachine(ISynchronizationStateMachine<TKey, TValue, TStoreFunctions, TAllocator> stateMachine)
+        private bool StartStateMachine(ISynchronizationStateMachine<TValue, TStoreFunctions, TAllocator> stateMachine)
         {
             // return immediately if there is a state machine under way.
             if (Interlocked.CompareExchange(ref stateMachineActive, 1, 0) != 0) return false;
@@ -250,7 +250,7 @@ namespace Tsavorite.core
                 Debug.Assert(
                     (threadState.Version < targetState.Version) ||
                        (threadState.Version == targetState.Version &&
-                       (threadState.Phase <= targetState.Phase || currentTask is IndexSnapshotStateMachine<TKey, TValue, TStoreFunctions, TAllocator>)
+                       (threadState.Phase <= targetState.Phase || currentTask is IndexSnapshotStateMachine<TValue, TStoreFunctions, TAllocator>)
                     ));
 
                 currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, sessionFunctions, valueTasks, token);

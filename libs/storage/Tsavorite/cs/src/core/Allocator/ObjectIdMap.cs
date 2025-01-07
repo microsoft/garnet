@@ -25,14 +25,20 @@ namespace Tsavorite.core
         public const int ObjectIdSize = sizeof(int);
 
         // Reserve a slot and return its ID.
-        public int Allocate()
+        public bool Allocate(out int objectId)
         {
-            Debug.Assert(tail < objectVector.Length - 1, "ObjectgIdMap overflow detected");
-            return Interlocked.Increment(ref tail) - 1;
+            if (tail >= objectVector.Length)
+            { 
+                Debug.Fail("ObjectIdMap overflow detected");
+                objectId = 0;
+                return false;
+            }
+            objectId = Interlocked.Increment(ref tail) - 1;
+            return true;
         }
 
         // Returns a reference to the slot's object.
-        public ref IHeapObject GetRef(int objectId)
+        internal ref IHeapObject GetRef(int objectId)
         {
             Debug.Assert(objectId > 0 && objectId < tail, "Invalid objectId");
             return ref objectVector[objectId];

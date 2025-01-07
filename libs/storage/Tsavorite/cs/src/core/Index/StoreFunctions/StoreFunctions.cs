@@ -8,7 +8,7 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Store functions for <typeparamref name="TKey"/> and <typeparamref name="TValue"/>.
+    /// Store functions for <typeparamref name="TValue"/>.
     /// </summary>
     /// <remarks>
     /// The implementation takes instances of the supported interfaces (e.g. <see cref="IObjectSerializer{T}"/>) to allow custom
@@ -16,18 +16,15 @@ namespace Tsavorite.core
     /// because there is no need to wrap calls to them with additional functionality. This can be changed to redirect if such wrapper
     /// functionality is needed.
     /// </remarks>
-    public struct StoreFunctions<TKey, TValue, TKeyComparer, TRecordDisposer>
-            (TKeyComparer keyComparer, Func<IObjectSerializer<TKey>> keySerializerCreator, Func<IObjectSerializer<TValue>> valueSerializerCreator, TRecordDisposer recordDisposer)
-            : IStoreFunctions<TKey, TValue>
-        where TKeyComparer : IKeyComparer<TKey>
-        where TRecordDisposer : IRecordDisposer<TKey, TValue>
+    public struct StoreFunctions<TValue, TKeyComparer, TRecordDisposer>
+            (TKeyComparer keyComparer, Func<IObjectSerializer<TValue>> valueSerializerCreator, TRecordDisposer recordDisposer)
+            : IStoreFunctions<TValue>
+        where TKeyComparer : IKeyComparer
+        where TRecordDisposer : IRecordDisposer<TValue>
     {
         #region Fields
         /// <summary>Compare two keys for equality, and get a key's hash code.</summary>
         readonly TKeyComparer keyComparer = keyComparer;
-
-        /// <summary>Serialize a Key to persistent storage</summary>
-        readonly Func<IObjectSerializer<TKey>> keySerializerCreator = keySerializerCreator;
 
         /// <summary>Serialize a Value to persistent storage</summary>
         readonly Func<IObjectSerializer<TValue>> valueSerializerCreator = valueSerializerCreator;
@@ -42,33 +39,12 @@ namespace Tsavorite.core
         #region Key Comparer
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetKeyHashCode64(ref TKey key) => keyComparer.GetHashCode64(ref key);
+        public readonly long GetKeyHashCode64(SpanByte key) => keyComparer.GetHashCode64(key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool KeysEqual(ref TKey k1, ref TKey k2) => keyComparer.Equals(ref k1, ref k2);
+        public readonly bool KeysEqual(SpanByte k1, SpanByte k2) => keyComparer.Equals(k1, k2);
         #endregion Key Comparer
-
-        #region Key Serializer
-        /// <inheritdoc/>
-        public readonly bool HasKeySerializer => keySerializerCreator is not null;
-
-        /// <inheritdoc/>
-        public readonly IObjectSerializer<TKey> BeginSerializeKey(Stream stream)
-        {
-            var keySerializer = keySerializerCreator();
-            keySerializer.BeginSerialize(stream);
-            return keySerializer;
-        }
-
-        /// <inheritdoc/>
-        public readonly IObjectSerializer<TKey> BeginDeserializeKey(Stream stream)
-        {
-            var keySerializer = keySerializerCreator();
-            keySerializer.BeginDeserialize(stream);
-            return keySerializer;
-        }
-        #endregion Key Serializer
 
         #region Value Serializer
         /// <inheritdoc/>
@@ -97,7 +73,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void DisposeRecord(ref TKey key, ref TValue value, DisposeReason reason, int newKeySize) => recordDisposer.DisposeRecord(ref key, ref value, reason, newKeySize);
+        public readonly void DisposeValueObject(IHeapObject valueObject, DisposeReason reason) => recordDisposer.DisposeValueObject(valueObject, reason);
         #endregion Record Disposer
 
         #region Checkpoint Completion
@@ -117,36 +93,33 @@ namespace Tsavorite.core
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
         /// </summary>
-        public static StoreFunctions<TKey, TValue, TKeyComparer, TRecordDisposer> Create<TKeyComparer, TRecordDisposer>
-                (TKeyComparer keyComparer, Func<IObjectSerializer<TKey>> keySerializerCreator, Func<IObjectSerializer<TValue>> valueSerializerCreator, TRecordDisposer recordDisposer)
-            where TKeyComparer : IKeyComparer<TKey>
-            where TRecordDisposer : IRecordDisposer<TKey, TValue>
-            => new(keyComparer, keySerializerCreator, valueSerializerCreator, recordDisposer);
+        public static StoreFunctions<TValue, TKeyComparer, TRecordDisposer> Create<TKeyComparer, TRecordDisposer>
+                (TKeyComparer keyComparer, Func<IObjectSerializer<TValue>> valueSerializerCreator, TRecordDisposer recordDisposer)
+            where TKeyComparer : IKeyComparer
+            where TRecordDisposer : IRecordDisposer<TValue>
+            => new(keyComparer, valueSerializerCreator, recordDisposer);
 
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
         /// </summary>
-        public static StoreFunctions<TKey, TValue, TKeyComparer, DefaultRecordDisposer<TKey, TValue>> Create<TKeyComparer>
-                (TKeyComparer keyComparer, Func<IObjectSerializer<TKey>> keySerializerCreator, Func<IObjectSerializer<TValue>> valueSerializerCreator)
-            where TKeyComparer : IKeyComparer<TKey>
-            => new(keyComparer, keySerializerCreator, valueSerializerCreator, new DefaultRecordDisposer<TKey, TValue>());
+        public static StoreFunctions<TValue, TKeyComparer, DefaultRecordDisposer<TValue>> Create<TKeyComparer>(TKeyComparer keyComparer, Func<IObjectSerializer<TValue>> valueSerializerCreator)
+            where TKeyComparer : IKeyComparer
+            => new(keyComparer, valueSerializerCreator, new DefaultRecordDisposer<TValue>());
 
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
         /// </summary>
-        public static StoreFunctions<TKey, TValue, TKeyComparer, TRecordDisposer> Create<TKeyComparer, TRecordDisposer>
-                (TKeyComparer keyComparer, TRecordDisposer recordDisposer)
-            where TKeyComparer : IKeyComparer<TKey>
-            where TRecordDisposer : IRecordDisposer<TKey, TValue>
-            => new(keyComparer, keySerializerCreator: null, valueSerializerCreator: null, recordDisposer);
+        public static StoreFunctions<TValue, TKeyComparer, TRecordDisposer> Create<TKeyComparer, TRecordDisposer>(TKeyComparer keyComparer, TRecordDisposer recordDisposer)
+            where TKeyComparer : IKeyComparer
+            where TRecordDisposer : IRecordDisposer<TValue>
+            => new(keyComparer, valueSerializerCreator: null, recordDisposer);
 
         /// <summary>
-        /// Store functions for <typeparamref name="TKey"/> and <typeparamref name="TValue"/> that take only the <paramref name="keyComparer"/>
+        /// Store functions for <typeparamref name="TValue"/> that take only the <paramref name="keyComparer"/>
         /// </summary>
-        public static StoreFunctions<TKey, TValue, TKeyComparer, DefaultRecordDisposer<TKey, TValue>> Create<TKeyComparer>
-                (TKeyComparer keyComparer)
-            where TKeyComparer : IKeyComparer<TKey>
-            => new(keyComparer, keySerializerCreator: null, valueSerializerCreator: null, DefaultRecordDisposer<TKey, TValue>.Instance);
+        public static StoreFunctions<TValue, TKeyComparer, DefaultRecordDisposer<TValue>> Create<TKeyComparer>(TKeyComparer keyComparer)
+            where TKeyComparer : IKeyComparer
+            => new(keyComparer, valueSerializerCreator: null, DefaultRecordDisposer<TValue>.Instance);
 
         /// <summary>
         /// Store functions for <see cref="SpanByte"/> Key and Value

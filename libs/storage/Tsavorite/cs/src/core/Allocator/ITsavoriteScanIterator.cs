@@ -29,15 +29,14 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator interface for Tsavorite log
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
     /// <typeparam name="TValue"></typeparam>
-    public interface ITsavoriteScanIterator<TKey, TValue> : IDisposable
+    public interface ITsavoriteScanIterator<TValue> : IDisposable
     {
         /// <summary>
         /// Gets reference to current key
         /// </summary>
         /// <returns></returns>
-        ref TKey GetKey();
+        ref SpanByte GetKey();
 
         /// <summary>
         /// Gets reference to current value
@@ -59,7 +58,7 @@ namespace Tsavorite.core
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns>True if record found, false if end of scan</returns>
-        bool GetNext(out RecordInfo recordInfo, out TKey key, out TValue value);
+        bool GetNext(out RecordInfo recordInfo, out SpanByte key, out TValue value);
 
         /// <summary>
         /// Current address

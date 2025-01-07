@@ -10,15 +10,15 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    internal sealed class ObjectScanIterator<TStoreFunctions> : ScanIteratorBase, ITsavoriteScanIterator<SpanByte, IHeapObject>, IPushScanIterator<SpanByte>
-        where TStoreFunctions : IStoreFunctions<SpanByte, IHeapObject>
+    internal sealed class ObjectScanIterator<TStoreFunctions> : ScanIteratorBase, ITsavoriteScanIterator<IHeapObject>, IPushScanIterator<SpanByte>
+        where TStoreFunctions : IStoreFunctions<IHeapObject>
     {
         private readonly TsavoriteKV<SpanByte, IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>> store;
         private readonly ObjectAllocatorImpl<TStoreFunctions> hlog;
-        private readonly GenericFrame<TKey, TValue> frame;  // TODO mix of spanbyte key with possible object and IHeapObject value
+        private readonly GenericFrame<IHeapObject> frame;  // TODO mix of spanbyte key with possible object and IHeapObject value
         private readonly int recordSize;
 
-        private TKey currentKey;
+        private SpanByte currentKey;
         private TValue currentValue;
 
         private long currentPage = -1, currentOffset = -1, currentFrame = -1;
@@ -34,7 +34,7 @@ namespace Tsavorite.core
             this.hlog = hlog;
             recordSize = hlog.GetRecordSize(0).allocatedSize;
             if (frameSize > 0)
-                frame = new GenericFrame<TKey, TValue>(frameSize, hlog.PageSize);
+                frame = new GenericFrame<TValue>(frameSize, hlog.PageSize);
         }
 
         /// <summary>
@@ -48,20 +48,20 @@ namespace Tsavorite.core
             this.hlog = hlog;
             recordSize = hlog.GetRecordSize(0).allocatedSize;
             if (frameSize > 0)
-                frame = new GenericFrame<TKey, TValue>(frameSize, hlog.PageSize);
+                frame = new GenericFrame<TValue>(frameSize, hlog.PageSize);
         }
 
         /// <summary>
         /// Gets reference to current key
         /// </summary>
         /// <returns></returns>
-        public ref TKey GetKey() => ref currentKey; // TODO SpanByte key but key may be an overflow object
+        public ref SpanByte GetKey() => ref currentKey; // TODO SpanByte key but key may be an overflow object; does this need to remain "ref"?
 
         /// <summary>
         /// Gets reference to current value
         /// </summary>
         /// <returns></returns>
-        public ref TValue GetValue() => ref currentValue;
+        public ref IHeapObject GetValue() => ref currentValue;  // TODO remove ref
 
         /// <inheritdoc/>
         public bool SnapCursorToLogicalAddress(ref long cursor)
@@ -134,7 +134,7 @@ namespace Tsavorite.core
 
                     // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend().
                     // These are pointer-sized shallow copies but we need to lock to ensure no value tearing inside the object while copying to temp storage.
-                    OperationStackContext<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> stackCtx = default;
+                    OperationStackContext<IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>> stackCtx = default;
                     try
                     {
                         // We cannot use GetKey() because it has not yet been set.
@@ -180,7 +180,7 @@ namespace Tsavorite.core
         /// Get previous record and keep the epoch held while we call the user's scan functions
         /// </summary>
         /// <returns>True if record found, false if end of scan</returns>
-        bool IPushScanIterator<TKey>.BeginGetPrevInMemory(ref TKey key, out RecordInfo recordInfo, out bool continueOnDisk)
+        bool IPushScanIterator.BeginGetPrevInMemory(SpanByte key, out RecordInfo recordInfo, out bool continueOnDisk)
         {
             recordInfo = default;
             currentKey = default;
@@ -228,7 +228,7 @@ namespace Tsavorite.core
             }
         }
 
-        bool IPushScanIterator<TKey>.EndGetPrevInMemory()
+        bool IPushScanIterator.EndGetPrevInMemory()
         {
             epoch?.Suspend();
             return true;
@@ -241,7 +241,7 @@ namespace Tsavorite.core
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        public bool GetNext(out RecordInfo recordInfo, out TKey key, out TValue value)
+        public bool GetNext(out RecordInfo recordInfo, out SpanByte key, out TValue value)
         {
             if (GetNext(out recordInfo))
             {

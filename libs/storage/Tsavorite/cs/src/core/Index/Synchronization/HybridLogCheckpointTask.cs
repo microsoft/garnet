@@ -13,14 +13,14 @@ namespace Tsavorite.core
     /// This task is the base class for a checkpoint "backend", which decides how a captured version is
     /// persisted on disk.
     /// </summary>
-    internal abstract class HybridLogCheckpointOrchestrationTask<TKey, TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal abstract class HybridLogCheckpointOrchestrationTask<TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         private long lastVersion;
         /// <inheritdoc />
         public virtual void GlobalBeforeEnteringState(SystemState next,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -57,7 +57,7 @@ namespace Tsavorite.core
             }
         }
 
-        protected static void CollectMetadata(SystemState next, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+        protected static void CollectMetadata(SystemState next, TsavoriteKV<TValue, TStoreFunctions, TAllocator> store)
         {
             // Collect object log offsets only after flushes
             // are completed
@@ -96,15 +96,15 @@ namespace Tsavorite.core
 
         /// <inheritdoc />
         public virtual void GlobalAfterEnteringState(SystemState next,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator> store)
         {
         }
 
         /// <inheritdoc />
         public virtual void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
-            SystemState prev, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            SystemState prev, TsavoriteKV<TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -127,13 +127,13 @@ namespace Tsavorite.core
     /// version on the log and waiting until it is flushed to disk. It is simple and fast, but can result
     /// in garbage entries on the log, and a slower recovery of performance.
     /// </summary>
-    internal sealed class FoldOverCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointOrchestrationTask<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class FoldOverCheckpointTask<TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointOrchestrationTask<TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         /// <inheritdoc />
         public override void GlobalBeforeEnteringState(SystemState next,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator> store)
         {
             base.GlobalBeforeEnteringState(next, store);
 
@@ -155,8 +155,8 @@ namespace Tsavorite.core
         public override void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -194,12 +194,12 @@ namespace Tsavorite.core
     /// slower and more complex than a foldover, but more space-efficient on the log, and retains in-place
     /// update performance as it does not advance the readonly marker unnecessarily.
     /// </summary>
-    internal sealed class SnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointOrchestrationTask<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class SnapshotCheckpointTask<TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointOrchestrationTask<TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         /// <inheritdoc />
-        public override void GlobalBeforeEnteringState(SystemState next, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+        public override void GlobalBeforeEnteringState(SystemState next, TsavoriteKV<TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -261,8 +261,8 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public override void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
-            SystemState prev, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            SystemState prev, TsavoriteKV<TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -301,12 +301,12 @@ namespace Tsavorite.core
     /// slower and more complex than a foldover, but more space-efficient on the log, and retains in-place
     /// update performance as it does not advance the readonly marker unnecessarily.
     /// </summary>
-    internal sealed class IncrementalSnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointOrchestrationTask<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class IncrementalSnapshotCheckpointTask<TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointOrchestrationTask<TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         /// <inheritdoc />
-        public override void GlobalBeforeEnteringState(SystemState next, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+        public override void GlobalBeforeEnteringState(SystemState next, TsavoriteKV<TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -357,8 +357,8 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public override void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
-            SystemState prev, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            SystemState prev, TsavoriteKV<TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -395,9 +395,9 @@ namespace Tsavorite.core
     /// <summary>
     /// 
     /// </summary>
-    internal class HybridLogCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator> : VersionChangeStateMachine<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal class HybridLogCheckpointStateMachine<TValue, TStoreFunctions, TAllocator> : VersionChangeStateMachine<TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         /// <summary>
         /// Construct a new HybridLogCheckpointStateMachine to use the given checkpoint backend (either fold-over or
@@ -405,15 +405,15 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="checkpointBackend">A task that encapsulates the logic to persist the checkpoint</param>
         /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
-        public HybridLogCheckpointStateMachine(ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator> checkpointBackend, long targetVersion = -1)
-            : base(targetVersion, new VersionChangeTask<TKey, TValue, TStoreFunctions, TAllocator>(), checkpointBackend) { }
+        public HybridLogCheckpointStateMachine(ISynchronizationTask<TValue, TStoreFunctions, TAllocator> checkpointBackend, long targetVersion = -1)
+            : base(targetVersion, new VersionChangeTask<TValue, TStoreFunctions, TAllocator>(), checkpointBackend) { }
 
         /// <summary>
         /// Construct a new HybridLogCheckpointStateMachine with the given tasks. Does not load any tasks by default.
         /// </summary>
         /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         /// <param name="tasks">The tasks to load onto the state machine</param>
-        protected HybridLogCheckpointStateMachine(long targetVersion, params ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>[] tasks)
+        protected HybridLogCheckpointStateMachine(long targetVersion, params ISynchronizationTask<TValue, TStoreFunctions, TAllocator>[] tasks)
             : base(targetVersion, tasks) { }
 
         /// <inheritdoc />

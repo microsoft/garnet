@@ -30,7 +30,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Callback functions for log scan or key-version iteration
     /// </summary>
-    public interface IScanIteratorFunctions<TKey, TValue>
+    public interface IScanIteratorFunctions<TValue>
     {
         /// <summary>Iteration is starting.</summary>
         /// <param name="beginAddress">Start address of the scan</param>
@@ -39,24 +39,24 @@ namespace Tsavorite.core
         bool OnStart(long beginAddress, long endAddress);
 
         /// <summary>Next record in iteration for a record not in mutable log memory.</summary>
-        /// <param name="key">Reference to the current record's key</param>
-        /// <param name="value">Reference to the current record's Value</param>
+        /// <param name="logRecord">Reference to the current log record's info</param>
         /// <param name="recordMetadata">Record metadata, including <see cref="RecordInfo"/> and the current record's logical address</param>
         /// <param name="numberOfRecords">The number of records returned so far, including the current one.</param>
         /// <param name="cursorRecordResult">Indicates whether the current record was accepted, or whether to end the current ScanCursor call.
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>
-        bool SingleReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult);
+        bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            where TSourceLogRecord : IReadOnlyLogRecord;
 
         /// <summary>Next record in iteration for a record in mutable log memory.</summary>
-        /// <param name="key">Reference to the current record's key</param>
-        /// <param name="value">Reference to the current record's Value</param>
+        /// <param name="logRecord">Reference to the current log record's info</param>
         /// <param name="recordMetadata">Record metadata, including <see cref="RecordInfo"/> and the current record's logical address</param>
         /// <param name="numberOfRecords">The number of records returned so far, including the current one.</param>
         /// <param name="cursorRecordResult">Indicates whether the current record was accepted, or whether to end the current ScanCursor call.
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>
-        bool ConcurrentReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult);
+        bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            where TSourceLogRecord : IReadOnlyLogRecord;
 
         /// <summary>Iteration is complete.</summary>
         /// <param name="completed">If true, the iteration completed; else scanFunctions.*Reader() returned false to stop the iteration.</param>
@@ -69,9 +69,9 @@ namespace Tsavorite.core
         void OnException(Exception exception, long numberOfRecords);
     }
 
-    internal interface IPushScanIterator<TKey>
+    internal interface IPushScanIterator
     {
-        bool BeginGetPrevInMemory(ref TKey key, out RecordInfo recordInfo, out bool continueOnDisk);
+        bool BeginGetPrevInMemory(SpanByte key, out RecordInfo recordInfo, out bool continueOnDisk);
         bool EndGetPrevInMemory();
 
         /// <summary>

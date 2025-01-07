@@ -7,13 +7,13 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool TryBlockAllocate<TInput, TOutput, TContext>(
-                AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> allocator,
+                AllocatorBase<TValue, TStoreFunctions, TAllocator> allocator,
                 int recordSize,
                 out long logicalAddress,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext,
@@ -47,9 +47,9 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool TryAllocateRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                                                       ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordSizeInfo sizeInfo, AllocateOptions options,
+                                                       ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordSizeInfo sizeInfo, AllocateOptions options,
                                                        out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             status = OperationStatus.SUCCESS;
 
@@ -112,7 +112,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool TryAllocateRecordReadCache<TInput, TOutput, TContext>(ref PendingContext<TInput, TOutput, TContext> pendingContext, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
+        bool TryAllocateRecordReadCache<TInput, TOutput, TContext>(ref PendingContext<TInput, TOutput, TContext> pendingContext, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx,
                                                        int allocatedSize, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
         {
             // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.
@@ -160,7 +160,7 @@ namespace Tsavorite.core
         // Do not inline, to keep TryAllocateRecord lean
         bool GetAllocationForRetry<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext, long minAddress,
                 ref int allocatedSize, int newKeySize, out long newLogicalAddress, out long newPhysicalAddress)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Use an earlier allocation from a failed operation, if possible.
             newLogicalAddress = pendingContext.retryNewLogicalAddress;
@@ -174,7 +174,7 @@ namespace Tsavorite.core
             }
 
             newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-            ref var recordInfo = ref hlog.GetInfo(newPhysicalAddress);
+            ref var recordInfo = ref hlog.GetInfoRef(newPhysicalAddress);
             Debug.Assert(!recordInfo.IsNull(), "RecordInfo should not be IsNull");
             ref var recordValue = ref hlog.GetValue(newPhysicalAddress);
             (int usedValueLength, int fullValueLength, int fullRecordLength) = GetRecordLengths(newPhysicalAddress, ref recordValue, ref recordInfo);

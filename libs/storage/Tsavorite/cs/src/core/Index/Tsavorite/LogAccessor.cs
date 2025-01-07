@@ -10,20 +10,20 @@ namespace Tsavorite.core
     /// <summary>
     /// Wrapper to process log-related commands
     /// </summary>
-    public sealed class LogAccessor<TKey, TValue, TStoreFunctions, TAllocator> : IObservable<ITsavoriteScanIterator<TKey, TValue>>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public sealed class LogAccessor<TValue, TStoreFunctions, TAllocator> : IObservable<ITsavoriteScanIterator<TValue>>
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
-        private readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
+        private readonly TsavoriteKV<TValue, TStoreFunctions, TAllocator> store;
         private readonly TAllocator allocator;
-        private readonly AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> allocatorBase;
+        private readonly AllocatorBase<TValue, TStoreFunctions, TAllocator> allocatorBase;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="store"></param>
         /// <param name="allocator"></param>
-        internal LogAccessor(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, TAllocator allocator)
+        internal LogAccessor(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, TAllocator allocator)
         {
             this.store = store;
             this.allocator = allocator;
@@ -191,7 +191,7 @@ namespace Tsavorite.core
         /// To scan the historical part of the log, use the Scan(...) method
         /// </summary>
         /// <param name="readOnlyObserver">Observer to which scan iterator is pushed</param>
-        public IDisposable Subscribe(IObserver<ITsavoriteScanIterator<TKey, TValue>> readOnlyObserver)
+        public IDisposable Subscribe(IObserver<ITsavoriteScanIterator<TValue>> readOnlyObserver)
         {
             allocatorBase.OnReadOnlyObserver = readOnlyObserver;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: true);
@@ -204,13 +204,13 @@ namespace Tsavorite.core
         /// To scan the historical part of the log, use the Scan(...) method
         /// </summary>
         /// <param name="evictionObserver">Observer to which scan iterator is pushed</param>
-        public IDisposable SubscribeEvictions(IObserver<ITsavoriteScanIterator<TKey, TValue>> evictionObserver)
+        public IDisposable SubscribeEvictions(IObserver<ITsavoriteScanIterator<TValue>> evictionObserver)
         {
             allocatorBase.OnEvictionObserver = evictionObserver;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: false);
         }
 
-        public IDisposable SubscribeDeserializations(IObserver<ITsavoriteScanIterator<TKey, TValue>> deserializationObserver)
+        public IDisposable SubscribeDeserializations(IObserver<ITsavoriteScanIterator<TValue>> deserializationObserver)
         {
             allocatorBase.OnDeserializationObserver = deserializationObserver;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: false);
@@ -221,10 +221,10 @@ namespace Tsavorite.core
         /// </summary>
         class LogSubscribeDisposable : IDisposable
         {
-            private readonly AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> allocator;
+            private readonly AllocatorBase<TValue, TStoreFunctions, TAllocator> allocator;
             private readonly bool readOnly;
 
-            public LogSubscribeDisposable(AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> allocator, bool isReadOnly)
+            public LogSubscribeDisposable(AllocatorBase<TValue, TStoreFunctions, TAllocator> allocator, bool isReadOnly)
             {
                 this.allocator = allocator;
                 readOnly = isReadOnly;
@@ -277,7 +277,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>Scan iterator instance</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ITsavoriteScanIterator<TKey, TValue> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false)
+        public ITsavoriteScanIterator<TValue> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false)
             => allocatorBase.Scan(store: null, beginAddress, endAddress, scanBufferingMode, includeSealedRecords);
 
         /// <summary>
@@ -285,16 +285,16 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
         public bool Scan<TScanFunctions>(ref TScanFunctions scanFunctions, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
-            where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
+            where TScanFunctions : IScanIteratorFunctions<TValue>
             => allocatorBase.Scan(store, beginAddress, endAddress, ref scanFunctions, scanBufferingMode);
 
         /// <summary>
         /// Iterate versions of the specified key, starting with most recent
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        public bool IterateKeyVersions<TScanFunctions>(ref TScanFunctions scanFunctions, ref TKey key)
-            where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
-            => allocatorBase.IterateKeyVersions(store, ref key, ref scanFunctions);
+        public bool IterateKeyVersions<TScanFunctions>(ref TScanFunctions scanFunctions, SpanByte key)
+            where TScanFunctions : IScanIteratorFunctions<TValue>
+            => allocatorBase.IterateKeyVersions(store, key, ref scanFunctions);
 
         /// <summary>
         /// Flush log until current tail (records are still retained in memory)
@@ -317,8 +317,8 @@ namespace Tsavorite.core
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
         public long Compact<TInput, TOutput, TContext, TFunctions>(TFunctions functions, long untilAddress, CompactionType compactionType)
-            where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-            => Compact<TInput, TOutput, TContext, TFunctions, DefaultCompactionFunctions<TKey, TValue>>(functions, default, untilAddress, compactionType);
+            where TFunctions : ISessionFunctions<TValue, TInput, TOutput, TContext>
+            => Compact<TInput, TOutput, TContext, TFunctions, DefaultCompactionFunctions<TValue>>(functions, default, untilAddress, compactionType);
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
@@ -331,8 +331,8 @@ namespace Tsavorite.core
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
         public long Compact<TInput, TOutput, TContext, TFunctions>(TFunctions functions, ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType)
-            where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-            => Compact<TInput, TOutput, TContext, TFunctions, DefaultCompactionFunctions<TKey, TValue>>(functions, default, ref input, ref output, untilAddress, compactionType);
+            where TFunctions : ISessionFunctions<TValue, TInput, TOutput, TContext>
+            => Compact<TInput, TOutput, TContext, TFunctions, DefaultCompactionFunctions<TValue>>(functions, default, ref input, ref output, untilAddress, compactionType);
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
@@ -344,8 +344,8 @@ namespace Tsavorite.core
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
         public long Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(TFunctions functions, TCompactionFunctions cf, long untilAddress, CompactionType compactionType)
-            where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-            where TCompactionFunctions : ICompactionFunctions<TKey, TValue>
+            where TFunctions : ISessionFunctions<TValue, TInput, TOutput, TContext>
+            where TCompactionFunctions : ICompactionFunctions<TValue>
         {
             TInput input = default;
             TOutput output = default;
@@ -364,8 +364,8 @@ namespace Tsavorite.core
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
         public long Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(TFunctions functions, TCompactionFunctions cf, ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType)
-            where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-            where TCompactionFunctions : ICompactionFunctions<TKey, TValue>
+            where TFunctions : ISessionFunctions<TValue, TInput, TOutput, TContext>
+            where TCompactionFunctions : ICompactionFunctions<TValue>
             => store.Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType);
     }
 }

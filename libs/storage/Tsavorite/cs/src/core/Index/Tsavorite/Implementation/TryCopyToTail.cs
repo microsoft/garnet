@@ -3,9 +3,9 @@
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         /// <summary>
         /// Copy a record from the immutable region of the log, from the disk, or from ConditionalCopyToTail to the tail of the log (or splice into the log/readcache boundary).
@@ -27,9 +27,9 @@ namespace Tsavorite.core
         ///     </list>
         /// </returns>
         internal OperationStatus TryCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                                    ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
+                                    SpanByte key, ref TInput input, ref TValue value, ref TOutput output, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx,
                                     ref RecordInfo srcRecordInfo, TSessionFunctionsWrapper sessionFunctions, WriteReason reason)
-        where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var (actualSize, allocatedSize, keySize) = hlog.GetRecordSize(ref key, ref value);
             if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, new AllocateOptions() { recycle = true },

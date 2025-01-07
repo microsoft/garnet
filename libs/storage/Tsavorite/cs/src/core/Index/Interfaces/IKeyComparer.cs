@@ -8,20 +8,19 @@ namespace Tsavorite.core
     /// <summary>
     /// Defines methods to support the comparison of Tsavorite keys for equality.
     /// </summary>
-    /// <typeparam name="T">The type of keys to compare.</typeparam>
-    /// <remarks>This comparer differs from the built-in <see cref="IEqualityComparer{T}"/> in that it implements a 64-bit hash code</remarks>
-    public interface IKeyComparer<T>
+    /// <remarks>This comparer differs from the built-in <see cref="IEqualityComparer{SpanByte}"/> in that it implements a 64-bit hash code</remarks>
+    public interface IKeyComparer
     {
         /// <summary>
         /// Get 64-bit hash code
         /// </summary>
-        long GetHashCode64(ref T key);
+        long GetHashCode64(SpanByte key);
 
         /// <summary>
         /// Equality comparison
         /// </summary>
         /// <param name="k1">Left side</param>
         /// <param name="k2">Right side</param>
-        bool Equals(ref T k1, ref T k2);
+        bool Equals(SpanByte k1, SpanByte k2);
     }
 }

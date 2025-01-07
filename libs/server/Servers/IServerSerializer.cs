@@ -1,16 +1,17 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using Tsavorite.core;
+
 namespace Garnet.server
 {
     /// <summary>
     /// Serializer interface for server-side processing
     /// </summary>
-    /// <typeparam name="TKey">Key</typeparam>
     /// <typeparam name="TValue">Value</typeparam>
     /// <typeparam name="TInput">Input</typeparam>
     /// <typeparam name="TOutput">Output</typeparam>
-    public unsafe interface IServerSerializer<TKey, TValue, TInput, TOutput>
+    public unsafe interface IServerSerializer<TValue, TInput, TOutput>
     {
         /// <summary>
         /// Write element to given destination, with length bytes of space available
@@ -19,7 +20,7 @@ namespace Garnet.server
         /// <param name="dst">Destination memory</param>
         /// <param name="length">Space (bytes) available at destination</param>
         /// <returns>True if write succeeded, false if not (insufficient space)</returns>
-        bool Write(ref TKey k, ref byte* dst, int length);
+        bool Write(SpanByte k, ref byte* dst, int length);
 
         /// <summary>
         /// Write element to given destination, with length bytes of space available
@@ -28,7 +29,7 @@ namespace Garnet.server
         /// <param name="dst">Destination memory</param>
         /// <param name="length">Space (bytes) available at destination</param>
         /// <returns>True if write succeeded, false if not (insufficient space)</returns>
-        bool Write(ref TValue v, ref byte* dst, int length);
+        bool Write(TValue v, ref byte* dst, int length);
 
         /// <summary>
         /// Write element to given destination, with length bytes of space available
@@ -51,7 +52,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="src">Memory location</param>
         /// <returns>Key</returns>
-        ref TKey ReadKeyByRef(ref byte* src);
+        ref SpanByte ReadKeyByRef(ref byte* src);
 
         /// <summary>
         /// Read value by reference, from given location

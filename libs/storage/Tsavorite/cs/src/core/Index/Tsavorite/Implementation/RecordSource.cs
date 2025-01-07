@@ -11,9 +11,9 @@ namespace Tsavorite.core
     /// operations, where "source" is a copy source for RMW and/or a locked record. This is passed to functions that create records, such as 
     /// TsavoriteKV.CreateNewRecord*() or TsavoriteKV.InternalTryCopyToTail(), and to unlocking utilities.
     /// </summary>
-    internal struct RecordSource<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal struct RecordSource<TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         /// <summary>
         /// If valid, this is the logical address of a record. As "source", it may be copied from for RMW or pending Reads,
@@ -54,7 +54,7 @@ namespace Tsavorite.core
         /// <summary>
         /// If <see cref="HasInMemorySrc"/>, this is the allocator base (hlog or readcache) that <see cref="LogicalAddress"/> is in.
         /// </summary>
-        internal AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> AllocatorBase { get; private set; }
+        internal AllocatorBase<TValue, TStoreFunctions, TAllocator> AllocatorBase { get; private set; }
 
         struct InternalStates
         {
@@ -135,22 +135,13 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void ClearHasReadCacheSrc() => internalState &= ~InternalStates.ReadCacheSrc;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long SetPhysicalAddress() => PhysicalAddress = Allocator.GetPhysicalAddress(LogicalAddress);
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly ref RecordInfo GetInfo() => ref Allocator.GetInfo(PhysicalAddress);
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly ref TKey GetKey() => ref Allocator.GetKey(PhysicalAddress);
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly ref TValue GetValue() => ref Allocator.GetValue(PhysicalAddress);
-
         internal readonly bool HasInMemorySrc => (internalState & (InternalStates.MainLogSrc | InternalStates.ReadCacheSrc)) != 0;
 
         /// <summary>
         /// Initialize to the latest logical address from the caller.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Set(long latestLogicalAddress, AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> srcAllocatorBase)
+        internal void Set(long latestLogicalAddress, AllocatorBase<TValue, TStoreFunctions, TAllocator> srcAllocatorBase)
         {
             PhysicalAddress = default;
             LowestReadCacheLogicalAddress = default;
@@ -165,7 +156,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetAllocator(AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> srcAllocatorBase)
+        internal void SetAllocator(AllocatorBase<TValue, TStoreFunctions, TAllocator> srcAllocatorBase)
         {
             this.AllocatorBase = srcAllocatorBase;
             this.Allocator = AllocatorBase._wrapper;

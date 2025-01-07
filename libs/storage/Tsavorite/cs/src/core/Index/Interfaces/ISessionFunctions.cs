@@ -6,23 +6,23 @@ namespace Tsavorite.core
     /// <summary>
     /// Callback functions to Tsavorite
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
     /// <typeparam name="TValue"></typeparam>
     /// <typeparam name="TInput"></typeparam>
     /// <typeparam name="TOutput"></typeparam>
     /// <typeparam name="TContext"></typeparam>
-    public interface ISessionFunctions<TKey, TValue, TInput, TOutput, TContext> : IVariableLengthInput<TValue, TInput>
+    public interface ISessionFunctions<TValue, TInput, TOutput, TContext> : IVariableLengthInput<TValue, TInput>
     {
         #region Reads
         /// <summary>
         /// Non-concurrent reader. 
         /// </summary>
-        /// <param name="logRecord">The log record being read</param>
+        /// <param name="srcLogRecord">The log record being read</param>
         /// <param name="input">The user input for computing <paramref name="output"/> from the record value</param>
         /// <param name="output">Receives the output of the operation, if any</param>
         /// <param name="readInfo">Information about this read operation and its context</param>
         /// <returns>True if the value was available, else false (e.g. the value was expired)</returns>
-        bool SingleReader(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo);
+        bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo)
+            where TSourceLogRecord : IReadOnlyLogRecord;
 
         /// <summary>
         /// Concurrent reader
@@ -31,9 +31,8 @@ namespace Tsavorite.core
         /// <param name="input">The user input for computing <paramref name="output"/> from the record value</param>
         /// <param name="output">Receives the output of the operation, if any</param>
         /// <param name="readInfo">Information about this read operation and its context</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the value was available, else false (e.g. the value was expired)</returns>
-        bool ConcurrentReader(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo, ref RecordInfo recordInfo);
+        bool ConcurrentReader(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo);
 
         /// <summary>
         /// Read completion
@@ -43,7 +42,7 @@ namespace Tsavorite.core
         /// <param name="output">The result of the read operation; if this is a struct, then it will be a temporary and should be copied to <paramref name="ctx"/></param>
         /// <param name="ctx">The application context passed through the pending operation</param>
         /// <param name="status">The result of the pending operation</param>
-        /// <param name="recordMetadata">Metadata for the record; may be used to obtain <see cref="RecordMetadata.RecordInfo"/>.PreviousAddress when doing iterative reads</param>
+        /// <param name="recordMetadata">Metadata for the record</param>
         void ReadCompletionCallback(ref LogRecord logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
         #endregion reads
 
@@ -79,10 +78,9 @@ namespace Tsavorite.core
         /// <param name="newValue">The value passed to Upsert, to be copied to the destination record</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the value was written, else false</returns>
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
-        bool ConcurrentWriter(ref LogRecord dstLogRecord, ref TInput input, TValue newValue, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo);
+        bool ConcurrentWriter(ref LogRecord dstLogRecord, ref TInput input, TValue newValue, ref TOutput output, ref UpsertInfo upsertInfo);
         #endregion Upserts
 
         #region RMWs
@@ -94,7 +92,7 @@ namespace Tsavorite.core
         /// <param name="input">The user input to be used for computing the updated value</param>
         /// <param name="output">The location where the result of the <paramref name="input"/> operation is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        bool NeedInitialUpdate(ref TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
+        bool NeedInitialUpdate(SpanByte key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
 
         /// <summary>
         /// Initial update for RMW (insert at the tail of the log).
@@ -113,7 +111,7 @@ namespace Tsavorite.core
         /// <param name="input">The user input to be used to create the destination record's value</param>
         /// <param name="output">The location where the output of the operation, if any, is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        void PostInitialUpdater(ref LogRecord logRecord, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo);
+        void PostInitialUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
         #endregion InitialUpdater
 
         #region CopyUpdater
@@ -162,10 +160,9 @@ namespace Tsavorite.core
         /// <param name="input">The user input to be used to create the destination record's value</param>
         /// <param name="output">The location where the output of the operation, if any, is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the value was successfully updated, else false (e.g. the value was expired)</returns>
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
-        bool InPlaceUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
+        bool InPlaceUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
         #endregion InPlaceUpdater
 
         /// <summary>
@@ -186,10 +183,9 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="logRecord">The log record that is being created with a tombstone</param>
         /// <param name="deleteInfo">Information about this update operation and its context</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
         /// <returns>True if the deleted record should be added, else false (e.g. cancellation)</returns>
-        bool SingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo);
+        bool SingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo);
 
         /// <summary>
         /// Called after a record marking a Delete (with Tombstone set) has been successfully inserted at the tail of the log.
@@ -205,10 +201,9 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="logRecord">The log record that is being deleted in-place</param>
         /// <param name="deleteInfo">Information about this update operation and its context</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
-        /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
+        /// <remarks>For Object Value types, Dispose() can be called here. If logRecord.Info.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
         /// <returns>True if the value was successfully deleted, else false (e.g. the record was sealed)</returns>
-        bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo);
+        bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo);
         #endregion Deletes
 
         #region Utilities
@@ -224,19 +219,17 @@ namespace Tsavorite.core
     /// <summary>
     /// Callback functions to Tsavorite (two-param version)
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
     /// <typeparam name="TValue"></typeparam>
-    public interface ISessionFunctions<TKey, TValue> : ISessionFunctions<TKey, TValue, TValue, TValue, Empty>
+    public interface ISessionFunctions<TValue> : ISessionFunctions<TValue, TValue, TValue, Empty>
     {
     }
 
     /// <summary>
     /// Callback functions to Tsavorite (two-param version with context)
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
     /// <typeparam name="TValue"></typeparam>
     /// <typeparam name="TContext"></typeparam>
-    public interface ISessionFunctions<TKey, TValue, TContext> : ISessionFunctions<TKey, TValue, TValue, TValue, TContext>
+    public interface ISessionFunctions<TValue, TContext> : ISessionFunctions<TValue, TValue, TValue, TContext>
     {
     }
 }

@@ -121,10 +121,7 @@ namespace Tsavorite.core
         int GetPageIndex(long logicalAddress) => (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress)   // TODO: replace in favor of SpanByteAllocator- or ObjectAllocator-specific call
-        {
-            return new LogRecord(physicalAddress, values[GetPageIndex(logicalAddress)].objectIdMap);
-        }
+        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord(physicalAddress, values[GetPageIndex(logicalAddress)].objectIdMap);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)].overflowAllocator;
@@ -313,7 +310,7 @@ namespace Tsavorite.core
             if (epoch.ThisInstanceProtected())
             {
                 epochProtected = true;
-                src = new AllocatorRecord<TKey, TValue>[values[flushPage % BufferSize].Length];
+                src = new AllocatorRecord<TValue>[values[flushPage % BufferSize].Length];
                 Array.Copy(values[flushPage % BufferSize], src, values[flushPage % BufferSize].Length);
                 epoch.Suspend();
             }
@@ -377,7 +374,7 @@ namespace Tsavorite.core
                     byte* recordPtr = buffer.aligned_pointer + i * RecordSize;
 
                     // Retrieve reference to record struct
-                    ref var record = ref Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(recordPtr);
+                    ref var record = ref Unsafe.AsRef<AllocatorRecord<TValue>>(recordPtr);
                     AddressInfo* key_address = null, value_address = null;
 
                     // Zero out object reference addresses (AddressInfo) in the planned disk image
@@ -595,12 +592,12 @@ namespace Tsavorite.core
 
             var result = (PageAsyncReadResult<TContext>)context;
 
-            AllocatorRecord<TKey, TValue>[] src;
+            AllocatorRecord<TValue>[] src;
 
             // We are reading into a frame
             if (result.frame != null)
             {
-                var frame = (GenericFrame<TKey, TValue>)result.frame;
+                var frame = (GenericFrame<TValue>)result.frame;
                 src = frame.GetPage(result.page % frame.frameSize);
             }
             else
@@ -674,7 +671,7 @@ namespace Tsavorite.core
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
             record.required_bytes = numBytes;
 
-            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<TKey, TValue>>);
+            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<TValue>>);
             asyncResult.context = context;
             asyncResult.context.record = result;
             asyncResult.context.objBuffer = record;
@@ -774,7 +771,7 @@ namespace Tsavorite.core
 
             while (ptr < untilptr)
             {
-                ref var record = ref Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(raw + ptr);
+                ref var record = ref Unsafe.AsRef<AllocatorRecord<TValue>>(raw + ptr);
                 src[ptr / RecordSize].info = record.info;
                 if (start_offset == -1)
                     start_offset = (int)(ptr / RecordSize);
@@ -819,7 +816,7 @@ namespace Tsavorite.core
 
             if (OnDeserializationObserver != null && start_offset != -1 && end_offset != -1)
             {
-                using var iter = new MemoryPageScanIterator<TKey, TValue>(src, start_offset, end_offset, -1, RecordSize);
+                using var iter = new MemoryPageScanIterator<TValue>(src, start_offset, end_offset, -1, RecordSize);
                 OnDeserializationObserver.OnNext(iter);
             }
 #endif // READ_WRITE
@@ -843,7 +840,7 @@ namespace Tsavorite.core
 
             while (!done && (ptr < untilptr))
             {
-                ref var record = ref Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(raw + ptr);
+                ref var record = ref Unsafe.AsRef<AllocatorRecord<TValue>>(raw + ptr);
 
                 if (!record.info.Invalid)
                 {
@@ -906,9 +903,9 @@ namespace Tsavorite.core
             // TODO: take also a ref DiskLogRecord, populating it from ctx.record and deserializing its valueObject
 #if READ_WRITE
             if (!KeyHasObjects())
-                ctx.key = Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(record).key;
+                ctx.key = Unsafe.AsRef<AllocatorRecord<TValue>>(record).key;
             if (!ValueHasObjects())
-                ctx.value = Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(record).value;
+                ctx.value = Unsafe.AsRef<AllocatorRecord<TValue>>(record).value;
 
             if (!(KeyHasObjects() || ValueHasObjects()))
                 return true;
@@ -1052,7 +1049,7 @@ namespace Tsavorite.core
                 var beginAddress = page << LogPageSizeBits;
                 var endAddress = (page + 1) << LogPageSizeBits;
                 ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
-                using var iter = new MemoryPageScanIterator<TKey, TValue>(values[(int)(page % BufferSize)], start, end, pageStartAddress, RecordSize);
+                using var iter = new MemoryPageScanIterator<TValue>(values[(int)(page % BufferSize)], start, end, pageStartAddress, RecordSize);
                 OnEvictionObserver?.OnNext(iter);
             }
 
@@ -1066,7 +1063,7 @@ namespace Tsavorite.core
 #if READ_WRITE
             var page = (beginAddress >> LogPageSizeBits) % BufferSize;
             ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
-            using var iter = new MemoryPageScanIterator<TKey, TValue>(values[page], start, end, pageStartAddress, RecordSize);
+            using var iter = new MemoryPageScanIterator<TValue>(values[page], start, end, pageStartAddress, RecordSize);
             Debug.Assert(epoch.ThisInstanceProtected());
             try
             {

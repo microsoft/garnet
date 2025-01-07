@@ -8,9 +8,9 @@ namespace Tsavorite.core
 {
     using static Utility;
 
-    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long GetMinRevivifiableAddress()
@@ -27,7 +27,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe void SetExtraValueLength(ref TValue recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
+        internal unsafe void SetExtraValueLength(ref TValue recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)  // TODO remove; should be superseded by logRecord
         {
             if (RevivificationManager.IsFixedLength)
                 recordInfo.ClearHasFiller();
@@ -36,7 +36,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe void SetVarLenExtraValueLength(ref TValue recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
+        internal static unsafe void SetVarLenExtraValueLength(ref TValue recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)  // TODO remove; should be superseded by logRecord
         {
             usedValueLength = RoundUp(usedValueLength, sizeof(int));
             Debug.Assert(fullValueLength >= usedValueLength, $"SetFullValueLength: usedValueLength {usedValueLength} cannot be > fullValueLength {fullValueLength}");
@@ -56,11 +56,11 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal (int usedValueLength, int fullValueLength, int fullRecordLength) GetRecordLengths(long physicalAddress, ref TValue recordValue, ref RecordInfo recordInfo)
+        internal (int usedValueLength, int fullValueLength, int fullRecordLength) GetRecordLengths(long physicalAddress, ref TValue recordValue, ref RecordInfo recordInfo)  // TODO remove; should be superseded by logRecord
         {
             // FixedLen may be GenericAllocator which does not point physicalAddress to the actual record location, so calculate fullRecordLength via GetAverageRecordSize().
             if (RevivificationManager.IsFixedLength)
-                return (RevivificationManager<TKey, TValue, TStoreFunctions, TAllocator>.FixedValueLength, RevivificationManager<TKey, TValue, TStoreFunctions, TAllocator>.FixedValueLength, hlog.GetAverageRecordSize());
+                return (RevivificationManager<TValue, TStoreFunctions, TAllocator>.FixedValueLength, RevivificationManager<TValue, TStoreFunctions, TAllocator>.FixedValueLength, hlog.GetAverageRecordSize());
 
             int usedValueLength, fullValueLength, allocatedSize, valueOffset = GetValueOffset(physicalAddress, ref recordValue);
             if (recordInfo.HasFiller)
@@ -130,7 +130,7 @@ namespace Tsavorite.core
         // Do not try to inline this; it causes TryAllocateRecord to bloat and slow
         bool TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, int requiredSize, ref int allocatedSize, int newKeySize, long minRevivAddress,
                     out long logicalAddress, out long physicalAddress)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Caller checks for UseFreeRecordPool
             if (RevivificationManager.TryTake(allocatedSize, minRevivAddress, out logicalAddress, ref sessionFunctions.Ctx.RevivificationStats))
@@ -174,25 +174,10 @@ namespace Tsavorite.core
         // TombstonedRecords are in the tag chain with the tombstone bit set (they are not in the freelist). They preserve the key (they mark that key as deleted,
         // which is important if there is a subsequent record for that key), and store the full Value length after the used value data (if there is room).
         #region TombstonedRecords
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetTombstoneAndExtraValueLength(ref TValue recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
-        {
-            recordInfo.SetTombstone();
-            if (RevivificationManager.IsFixedLength)
-            {
-                recordInfo.ClearHasFiller();
-                return;
-            }
-
-            Debug.Assert(usedValueLength == hlog.GetValueLength(ref recordValue));
-            SetVarLenExtraValueLength(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal (bool ok, int usedValueLength) TryReinitializeTombstonedValue<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref RecordInfo srcRecordInfo, ref TKey key, ref TValue recordValue, int requiredSize, (int usedValueLength, int fullValueLength, int allocatedSize) recordLengths)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                ref RecordInfo srcRecordInfo, SpanByte key, ref TValue recordValue, int requiredSize, (int usedValueLength, int fullValueLength, int allocatedSize) recordLengths)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (RevivificationManager.IsFixedLength || recordLengths.allocatedSize < requiredSize)
                 return (false, recordLengths.usedValueLength);

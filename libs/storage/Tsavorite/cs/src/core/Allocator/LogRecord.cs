@@ -34,7 +34,7 @@ namespace Tsavorite.core
         /// <summary>The ObjectIdMap if this is a record in the object log.</summary>
         readonly ObjectIdMap objectIdMap;
 
-        private readonly bool IsObjectRecord => objectIdMap is not null;
+        public readonly bool IsObjectRecord => objectIdMap is not null;
 
         private readonly int ValueLen => IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalInlineSize;
 
@@ -73,7 +73,7 @@ namespace Tsavorite.core
             get
             {
                 Debug.Assert(IsObjectRecord, "ValueObject is not valid for String log records");
-                return objectIdMap.GetRef(ValueObjectId);
+                return (*ValueObjectIdAddress == ObjectIdMap.InvalidObjectId) ? null : objectIdMap.GetRef(ValueObjectId);
             }
         }
 
@@ -118,7 +118,16 @@ namespace Tsavorite.core
         internal static int* GetValueObjectIdAddress(long physicalAddress) => (int*)GetValueAddress(physicalAddress);
 
         /// <summary>The value object id (index into the object values array)</summary>
-        internal readonly int ValueObjectId => *ValueObjectIdAddress;
+        internal readonly int ValueObjectId
+        {
+            get
+            {
+                Debug.Assert(!IsObjectRecord, "Cannot get ValueObjectId for String LogRecord");
+                return *ValueObjectIdAddress;
+            }
+        }
+
+        internal readonly ref IHeapObject ObjectRef => ref objectIdMap.GetRef(ValueObjectId);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TrySetValueSpanLength(int newValueLen)
@@ -179,7 +188,7 @@ namespace Tsavorite.core
             //  - Shrinking the value and zeroing unused space
             ValueSpanRef.ShrinkSerializedLength(newValueLen);
             //  - Set the new (increased) FillerLength first, then the optionals
-            if (fillerLen >= LogRecordBase.FillerLenSize)
+            if (fillerLen >= FillerLenSize)
                 *(int*)fillerLenAddress = fillerLen;
             Buffer.MemoryCopy((byte*)(optStartAddress + growth), saveBuf, optLen, optLen);
 
@@ -198,11 +207,16 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SetValueObject(IHeapObject value)
+        public readonly bool TrySetValueObject(IHeapObject value)
         {
             if (*ValueObjectIdAddress == ObjectIdMap.InvalidObjectId)
-                *ValueObjectIdAddress = objectIdMap.Allocate();
+            {
+                if (!objectIdMap.Allocate(out var objectId))
+                    return false;
+                *ValueObjectIdAddress = objectId;
+            }
             objectIdMap.GetRef(*ValueObjectIdAddress) = value;
+            return true;
         }
 
         private readonly int ETagLen => Info.HasETag ? ETagSize : 0;
@@ -418,10 +432,10 @@ namespace Tsavorite.core
             return availableSpace >= growth;
         }
 
-        public readonly string ToString(int valueLen, string valueString)
+        public override readonly string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
-
+            var valueString = IsObjectRecord ? "<obj>" : ValueSpan.ToString();
             return $"ri {Info} | key {Key.ToShortString(20)} | val {valueString} | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpiration {bstr(Info.HasExpiration)}:{Expiration}";
         }
     }

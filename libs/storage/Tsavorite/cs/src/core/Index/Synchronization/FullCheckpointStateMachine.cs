@@ -12,14 +12,14 @@ namespace Tsavorite.core
     /// <summary>
     /// This task contains logic to orchestrate the index and hybrid log checkpoint in parallel
     /// </summary>
-    internal sealed class FullCheckpointOrchestrationTask<TKey, TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class FullCheckpointOrchestrationTask<TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         /// <inheritdoc />
         public void GlobalBeforeEnteringState(
             SystemState next,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -46,7 +46,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public void GlobalAfterEnteringState(
             SystemState next,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator> store)
         {
         }
 
@@ -54,8 +54,8 @@ namespace Tsavorite.core
         public void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -67,9 +67,9 @@ namespace Tsavorite.core
     /// <summary>
     /// The state machine orchestrates a full checkpoint
     /// </summary>
-    internal sealed class FullCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class FullCheckpointStateMachine<TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointStateMachine<TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         /// <summary>
         /// Construct a new FullCheckpointStateMachine to use the given checkpoint backend (either fold-over or snapshot),
@@ -77,9 +77,9 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="checkpointBackend">A task that encapsulates the logic to persist the checkpoint</param>
         /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
-        public FullCheckpointStateMachine(ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator> checkpointBackend, long targetVersion = -1) : base(
-            targetVersion, new VersionChangeTask<TKey, TValue, TStoreFunctions, TAllocator>(), new FullCheckpointOrchestrationTask<TKey, TValue, TStoreFunctions, TAllocator>(),
-            new IndexSnapshotTask<TKey, TValue, TStoreFunctions, TAllocator>(), checkpointBackend)
+        public FullCheckpointStateMachine(ISynchronizationTask<TValue, TStoreFunctions, TAllocator> checkpointBackend, long targetVersion = -1) : base(
+            targetVersion, new VersionChangeTask<TValue, TStoreFunctions, TAllocator>(), new FullCheckpointOrchestrationTask<TValue, TStoreFunctions, TAllocator>(),
+            new IndexSnapshotTask<TValue, TStoreFunctions, TAllocator>(), checkpointBackend)
         { }
 
         /// <inheritdoc />

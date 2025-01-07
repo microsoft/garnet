@@ -157,9 +157,9 @@ namespace Tsavorite.core
         public long deltaLogTailAddress;
     }
 
-    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         private const long NoPageFreed = -1;
 
@@ -1103,7 +1103,7 @@ namespace Tsavorite.core
             while (pointer < untilLogicalAddressInPage)
             {
                 recordStart = pagePhysicalAddress + pointer;
-                ref RecordInfo info = ref hlog.GetInfo(recordStart);
+                ref RecordInfo info = ref hlog.GetInfoRef(recordStart);
 
                 if (info.IsNull())
                 {
@@ -1113,7 +1113,7 @@ namespace Tsavorite.core
 
                 if (!info.Invalid)
                 {
-                    HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref hlog.GetKey(recordStart)));
+                    HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(hlog.GetKey(recordStart)));
                     FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 
                     bool ignoreRecord = ((pageLogicalAddress + pointer) >= options.fuzzyRegionStartAddress) && info.IsInNewVersion;
@@ -1139,7 +1139,7 @@ namespace Tsavorite.core
                         }
                     }
                 }
-                pointer += hlog.GetRecordSize(recordStart).Item2;
+                pointer += hlog.GetFullRecordSizes(recordStart).allocatedSize;
             }
 
             return touched;
@@ -1182,9 +1182,9 @@ namespace Tsavorite.core
         }
     }
 
-    public abstract partial class AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> : IDisposable
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public abstract partial class AllocatorBase<TValue, TStoreFunctions, TAllocator> : IDisposable
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         /// <summary>
         /// Restore log

@@ -9,19 +9,18 @@ namespace Tsavorite.core
     /// Lightweight iterator for memory page (copied to buffer). GetNext() can be used outside epoch protection and locking,
     /// but ctor must be called within epoch protection.
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
     /// <typeparam name="TValue"></typeparam>
-    internal sealed class MemoryPageScanIterator<TKey, TValue> : ITsavoriteScanIterator<TKey, TValue>
+    internal sealed class MemoryPageScanIterator<TValue> : ITsavoriteScanIterator<TValue>
     {
-        readonly AllocatorRecord<TKey, TValue>[] page;
+        readonly AllocatorRecord<TValue>[] page;
         readonly long pageStartAddress;
         readonly int recordSize;
         readonly int start, end;
         int offset;
 
-        public MemoryPageScanIterator(AllocatorRecord<TKey, TValue>[] page, int start, int end, long pageStartAddress, int recordSize)
+        public MemoryPageScanIterator(AllocatorRecord<TValue>[] page, int start, int end, long pageStartAddress, int recordSize)
         {
-            this.page = new AllocatorRecord<TKey, TValue>[page.Length];
+            this.page = new AllocatorRecord<TValue>[page.Length];
             Array.Copy(page, start, this.page, start, end - start);
             offset = start - 1;
             this.start = start;
@@ -42,7 +41,7 @@ namespace Tsavorite.core
         {
         }
 
-        public ref TKey GetKey() => ref page[offset].key;
+        public ref SpanByte GetKey() => ref page[offset].key;
         public ref TValue GetValue() => ref page[offset].value;
 
         public bool GetNext(out RecordInfo recordInfo)
@@ -63,7 +62,7 @@ namespace Tsavorite.core
             return true;
         }
 
-        public bool GetNext(out RecordInfo recordInfo, out TKey key, out TValue value)
+        public bool GetNext(out RecordInfo recordInfo, out SpanByte key, out TValue value)
         {
             var r = GetNext(out recordInfo);
             if (r)

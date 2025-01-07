@@ -7,9 +7,9 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         internal Dictionary<int, SessionInfo> _activeSessions = new();
 
@@ -20,9 +20,9 @@ namespace Tsavorite.core
         /// <param name="sessionName">Name of session (optional)</param>
         /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at TsavoriteKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
-        public ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> NewSession<TInput, TOutput, TContext, TFunctions>(TFunctions functions, string sessionName = null,
+        public ClientSession<TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> NewSession<TInput, TOutput, TContext, TFunctions>(TFunctions functions, string sessionName = null,
                 ReadCopyOptions readCopyOptions = default)
-            where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
+            where TFunctions : ISessionFunctions<TValue, TInput, TOutput, TContext>
         {
             if (functions == null)
                 throw new ArgumentNullException(nameof(functions));
@@ -43,7 +43,7 @@ namespace Tsavorite.core
             if (_activeSessions == null)
                 _ = Interlocked.CompareExchange(ref _activeSessions, new Dictionary<int, SessionInfo>(), null);
 
-            var session = new ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(this, ctx, functions);
+            var session = new ClientSession<TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(this, ctx, functions);
             lock (_activeSessions)
                 _activeSessions.Add(sessionID, new SessionInfo { sessionName = sessionName, session = session, isActive = true });
             return session;

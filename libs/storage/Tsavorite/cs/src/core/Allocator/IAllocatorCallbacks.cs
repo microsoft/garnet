@@ -5,12 +5,12 @@ namespace Tsavorite.core
 {
     /// <summary>
     /// Interface for hybrid log memory allocator struct wrapper callbacks for inlining performance-path callbacks from 
-    /// <see cref="AllocatorBase{Key, Value, TStoreFunctions, TAllocatorCallbacks}"/>
+    /// <see cref="AllocatorBase{TValue, TStoreFunctions, TAllocatorCallbacks}"/>
     /// to the fully derived allocator, including both record accessors and Scan calls.
     /// </summary>
     /// <remarks>This interface does not currently appear in type constraints, but the organization may prove useful.</remarks>
-    public interface IAllocatorCallbacks<TKey, TValue, TStoreFunctions>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+    public interface IAllocatorCallbacks<TValue, TStoreFunctions>
+        where TStoreFunctions : IStoreFunctions<TValue>
     {
         /// <summary>Get start logical address on <paramref name="page"/></summary>
         long GetStartLogicalAddress(long page);
@@ -27,11 +27,11 @@ namespace Tsavorite.core
         /// <summary>Get <see cref="RecordInfo"/> from pinned memory</summary>
         unsafe ref RecordInfo GetInfoRefFromBytePointer(byte* ptr);
 
-        /// <summary>Get <typeparamref name="TKey"/> from <paramref name="physicalAddress"/></summary>
-        TKey GetKey(long physicalAddress);
+        /// <summary>Get <see cref="SpanByte"/> Key from <paramref name="physicalAddress"/></summary>
+        SpanByte GetKey(long physicalAddress);
 
         /// <summary>Get the actual (used) and allocated record sizes at <paramref name="physicalAddress"/></summary>
-        (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress);
+        (int actualSize, int allocatedSize) GetFullRecordSizes(long physicalAddress);
 
         /// <summary>Allocate the page in the circular buffer slot at <paramref name="pageIndex"/></summary>
         void AllocatePage(int pageIndex);
@@ -54,10 +54,10 @@ namespace Tsavorite.core
         int OverflowPageCount { get; }
 
         /// <summary>Determine whether IO has returned the full record</summary>
-        unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<TKey, TValue> ctx);
+        unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<TValue> ctx);
 
         /// <summary>Get heap container for pending key</summary>
-        IHeapContainer<TKey> GetKeyContainer(ref TKey key);
+        IHeapContainer<SpanByte> GetKeyContainer(SpanByte key);
 
         /// <summary>Get heap container for pending value</summary>
         IHeapContainer<TValue> GetValueContainer(ref TValue value);

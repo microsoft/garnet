@@ -180,10 +180,10 @@ namespace Garnet.server
         /// <summary>
         /// Get KVSettings
         /// </summary>
-        public void GetSettings<TKey, TValue>()
+        public void GetSettings<TValue>()
         {
             var indexCacheLines = IndexSizeCachelines("hash index size", IndexSize);
-            var kvSettings = new KVSettings<TKey, TValue>()
+            var kvSettings = new KVSettings()
             {
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,

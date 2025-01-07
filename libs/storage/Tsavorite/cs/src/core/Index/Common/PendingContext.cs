@@ -5,15 +5,15 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         internal struct PendingContext<TInput, TOutput, TContext>
         {
             // User provided information
             internal OperationType type;
-            internal IHeapContainer<TKey> key;
+            internal IHeapContainer<SpanByte> key;
             internal IHeapContainer<TValue> value;
             internal IHeapContainer<TInput> input;
             internal TOutput output;
@@ -44,7 +44,7 @@ namespace Tsavorite.core
             // For RMW if an allocation caused the source record for a copy to go from readonly to below HeadAddress, or for any operation with CAS failure.
             internal long retryNewLogicalAddress;
 
-            internal ScanCursorState<TKey, TValue> scanCursorState;
+            internal ScanCursorState<TValue> scanCursorState;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal PendingContext(long keyHash) => this.keyHash = keyHash;

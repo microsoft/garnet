@@ -8,8 +8,7 @@ namespace Tsavorite.core
     /// <summary>
     /// LockTable interface definition (for both Transactional and Ephemeral)
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
-    public interface ILockTable<TKey> : IDisposable
+    public interface ILockTable : IDisposable
     {
         /// <summary>
         /// Whether the lock table is enabled.

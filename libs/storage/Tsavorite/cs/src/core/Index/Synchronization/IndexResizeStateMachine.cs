@@ -10,16 +10,16 @@ namespace Tsavorite.core
     /// <summary>
     /// Resizes an index
     /// </summary>
-    internal sealed class IndexResizeTask<TKey, TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class IndexResizeTask<TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         bool allThreadsInPrepareGrow;
 
         /// <inheritdoc />
         public void GlobalBeforeEnteringState(
             SystemState next,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -54,7 +54,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public void GlobalAfterEnteringState(
             SystemState next,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -85,8 +85,8 @@ namespace Tsavorite.core
         public void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -113,14 +113,14 @@ namespace Tsavorite.core
     /// <summary>
     /// Resizes the index
     /// </summary>
-    internal sealed class IndexResizeStateMachine<TKey, TValue, TStoreFunctions, TAllocator> : SynchronizationStateMachineBase<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class IndexResizeStateMachine<TValue, TStoreFunctions, TAllocator> : SynchronizationStateMachineBase<TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
         /// <summary>
         /// Constructs a new IndexResizeStateMachine
         /// </summary>
-        public IndexResizeStateMachine() : base(new IndexResizeTask<TKey, TValue, TStoreFunctions, TAllocator>()) { }
+        public IndexResizeStateMachine() : base(new IndexResizeTask<TValue, TStoreFunctions, TAllocator>()) { }
 
         /// <inheritdoc />
         public override SystemState NextState(SystemState start)

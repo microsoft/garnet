@@ -3,8 +3,8 @@
 
 namespace Tsavorite.core
 {
-    internal sealed class LogCompactionFunctions<TKey, TValue, TInput, TOutput, TContext, TFunctions> : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-        where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
+    internal sealed class LogCompactionFunctions<TValue, TInput, TOutput, TContext, TFunctions> : ISessionFunctions<TValue, TInput, TOutput, TContext>
+        where TFunctions : ISessionFunctions<TValue, TInput, TOutput, TContext>
     {
         readonly TFunctions _functions;
 
@@ -16,56 +16,63 @@ namespace Tsavorite.core
         /// <summary>
         /// No reads during compaction
         /// </summary>
-        public bool ConcurrentReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo) => true;
+        public bool ConcurrentReader(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo) => true;
 
-        public bool SingleDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
+        public bool SingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) => true;
 
-        public void PostSingleDeleter(ref TKey key, ref DeleteInfo deleteInfo) { }
+        public void PostSingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) { }
 
         /// <summary>
         /// No ConcurrentDeleter needed for compaction
         /// </summary>
-        public bool ConcurrentDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
+        public bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) => true;
 
         /// <summary>
-        /// For compaction, we never perform concurrent writes as rolled over data defers to
-        /// newly inserted data for the same key.
+        /// For compaction, we never perform concurrent writes as rolled over data defers to newly inserted data for the same key.
         /// </summary>
-        public bool ConcurrentWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) => true;
+        public bool ConcurrentWriter(ref LogRecord logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo) => true;
 
-        public bool CopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
+        public bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : IReadOnlyLogRecord
+            => true;
 
-        public bool PostCopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo) => true;
+        public bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : IReadOnlyLogRecord
+            => true;
 
-        public bool InitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
-        public void PostInitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo) { }
+        public bool InitialUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
+        public void PostInitialUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) { }
 
-        public bool InPlaceUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
+        public bool InPlaceUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
 
-        public bool NeedInitialUpdate(ref TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
+        public bool NeedInitialUpdate(SpanByte key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
 
-        public bool NeedCopyUpdate(ref TKey key, ref TInput input, ref TValue oldValue, ref TOutput output, ref RMWInfo rmwInfo) => true;
+        public bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : IReadOnlyLogRecord
+            => true;
 
-        public void ReadCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
+        public void ReadCompletionCallback(ref LogRecord logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
 
-        public void RMWCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
+        public void RMWCompletionCallback(ref LogRecord logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
 
-        public int GetRMWModifiedValueLength(ref TValue value, ref TInput input) => 0;
-        public int GetRMWInitialValueLength(ref TInput input) => 0;
-        public int GetUpsertValueLength(ref TValue value, ref TInput input) => _functions.GetUpsertValueLength(ref value, ref input);
+        public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input)
+            where TSourceLogRecord : IReadOnlyLogRecord
+            => default;
+        public RecordFieldInfo GetRMWInitialFieldInfo(ref TInput input) => default;
+        public RecordFieldInfo GetUpsertFieldInfo(TValue value, ref TInput input) => _functions.GetUpsertValueLength(value, ref input);
 
         /// <summary>
         /// No reads during compaction
         /// </summary>
-        public bool SingleReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo) => true;
+        public bool SingleReader(ref LogRecord logRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo) => true;
 
         /// <summary>
         /// Write compacted live value to store
         /// </summary>
-        public bool SingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-            => _functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
+        public bool SingleWriter(ref LogRecord logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            => _functions.SingleWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo, reason);
 
-        public void PostSingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+        public void PostSingleWriter(ref LogRecord logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 
         public void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
     }
