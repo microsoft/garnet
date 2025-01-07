@@ -28,14 +28,6 @@ namespace Garnet.cluster
         readonly ConcurrentDictionary<string, long> workerBanList = new();
         public readonly CancellationTokenSource ctsGossip = new();
 
-        /// <summary>
-        /// Last transmitted configuration
-        /// </summary>
-        ClusterConfig lastConfig = null;
-
-        List<string> shardIds;
-        List<string> allNodeIds;
-
         public List<string> GetBanList()
         {
             var banlist = new List<string>();
@@ -217,20 +209,16 @@ namespace Garnet.cluster
         /// <param name="message"></param>
         public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
         {
-            GarnetServerNode gsn = null;
             var conf = CurrentConfig;
-            var created = false;
-
-            // Ensure we calculate the list of nodeIds only once for every update in the configuration
-            if (lastConfig == null || conf != lastConfig)
+            List<string> nodeIds = null;
+            if (cmd == RespCommand.PUBLISH)
+                conf.GetAllNodeIds(out nodeIds);
+            else
+                conf.GetNodeIdsForShard(out nodeIds);
+            foreach (var nodeId in nodeIds)
             {
-                lastConfig = conf;
-                lastConfig.GetNodeIdsForPublishedMessageForwarding(out allNodeIds, out shardIds);
-            }
-
-            var nodes = cmd == RespCommand.PUBLISH ? allNodeIds : shardIds;
-            foreach (var nodeId in nodes)
-            {
+                GarnetServerNode gsn = null;
+                var created = false;
                 try
                 {
                     if (nodeId != null)
