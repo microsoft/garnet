@@ -329,7 +329,7 @@ namespace Garnet.test
 
                     // Free in a random order
                     toFree = toFree.Select(p => (Pointer: p, Order: rand.Next())).OrderBy(t => t.Order).Select(t => t.Pointer).ToList();
-                    for(var j = 0; j < toFree.Count; j++)
+                    for (var j = 0; j < toFree.Count; j++)
                     {
                         var ptr = toFree[j];
                         ref var asData = ref Unsafe.AsRef<byte>((void*)ptr);

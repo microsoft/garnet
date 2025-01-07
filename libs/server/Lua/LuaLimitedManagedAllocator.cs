@@ -395,7 +395,7 @@ namespace Garnet.server
         public void Free(ref byte start, int sizeBytes)
         {
             ref var dataStartRef = ref GetDataStartRef();
-           
+
             ref var blockRef = ref GetBlockRef(ref dataStartRef, ref start);
 
             Debug.Assert(blockRef.IsInUse, "Should be in use");
@@ -414,7 +414,7 @@ namespace Garnet.server
         public ref byte ResizeAllocation(ref byte start, int oldSizeBytes, int newSizeBytes, out bool failed)
         {
             ref var dataStartRef = ref GetDataStartRef();
-            
+
             ref var curBlock = ref GetBlockRef(ref dataStartRef, ref start);
             Debug.Assert(curBlock.IsInUse, "Shouldn't be resizing an allocation that isn't in use");
 

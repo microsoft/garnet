@@ -204,7 +204,7 @@ return returnValue
             };
 
             server = new EmbeddedRespServer(opts);
-          
+
             session = server.GetRespSession();
 
             SetupOperation(ref scriptLoad, SCRIPT_LOAD);
