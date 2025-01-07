@@ -757,6 +757,8 @@ namespace Garnet.server
 
                 RespCommand.EVAL => TryEVAL(),
                 RespCommand.EVALSHA => TryEVALSHA(),
+                // Slow commands
+                RespCommand.LCS => NetworkLCS(ref storageApi),
                 _ => Process(command)
             };
 
