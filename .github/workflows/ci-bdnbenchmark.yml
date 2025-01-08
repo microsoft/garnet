@@ -42,8 +42,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
-        # temp changes to make my testing loop faster
-        test: [ 'Operations.RawStringOperations' ]
+        test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Operations.HashObjectOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts', 'Operations.CustomOperations', 'Operations.RawStringOperations', 'Operations.ScriptOperations','Network.BasicOperations', 'Network.RawStringOperations' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4
