@@ -341,7 +341,7 @@ namespace Garnet
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("miniothreads", Required = false, HelpText = "Minimum IO completion threads in thread pool, 0 uses the system default.")]
-        public int ThreadPoolMinIoCompletionThreads { get; set; }
+        public int ThreadPoolMinIOCompletionThreads { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("maxiothreads", Required = false, HelpText = "Maximum IO completion threads in thread pool, 0 uses the system default.")]
@@ -688,7 +688,7 @@ namespace Garnet
                 QuietMode = QuietMode.GetValueOrDefault(),
                 ThreadPoolMinThreads = ThreadPoolMinThreads,
                 ThreadPoolMaxThreads = ThreadPoolMaxThreads,
-                ThreadPoolMinIOCompletionThreads = ThreadPoolMinIoCompletionThreads,
+                ThreadPoolMinIOCompletionThreads = ThreadPoolMinIOCompletionThreads,
                 ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
                 NetworkConnectionLimit = NetworkConnectionLimit,
                 DeviceFactoryCreator = useAzureStorage
