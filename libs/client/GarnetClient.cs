@@ -786,12 +786,12 @@ namespace Garnet.client
                         Dispose();
                         ThrowException(disposeException);
                     }
-                    (taskId, address) = networkWriter.TryAllocate(totalLen, out _);
+                    (taskId, address) = networkWriter.TryAllocate(totalLen, out var flushEvent, skipTaskIdIncrement: true);
                     if (address >= 0) break;
                     try
                     {
                         networkWriter.epoch.Suspend();
-                        Thread.Yield();
+                        flushEvent.Wait(token);
                     }
                     finally
                     {
@@ -815,12 +815,8 @@ namespace Garnet.client
                 #endregion
 
                 #region scheduleSend
-                var shortTaskId = taskId & (maxOutstandingTasks - 1);
-                tcsArray[shortTaskId].LoadFrom(TaskType.NoResponse, taskId);
-
                 if (Disposed)
                 {
-                    DisposeOffset(shortTaskId);
                     ThrowException(disposeException);
                 }
                 // Console.WriteLine($"Filled {address}-{address + totalLen}");

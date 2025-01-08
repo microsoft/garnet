@@ -23,7 +23,7 @@ namespace Garnet.cluster
         CancellationTokenSource internalCts = new();
         volatile int initialized = 0;
         readonly ILogger logger = null;
-        int disposeCount = 0;
+        SingleWriterMultiReaderLock dispose;
 
         /// <summary>
         /// Last transmitted configuration
@@ -88,6 +88,7 @@ namespace Garnet.cluster
                 address, port, tlsOptions,
                 sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
                 maxOutstandingTasks: opts.DisablePubSub ? defaultMaxOutstandingTask : Math.Max(defaultMaxOutstandingTask, opts.MaxPubSubTasks),
+                timeoutMilliseconds: opts.ClusterTimeout <= 0 ? 0 : TimeSpan.FromSeconds(opts.ClusterTimeout).Milliseconds,
                 authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
                 logger: logger);
@@ -113,8 +114,13 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
-            if (Interlocked.Increment(ref disposeCount) != 1)
+            // Single write lock acquisition only
+            if (!dispose.FinalWriteLock())
+            {
                 logger?.LogTrace("GarnetServerNode.Dispose called multiple times");
+                return;
+            }
+
             try
             {
                 cts?.Cancel();
@@ -258,6 +264,10 @@ namespace Garnet.cluster
             return false;
         }
 
+        /// <summary>
+        /// Get connection info
+        /// </summary>
+        /// <returns></returns>
         public ConnectionInfo GetConnectionInfo()
         {
             var nowTicks = DateTimeOffset.UtcNow.Ticks;
@@ -279,6 +289,22 @@ namespace Garnet.cluster
         /// <param name="channel"></param>
         /// <param name="message"></param>
         public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
-            => gc.ClusterPublish(cmd, ref channel, ref message);
+        {
+            var locked = false;
+            try
+            {
+                if (!dispose.TryReadLock())
+                {
+                    logger?.LogWarning("Could not acquire readLock for publish forwarding");
+                    return;
+                }
+                locked = true;
+                gc.ClusterPublishNoResponse(cmd, ref channel, ref message);
+            }
+            finally
+            {
+                if (locked) dispose.ReadUnlock();
+            }
+        }
     }
 }
