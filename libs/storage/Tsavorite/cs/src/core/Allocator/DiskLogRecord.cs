@@ -29,6 +29,8 @@ namespace Tsavorite.core
 
         #region IReadOnlyRecord
         /// <inheritdoc/>
+        public readonly bool IsSet => true;
+        /// <inheritdoc/>
         public readonly ref RecordInfo InfoRef => ref Unsafe.AsRef<RecordInfo>((byte*)physicalAddress);
         /// <inheritdoc/>
         public readonly RecordInfo Info => *(RecordInfo*)physicalAddress;

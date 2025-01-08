@@ -5,7 +5,7 @@ namespace Tsavorite.core
 {
     /// <summary>
     /// Interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
-    /// abstract/virtual methods may be called via <see cref="AllocatorBase{Key, Value, TStoreFunctions, TAllocatorCallbacks}"/>.
+    /// abstract/virtual methods may be called via <see cref="AllocatorBase{TValue, TStoreFunctions, TAllocatorCallbacks}"/>.
     /// </summary>
     public interface IAllocator<TValue, TStoreFunctions> : IAllocatorCallbacks<TValue, TStoreFunctions>
         where TStoreFunctions : IStoreFunctions<TValue>
@@ -27,11 +27,8 @@ namespace Tsavorite.core
             where TVariableLengthInput : IVariableLengthInput<TValue, TInput>;
 
         /// <summary>Get record size required for the given <paramref name="key"/>, <paramref name="value"/>, and <paramref name="input"/></summary>
-        RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(SpanByte key, ref TValue value, ref TInput input, TVariableLengthInput varlenInput)
+        RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(SpanByte key, TValue value, ref TInput input, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<TValue, TInput>;
-
-        /// <summary>Get record size required for the given <paramref name="key"/> and <paramref name="value"/></summary>
-        (int actualSize, int allocatedSize, int keySize) GetRecordSize(SpanByte key, ref TValue value);
 
         /// <summary>Mark the page that contains <paramref name="logicalAddress"/> as dirty</summary>
         void MarkPage(long logicalAddress, long version);
@@ -43,7 +40,10 @@ namespace Tsavorite.core
         long[] GetSegmentOffsets(); // TODO remove
 
         /// <summary>Serialize key to log</summary>
-        void SerializeKey(SpanByte key, long physicalAddress);
+        void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord logRecord);
+
+        /// <summary>Return the <see cref="LogRecord"/> for the allocator page at <paramref name="logicalAddress"/></summary>
+        LogRecord CreateLogRecord(long logicalAddress);
 
         /// <summary>Return the <see cref="LogRecord"/> for the allocator page at <paramref name="physicalAddress"/></summary>
         LogRecord CreateLogRecord(long logicalAddress, long physicalAddress);

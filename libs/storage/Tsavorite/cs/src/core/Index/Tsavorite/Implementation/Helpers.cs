@@ -19,12 +19,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static ref RecordInfo WriteNewRecordInfo(ref TKey key, AllocatorBase<TValue, TStoreFunctions, TAllocator> log, long newPhysicalAddress, bool inNewVersion, long previousAddress)
+        static LogRecord WriteNewRecordInfo(SpanByte key, AllocatorBase<TValue, TStoreFunctions, TAllocator> log, long logicalAddress, long physicalAddress, bool inNewVersion, long previousAddress)
         {
-            ref RecordInfo recordInfo = ref log._wrapper.GetInfoRef(newPhysicalAddress);
+            ref RecordInfo recordInfo = ref LogRecord.GetInfoRef(physicalAddress);
             recordInfo.WriteInfo(inNewVersion, previousAddress);
-            log._wrapper.SerializeKey(ref key, newPhysicalAddress); // TODO move to hlogBase as key may overflow
-            return ref recordInfo;
+            log._wrapper.SerializeKey(key, logicalAddress, physicalAddress);
+            return log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

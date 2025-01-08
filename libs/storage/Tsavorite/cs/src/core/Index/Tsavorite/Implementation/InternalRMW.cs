@@ -335,7 +335,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Create a new record for RMW
         /// </summary>
-        /// <param name="key">Key to insert a new record for. TODO: split function</param>
+        /// <param name="key">Key, if inserting a new record.</param>
         /// <param name="srcLogRecord">The source record. If <paramref name="stackCtx"/>.<see cref="RecordSource{TValue, TStoreFunctions, TAllocator}.HasInMemorySrc"/>
         /// it is in-memory (either too small or readonly region, or raadcache); otherwise it is from disk IO</param>
         /// <param name="input">Input to the operation</param>
@@ -345,9 +345,9 @@ namespace Tsavorite.core
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TValue, TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions. If called from pending IO,
         ///     this is populated from the data read from disk.</param>
-        /// <param name="doingCU">Whether we are doing a CopyUpdate, either from in-memory or pending IO. TODO: replace by splitting this function</param>
+        /// <param name="doingCU">Whether we are doing a CopyUpdate, either from in-memory or pending IO.</param>
         /// <returns></returns>
-        private OperationStatus CreateNewRecordRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref TKey key, ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output,
+        private OperationStatus CreateNewRecordRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(SpanByte key, ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output,
                                                                                           ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
                                                                                           ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, bool doingCU)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -391,7 +391,7 @@ namespace Tsavorite.core
             // Allocate and initialize the new record.
             var sizeInfo = doingCU
                 ? hlog.GetRMWCopyRecordSize(ref srcLogRecord, ref input, sessionFunctions)
-                : hlog.GetRMWInitialRecordSize(ref key, ref input, sessionFunctions);
+                : hlog.GetRMWInitialRecordSize(key, ref input, sessionFunctions);
 
             AllocateOptions allocOptions = new()
             {
@@ -400,16 +400,12 @@ namespace Tsavorite.core
             };
 
             // TODO: This must handle out-of-line allocations for key and value (get overflow allocator for logicalAddress' page
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
-            var newLogRecord = hlog.CreateLogRecord(newLogicalAddress, newPhysicalAddress);
-
-            // TODO: modify or subsume Helpers.WriteNewRecordInfo (SerializeKey is just SpanByte copy now)
-
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
+            var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
             if (allocOptions.elideSourceRecord)
-                newRecordInfo.PreviousAddress = srcLogRecord.Info.PreviousAddress;
+                newLogRecord.InfoRef.PreviousAddress = srcLogRecord.Info.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);
 
             rmwInfo.Address = newLogicalAddress;
@@ -442,7 +438,7 @@ namespace Tsavorite.core
                     if (rmwInfo.PreserveCopyUpdaterSourceRecord)
                     {
                         allocOptions.elideSourceRecord = false;
-                        newRecordInfo.PreviousAddress = stackCtx.recSrc.LatestLogicalAddress;
+                        newLogRecord.InfoRef.PreviousAddress = stackCtx.recSrc.LatestLogicalAddress;
                     }
                     goto DoCAS;
                 }
@@ -452,12 +448,12 @@ namespace Tsavorite.core
                     if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, sizeInfo.AllocatedInlineRecordSize, ref sessionFunctions.Ctx.RevivificationStats))
                         stackCtx.ClearNewRecord();
                     else
-                        stackCtx.SetNewRecordInvalid(ref newRecordInfo);
+                        stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
                     return OperationStatus.CANCELED;
                 }
                 if (rmwInfo.Action == RMWAction.ExpireAndStop)
                 {
-                    newRecordInfo.SetTombstone();
+                    newLogRecord.InfoRef.SetTombstone();
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
                     goto DoCAS;
                 }
@@ -476,7 +472,7 @@ namespace Tsavorite.core
                         if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, sizeInfo.AllocatedInlineRecordSize, ref sessionFunctions.Ctx.RevivificationStats))
                             stackCtx.ClearNewRecord();
                         else
-                            stackCtx.SetNewRecordInvalid(ref newRecordInfo);
+                            stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
                         goto RetryNow;
                     }
                     goto DoCAS;
@@ -487,10 +483,10 @@ namespace Tsavorite.core
 
         DoCAS:
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
-            bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
+            bool success = CASRecordIntoChain(ref newLogRecord, ref stackCtx, newLogicalAddress);
             if (success)
             {
-                PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo);
+                PostCopyToTail(ref newLogRecord, ref stackCtx);
 
                 // If IU, status will be NOTFOUND; return that.
                 if (!doingCU)

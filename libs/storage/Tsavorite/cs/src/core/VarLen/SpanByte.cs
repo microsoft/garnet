@@ -83,7 +83,7 @@ namespace Tsavorite.core
         public readonly int MetadataSize => 0;  // TODO remove
 
         /// <summary>
-        /// Create a <see cref="SpanByte"/> around a given <paramref name="payload"/> pointer and given <paramref name="length"/>
+        /// Create a nonserialized <see cref="SpanByte"/> around a given <paramref name="payload"/> pointer and given <paramref name="length"/>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public SpanByte(int length, IntPtr payload)

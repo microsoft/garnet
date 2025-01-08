@@ -60,6 +60,6 @@ namespace Tsavorite.core
         IHeapContainer<SpanByte> GetKeyContainer(SpanByte key);
 
         /// <summary>Get heap container for pending value</summary>
-        IHeapContainer<TValue> GetValueContainer(ref TValue value);
+        IHeapContainer<TValue> GetValueContainer(TValue value);
     }
 }

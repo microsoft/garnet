@@ -70,8 +70,8 @@ namespace Tsavorite.core
         internal long HeadAddressLagOffset;
 
         /// <summary>
-        /// Number of <see cref="TransactionalUnsafeContext{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/> or 
-        /// <see cref="TransactionalContext{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/> instances active.
+        /// Number of <see cref="TransactionalUnsafeContext{TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}"/> or 
+        /// <see cref="TransactionalContext{TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}"/> instances active.
         /// </summary>
         internal long NumActiveTransactionalSessions = 0;
 
@@ -387,6 +387,8 @@ namespace Tsavorite.core
             OnEvictionObserver?.OnCompleted();
         }
 
+        internal abstract OverflowAllocator GetOverflowAllocator(long logicalAddress);
+
         #endregion abstract and virtual methods
 
         #region LogRecord functions
@@ -405,7 +407,21 @@ namespace Tsavorite.core
         public static SpanByte GetKey(long physicalAddress) => LogRecord.GetKey(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe void SerializeKey(ref SpanByte key, long physicalAddress) => key.CopyTo(ref LogRecord.GetKeyRef(physicalAddress));
+        public unsafe void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord logRecord, int maxInlineKeySize)
+        {
+            if (key.Length <= maxInlineKeySize)
+            {
+                key.CopyTo(ref logRecord.KeyRef);
+                Debug.Assert(logRecord.KeyRef.Serialized, "inline key should be serialized");
+                return;
+            }
+
+            var overflowAllocator = GetOverflowAllocator(logicalAddress);
+            var overflowKey = overflowAllocator.Allocate(key.Length);
+            key.CopyTo(ref overflowKey);
+            logRecord.KeyRef = new(overflowKey.Length, (nint)overflowKey.ToPointer());
+            Debug.Assert(!logRecord.KeyRef.Serialized, "overflow key should not be serialized");
+        }
 
         #endregion LogRecord functions
 

@@ -6,8 +6,8 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     // Allocator for SpanByte Keys and Values.
-    public struct SpanByteAllocator<TStoreFunctions> : IAllocator<SpanByte, SpanByte, TStoreFunctions>
-        where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte>
+    public struct SpanByteAllocator<TStoreFunctions> : IAllocator<SpanByte, TStoreFunctions>
+        where TStoreFunctions : IStoreFunctions<SpanByte>
     {
         /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
         private readonly SpanByteAllocatorImpl<TStoreFunctions> _this;
@@ -25,9 +25,9 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly AllocatorBase<SpanByte, SpanByte, TStoreFunctions, TAllocator> GetBase<TAllocator>()
-            where TAllocator : IAllocator<SpanByte, SpanByte, TStoreFunctions>
-            => (AllocatorBase<SpanByte, SpanByte, TStoreFunctions, TAllocator>)(object)_this;
+        public readonly AllocatorBase<SpanByte, TStoreFunctions, TAllocator> GetBase<TAllocator>()
+            where TAllocator : IAllocator<SpanByte, TStoreFunctions>
+            => (AllocatorBase<SpanByte, TStoreFunctions, TAllocator>)(object)_this;
 
         /// <inheritdoc/>
         public readonly bool IsFixedLength => false;
@@ -65,34 +65,30 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress) => new LogRecord(physicalAddress).GetFullRecordSizes();
+        public readonly (int actualSize, int allocatedSize) GetFullRecordSizes(long physicalAddress) => new LogRecord(physicalAddress).GetFullRecordSizes();
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
+        public readonly RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
             where TSourceLogRecord : IReadOnlyLogRecord
             where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
-             => _this.GetRMWCopyRecordSize(ref srcLogRecord, ref input, ref recordInfo, varlenInput);
+             => _this.GetRMWCopyRecordSize(ref srcLogRecord, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordSizeInfo GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : IVariableLengthInput<SpanByte, TInput>
-            => _this.GetRMWInitialRecordSize(key, ref input, sessionFunctions);
+        public readonly RecordSizeInfo GetRMWInitialRecordSize<TInput, TVariableLengthInput>(SpanByte key, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
+            => _this.GetRMWInitialRecordSize(key, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref SpanByte value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : IVariableLengthInput<SpanByte, TInput>
-            => _this.GetUpsertRecordSize(key, value, ref input, sessionFunctions);
+        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(SpanByte key, SpanByte value, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
+            => _this.GetUpsertRecordSize(key, value, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref SpanByte key, ref SpanByte value) => _this.GetRecordSize(ref key, ref value);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte, SpanByte> ctx)
+        public readonly unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte> ctx)
             => SpanByteAllocatorImpl<TStoreFunctions>.RetrievedFullRecord(record, ref ctx);
 
         /// <inheritdoc/>
@@ -125,11 +121,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => _this.GetKeyContainer(ref key);
+        public readonly IHeapContainer<SpanByte> GetKeyContainer(SpanByte key) => _this.GetKeyContainer(ref key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly IHeapContainer<SpanByte> GetValueContainer(ref SpanByte value) => _this.GetValueContainer(ref value);
+        public readonly IHeapContainer<SpanByte> GetValueContainer(SpanByte value) => _this.GetValueContainer(ref value);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -141,16 +137,18 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SerializeKey(ref SpanByte key, long physicalAddress)
-            => SpanByteAllocatorImpl<TStoreFunctions>.SerializeKey(ref key, physicalAddress);
+        public readonly void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord logRecord) => _this.SerializeKey(key, logicalAddress, ref logRecord);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public LogRecord CreateLogRecord(long logicalAddress, long physicalAddress)   // TODO: replace in favor of SpanByteAllocator- or ObjectAllocator-specific call
-            => _this.CreateLogRecord(logicalAddress, physicalAddress);
+        public readonly LogRecord CreateLogRecord(long logicalAddress) => _this.CreateLogRecord(logicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public OverflowAllocator GetOverflowAllocator(long logicalAddress) => _this.GetOverflowAllocator(logicalAddress);
+        public readonly LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => _this.CreateLogRecord(logicalAddress, physicalAddress);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly OverflowAllocator GetOverflowAllocator(long logicalAddress) => _this.GetOverflowAllocator(logicalAddress);
     }
 }

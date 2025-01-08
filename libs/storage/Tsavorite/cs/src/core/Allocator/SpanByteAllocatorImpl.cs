@@ -11,8 +11,8 @@ using static Tsavorite.core.Utility;
 namespace Tsavorite.core
 {
     // Allocator for SpanByte, possibly with a Blittable Key or Value.
-    internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions> : AllocatorBase<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>>
-        where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte>
+    internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions> : AllocatorBase<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>>
+        where TStoreFunctions : IStoreFunctions<SpanByte>
     {
         /// <summary>Circular buffer definition, in parallel with <see cref="values"/></summary>
         /// <remarks>The long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation more easily</remarks>
@@ -96,10 +96,16 @@ namespace Tsavorite.core
         int GetPageIndex(long logicalAddress) => (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal LogRecord CreateLogRecord(long logicalAddress) => new LogRecord(GetPhysicalAddress(logicalAddress));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)];
+        internal override OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)];
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize);
 
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
@@ -112,26 +118,31 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
+        public RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
             where TSourceLogRecord : IReadOnlyLogRecord
             where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
         {
-            // Used by RMW to determine the length of copy destination (taking Input into account), so does not need to get filler length.
+            // Used by RMW to determine the length of copy destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
             var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetRMWModifiedFieldInfo(ref srcLogRecord, ref input) };
             PopulateRecordSizeInfo(srcLogRecord.Key, ref sizeInfo);
             return sizeInfo;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetRMWInitialRecordSize<TInput, TVariableLengthInput>(SpanByte key, ref TInput input, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
         {
+            // Used by RMW to determine the length of initial destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
             var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetRMWInitialFieldInfo(ref input) };
             PopulateRecordSizeInfo(key, ref sizeInfo);
             return sizeInfo;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(SpanByte key, SpanByte value, ref TInput input, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
         {
+            // Used by Upsert to determine the length of insert destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
             var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(value, ref input) };
             PopulateRecordSizeInfo(key, ref sizeInfo);
             return sizeInfo;
@@ -232,12 +243,12 @@ namespace Tsavorite.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<SpanByte, SpanByte> context, SectorAlignedMemory result = default)
+        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<SpanByte> context, SectorAlignedMemory result = default)
         {
             throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for SpanByteAllocator");
         }
 
-        internal static bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte, SpanByte> ctx) => true;
+        internal static bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte> ctx) => true;
 
         internal IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => new SpanByteHeapContainer(ref key, bufferPool);
 
@@ -254,14 +265,14 @@ namespace Tsavorite.core
         /// <summary>
         /// Iterator interface for pull-scanning Tsavorite log
         /// </summary>
-        public override ITsavoriteScanIterator<SpanByte, SpanByte> Scan(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
+        public override ITsavoriteScanIterator<SpanByte> Scan(TsavoriteKV<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
             => new SpanByteScanIterator<TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, logger: logger);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
         /// </summary>
-        internal override bool Scan<TScanFunctions>(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
+        internal override bool Scan<TScanFunctions>(TsavoriteKV<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
         {
             using SpanByteScanIterator<TStoreFunctions> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
@@ -271,8 +282,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
-        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
-                ScanCursorState<SpanByte, SpanByte> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
+        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
+                ScanCursorState<SpanByte> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
         {
             using SpanByteScanIterator<TStoreFunctions> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
             return ScanLookup<SpanByte, SpanByteAndMemory, TScanFunctions, SpanByteScanIterator<TStoreFunctions>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
@@ -281,15 +292,15 @@ namespace Tsavorite.core
         /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
-        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
+        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
                 ref SpanByte key, long beginAddress, ref TScanFunctions scanFunctions)
         {
             using SpanByteScanIterator<TStoreFunctions> iter = new(store, this, beginAddress, epoch, logger: logger);
-            return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
+            return IterateKeyVersionsImpl(store, key, beginAddress, ref scanFunctions, iter);
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<SpanByte, SpanByte>> observer)
+        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<SpanByte>> observer)
         {
             using var iter = new SpanByteScanIterator<TStoreFunctions>(store: null, this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, false, epoch, true, logger: logger);
             observer?.OnNext(iter);

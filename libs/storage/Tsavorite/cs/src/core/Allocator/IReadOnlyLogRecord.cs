@@ -12,6 +12,9 @@ namespace Tsavorite.core
         /// <summary>Fast access returning a copy of the record header</summary>
         public RecordInfo Info { get; }
 
+        /// <summary>Whether there is actually a record here</summary>
+        public bool IsSet { get; }
+
         /// <summary>The key:
         ///     <list type="bullet">
         ///     <item>If serialized, then the key is inline in this record (i.e. is below the overflow size).</item>

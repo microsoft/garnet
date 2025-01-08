@@ -34,8 +34,6 @@ namespace Tsavorite.core
         /// <summary>The ObjectIdMap if this is a record in the object log.</summary>
         readonly ObjectIdMap objectIdMap;
 
-        internal bool IsSet => physicalAddress != 0;
-
         public readonly bool IsObjectRecord => objectIdMap is not null;
 
         private readonly int ValueLen => IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalInlineSize;
@@ -53,6 +51,8 @@ namespace Tsavorite.core
         }
 
         #region IReadOnlyLogRecord
+        /// <inheritdoc/>
+        public readonly bool IsSet => physicalAddress != 0;
         /// <inheritdoc/>
         public readonly ref RecordInfo InfoRef => ref GetInfoRef(physicalAddress);
         /// <inheritdoc/>
@@ -103,6 +103,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static SpanByte GetKey(long physicalAddress) => *(SpanByte*)(physicalAddress + RecordInfo.GetLength());
 
+        /// <summary>Get a reference to the key; used for initial key setting.</summary>
+        public readonly ref SpanByte KeyRef => ref GetKeyRef(physicalAddress);
         /// <summary>Get a reference to the key; used for initial key setting.</summary>
         public static ref SpanByte GetKeyRef(long physicalAddress) => ref *(SpanByte*)(physicalAddress + RecordInfo.GetLength());
 
