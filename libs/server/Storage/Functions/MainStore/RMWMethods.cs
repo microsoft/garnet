@@ -297,17 +297,17 @@ namespace Garnet.server
 
             RespCommand cmd = input.header.cmd;
 
-            int etagIgnoredOffset = 0;
-            int etagIgnoredEnd = -1;
-            long oldEtag = Constants.BaseEtag;
+            int etagIgnoredOffset = this.functionsState.etagIgnoredOffset = 0;
+            int etagIgnoredEnd = this.functionsState.etagIgnoredEnd = -1;
+            long oldEtag = this.functionsState.oldEtag = Constants.BaseEtag;
             this.functionsState.etagOffsetForVarlen = 0;
             bool shouldUpdateEtag = recordInfo.ETag;
             if (shouldUpdateEtag)
             {
                 // used in varlen
-                etagIgnoredOffset = Constants.EtagSize;
+                etagIgnoredOffset = this.functionsState.etagIgnoredOffset = Constants.EtagSize;
                 etagIgnoredEnd = value.LengthWithoutMetadata;
-                oldEtag = *(long*)value.ToPointer();
+                oldEtag = this.functionsState.oldEtag = *(long*)value.ToPointer();
                 // if something is going to go past this into copy we need to provide offset management for its varlen during allocation
                 this.functionsState.etagOffsetForVarlen = Constants.EtagSize;
             }
@@ -793,15 +793,7 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.SETIFMATCH:
-                    int etagIgnoredOffset = 0;
-                    int etagIgnoredEnd = -1;
-                    long existingEtag = Constants.BaseEtag;
-                    if (rmwInfo.RecordInfo.ETag)
-                    {
-                        existingEtag = *(long*)oldValue.ToPointer();
-                        etagIgnoredOffset = Constants.EtagSize;
-                        etagIgnoredEnd = oldValue.LengthWithoutMetadata;
-                    }
+                    long existingEtag = this.functionsState.oldEtag;
 
                     long etagToCheckWith = input.parseState.GetLong(1);
 
@@ -811,7 +803,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        CopyRespToWithInput(ref input, ref oldValue, ref output, isFromPending: false, etagIgnoredOffset, etagIgnoredEnd, hasEtagInVal: rmwInfo.RecordInfo.ETag);
+                        CopyRespToWithInput(ref input, ref oldValue, ref output, isFromPending: false, this.functionsState.etagIgnoredOffset, this.functionsState.etagIgnoredEnd, hasEtagInVal: rmwInfo.RecordInfo.ETag);
                         return false;
                     }
 
@@ -830,19 +822,10 @@ namespace Garnet.server
                     if (input.header.NotSetGetNorCheckWithEtag())
                         return false;
 
-                    etagIgnoredOffset = 0;
-                    etagIgnoredEnd = -1;
-                    if (rmwInfo.RecordInfo.ETag)
-                    {
-                        etagIgnoredOffset = Constants.EtagSize;
-                        etagIgnoredEnd = oldValue.LengthWithoutMetadata;
-                    }
-
-
                     if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
-                        CopyRespTo(ref oldValue, ref output, etagIgnoredOffset, etagIgnoredEnd);
+                        CopyRespTo(ref oldValue, ref output, this.functionsState.etagIgnoredOffset, this.functionsState.etagIgnoredEnd);
                     }
                     else if (input.header.CheckWithEtagFlag())
                     {
@@ -864,9 +847,8 @@ namespace Garnet.server
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        etagIgnoredOffset = !rmwInfo.RecordInfo.ETag ? 0 : Constants.EtagSize;
                         var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
-                            .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(etagIgnoredOffset), ref outp);
+                            .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(this.functionsState.etagIgnoredOffset), ref outp);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
                         return ret;
@@ -890,16 +872,9 @@ namespace Garnet.server
             RespCommand cmd = input.header.cmd;
             bool shouldUpdateEtag = recordInfo.ETag;
 
-            int etagIgnoredOffset = 0;
-            int etagIgnoredEnd = -1;
-            long oldEtag = Constants.BaseEtag;
-
-            if (shouldUpdateEtag)
-            {
-                etagIgnoredOffset = Constants.EtagSize;
-                etagIgnoredEnd = newValue.LengthWithoutMetadata;
-                oldEtag = *(long*)oldValue.ToPointer();
-            }
+            int etagIgnoredOffset = this.functionsState.etagIgnoredOffset;
+            int etagIgnoredEnd = this.functionsState.etagIgnoredEnd;
+            long oldEtag = this.functionsState.oldEtag;
 
             switch (cmd)
             {
