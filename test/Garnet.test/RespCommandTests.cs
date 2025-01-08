@@ -54,7 +54,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             TestUtils.DeleteDirectory(Directory.GetParent(extTestDir)?.FullName);
         }
 

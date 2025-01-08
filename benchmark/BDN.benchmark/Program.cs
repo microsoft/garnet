@@ -19,6 +19,7 @@ BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly)
 public class BaseConfig : ManualConfig
 {
     public Job Net8BaseJob { get; }
+    public Job Net9BaseJob { get; }
 
     public BaseConfig()
     {
@@ -30,9 +31,12 @@ public class BaseConfig : ManualConfig
 
         Net8BaseJob = baseJob.WithRuntime(CoreRuntime.Core80)
             .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
+        Net9BaseJob = baseJob.WithRuntime(CoreRuntime.Core90)
+            .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
 
         AddJob(
-            Net8BaseJob.WithId(".NET 8")
+            Net8BaseJob.WithId(".NET 8"),
+            Net9BaseJob.WithId(".NET 9")
             );
     }
 }

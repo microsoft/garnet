@@ -261,6 +261,13 @@ namespace Garnet.server
         /// <param name="id">Item ID</param>
         /// <returns>Map index</returns>
         private int GetIndexFromId(int id) => descIds ? minId - id : id;
+
+        public void Clear()
+        {
+            if (Map is not null)
+                Array.Clear(Map);
+            ActualSize = 0;
+        }
     }
 
     /// <summary>

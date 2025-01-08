@@ -238,7 +238,7 @@ namespace CommandInfoUpdater
                     : existingCommandsInfo[command.Command].SubCommands.Select(sc => sc.Name).ToArray();
                 var remainingSubCommands = existingSubCommands == null ? null :
                     command.SubCommands == null ? existingSubCommands :
-                    existingSubCommands.Except(command.SubCommands.Keys).ToArray();
+                    [.. existingSubCommands.Except(command.SubCommands.Keys)];
 
                 // Create updated command info based on existing command
                 var existingCommand = existingCommandsInfo[command.Command];
@@ -257,7 +257,7 @@ namespace CommandInfoUpdater
                     KeySpecifications = existingCommand.KeySpecifications,
                     SubCommands = remainingSubCommands == null || remainingSubCommands.Length == 0
                         ? null
-                        : existingCommand.SubCommands.Where(sc => remainingSubCommands.Contains(sc.Name)).ToArray()
+                        : [.. existingCommand.SubCommands.Where(sc => remainingSubCommands.Contains(sc.Name))]
                 };
 
                 updatedCommandsInfo.Add(updatedCommand.Name, updatedCommand);
@@ -272,7 +272,7 @@ namespace CommandInfoUpdater
                 if (existingCommandsInfo.ContainsKey(command.Command))
                 {
                     updatedSubCommands = existingCommandsInfo[command.Command].SubCommands == null
-                        ? new List<RespCommandsInfo>()
+                        ? []
                         : [.. existingCommandsInfo[command.Command].SubCommands];
 
                     // Add sub-commands with updated queried command info
@@ -294,7 +294,7 @@ namespace CommandInfoUpdater
                     // Update sub-commands to contain supported sub-commands only
                     updatedSubCommands = command.SubCommands == null
                         ? null
-                        : baseCommand.SubCommands.Where(sc => command.SubCommands.ContainsKey(sc.Name)).ToList();
+                        : [.. baseCommand.SubCommands.Where(sc => command.SubCommands.ContainsKey(sc.Name))];
                 }
 
                 // Create updated command info based on base command & updated sub-commands

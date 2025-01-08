@@ -296,13 +296,13 @@ namespace Garnet.test
 
             foreach (var argCombination in argCombinations)
             {
-                args = argCombination.Union(sampleEntries).ToArray<object>();
+                args = [.. argCombination.Union(sampleEntries)];
                 ex = Assert.Throws<RedisServerException>(() => db.Execute("ZADD", args));
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GT_LT_NX_NOT_COMPATIBLE), ex.Message);
             }
 
             // INCR option supports only one score-element pair
-            args = new[] { key, "INCR" }.Union(sampleEntries).ToArray<object>();
+            args = [.. new[] { key, "INCR" }.Union(sampleEntries)];
             ex = Assert.Throws<RedisServerException>(() => db.Execute("ZADD", args));
             ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR), ex.Message);
 
@@ -372,7 +372,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // remove all entries
-            var removed = db.SortedSetRemove(key, entries.Select(e => e.Element).ToArray());
+            var removed = db.SortedSetRemove(key, [.. entries.Select(e => e.Element)]);
             ClassicAssert.AreEqual(entries.Length, removed);
 
             // length should be 0
@@ -398,7 +398,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // remove the single entry
-            removed = db.SortedSetRemove(key, entries.Take(1).Select(e => e.Element).ToArray());
+            removed = db.SortedSetRemove(key, [.. entries.Take(1).Select(e => e.Element)]);
             ClassicAssert.AreEqual(1, removed);
 
             // length should be 0
@@ -440,7 +440,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // remaining entries removed
-            removed = db.SortedSetRemove(key, entries.Select(e => e.Element).ToArray());
+            removed = db.SortedSetRemove(key, [.. entries.Select(e => e.Element)]);
             ClassicAssert.AreEqual(entries.Length - 1, removed);
 
             keyExists = db.KeyExists(key);
@@ -1435,7 +1435,7 @@ namespace Garnet.test
             {
                 var resultWithScores = db.SortedSetCombineWithScores(SetOperation.Intersect,
                     command.Contains("WEIGHTS") ? [new RedisKey("zset1"), new RedisKey("zset2")] :
-                        Enumerable.Range(1, numKeys).Select(i => new RedisKey($"zset{i}")).ToArray(),
+                        [.. Enumerable.Range(1, numKeys).Select(i => new RedisKey($"zset{i}"))],
                     command.Contains("WEIGHTS") ? [2.0, 3.0] : null,
                     command.Contains("MAX") ? Aggregate.Max :
                     command.Contains("MIN") ? Aggregate.Min : Aggregate.Sum);
@@ -1450,7 +1450,7 @@ namespace Garnet.test
             else
             {
                 var result = db.SortedSetCombine(SetOperation.Intersect,
-                    Enumerable.Range(1, numKeys).Select(i => new RedisKey($"zset{i}")).ToArray());
+                    [.. Enumerable.Range(1, numKeys).Select(i => new RedisKey($"zset{i}"))]);
 
                 ClassicAssert.AreEqual(expectedValues.Length, result.Length);
                 for (int i = 0; i < expectedValues.Length; i++)

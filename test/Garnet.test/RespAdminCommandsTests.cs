@@ -198,7 +198,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 db.ListLeftPush(key, ldata);
-                ldata = ldata.Select(x => x).Reverse().ToArray();
+                ldata = [.. ldata.Select(x => x).Reverse()];
                 returned_data_before_recovery = db.ListRange(key);
                 ClassicAssert.AreEqual(ldata, returned_data_before_recovery);
 

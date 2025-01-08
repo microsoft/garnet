@@ -20,8 +20,7 @@ namespace GarnetClientStress
 
         public static string RandomValue(Random r, int valueSize)
         {
-            return new string(Enumerable.Repeat(ascii_chars, valueSize)
-                .Select(s => s[r.Next(s.Length)]).ToArray());
+            return new string([.. Enumerable.Repeat(ascii_chars, valueSize).Select(s => s[r.Next(s.Length)])]);
         }
 
         public static T NotNull<T>(T argument, string parameterName) where T : class => argument ?? throw new ArgumentNullException(parameterName);

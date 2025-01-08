@@ -47,8 +47,10 @@ namespace Garnet.server
             var newCmd = new CustomRawStringCommand(name, (ushort)cmdId, type, customFunctions, expirationTicks);
             var setSuccessful = rawStringCommandMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
-            if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
-            if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
+            if (commandInfo != null)
+                customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
+            if (commandDocs != null)
+                customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
             return cmdId;
         }
 
@@ -61,8 +63,10 @@ namespace Garnet.server
             var newCmd = new CustomTransaction(name, (byte)cmdId, proc);
             var setSuccessful = transactionProcMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
-            if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
-            if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
+            if (commandInfo != null)
+                customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
+            if (commandDocs != null)
+                customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
             return cmdId;
         }
 
@@ -101,13 +105,14 @@ namespace Garnet.server
                 throw new Exception("Out of registration space");
 
             Debug.Assert(scId <= byte.MaxValue);
-            var newSubCmd = new CustomObjectCommand(name, (byte)typeId, (byte)scId, commandType, wrapper.factory,
-                customObjectFunctions);
+            var newSubCmd = new CustomObjectCommand(name, (byte)typeId, (byte)scId, commandType, wrapper.factory, customObjectFunctions);
             var scSetSuccessful = wrapper.commandMap.TrySetValue(scId, ref newSubCmd);
             Debug.Assert(scSetSuccessful);
 
-            if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
-            if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
+            if (commandInfo != null)
+                customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
+            if (commandDocs != null)
+                customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
 
             return (typeId, scId);
         }
@@ -132,8 +137,10 @@ namespace Garnet.server
             var setSuccessful = customProcedureMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
 
-            if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
-            if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
+            if (commandInfo != null)
+                customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
+            if (commandDocs != null)
+                customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
             return cmdId;
         }
 

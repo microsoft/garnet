@@ -295,9 +295,7 @@ namespace Garnet.server.TLS
                 var chainBuilt = chain.Build(certificateToValidate);
                 if (!chainBuilt)
                 {
-                    string[] errors = chain.ChainStatus
-                        .Select(x => String.Format("{0} ({1})", x.StatusInformation.Trim(), x.Status))
-                        .ToArray();
+                    string[] errors = [.. chain.ChainStatus.Select(x => String.Format("{0} ({1})", x.StatusInformation.Trim(), x.Status))];
                     string certificateErrorsString = "Unknown errors.";
                     if (errors != null && errors.Length > 0)
                         certificateErrorsString = String.Join(", ", errors);
