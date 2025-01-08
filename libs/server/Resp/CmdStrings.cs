@@ -119,12 +119,16 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LEFT => "LEFT"u8;
         public static ReadOnlySpan<byte> BYLEX => "BYLEX"u8;
         public static ReadOnlySpan<byte> REV => "REV"u8;
+        public static ReadOnlySpan<byte> LIMIT => "LIMIT"u8;
+        public static ReadOnlySpan<byte> MIN => "MIN"u8;
+        public static ReadOnlySpan<byte> MAX => "MAX"u8;
         public static ReadOnlySpan<byte> WEIGHTS => "WEIGHTS"u8;
         public static ReadOnlySpan<byte> AGGREGATE => "AGGREGATE"u8;
         public static ReadOnlySpan<byte> SUM => "SUM"u8;
-        public static ReadOnlySpan<byte> MIN => "MIN"u8;
-        public static ReadOnlySpan<byte> MAX => "MAX"u8;
-        public static ReadOnlySpan<byte> LIMIT => "LIMIT"u8;
+        public static ReadOnlySpan<byte> LEN => "LEN"u8;
+        public static ReadOnlySpan<byte> IDX => "IDX"u8;
+        public static ReadOnlySpan<byte> MINMATCHLEN => "MINMATCHLEN"u8;
+        public static ReadOnlySpan<byte> WITHMATCHLEN => "WITHMATCHLEN"u8;
 
         /// <summary>
         /// Response strings
@@ -140,6 +144,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_PONG => "+PONG\r\n"u8;
         public static ReadOnlySpan<byte> RESP_EMPTY => "$0\r\n\r\n"u8;
         public static ReadOnlySpan<byte> RESP_QUEUED => "+QUEUED\r\n"u8;
+        public static ReadOnlySpan<byte> matches => "matches"u8;
+        public static ReadOnlySpan<byte> len => "len"u8;
 
         /// <summary>
         /// Simple error response strings, i.e. these are of the form "-errorString\r\n"
@@ -215,6 +221,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR => "ERR INCR option supports a single increment-element pair"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_BITFIELD_TYPE => "ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is"u8;
         public static ReadOnlySpan<byte> RESP_ERR_SCRIPT_FLUSH_OPTIONS => "ERR SCRIPT FLUSH only support SYNC|ASYNC option"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_LENGTH_AND_INDEXES => "If you want both the length and indexes, please just use IDX."u8;
 
         /// <summary>
         /// Response string templates
@@ -337,5 +344,13 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
         public static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
         public static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
+
+        // Lua scripting strings
+        public static ReadOnlySpan<byte> LUA_OK => "OK"u8;
+        public static ReadOnlySpan<byte> LUA_err => "err"u8;
+        public static ReadOnlySpan<byte> LUA_No_session_available => "No session available"u8;
+        public static ReadOnlySpan<byte> LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call => "ERR Please specify at least one argument for this redis lib call"u8;
+        public static ReadOnlySpan<byte> LUA_ERR_Unknown_Redis_command_called_from_script => "ERR Unknown Redis command called from script"u8;
+        public static ReadOnlySpan<byte> LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers => "ERR Lua redis lib command arguments must be strings or integers"u8;
     }
 }

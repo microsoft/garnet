@@ -4,13 +4,13 @@
 using BenchmarkDotNet.Attributes;
 using Embedded.server;
 
-namespace BDN.benchmark.Operations
+namespace BDN.benchmark.Network
 {
     /// <summary>
     /// Benchmark for BasicOperations
     /// </summary>
     [MemoryDiagnoser]
-    public unsafe class BasicOperations : OperationsBase
+    public class BasicOperations : NetworkBase
     {
         static ReadOnlySpan<byte> INLINE_PING => "PING\r\n"u8;
         Request ping;
@@ -22,9 +22,9 @@ namespace BDN.benchmark.Operations
         }
 
         [Benchmark]
-        public void InlinePing()
+        public async ValueTask InlinePing()
         {
-            Send(ping);
+            await Send(ping);
         }
     }
 }

@@ -158,6 +158,7 @@ namespace CommandInfoUpdater
             new("INCRBYFLOAT", RespCommand.INCRBYFLOAT),
             new("INFO", RespCommand.INFO),
             new("KEYS", RespCommand.KEYS),
+            new("LCS", RespCommand.LCS),
             new("LASTSAVE", RespCommand.LASTSAVE),
             new("LATENCY", RespCommand.LATENCY,
             [
@@ -292,6 +293,8 @@ namespace CommandInfoUpdater
             new("ZREVRANK", RespCommand.ZREVRANK),
             new("ZSCAN", RespCommand.ZSCAN),
             new("ZSCORE", RespCommand.ZSCORE),
+            new("ZUNION", RespCommand.ZUNION),
+            new("ZUNIONSTORE", RespCommand.ZUNIONSTORE),
             new("EVAL", RespCommand.EVAL),
             new("EVALSHA", RespCommand.EVALSHA),
             new("SCRIPT", RespCommand.SCRIPT,

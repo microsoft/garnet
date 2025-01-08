@@ -206,6 +206,34 @@ namespace Garnet.test.cluster
     }
 
     #region BasicCommands
+    internal class LCS : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(LCS);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[2];
+            setup[0] = new(["SET", ssk[0], "hello"]);
+            setup[1] = new(["SET", ssk[1], "world"]);
+            return setup;
+        }
+    }
+
     internal class GET : BaseCommand
     {
         public override bool IsArrayCommand => false;
@@ -2181,6 +2209,54 @@ namespace Garnet.test.cluster
         {
             var csk = GetCrossSlotKeys;
             return ["3", csk[0], csk[1], csk[2], "MIN", "COUNT", "1"];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[3];
+            setup[0] = new ArraySegment<string>(["ZADD", ssk[1], "1", "a"]);
+            setup[1] = new ArraySegment<string>(["ZADD", ssk[2], "2", "b"]);
+            setup[2] = new ArraySegment<string>(["ZADD", ssk[3], "3", "c"]);
+            return setup;
+        }
+    }
+
+    internal class ZUNION : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(ZUNION);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            // ZUNION 2 a b
+            return ["2", ssk[0], ssk[1]];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class ZUNIONSTORE : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(ZUNIONSTORE);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            // ZUNIONSTORE c 2 a b
+            return [ssk[0], "2", ssk[1], ssk[2]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], "2", csk[1], csk[2]];
         }
 
         public override ArraySegment<string>[] SetupSingleSlotRequest()

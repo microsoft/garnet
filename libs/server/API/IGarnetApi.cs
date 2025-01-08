@@ -532,6 +532,17 @@ namespace Garnet.server
         /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
         GarnetStatus SortedSetIntersectStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count);
 
+        /// <summary>
+        /// Performs a union of multiple sorted sets and stores the result in the destination key.
+        /// </summary>
+        /// <param name="destinationKey">The key where the result will be stored.</param>
+        /// <param name="keys">The keys of the sorted sets to union.</param>
+        /// <param name="count">The number of elements in the resulting sorted set.</param>
+        /// <param name="weights">Optional weights to apply to each sorted set.</param>
+        /// <param name="aggregateType">The type of aggregation to perform (e.g., Sum, Min, Max).</param>
+        /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
+        GarnetStatus SortedSetUnionStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count);
+
         #endregion
 
         #region Set Methods
@@ -1111,6 +1122,19 @@ namespace Garnet.server
         /// <param name="value"></param>
         /// <returns></returns>
         GarnetStatus GET(byte[] key, out GarnetObjectStoreOutput value);
+
+        /// <summary>
+        /// Finds the longest common subsequence (LCS) between two keys.
+        /// </summary>
+        /// <param name="key1">The first key to compare.</param>
+        /// <param name="key2">The second key to compare.</param>
+        /// <param name="output">The output containing the LCS result.</param>
+        /// <param name="lenOnly">If true, only the length of the LCS is returned.</param>
+        /// <param name="withIndices">If true, the indices of the LCS in both keys are returned.</param>
+        /// <param name="withMatchLen">If true, the length of each match is returned.</param>
+        /// <param name="minMatchLen">The minimum length of a match to be considered.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus LCS(ArgSlice key1, ArgSlice key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0);
         #endregion
 
         #region GETRANGE
@@ -1293,6 +1317,16 @@ namespace Garnet.server
         /// <param name="pairs"></param>
         /// <returns></returns>
         GarnetStatus SortedSetDifference(ArgSlice[] keys, out Dictionary<byte[], double> pairs);
+
+        /// <summary>
+        /// Performs a union of multiple sorted sets and stores the result in a dictionary.
+        /// </summary>
+        /// <param name="keys">A read-only span of ArgSlice representing the keys of the sorted sets to union.</param>
+        /// <param name="pairs">An output dictionary where the result of the union will be stored, with byte arrays as keys and doubles as values.</param>
+        /// <param name="weights">An optional array of doubles representing the weights to apply to each sorted set during the union.</param>
+        /// <param name="aggregateType">The type of aggregation to use when combining scores from the sorted sets. Defaults to <see cref="SortedSetAggregateType.Sum"/>.</param>
+        /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
+        GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs);
 
         /// <summary>
         /// Iterates members of SortedSet key and their associated scores using a cursor,
