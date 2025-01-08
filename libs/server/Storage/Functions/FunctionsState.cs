@@ -20,9 +20,6 @@ namespace Garnet.server
         public readonly GarnetObjectSerializer garnetObjectSerializer;
         public bool StoredProcMode;
         public byte etagOffsetForVarlen;
-        public int etagIgnoredOffset;
-        public int etagIgnoredEnd;
-        public long oldEtag;
 
         public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
             MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, GarnetObjectSerializer garnetObjectSerializer)

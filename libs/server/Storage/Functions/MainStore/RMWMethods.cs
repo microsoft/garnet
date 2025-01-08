@@ -40,14 +40,7 @@ namespace Garnet.server
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
                 case RespCommand.SETKEEPTTL:
-                    if (input.header.CheckWithEtagFlag())
-                    {
-                        this.functionsState.etagOffsetForVarlen = Constants.EtagSize;
-                    }
-                    else
-                    {
-                        this.functionsState.etagOffsetForVarlen = 0;
-                    }
+                    this.functionsState.etagOffsetForVarlen = (byte)(input.header.CheckWithEtagFlag() ? Constants.EtagSize : 0);
                     return true;
                 default:
                     this.functionsState.etagOffsetForVarlen = 0;
@@ -297,17 +290,17 @@ namespace Garnet.server
 
             RespCommand cmd = input.header.cmd;
 
-            int etagIgnoredOffset = this.functionsState.etagIgnoredOffset = 0;
-            int etagIgnoredEnd = this.functionsState.etagIgnoredEnd = -1;
-            long oldEtag = this.functionsState.oldEtag = Constants.BaseEtag;
+            int etagIgnoredOffset = 0;
+            int etagIgnoredEnd = -1;
+            long oldEtag = Constants.BaseEtag;
             this.functionsState.etagOffsetForVarlen = 0;
             bool shouldUpdateEtag = recordInfo.ETag;
             if (shouldUpdateEtag)
             {
                 // used in varlen
-                etagIgnoredOffset = this.functionsState.etagIgnoredOffset = Constants.EtagSize;
+                etagIgnoredOffset = Constants.EtagSize;
                 etagIgnoredEnd = value.LengthWithoutMetadata;
-                oldEtag = this.functionsState.oldEtag = *(long*)value.ToPointer();
+                oldEtag = *(long*)value.ToPointer();
                 // if something is going to go past this into copy we need to provide offset management for its varlen during allocation
                 this.functionsState.etagOffsetForVarlen = Constants.EtagSize;
             }
@@ -788,12 +781,25 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool NeedCopyUpdate(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
-            // offsets are precomputed at inplace updater
+            int etagIgnoredOffset = 0;
+            int etagIgnoredEnd = -1;
+            long oldEtag = Constants.BaseEtag;
+            this.functionsState.etagOffsetForVarlen = 0;
+            bool shouldUpdateEtag = rmwInfo.RecordInfo.ETag;
+            if (shouldUpdateEtag)
+            {
+                // used in varlen
+                etagIgnoredOffset = Constants.EtagSize;
+                etagIgnoredEnd = oldValue.LengthWithoutMetadata;
+                oldEtag = *(long*)oldValue.ToPointer();
+                // if something is going to go past this into copy we need to provide offset management for its varlen during allocation
+                this.functionsState.etagOffsetForVarlen = Constants.EtagSize;
+            }
 
             switch (input.header.cmd)
             {
                 case RespCommand.SETIFMATCH:
-                    long existingEtag = this.functionsState.oldEtag;
+                    long existingEtag = oldEtag;
 
                     long etagToCheckWith = input.parseState.GetLong(1);
 
@@ -803,7 +809,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        CopyRespToWithInput(ref input, ref oldValue, ref output, isFromPending: false, this.functionsState.etagIgnoredOffset, this.functionsState.etagIgnoredEnd, hasEtagInVal: rmwInfo.RecordInfo.ETag);
+                        CopyRespToWithInput(ref input, ref oldValue, ref output, isFromPending: false, etagIgnoredOffset, etagIgnoredEnd, hasEtagInVal: rmwInfo.RecordInfo.ETag);
                         return false;
                     }
 
@@ -825,7 +831,7 @@ namespace Garnet.server
                     if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
-                        CopyRespTo(ref oldValue, ref output, this.functionsState.etagIgnoredOffset, this.functionsState.etagIgnoredEnd);
+                        CopyRespTo(ref oldValue, ref output, etagIgnoredOffset, etagIgnoredEnd);
                     }
                     else if (input.header.CheckWithEtagFlag())
                     {
@@ -848,7 +854,7 @@ namespace Garnet.server
                     {
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
                         var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
-                            .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(this.functionsState.etagIgnoredOffset), ref outp);
+                            .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(etagIgnoredOffset), ref outp);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
                         return ret;
@@ -872,9 +878,19 @@ namespace Garnet.server
             RespCommand cmd = input.header.cmd;
             bool shouldUpdateEtag = recordInfo.ETag;
 
-            int etagIgnoredOffset = this.functionsState.etagIgnoredOffset;
-            int etagIgnoredEnd = this.functionsState.etagIgnoredEnd;
-            long oldEtag = this.functionsState.oldEtag;
+            int etagIgnoredOffset = 0;
+            int etagIgnoredEnd = -1;
+            long oldEtag = Constants.BaseEtag;
+            this.functionsState.etagOffsetForVarlen = 0;
+            if (shouldUpdateEtag)
+            {
+                // used in varlen
+                etagIgnoredOffset = Constants.EtagSize;
+                etagIgnoredEnd = oldValue.LengthWithoutMetadata;
+                oldEtag = *(long*)oldValue.ToPointer();
+                // if something is going to go past this into copy we need to provide offset management for its varlen during allocation
+                this.functionsState.etagOffsetForVarlen = Constants.EtagSize;
+            }
 
             switch (cmd)
             {
