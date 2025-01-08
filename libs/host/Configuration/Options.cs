@@ -332,12 +332,20 @@ namespace Garnet
         public string FileLogger { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("minthreads", Required = false, HelpText = "Minimum worker and completion threads in thread pool, 0 uses the system default.")]
+        [Option("minthreads", Required = false, HelpText = "Minimum worker threads in thread pool, 0 uses the system default.")]
         public int ThreadPoolMinThreads { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("maxthreads", Required = false, HelpText = "Maximum worker and completion threads in thread pool, 0 uses the system default.")]
+        [Option("maxthreads", Required = false, HelpText = "Maximum worker threads in thread pool, 0 uses the system default.")]
         public int ThreadPoolMaxThreads { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("miniothreads", Required = false, HelpText = "Minimum IO completion threads in thread pool, 0 uses the system default.")]
+        public int ThreadPoolMinIOCompletionThreads { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("maxiothreads", Required = false, HelpText = "Maximum IO completion threads in thread pool, 0 uses the system default.")]
+        public int ThreadPoolMaxIOCompletionThreads { get; set; }
 
         [IntRangeValidation(-1, int.MaxValue)]
         [Option("network-connection-limit", Required = false, Default = -1, HelpText = "Maximum number of simultaneously active network connections.")]
@@ -680,6 +688,8 @@ namespace Garnet
                 QuietMode = QuietMode.GetValueOrDefault(),
                 ThreadPoolMinThreads = ThreadPoolMinThreads,
                 ThreadPoolMaxThreads = ThreadPoolMaxThreads,
+                ThreadPoolMinIOCompletionThreads = ThreadPoolMinIOCompletionThreads,
+                ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
                 NetworkConnectionLimit = NetworkConnectionLimit,
                 DeviceFactoryCreator = useAzureStorage
                     ? () => new AzureStorageNamedDeviceFactory(AzureStorageConnectionString, logger)
