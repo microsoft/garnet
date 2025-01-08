@@ -217,19 +217,12 @@ namespace Garnet.cluster
                 conf.GetNodeIdsForShard(out nodeIds);
             foreach (var nodeId in nodeIds)
             {
-                GarnetServerNode gsn = null;
-                var created = false;
                 try
                 {
-                    if (nodeId != null)
-                        clusterConnectionStore.GetConnection(nodeId, out gsn);
+                    _ = clusterConnectionStore.GetConnection(nodeId, out var gsn);
 
                     if (gsn == null)
-                    {
-                        var (address, port) = conf.GetEndpointFromNodeId(nodeId);
-                        gsn = new GarnetServerNode(clusterProvider, address, port, tlsOptions?.TlsClientOptions, logger: logger);
-                        created = true;
-                    }
+                        continue;
 
                     // Initialize GarnetServerNode
                     // Thread-Safe initialization executes only once
@@ -237,18 +230,10 @@ namespace Garnet.cluster
 
                     // Publish to remote nodes
                     gsn.TryClusterPublish(cmd, ref channel, ref message);
-
-                    if (created && !clusterConnectionStore.AddConnection(gsn))
-                        gsn.Dispose();
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, $"{nameof(ClusterManager)}.{nameof(TryClusterPublish)}");
-                    if (created) gsn?.Dispose();
-                }
-                finally
-                {
-
+                    logger?.LogWarning(ex, $"{nameof(ClusterManager)}.{nameof(TryClusterPublish)}");
                 }
             }
         }

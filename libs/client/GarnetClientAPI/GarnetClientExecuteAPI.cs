@@ -1070,7 +1070,7 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Execute command (async) with cancellation token
+        /// Execute command expecting no response
         /// </summary>
         /// <param name="op"></param>
         /// <param name="param1"></param>

@@ -293,7 +293,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 2)
+            if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 1)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CONFIG_EPOCH_ASSIGNMENT, ref dcurr, dend))
                     SendAndReset();
@@ -486,7 +486,8 @@ namespace Garnet.cluster
             *(int*)keyPtr = kSize;
             *(int*)valPtr = vSize;
 
-            var numClients = clusterProvider.storeWrapper.subscribeBroker.PublishNow(keyPtr, valPtr, vSize + sizeof(int), true);
+            clusterProvider.storeWrapper.subscribeBroker.Publish(keyPtr, valPtr, vSize + sizeof(int), true);
+
             return true;
         }
     }

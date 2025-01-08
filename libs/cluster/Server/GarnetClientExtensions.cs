@@ -16,6 +16,9 @@ namespace Garnet.cluster
         static readonly Memory<byte> GOSSIP = "GOSSIP"u8.ToArray();
         static readonly Memory<byte> WITHMEET = "WITHMEET"u8.ToArray();
 
+        static Memory<byte> PUBLISH => "PUBLISH"u8.ToArray();
+        static Memory<byte> SPUBLISH => "SPUBLISH"u8.ToArray();
+
         /// <summary>
         /// Send config
         /// </summary>
@@ -62,7 +65,7 @@ namespace Garnet.cluster
             return await client.ExecuteForLongResultWithCancellationAsync(GarnetClient.CLUSTER, args, cancellationToken).ConfigureAwait(false);
         }
 
-        public static void ClusterPublish(this GarnetClient client, RespCommand cmd, ref Span<byte> channel, ref Span<byte> message, CancellationToken cancellationToken = default)
+        public static void ClusterPublishNoResponse(this GarnetClient client, RespCommand cmd, ref Span<byte> channel, ref Span<byte> message, CancellationToken cancellationToken = default)
             => client.ExecuteNoResponse(GarnetClient.CLUSTER, RespCommand.PUBLISH == cmd ? GarnetClient.PUBLISH : GarnetClient.SPUBLISH, ref channel, ref message, cancellationToken);
     }
 }
