@@ -257,7 +257,11 @@ namespace Garnet.server.TLS
             {
                 try
                 {
+#if NET9_0_OR_GREATER
+                    issuer = X509CertificateLoader.LoadCertificateFromFile(issuerCertificatePath); 
+#else
                     issuer = new X509Certificate2(issuerCertificatePath);
+#endif
                 }
                 catch (Exception ex)
                 {
