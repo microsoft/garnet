@@ -44,13 +44,13 @@ namespace Garnet.server
             if (!rawStringCommandMap.TryGetNextId(out var cmdId))
                 throw new Exception("Out of registration space");
             Debug.Assert(cmdId <= ushort.MaxValue);
-            var friendlyCmdId = GetRawStringFriendlyIdFromCommandId(cmdId);
-            var newCmd = new CustomRawStringCommand(name, (ushort)friendlyCmdId, type, customFunctions, expirationTicks);
+            var extId = GetRawStringExternalId(cmdId);
+            var newCmd = new CustomRawStringCommand(name, (ushort)extId, type, customFunctions, expirationTicks);
             var setSuccessful = rawStringCommandMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
             if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
             if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
-            return friendlyCmdId;
+            return extId;
         }
 
         internal int Register(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
@@ -76,31 +76,31 @@ namespace Garnet.server
                 throw new Exception("Out of registration space");
             Debug.Assert(cmdId <= byte.MaxValue);
 
-            var friendlyTypeId = GetTypeFriendlyIdFromCommandId(cmdId);
-            var newCmd = new CustomObjectCommandWrapper((byte)friendlyTypeId, factory);
+            var extId = GetTypeExternalId(cmdId);
+            var newCmd = new CustomObjectCommandWrapper((byte)extId, factory);
             var setSuccessful = objectCommandMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
 
-            return friendlyTypeId;
+            return extId;
         }
 
         internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo, RespCommandDocs commandDocs, CustomObjectFunctions customObjectFunctions = null)
         {
-            int friendlyTypeId;
+            int extId;
             if (!objectCommandMap.TryGetFirstId(c => c.factory == factory, out var typeId))
             {
                 if (!objectCommandMap.TryGetNextId(out typeId))
                     throw new Exception("Out of registration space");
 
                 Debug.Assert(typeId <= byte.MaxValue);
-                friendlyTypeId = GetTypeFriendlyIdFromCommandId(typeId);
-                var newCmd = new CustomObjectCommandWrapper((byte)friendlyTypeId, factory);
+                extId = GetTypeExternalId(typeId);
+                var newCmd = new CustomObjectCommandWrapper((byte)extId, factory);
                 var setSuccessful = objectCommandMap.TrySetValue(typeId, ref newCmd);
                 Debug.Assert(setSuccessful);
             }
             else
             {
-                friendlyTypeId = GetTypeFriendlyIdFromCommandId(typeId);
+                extId = GetTypeExternalId(typeId);
             }
 
             objectCommandMap.TryGetValue(typeId, out var wrapper);
@@ -108,7 +108,7 @@ namespace Garnet.server
                 throw new Exception("Out of registration space");
 
             Debug.Assert(scId <= byte.MaxValue);
-            var newSubCmd = new CustomObjectCommand(name, (byte)friendlyTypeId, (byte)scId, commandType, wrapper.factory,
+            var newSubCmd = new CustomObjectCommand(name, (byte)extId, (byte)scId, commandType, wrapper.factory,
                 customObjectFunctions);
             var scSetSuccessful = wrapper.commandMap.TrySetValue(scId, ref newSubCmd);
             Debug.Assert(scSetSuccessful);
@@ -116,7 +116,7 @@ namespace Garnet.server
             if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
             if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
 
-            return (friendlyTypeId, scId);
+            return (extId, scId);
         }
 
         /// <summary>
@@ -185,16 +185,16 @@ namespace Garnet.server
             return this.customCommandsDocs.TryGetValue(cmdName, out respCommandsDocs);
         }
 
-        internal int GetRawStringCommandIdFromFriendlyId(int friendlyId)
-            => rawStringCommandMap.GetIdFromIndex(friendlyId);
+        internal RespCommand GetCustomRespCommand(int id)
+            => (RespCommand)rawStringCommandMap.GetIdFromIndex(id);
 
-        internal int GetTypeIdFromFriendlyId(int friendlyId)
-            => objectCommandMap.GetIdFromIndex(friendlyId);
+        internal GarnetObjectType GetCustomGarnetObjectType(int id)
+            => (GarnetObjectType)objectCommandMap.GetIdFromIndex(id);
 
-        private int GetRawStringFriendlyIdFromCommandId(int cmdId)
+        private int GetRawStringExternalId(int cmdId)
             => rawStringCommandMap.GetIndexFromId(cmdId);
 
-        private int GetTypeFriendlyIdFromCommandId(int cmdId)
+        private int GetTypeExternalId(int cmdId)
             => objectCommandMap.GetIndexFromId(cmdId);
     }
 }
