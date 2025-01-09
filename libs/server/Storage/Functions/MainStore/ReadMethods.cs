@@ -58,7 +58,7 @@ namespace Garnet.server
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
             if (cmd is (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
             {
-                CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag);
+                RespWriteUtils.CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
                 return true;
             }
 
@@ -116,7 +116,7 @@ namespace Garnet.server
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
             if (cmd is (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
             {
-                CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag);
+                RespWriteUtils.CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
                 return true;
             }
 
@@ -144,7 +144,7 @@ namespace Garnet.server
                 var nilResp = CmdStrings.RESP_ERRNOTFOUND;
                 // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                 var numDigitsInEtag = NumUtils.NumDigitsInLong(existingEtag);
-                WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, existingEtag, ref dst, writeDirect: true);
+                RespWriteUtils.WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, existingEtag, ref dst, functionsState.memoryPool, writeDirect: true);
                 return true;
             }
 

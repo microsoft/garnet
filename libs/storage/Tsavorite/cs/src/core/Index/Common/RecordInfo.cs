@@ -284,11 +284,6 @@ namespace Tsavorite.core
         public void SetHasETag() => word |= kETagBitMask;
         public void ClearHasETag() => word &= ~kETagBitMask;
 
-        /// <summary>
-        /// When ETag is set this returns 1 else 0. Used for branchless programming
-        /// </summary>
-        public int HasETagMultiplier => (int)((word & kETagBitMask) >> kEtagBitOffset);
-
         public override readonly string ToString()
         {
             var paRC = IsReadCache(PreviousAddress) ? "(rc)" : string.Empty;

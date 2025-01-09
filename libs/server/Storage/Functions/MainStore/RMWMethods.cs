@@ -319,7 +319,7 @@ namespace Garnet.server
                     long etagFromClient = input.parseState.GetLong(1);
                     if (functionsState.etagState.etag != etagFromClient)
                     {
-                        CopyRespWithEtagData(ref value, ref output, hasEtagInRecord);
+                        RespWriteUtils.CopyRespWithEtagData(ref value, ref output, hasEtagInRecord, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
                         return true;
                     }
 
@@ -354,7 +354,7 @@ namespace Garnet.server
                     var nilResp = CmdStrings.RESP_ERRNOTFOUND;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                     var numDigitsInEtag = NumUtils.NumDigitsInLong(newEtag);
-                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, writeDirect: true);
+                    RespWriteUtils.WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
                     // early return since we already updated the ETag
                     return true;
                 case RespCommand.SET:
@@ -783,7 +783,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        CopyRespWithEtagData(ref oldValue, ref output, hasEtagInVal: rmwInfo.RecordInfo.ETag);
+                        RespWriteUtils.CopyRespWithEtagData(ref oldValue, ref output, hasEtagInVal: rmwInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
                         return false;
                     }
 
@@ -883,7 +883,7 @@ namespace Garnet.server
                     var nilResp = CmdStrings.RESP_ERRNOTFOUND;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                     var numDigitsInEtag = NumUtils.NumDigitsInLong(newEtag);
-                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, writeDirect: true);
+                    RespWriteUtils.WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, functionsState.memoryPool,writeDirect: true);
                     break;
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:

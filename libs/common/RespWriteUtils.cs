@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using Tsavorite.core;
 
 namespace Garnet.common
 {
@@ -695,6 +696,63 @@ namespace Garnet.common
                     return false;
             }
             return true;
+        }
+
+        public static void CopyRespWithEtagData(ref SpanByte value, ref SpanByteAndMemory dst, bool hasEtagInVal, int etagSkippedStart, MemoryPool<byte> memoryPool)
+        {
+            int valueLength = value.LengthWithoutMetadata;
+            // always writing an array of size 2 => *2\r\n
+            int desiredLength = 4;
+            ReadOnlySpan<byte> etagTruncatedVal;
+            // get etag to write, default etag 0 for when no etag
+            long etag = hasEtagInVal ? value.GetEtagInPayload() : 0; // BaseEtag
+            // remove the length of the ETAG
+            var etagAccountedValueLength = valueLength - etagSkippedStart;
+            if (hasEtagInVal)
+            {
+                etagAccountedValueLength = valueLength - sizeof(long); // EtagSize
+            }
+
+            // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
+            etagTruncatedVal = value.AsReadOnlySpan(etagSkippedStart);
+            // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
+            desiredLength += 1 + NumUtils.NumDigitsInLong(etag) + 2 + 1 + NumUtils.NumDigits(etagAccountedValueLength) + 2 + etagAccountedValueLength + 2;
+
+            WriteValAndEtagToDst(desiredLength, ref etagTruncatedVal, etag, ref dst, memoryPool);
+        }
+
+        public static void WriteValAndEtagToDst(int desiredLength, ref ReadOnlySpan<byte> value, long etag, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool, bool writeDirect = false)
+        {
+            if (desiredLength <= dst.Length)
+            {
+                dst.Length = desiredLength;
+                byte* curr = dst.SpanByte.ToPointer();
+                byte* end = curr + dst.SpanByte.Length;
+                RespWriteEtagValArray(etag, ref value, ref curr, end, writeDirect);
+                return;
+            }
+
+            dst.ConvertToHeap();
+            dst.Length = desiredLength;
+            dst.Memory = memoryPool.Rent(desiredLength);
+            fixed (byte* ptr = dst.Memory.Memory.Span)
+            {
+                byte* curr = ptr;
+                byte* end = ptr + desiredLength;
+                RespWriteEtagValArray(etag, ref value, ref curr, end, writeDirect);
+            }
+        }
+
+        public static void RespWriteEtagValArray(long etag, ref ReadOnlySpan<byte> value, ref byte* curr, byte* end, bool writeDirect)
+        {
+            // Writes a Resp encoded Array of Integer for ETAG as first element, and bulk string for value as second element
+            RespWriteUtils.WriteArrayLength(2, ref curr, end);
+            RespWriteUtils.WriteInteger(etag, ref curr, end);
+
+            if (writeDirect)
+                RespWriteUtils.WriteDirect(value, ref curr, end);
+            else
+                RespWriteUtils.WriteBulkString(value, ref curr, end);
         }
 
         /// <summary>
