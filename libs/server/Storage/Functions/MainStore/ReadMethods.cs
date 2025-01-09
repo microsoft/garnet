@@ -20,29 +20,26 @@ namespace Garnet.server
             ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
         {
             if (value.MetadataSize != 0 && CheckExpiry(ref value))
+            {
+                readInfo.RecordInfo.ClearHasETag();
                 return false;
+            }
 
             var cmd = input.header.cmd;
 
-            var etagMultiplier = readInfo.RecordInfo.HasETagMultiplier;
-
             if (cmd == RespCommand.GETIFNOTMATCH)
             {
-                long etagToMatchAgainst = input.parseState.GetLong(0);
-                // Any value without an etag is treated the same as a value with an etag
-                long existingEtag = etagMultiplier * *(long*)value.ToPointer();
-                if (existingEtag == etagToMatchAgainst)
-                {
-                    // write back array of the format [etag, nil]
-                    var nilResp = CmdStrings.RESP_ERRNOTFOUND;
-                    // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
-                    var numDigitsInEtag = NumUtils.NumDigitsInLong(existingEtag);
-                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, existingEtag, ref dst, writeDirect: true);
+                if (handleGetIfNotMatch(ref input, ref value, ref dst, ref readInfo))
                     return true;
-                }
             }
             else if (cmd > RespCommandExtensions.LastValidCommand)
             {
+                if (readInfo.RecordInfo.ETag)
+                {
+                    CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref dst);
+                    return true;
+                }
+
                 var valueLength = value.LengthWithoutMetadata;
                 (IMemoryOwner<byte> Memory, int Length) output = (dst.Memory, 0);
                 var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
@@ -53,21 +50,23 @@ namespace Garnet.server
                 return ret;
             }
 
-            int start = 0;
-            int end = -1;
-            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
-            if (readInfo.RecordInfo.ETag && cmd is not (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
+            if (readInfo.RecordInfo.ETag)
             {
-                start = Constants.EtagSize;
-                end = value.LengthWithoutMetadata;
+                functionsState.etagState.SetValsForRecordWithEtag(ref value);
             }
 
+            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
+            if (cmd is (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
+            {
+                CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag);
+                return true;
+            }
 
             if (cmd == RespCommand.NONE)
-                CopyRespTo(ref value, ref dst, start, end);
+                CopyRespTo(ref value, ref dst, functionsState.etagState.etagSkippedStart, functionsState.etagState.etagAccountedLength);
             else
             {
-                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending, start, end, readInfo.RecordInfo.ETag);
+                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
             }
 
             return true;
@@ -79,29 +78,26 @@ namespace Garnet.server
             ref SpanByteAndMemory dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
         {
             if (value.MetadataSize != 0 && CheckExpiry(ref value))
+            {
+                recordInfo.ClearHasETag();
                 return false;
+            }
 
             var cmd = input.header.cmd;
 
-            var etagMultiplier = readInfo.RecordInfo.HasETagMultiplier;
-
             if (cmd == RespCommand.GETIFNOTMATCH)
             {
-                long etagToMatchAgainst = input.parseState.GetLong(0);
-                // Any value without an etag is treated the same as a value with an etag
-                long existingEtag = etagMultiplier * *(long*)value.ToPointer();
-                if (existingEtag == etagToMatchAgainst)
-                {
-                    // write back array of the format [etag, nil]
-                    var nilResp = CmdStrings.RESP_ERRNOTFOUND;
-                    // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
-                    var numDigitsInEtag = NumUtils.NumDigitsInLong(existingEtag);
-                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, existingEtag, ref dst, writeDirect: true);
+                if (handleGetIfNotMatch(ref input, ref value, ref dst, ref readInfo))
                     return true;
-                }
             }
             else if (cmd > RespCommandExtensions.LastValidCommand)
             {
+                if (readInfo.RecordInfo.ETag)
+                {
+                    CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref dst);
+                    return true;
+                }
+
                 var valueLength = value.LengthWithoutMetadata;
                 (IMemoryOwner<byte> Memory, int Length) output = (dst.Memory, 0);
                 var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
@@ -112,23 +108,47 @@ namespace Garnet.server
                 return ret;
             }
 
-            int start = 0;
-            int end = -1;
-            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
-            if (recordInfo.ETag && cmd is not (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
+            if (readInfo.RecordInfo.ETag)
             {
-                start = Constants.EtagSize;
-                end = value.LengthWithoutMetadata;
+                functionsState.etagState.SetValsForRecordWithEtag(ref value);
             }
 
+            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
+            if (cmd is (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
+            {
+                CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag);
+                return true;
+            }
+
+
             if (cmd == RespCommand.NONE)
-                CopyRespTo(ref value, ref dst, start, end);
+                CopyRespTo(ref value, ref dst, functionsState.etagState.etagSkippedStart, functionsState.etagState.etagAccountedLength);
             else
             {
-                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending, start, end, readInfo.RecordInfo.ETag);
+                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
             }
 
             return true;
+        }
+
+        private bool handleGetIfNotMatch(ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
+        {
+            // Any value without an etag is treated the same as a value with an etag
+            long etagToMatchAgainst = input.parseState.GetLong(0);
+
+            long existingEtag = readInfo.RecordInfo.ETag ? value.GetEtagInPayload() : Constants.BaseEtag;
+
+            if (existingEtag == etagToMatchAgainst)
+            {
+                // write back array of the format [etag, nil]
+                var nilResp = CmdStrings.RESP_ERRNOTFOUND;
+                // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
+                var numDigitsInEtag = NumUtils.NumDigitsInLong(existingEtag);
+                WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, existingEtag, ref dst, writeDirect: true);
+                return true;
+            }
+
+            return false;
         }
     }
 }

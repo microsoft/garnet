@@ -498,6 +498,19 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Gets an Etag from the payload of the SpanByte, caller should make sure the SpanByte has an Etag for the record by checking RecordInfo
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetEtagInPayload() => *(long*)this.ToPointer();
+
+        /// <summary>
+        /// Gets an Etag from the payload of the SpanByte, caller should make sure the SpanByte has an Etag for the record by checking RecordInfo
+        /// </summary>
+        /// <param name="etag">The Etag value to set</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetEtagInPayload(long etag) => *(long*)this.ToPointer() = etag;
+
         /// <inheritdoc/>
         public override string ToString()
         {

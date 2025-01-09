@@ -231,6 +231,8 @@ namespace Garnet.test
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2", expiry: TimeSpan.FromDays(1), when: When.NotExists);
                 db.Execute("SET", "SeAofUpsertRecoverTestKey3", "SeAofUpsertRecoverTestValue3", "WITHETAG");
                 db.Execute("SETIFMATCH", "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3", "1");
+                db.Execute("SET", "SeAofUpsertRecoverTestKey4", "2");
+                var res = db.Execute("INCR", "SeAofUpsertRecoverTestKey4");
             }
 
             server.Store.CommitAOF(true);
@@ -246,6 +248,8 @@ namespace Garnet.test
                 recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
                 ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
                 ExpectedEtagTest(db, "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3", 2);
+                recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey4");
+                ClassicAssert.AreEqual("3", recoveredValue.ToString());
             }
         }
 

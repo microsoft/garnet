@@ -408,6 +408,7 @@ namespace Garnet.server
 
             while (bytesRead - readHead >= 4)
             {
+                storageSession.functionsState.etagState.ResetToDefaultVals();
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
                 // On success, readHead is left at the start of the command payload for legacy operators

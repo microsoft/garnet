@@ -8,6 +8,6 @@ namespace Garnet.server
     {
         public const byte EtagSize = sizeof(long);
 
-        public const int BaseEtag = 0;
+        public const long BaseEtag = 0;
     }
 }

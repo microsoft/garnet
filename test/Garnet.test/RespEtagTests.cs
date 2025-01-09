@@ -1351,7 +1351,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var key = "keyA";
-            db.Execute("SET", [key, key]);
+            db.Execute("SET", [key, key, "WITHETAG"]);
 
             var value = db.StringGet(key);
             ClassicAssert.AreEqual(key, (string)value);

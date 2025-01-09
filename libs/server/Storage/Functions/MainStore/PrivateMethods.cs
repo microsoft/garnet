@@ -83,7 +83,7 @@ namespace Garnet.server
             }
         }
 
-        void CopyRespToWithInput(ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory dst, bool isFromPending, int payloadEtagAccountedEndOffset, int etagAccountedEnd, bool hasEtagInVal)
+        void CopyRespToWithInput(ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory dst, bool isFromPending)
         {
             switch (input.header.cmd)
             {
@@ -93,7 +93,7 @@ namespace Garnet.server
                     // This is accomplished by calling ConvertToHeap on the destination SpanByteAndMemory
                     if (isFromPending)
                         dst.ConvertToHeap();
-                    CopyRespTo(ref value, ref dst, payloadEtagAccountedEndOffset, etagAccountedEnd);
+                    CopyRespTo(ref value, ref dst, functionsState.etagState.etagSkippedStart, functionsState.etagState.etagAccountedLength);
                     break;
 
                 case RespCommand.MIGRATE:
@@ -123,20 +123,20 @@ namespace Garnet.server
                     // Get value without RESP header; exclude expiration
                     if (value.LengthWithoutMetadata <= dst.Length)
                     {
-                        dst.Length = value.LengthWithoutMetadata - payloadEtagAccountedEndOffset;
-                        value.AsReadOnlySpan(payloadEtagAccountedEndOffset).CopyTo(dst.SpanByte.AsSpan());
+                        dst.Length = value.LengthWithoutMetadata - functionsState.etagState.etagSkippedStart;
+                        value.AsReadOnlySpan(functionsState.etagState.etagSkippedStart).CopyTo(dst.SpanByte.AsSpan());
                         return;
                     }
 
                     dst.ConvertToHeap();
-                    dst.Length = value.LengthWithoutMetadata - payloadEtagAccountedEndOffset;
+                    dst.Length = value.LengthWithoutMetadata - functionsState.etagState.etagSkippedStart;
                     dst.Memory = functionsState.memoryPool.Rent(value.LengthWithoutMetadata);
-                    value.AsReadOnlySpan(payloadEtagAccountedEndOffset).CopyTo(dst.Memory.Memory.Span);
+                    value.AsReadOnlySpan(functionsState.etagState.etagSkippedStart).CopyTo(dst.Memory.Memory.Span);
                     break;
 
                 case RespCommand.GETBIT:
                     var offset = input.parseState.GetLong(0);
-                    var oldValSet = BitmapManager.GetBit(offset, value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
+                    var oldValSet = BitmapManager.GetBit(offset, value.ToPointer() + functionsState.etagState.etagSkippedStart, value.Length - functionsState.etagState.etagSkippedStart);
                     if (oldValSet == 0)
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref dst);
                     else
@@ -160,7 +160,7 @@ namespace Garnet.server
                         }
                     }
 
-                    var count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
+                    var count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, value.ToPointer() + functionsState.etagState.etagSkippedStart, value.Length - functionsState.etagState.etagSkippedStart);
                     CopyRespNumber(count, ref dst);
                     break;
 
@@ -186,13 +186,13 @@ namespace Garnet.server
                     }
 
                     var pos = BitmapManager.BitPosDriver(bpSetVal, bpStartOffset, bpEndOffset, bpOffsetType,
-                        value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
+                        value.ToPointer() + functionsState.etagState.etagSkippedStart, value.Length - functionsState.etagState.etagSkippedStart);
                     *(long*)dst.SpanByte.ToPointer() = pos;
                     CopyRespNumber(pos, ref dst);
                     break;
 
                 case RespCommand.BITOP:
-                    var bitmap = (IntPtr)value.ToPointer() + payloadEtagAccountedEndOffset;
+                    var bitmap = (IntPtr)value.ToPointer() + functionsState.etagState.etagSkippedStart;
                     var output = dst.SpanByte.ToPointer();
 
                     *(long*)output = bitmap.ToInt64();
@@ -202,7 +202,7 @@ namespace Garnet.server
 
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    var (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
+                    var (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer() + functionsState.etagState.etagSkippedStart, value.Length - functionsState.etagState.etagSkippedStart);
                     if (!overflow)
                         CopyRespNumber(retValue, ref dst);
                     else
@@ -211,16 +211,16 @@ namespace Garnet.server
 
                 case RespCommand.PFCOUNT:
                 case RespCommand.PFMERGE:
-                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset))
+                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(value.ToPointer(), value.Length))
                     {
                         *(long*)dst.SpanByte.ToPointer() = -1;
                         return;
                     }
 
-                    if (value.Length - payloadEtagAccountedEndOffset <= dst.Length)
+                    if (value.Length <= dst.Length)
                     {
-                        Buffer.MemoryCopy(value.ToPointer() + payloadEtagAccountedEndOffset, dst.SpanByte.ToPointer(), value.Length - payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
-                        dst.SpanByte.Length = value.Length - payloadEtagAccountedEndOffset;
+                        Buffer.MemoryCopy(value.ToPointer(), dst.SpanByte.ToPointer(), value.Length, value.Length);
+                        dst.SpanByte.Length = value.Length;
                         return;
                     }
 
@@ -237,37 +237,13 @@ namespace Garnet.server
                     return;
 
                 case RespCommand.GETRANGE:
-                    var len = value.LengthWithoutMetadata - payloadEtagAccountedEndOffset;
+                    var len = value.LengthWithoutMetadata - functionsState.etagState.etagSkippedStart;
                     var start = input.parseState.GetInt(0);
                     var end = input.parseState.GetInt(1);
 
                     (start, end) = NormalizeRange(start, end, len);
-                    CopyRespTo(ref value, ref dst, start + payloadEtagAccountedEndOffset, end + payloadEtagAccountedEndOffset);
+                    CopyRespTo(ref value, ref dst, start + functionsState.etagState.etagSkippedStart, end + functionsState.etagState.etagSkippedStart);
                     return;
-                case RespCommand.SETIFMATCH:
-                case RespCommand.GETIFNOTMATCH:
-                case RespCommand.GETWITHETAG:
-                    int valueLength = value.LengthWithoutMetadata;
-                    // always writing an array of size 2 => *2\r\n
-                    int desiredLength = 4;
-                    ReadOnlySpan<byte> etagTruncatedVal;
-                    // get etag to write, default etag 0 for when no etag
-                    long etag = hasEtagInVal ? *(long*)value.ToPointer() : Constants.BaseEtag;
-                    // remove the length of the ETAG
-                    var etagAccountedValueLength = valueLength - payloadEtagAccountedEndOffset;
-                    if (hasEtagInVal)
-                    {
-                        etagAccountedValueLength = valueLength - Constants.EtagSize;
-                        payloadEtagAccountedEndOffset = Constants.EtagSize;
-                    }
-                    // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
-                    etagTruncatedVal = value.AsReadOnlySpan(payloadEtagAccountedEndOffset);
-                    // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
-                    desiredLength += 1 + NumUtils.NumDigitsInLong(etag) + 2 + 1 + NumUtils.NumDigits(etagAccountedValueLength) + 2 + etagAccountedValueLength + 2;
-
-                    WriteValAndEtagToDst(desiredLength, ref etagTruncatedVal, etag, ref dst);
-                    return;
-
                 case RespCommand.EXPIRETIME:
                     var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
                     CopyRespNumber(expireTime, ref dst);
@@ -281,6 +257,29 @@ namespace Garnet.server
                 default:
                     throw new GarnetException("Unsupported operation on input");
             }
+        }
+
+        void CopyRespWithEtagData(ref SpanByte value, ref SpanByteAndMemory dst, bool hasEtagInVal)
+        {
+            int valueLength = value.LengthWithoutMetadata;
+            // always writing an array of size 2 => *2\r\n
+            int desiredLength = 4;
+            ReadOnlySpan<byte> etagTruncatedVal;
+            // get etag to write, default etag 0 for when no etag
+            long etag = hasEtagInVal ? value.GetEtagInPayload() : Constants.BaseEtag;
+            // remove the length of the ETAG
+            var etagAccountedValueLength = valueLength - functionsState.etagState.etagSkippedStart;
+            if (hasEtagInVal)
+            {
+                etagAccountedValueLength = valueLength - Constants.EtagSize;
+            }
+
+            // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
+            etagTruncatedVal = value.AsReadOnlySpan(functionsState.etagState.etagSkippedStart);
+            // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
+            desiredLength += 1 + NumUtils.NumDigitsInLong(etag) + 2 + 1 + NumUtils.NumDigits(etagAccountedValueLength) + 2 + etagAccountedValueLength + 2;
+
+            WriteValAndEtagToDst(desiredLength, ref etagTruncatedVal, etag, ref dst);
         }
 
         void WriteValAndEtagToDst(int desiredLength, ref ReadOnlySpan<byte> value, long etag, ref SpanByteAndMemory dst, bool writeDirect = false)
@@ -460,7 +459,6 @@ namespace Garnet.server
 
         internal static bool CheckExpiry(ref SpanByte src) => src.ExtraMetadata < DateTimeOffset.UtcNow.Ticks;
 
-        // HK TODO: SUSPECT INCY IS JUST GETTING SKIPPED
         static bool InPlaceUpdateNumber(long val, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo, int valueOffset)
         {
             var fNeg = false;

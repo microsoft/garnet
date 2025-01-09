@@ -134,6 +134,7 @@ namespace Garnet.server
                 {
                     count++;
                     ProcessAofRecord(entry, length);
+                    this.respServerSession.storageSession.functionsState.etagState.ResetToDefaultVals();
                     if (count % 100_000 == 0)
                         logger?.LogInformation("Completed AOF replay of {count} records, until AOF address {nextAofAddress}", count, nextAofAddress);
                 }

@@ -130,7 +130,7 @@ namespace Garnet.server
                         return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
                     }
 
-                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + (input.arg1 == 0 ? 0 : sizeof(long)) + this.functionsState.etagOffsetForVarlen;
+                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + (input.arg1 == 0 ? 0 : sizeof(long)) + this.functionsState.etagState.etagOffsetForVarlen;
             }
         }
 
@@ -141,45 +141,43 @@ namespace Garnet.server
             {
                 var cmd = input.header.cmd;
 
-                int etagOffset = this.functionsState.etagOffsetForVarlen;
-
                 switch (cmd)
                 {
                     case RespCommand.INCR:
                     case RespCommand.INCRBY:
                         var incrByValue = input.header.cmd == RespCommand.INCRBY ? input.arg1 : 1;
 
-                        var curr = NumUtils.BytesToLong(t.AsSpan(etagOffset));
+                        var curr = NumUtils.BytesToLong(t.AsSpan(functionsState.etagState.etagOffsetForVarlen));
                         var next = curr + incrByValue;
 
                         var fNeg = false;
                         var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
                         ndigits += fNeg ? 1 : 0;
 
-                        return sizeof(int) + ndigits + t.MetadataSize + etagOffset;
+                        return sizeof(int) + ndigits + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
 
                     case RespCommand.DECR:
                     case RespCommand.DECRBY:
                         var decrByValue = input.header.cmd == RespCommand.DECRBY ? input.arg1 : 1;
 
-                        curr = NumUtils.BytesToLong(t.AsSpan(etagOffset));
+                        curr = NumUtils.BytesToLong(t.AsSpan(functionsState.etagState.etagOffsetForVarlen));
                         next = curr - decrByValue;
 
                         fNeg = false;
                         ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
                         ndigits += fNeg ? 1 : 0;
 
-                        return sizeof(int) + ndigits + t.MetadataSize + etagOffset;
+                        return sizeof(int) + ndigits + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
                     case RespCommand.INCRBYFLOAT:
                         // We don't need to TryGetDouble here because InPlaceUpdater will raise an error before we reach this point
                         var incrByFloat = input.parseState.GetDouble(0);
 
-                        NumUtils.TryBytesToDouble(t.AsSpan(etagOffset), out var currVal);
+                        NumUtils.TryBytesToDouble(t.AsSpan(functionsState.etagState.etagOffsetForVarlen), out var currVal);
                         var nextVal = currVal + incrByFloat;
 
                         ndigits = NumUtils.NumOfCharInDouble(nextVal, out _, out _, out _);
 
-                        return sizeof(int) + ndigits + t.MetadataSize + etagOffset;
+                        return sizeof(int) + ndigits + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
                     case RespCommand.SETBIT:
                         var bOffset = input.parseState.GetLong(0);
                         return sizeof(int) + BitmapManager.NewBlockAllocLength(t.Length, bOffset);
@@ -202,11 +200,11 @@ namespace Garnet.server
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
                         var setValue = input.parseState.GetArgSliceByRef(0);
-                        return sizeof(int) + t.MetadataSize + setValue.Length + etagOffset;
+                        return sizeof(int) + t.MetadataSize + setValue.Length + functionsState.etagState.etagOffsetForVarlen;
 
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
-                        return sizeof(int) + input.parseState.GetArgSliceByRef(0).Length + (input.arg1 == 0 ? 0 : sizeof(long)) + etagOffset;
+                        return sizeof(int) + input.parseState.GetArgSliceByRef(0).Length + (input.arg1 == 0 ? 0 : sizeof(long)) + functionsState.etagState.etagOffsetForVarlen;
                     case RespCommand.PERSIST:
                         return sizeof(int) + t.LengthWithoutMetadata;
                     case RespCommand.SETIFMATCH:
@@ -223,8 +221,8 @@ namespace Garnet.server
                         var offset = input.parseState.GetInt(0);
                         newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
-                        if (newValue.Length + offset > t.LengthWithoutMetadata - etagOffset)
-                            return sizeof(int) + newValue.Length + offset + t.MetadataSize + etagOffset;
+                        if (newValue.Length + offset > t.LengthWithoutMetadata - functionsState.etagState.etagOffsetForVarlen)
+                            return sizeof(int) + newValue.Length + offset + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
                         return sizeof(int) + t.Length;
 
                     case RespCommand.GETDEL:
