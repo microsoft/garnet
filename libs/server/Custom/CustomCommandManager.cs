@@ -14,9 +14,7 @@ namespace Garnet.server
     {
         private static readonly int MaxCustomRawStringCommands = 256;
 
-        private static readonly int CustomRawStringCommandMinId =
-            (ushort)RespCommand.INVALID - MaxCustomRawStringCommands;
-
+        private static readonly int CustomRawStringCommandMinId = (ushort)RespCommand.INVALID - MaxCustomRawStringCommands;
         private static readonly int CustomRawStringCommandMaxId = (ushort)RespCommand.INVALID - 1;
         private static readonly int CustomObjectTypeMinId = (byte)GarnetObjectTypeExtensions.LastObjectType + 1;
         private static readonly int CustomObjectTypeMaxId = (byte)GarnetObjectTypeExtensions.FirstSpecialObjectType - 1;
