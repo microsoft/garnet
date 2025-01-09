@@ -142,7 +142,6 @@ namespace Tsavorite.core
 
                         // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
                         // Our SessionFunctionsWrapper.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
-                        pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         // status has been set by InPlaceUpdater
                         goto LatchRelease;
@@ -272,7 +271,6 @@ namespace Tsavorite.core
                     {
                         // Success
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
-                        pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                         return true;
@@ -351,7 +349,7 @@ namespace Tsavorite.core
                                                                                           ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
                                                                                           ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, bool doingCU)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TSourceLogRecord : IReadOnlyLogRecord
+            where TSourceLogRecord : ISourceLogRecord
         {
             var forExpiration = false;
 
@@ -483,10 +481,10 @@ namespace Tsavorite.core
 
         DoCAS:
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
-            bool success = CASRecordIntoChain(ref newLogRecord, ref stackCtx, newLogicalAddress);
+            bool success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
-                PostCopyToTail(ref newLogRecord, ref stackCtx);
+                PostCopyToTail(ref srcLogRecord, ref stackCtx);
 
                 // If IU, status will be NOTFOUND; return that.
                 if (!doingCU)
@@ -502,7 +500,7 @@ namespace Tsavorite.core
                     {
                         if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
-                            newRecordInfo.SetTombstone();
+                            newLogRecord.InfoRef.SetTombstone();
                             status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
                         }
                         else
@@ -516,30 +514,28 @@ namespace Tsavorite.core
                     if (allocOptions.elideSourceRecord)
                     {
                         // Success should always Seal the old record. This may be readcache, readonly, or the temporary recordInfo, which is OK and saves the cost of an "if".
-                        srcRecordInfo.SealAndInvalidate();    // The record was elided, so Invalidate
+                        srcLogRecord.InfoRef.SealAndInvalidate();    // The record was elided, so Invalidate
 
                         if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
-                        {
-                            // We need to re-get the old record's length because rmwInfo has the new record's info. If freelist-add fails, it remains Sealed/Invalidated.
-                            var oldRecordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref srcRecordInfo);
-                            _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo, oldRecordLengths);
+                        { 
+                            var inMemoryLogRecord = srcLogRecord.AsLogRecord();
+                            _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
                         }
                     }
                     else
-                        srcRecordInfo.Seal();              // The record was not elided, so do not Invalidate
+                        srcLogRecord.InfoRef.Seal();              // The record was not elided, so do not Invalidate
                 }
 
                 stackCtx.ClearNewRecord();
-                pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;
                 return status;
             }
 
             // CAS failed
-            stackCtx.SetNewRecordInvalid(ref newRecordInfo);
-            DisposeRecord(ref logRecord, doingCU ? DisposeReason.CopyUpdaterCASFailed : DisposeReason.InitialUpdaterCASFailed);
+            stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
+            DisposeRecord(ref newLogRecord, doingCU ? DisposeReason.CopyUpdaterCASFailed : DisposeReason.InitialUpdaterCASFailed);
 
-            SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
+            SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
         }
 

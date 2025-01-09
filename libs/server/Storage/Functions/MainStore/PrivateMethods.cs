@@ -508,7 +508,7 @@ namespace Garnet.server
         /// <param name="output">Output value</param>
         /// <param name="input">Parsed input value</param>
         static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref SpanByteAndMemory output, long input)
-            where TSourceLogRecord : IReadOnlyLogRecord
+            where TSourceLogRecord : ISourceLogRecord
         {
             if (!dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
                 return false;
@@ -546,7 +546,7 @@ namespace Garnet.server
         /// <param name="output">Output value</param>
         /// <param name="input">Parsed input value</param>
         static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref SpanByteAndMemory output, double input)
-            where TSourceLogRecord : IReadOnlyLogRecord
+            where TSourceLogRecord : ISourceLogRecord
         {
             if (!dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
                 return false;

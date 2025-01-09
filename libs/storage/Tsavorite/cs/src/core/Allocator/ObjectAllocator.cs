@@ -72,7 +72,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-            where TSourceLogRecord : IReadOnlyLogRecord
+            where TSourceLogRecord : ISourceLogRecord
             where TVariableLengthInput : IVariableLengthInput<IHeapObject, TInput>
              => _this.GetRMWCopyRecordSize(ref srcLogRecord, ref input, varlenInput);
 

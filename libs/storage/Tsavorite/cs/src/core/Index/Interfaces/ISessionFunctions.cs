@@ -22,7 +22,7 @@ namespace Tsavorite.core
         /// <param name="readInfo">Information about this read operation and its context</param>
         /// <returns>True if the value was available, else false (e.g. the value was expired)</returns>
         bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo)
-            where TSourceLogRecord : IReadOnlyLogRecord;
+            where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
         /// Concurrent reader
@@ -123,7 +123,7 @@ namespace Tsavorite.core
         /// <param name="output">The location where the output of the operation, if any, is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
         bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : IReadOnlyLogRecord;
+            where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
         /// Copy-update for RMW (RCU (Read-Copy-Update) to the tail of the log)
@@ -135,7 +135,7 @@ namespace Tsavorite.core
         /// <param name="rmwInfo">Information about this update operation and its context</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
         bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : IReadOnlyLogRecord;
+            where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
         /// Called after a record containing an RCU (Read-Copy-Update) for RMW has been successfully inserted at the tail of the log.
@@ -149,7 +149,7 @@ namespace Tsavorite.core
         /// objects in-memory until we know the "insert at tail" is successful. Therefore, we allow a false return as a signal to inspect <paramref name="rmwInfo.Action"/>
         /// and handle <see cref="RMWAction.ExpireAndStop"/>.</returns>
         bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : IReadOnlyLogRecord;
+            where TSourceLogRecord : ISourceLogRecord;
         #endregion CopyUpdater
 
         #region InPlaceUpdater

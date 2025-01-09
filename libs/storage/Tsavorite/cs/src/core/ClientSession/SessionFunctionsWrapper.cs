@@ -27,7 +27,7 @@ namespace Tsavorite.core
         #region Reads
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo)
-            where TSourceLogRecord : IReadOnlyLogRecord
+            where TSourceLogRecord : ISourceLogRecord
             => _clientSession.functions.SingleReader(ref srcLogRecord, ref input, ref dst, ref readInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -82,17 +82,17 @@ namespace Tsavorite.core
         #region CopyUpdater
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : IReadOnlyLogRecord
+            where TSourceLogRecord : ISourceLogRecord
             => _clientSession.functions.NeedCopyUpdate(ref srcLogRecord, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : IReadOnlyLogRecord
+            where TSourceLogRecord : ISourceLogRecord
             => _clientSession.functions.CopyUpdater(ref srcLogRecord, ref dstLogRecord, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : IReadOnlyLogRecord
+            where TSourceLogRecord : ISourceLogRecord
         {
             dstLogRecord.InfoRef.SetDirtyAndModified();
             return _clientSession.functions.PostCopyUpdater(ref srcLogRecord, ref dstLogRecord, ref input, ref output, ref rmwInfo);
@@ -195,7 +195,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input)
-            where TSourceLogRecord : IReadOnlyLogRecord
+            where TSourceLogRecord : ISourceLogRecord
             => _clientSession.functions.GetRMWModifiedFieldInfo(ref srcLogRecord, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

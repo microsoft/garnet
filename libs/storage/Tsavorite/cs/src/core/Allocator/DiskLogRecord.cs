@@ -16,7 +16,7 @@ namespace Tsavorite.core
     ///     </list>
     /// This lets us get to the optional fields for comparisons without loading the full record (GetIOSize should cover the space for optionals).
     /// </remarks>
-    public unsafe struct DiskLogRecord : IReadOnlyLogRecord
+    public unsafe struct DiskLogRecord : ISourceLogRecord
     {
         /// <summary>The physicalAddress in the log.</summary>
         internal readonly long physicalAddress;
@@ -44,6 +44,8 @@ namespace Tsavorite.core
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : 0;
         /// <inheritdoc/>
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
+        /// <inheritdoc/>
+        public readonly LogRecord AsLogRecord() => throw new TsavoriteException("DiskLogRecord cannot be converted to AsLogRecord");
         #endregion //IReadOnlyRecord
 
         const int FullRecordLenSize = sizeof(int);

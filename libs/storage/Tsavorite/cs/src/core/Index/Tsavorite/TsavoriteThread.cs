@@ -173,7 +173,7 @@ namespace Tsavorite.core
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
                                                      status,
-                                                     new RecordMetadata(pendingContext.recordInfo, pendingContext.logicalAddress));
+                                                     new RecordMetadata(pendingContext.logicalAddress));
                 }
                 else
                 {
@@ -182,14 +182,14 @@ namespace Tsavorite.core
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
                                                      status,
-                                                     new RecordMetadata(pendingContext.recordInfo, pendingContext.logicalAddress));
+                                                     new RecordMetadata(pendingContext.logicalAddress));
                 }
             }
 
             unsafe
             {
-                ref RecordInfo recordInfo = ref hlog.GetInfoRefFromBytePointer(request.record.GetValidPointer());
-                storeFunctions.DisposeRecord(ref hlog.GetContextRecordKey(ref request), ref hlog.GetContextRecordValue(ref request), DisposeReason.DeserializedFromDisk);
+                DiskLogRecord diskLogRecord = new((long)request.record.GetValidPointer());
+                DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
             }
             request.Dispose();
             return status;

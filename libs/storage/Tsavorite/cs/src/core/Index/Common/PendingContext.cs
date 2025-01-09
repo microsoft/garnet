@@ -35,7 +35,6 @@ namespace Tsavorite.core
             internal ReadCopyOptions readCopyOptions;   // Two byte enums
             internal WriteReason writeReason;   // for ConditionalCopyToTail; one byte enum
 
-            internal RecordInfo recordInfo;
             internal long minAddress;
 
             // For flushing head pages on tail allocation.
@@ -43,6 +42,9 @@ namespace Tsavorite.core
 
             // For RMW if an allocation caused the source record for a copy to go from readonly to below HeadAddress, or for any operation with CAS failure.
             internal long retryNewLogicalAddress;
+
+            // Address of the initial entry in the hash chain upon start of Internal(RUMD).
+            internal long InitialEntryAddress;
 
             internal ScanCursorState<TValue> scanCursorState;
 
@@ -83,13 +85,6 @@ namespace Tsavorite.core
             {
                 readonly get => (operationFlags & kIsReadAtAddress) != 0;
                 set => operationFlags = value ? (ushort)(operationFlags | kIsReadAtAddress) : (ushort)(operationFlags & ~kIsReadAtAddress);
-            }
-
-            // RecordInfo is not used as such during the pending phase, so we reuse the space here.
-            internal long InitialEntryAddress
-            {
-                readonly get => recordInfo.PreviousAddress;
-                set => recordInfo.PreviousAddress = value;
             }
 
             public void Dispose()

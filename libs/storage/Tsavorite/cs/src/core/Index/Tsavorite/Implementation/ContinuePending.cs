@@ -121,7 +121,6 @@ namespace Tsavorite.core
 
                         if (!success)
                         {
-                            pendingContext.recordInfo = srcRecordInfo;
                             if (readInfo.Action == ReadAction.CancelOperation)
                                 return OperationStatus.CANCELED;
                             if (readInfo.Action == ReadAction.Expire)
@@ -141,7 +140,6 @@ namespace Tsavorite.core
                         }
                         else
                         {
-                            pendingContext.recordInfo = srcRecordInfo;
                             return OperationStatus.SUCCESS;
                         }
                     }
@@ -158,7 +156,6 @@ namespace Tsavorite.core
             }
 
         NotFound:
-            pendingContext.recordInfo = srcRecordInfo;
             return OperationStatus.NOTFOUND;
         }
 
@@ -345,7 +342,7 @@ namespace Tsavorite.core
             // Prepare to push to caller's iterator functions. Use data from pendingContext, not request; we're only made it to this line if the key was not found,
             // and thus the request was not populated. The new minAddress should be the highest logicalAddress we previously saw, because we need to make sure the
             // record was not added to the log after we initialized the pending IO.
-            hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.scanCursorState, pendingContext.recordInfo, ref pendingContext.key.Get(), ref pendingContext.value.Get(),
+            hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.scanCursorState, pendingContext.key.Get(), pendingContext.value.Get(),
                 currentAddress: request.logicalAddress, minAddress: pendingContext.InitialLatestLogicalAddress + 1);
 
             // ConditionalScanPush has already called HandleOperationStatus, so return SUCCESS here.

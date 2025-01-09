@@ -16,7 +16,7 @@ namespace Tsavorite.core
 
         #region Reads
         bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo)
-            where TSourceLogRecord : IReadOnlyLogRecord;
+            where TSourceLogRecord : ISourceLogRecord;
         bool ConcurrentReader(ref LogRecord logRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo);
         void ReadCompletionCallback(ref LogRecord logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
         #endregion reads
@@ -36,11 +36,11 @@ namespace Tsavorite.core
 
         #region CopyUpdater
         bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : IReadOnlyLogRecord;
+            where TSourceLogRecord : ISourceLogRecord;
         bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : IReadOnlyLogRecord;
+            where TSourceLogRecord : ISourceLogRecord;
         bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : IReadOnlyLogRecord;
+            where TSourceLogRecord : ISourceLogRecord;
         #endregion CopyUpdater
 
         #region InPlaceUpdater

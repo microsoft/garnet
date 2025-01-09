@@ -10,7 +10,7 @@ namespace Tsavorite.core
     {
         /// <summary>Length of resulting value object when performing RMW modification of value using given input</summary>
         RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input)
-            where TSourceLogRecord : IReadOnlyLogRecord;
+            where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>Initial expected length of value object when populated by RMW using given input</summary>
         RecordFieldInfo GetRMWInitialFieldInfo(ref TInput input);

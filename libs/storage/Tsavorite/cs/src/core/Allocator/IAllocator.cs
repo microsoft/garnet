@@ -19,7 +19,7 @@ namespace Tsavorite.core
 
         /// <summary>Get copy destination size for RMW, taking Input into account</summary>
         RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-            where TSourceLogRecord : IReadOnlyLogRecord
+            where TSourceLogRecord : ISourceLogRecord
             where TVariableLengthInput : IVariableLengthInput<TValue, TInput>;
 
         /// <summary>Get initial record size for RMW, given the <paramref name="key"/> and <paramref name="input"/></summary>

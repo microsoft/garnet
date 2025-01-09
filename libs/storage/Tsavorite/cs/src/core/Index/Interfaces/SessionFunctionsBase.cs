@@ -68,15 +68,15 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public virtual bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : IReadOnlyLogRecord
+            where TSourceLogRecord : ISourceLogRecord
             => true;
         /// <inheritdoc/>
         public virtual bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : IReadOnlyLogRecord
+            where TSourceLogRecord : ISourceLogRecord
             => true;
         /// <inheritdoc/>
         public virtual bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) 
-            where TSourceLogRecord : IReadOnlyLogRecord
+            where TSourceLogRecord : ISourceLogRecord
             => true;
         /// <inheritdoc/>
         public virtual bool InPlaceUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
@@ -96,7 +96,7 @@ namespace Tsavorite.core
 
         // *FieldInfo require an implementation that knows what is in IInput
         /// <inheritdoc/>
-        public abstract RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input) where TSourceLogRecord : IReadOnlyLogRecord;
+        public abstract RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input) where TSourceLogRecord : ISourceLogRecord;
         /// <inheritdoc/>
         public abstract RecordFieldInfo GetRMWInitialFieldInfo(ref TInput input);
         /// <inheritdoc/>

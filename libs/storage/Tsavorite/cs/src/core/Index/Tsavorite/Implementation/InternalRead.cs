@@ -88,7 +88,6 @@ namespace Tsavorite.core
 
                         // This is not called when looking up by address, so we can set pendingContext.recordInfo.
                         srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-                        pendingContext.recordInfo = srcRecordInfo;
                         readInfo.SetRecordInfo(ref srcRecordInfo);
 
                         readInfo.Address = Constants.kInvalidAddress;   // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
@@ -119,8 +118,6 @@ namespace Tsavorite.core
                 {
                     // Mutable region (even fuzzy region is included here)
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-                    pendingContext.recordInfo = srcRecordInfo;
-                    readInfo.SetRecordInfo(ref srcRecordInfo);
 
                     if (srcRecordInfo.IsClosedOrTombstoned(ref status))
                         return status;
@@ -134,8 +131,6 @@ namespace Tsavorite.core
                 {
                     // Immutable region
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-                    pendingContext.recordInfo = srcRecordInfo;
-                    readInfo.SetRecordInfo(ref srcRecordInfo);
 
                     if (srcRecordInfo.IsClosedOrTombstoned(ref status))
                         return status;
@@ -246,7 +241,7 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long readAtAddress, ref TKey key, ref TInput input, ref TOutput output,
+        internal OperationStatus InternalReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long readAtAddress, SpanByte key, ref TInput input, ref TOutput output,
                                     ref ReadOptions readOptions, TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -311,7 +306,6 @@ namespace Tsavorite.core
                 // We do not check for Tombstone here; we return the record to the caller.
 
                 stackCtx.recSrc.SetHasMainLogSrc();
-                pendingContext.recordInfo = srcRecordInfo;
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                 ReadInfo readInfo = new()
@@ -320,7 +314,6 @@ namespace Tsavorite.core
                     Address = stackCtx.recSrc.LogicalAddress,
                     IsFromPending = pendingContext.type != OperationType.NONE,
                 };
-                readInfo.SetRecordInfo(ref srcRecordInfo);
 
                 // Ignore the return value from the ISessionFunctions calls; we're doing nothing else based on it.
                 status = OperationStatus.SUCCESS;

@@ -46,7 +46,7 @@ namespace Tsavorite.core
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>
         bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-            where TSourceLogRecord : IReadOnlyLogRecord;
+            where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>Next record in iteration for a record in mutable log memory.</summary>
         /// <param name="logRecord">Reference to the current log record's info</param>
@@ -56,7 +56,7 @@ namespace Tsavorite.core
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>
         bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-            where TSourceLogRecord : IReadOnlyLogRecord;
+            where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>Iteration is complete.</summary>
         /// <param name="completed">If true, the iteration completed; else scanFunctions.*Reader() returned false to stop the iteration.</param>

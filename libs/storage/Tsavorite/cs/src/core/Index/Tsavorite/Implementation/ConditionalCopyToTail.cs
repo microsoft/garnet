@@ -117,7 +117,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus PrepareIOForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                                         ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                                        ref TKey key, ref TInput input, ref TValue value, ref TOutput output, TContext userContext,
+                                        SpanByte key, ref TInput input, ref TValue value, ref TOutput output, TContext userContext,
                                         ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, WriteReason writeReason,
                                         OperationType opType = OperationType.CONDITIONAL_INSERT)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>

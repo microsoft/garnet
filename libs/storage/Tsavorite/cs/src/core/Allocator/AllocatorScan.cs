@@ -247,8 +247,8 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ScanCursorState<TValue> scanCursorState, RecordInfo recordInfo,
-                SpanByte key, ref TValue value, long currentAddress, long minAddress)
+        internal Status ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ScanCursorState<TValue> scanCursorState,
+                SpanByte key, TValue value, long currentAddress, long minAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup so the epoch should be protected");
@@ -277,7 +277,7 @@ namespace Tsavorite.core
             {
                 // A more recent version of the key was not found. recSrc.LogicalAddress is the correct address, because minAddress was examined
                 // and this is the previous record in the tag chain. Push this record to the user.
-                RecordMetadata recordMetadata = new(recordInfo, stackCtx.recSrc.LogicalAddress);
+                RecordMetadata recordMetadata = new(stackCtx.recSrc.LogicalAddress);
                 var stop = (stackCtx.recSrc.LogicalAddress >= HeadAddress)
                     ? !scanCursorState.functions.ConcurrentReader(ref key, ref value, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult)
                     : !scanCursorState.functions.SingleReader(ref key, ref value, recordMetadata, scanCursorState.acceptedCount, out cursorRecordResult);

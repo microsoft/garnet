@@ -4,7 +4,7 @@
 namespace Tsavorite.core
 {
     /// <summary>An interface to cover either an in-memory or on-disk log record for RCU</summary>
-    public interface IReadOnlyLogRecord
+    public interface ISourceLogRecord
     {
         /// <summary>A ref to the record header</summary>
         public ref RecordInfo InfoRef { get; }
@@ -36,5 +36,9 @@ namespace Tsavorite.core
 
         /// <summary>The Expiration of the record, if any (see <see cref="RecordInfo.HasExpiration"/>; 0 by default.</summary>
         public long Expiration { get; }
+
+        /// <summary>A shim to "convert" a TSourceLogRecord generic that is a <see cref="LogRecord"/> to a <see cref="LogRecord"/> type.
+        /// Should throw if the TSourceLogRecord is a <see cref="DiskLogRecord"/>.</summary>
+        public LogRecord AsLogRecord();
     }
 }

@@ -19,7 +19,7 @@ namespace Tsavorite.core
     /// This lets us get to the key without intermediate computations to account for the optional fields.
     /// Some methods have both member and static versions for ease of access and possibly performance gains.
     /// </remarks>
-    public unsafe struct LogRecord : IReadOnlyLogRecord
+    public unsafe struct LogRecord : ISourceLogRecord
     {
         /// <summary>Number of bytes required to store an ETag</summary>
         public const int ETagSize = sizeof(long);
@@ -83,6 +83,9 @@ namespace Tsavorite.core
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : 0;
         /// <inheritdoc/>
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly LogRecord AsLogRecord() => this;
         #endregion //IReadOnlyLogRecord
 
         /// <summary>A ref to the record header</summary>

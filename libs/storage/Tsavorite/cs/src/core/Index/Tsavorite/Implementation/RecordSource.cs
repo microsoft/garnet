@@ -135,6 +135,12 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void ClearHasReadCacheSrc() => internalState &= ~InternalStates.ReadCacheSrc;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal long SetPhysicalAddress() => PhysicalAddress = Allocator.GetPhysicalAddress(LogicalAddress);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly ref RecordInfo GetInfoRef() => ref Allocator.GetInfoRef(PhysicalAddress);
+        internal readonly RecordInfo GetInfo() => Allocator.GetInfoRef(PhysicalAddress);
+
         internal readonly bool HasInMemorySrc => (internalState & (InternalStates.MainLogSrc | InternalStates.ReadCacheSrc)) != 0;
 
         /// <summary>

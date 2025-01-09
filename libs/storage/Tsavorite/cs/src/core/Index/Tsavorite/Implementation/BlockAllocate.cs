@@ -142,10 +142,10 @@ namespace Tsavorite.core
             return false;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void SaveAllocationForRetry<TInput, TOutput, TContext>(ref PendingContext<TInput, TOutput, TContext> pendingContext, long logicalAddress, long physicalAddress, int allocatedSize)
+        // Do not inline, to keep CreateNewRecord* lean
+        void SaveAllocationForRetry<TInput, TOutput, TContext>(ref PendingContext<TInput, TOutput, TContext> pendingContext, long logicalAddress, long physicalAddress)
         {
-            ref var recordInfo = ref hlog.GetInfo(physicalAddress);
+            ref var recordInfo = ref hlog.GetInfoRef(physicalAddress);
 
             // TryAllocateRecord may stash this before WriteRecordInfo is called, leaving .PreviousAddress set to kInvalidAddress.
             // This is zero, and setting Invalid will result in recordInfo.IsNull being true, which will cause log-scan problems.
@@ -173,7 +173,12 @@ namespace Tsavorite.core
                 return false;
             }
 
+            // TODO: Key should not change, but verify; Value may overflow or not. Also, overflow keys/values should keep their full length if possible (at the end of the data value);
+            //      do we need a bit like the old Expiration bit for this? Same considerations on Revivification
+
             newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+            var newLogRecord = new LogRecord(newPhysicalAddress);
+            // TODO...
             ref var recordInfo = ref hlog.GetInfoRef(newPhysicalAddress);
             Debug.Assert(!recordInfo.IsNull(), "RecordInfo should not be IsNull");
             ref var recordValue = ref hlog.GetValue(newPhysicalAddress);

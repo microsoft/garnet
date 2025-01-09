@@ -306,7 +306,6 @@ namespace Tsavorite.core
                 srcRecordInfo.Seal();    // Not elided so Seal without invalidate
 
                 stackCtx.ClearNewRecord();
-                pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
             }

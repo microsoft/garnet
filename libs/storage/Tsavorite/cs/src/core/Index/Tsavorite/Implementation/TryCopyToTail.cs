@@ -68,7 +68,6 @@ namespace Tsavorite.core
                 newRecordInfo.UnsealAndValidate();
                 PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo, pendingContext.InitialEntryAddress);
 
-                pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = upsertInfo.Address;
                 sessionFunctions.PostSingleWriter(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref upsertInfo, reason, ref newRecordInfo);
                 stackCtx.ClearNewRecord();

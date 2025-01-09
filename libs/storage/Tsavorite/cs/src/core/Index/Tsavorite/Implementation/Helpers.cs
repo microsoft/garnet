@@ -23,8 +23,9 @@ namespace Tsavorite.core
         {
             ref RecordInfo recordInfo = ref LogRecord.GetInfoRef(physicalAddress);
             recordInfo.WriteInfo(inNewVersion, previousAddress);
-            log._wrapper.SerializeKey(key, logicalAddress, physicalAddress);
-            return log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
+            var logRecord = log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
+            log._wrapper.SerializeKey(key, logicalAddress, ref logRecord);
+            return logRecord;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -40,6 +41,14 @@ namespace Tsavorite.core
                     heapObj = default;
                 }
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason)
+        {
+            // Clear the IHeapObject if we deserialized it
+            if (logRecord.ValueObject is not null)
+                storeFunctions.DisposeValueObject(logRecord.ValueObject, disposeReason);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -116,40 +125,34 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private (bool elided, bool added) TryElideAndTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, (int usedValueLength, int fullValueLength, int fullRecordLength) recordLengths)
+                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Try to CAS out of the hashtable and if successful, add it to the free list.
-            Debug.Assert(srcRecordInfo.IsSealed, "Expected a Sealed record in TryElideAndTransferToFreeList");
+            Debug.Assert(logRecord.Info.IsSealed, "Expected a Sealed record in TryElideAndTransferToFreeList");
 
             if (!stackCtx.hei.TryElide())
                 return (false, false);
 
-            return (true, TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo, recordLengths));
+            return (true, TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref logRecord));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx,
-                ref RecordInfo srcRecordInfo, (int usedValueLength, int fullValueLength, int fullRecordLength) recordLengths)
+                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // The record has been CAS'd out of the hashtable or elided from the chain, so add it to the free list.
-            Debug.Assert(srcRecordInfo.IsSealed, "Expected a Sealed record in TryTransferToFreeList");
+            Debug.Assert(logRecord.Info.IsSealed, "Expected a Sealed record in TryTransferToFreeList");
 
             // Dispose any existing key and value. We do this as soon as we have elided so objects are released for GC as early as possible.
-            // We don't want the caller to know details of the Filler, so we cleared out any extraValueLength entry to ensure the space beyond
-            // usedValueLength is zero'd for log-scan correctness.
-            ref TValue recordValue = ref stackCtx.recSrc.GetValue();
-            ClearExtraValueSpace(ref srcRecordInfo, ref recordValue, recordLengths.usedValueLength, recordLengths.fullValueLength);
-            storeFunctions.DisposeRecord(ref stackCtx.recSrc.GetKey(), ref recordValue, DisposeReason.RevivificationFreeList);
+            DisposeRecord(ref logRecord, DisposeReason.RevivificationFreeList);
 
             // Now that we've Disposed the record, see if its address is revivifiable. If not, just leave it orphaned and invalid.
             if (stackCtx.recSrc.LogicalAddress < GetMinRevivifiableAddress())
                 return false;
 
-            SetFreeRecordSize(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo, recordLengths.fullRecordLength);
-            return RevivificationManager.TryAdd(stackCtx.recSrc.LogicalAddress, recordLengths.fullRecordLength, ref sessionFunctions.Ctx.RevivificationStats);
+            return RevivificationManager.TryAdd(stackCtx.recSrc.LogicalAddress, logRecord.GetFullRecordSizes().allocatedSize, ref sessionFunctions.Ctx.RevivificationStats);
         }
 
         internal enum LatchOperation : byte
@@ -167,38 +170,41 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CASRecordIntoChain(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long newLogicalAddress, ref RecordInfo newRecordInfo)
+        private bool CASRecordIntoChain(long newLogicalAddress, ref LogRecord newLogRecord, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             var result = stackCtx.recSrc.LowestReadCachePhysicalAddress == Constants.kInvalidAddress
                 ? stackCtx.hei.TryCAS(newLogicalAddress)
-                : SpliceIntoHashChainAtReadCacheBoundary(key, ref stackCtx, newLogicalAddress);
+                : SpliceIntoHashChainAtReadCacheBoundary(newLogRecord.Key, ref stackCtx, newLogicalAddress);
             if (result)
-                newRecordInfo.UnsealAndValidate();
+                newLogRecord.InfoRef.UnsealAndValidate();
             return result;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostCopyToTail(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
-            => PostCopyToTail(key, ref stackCtx, ref srcRecordInfo, stackCtx.hei.Address);
+        private void PostCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
+            where TSourceLogRecord : ISourceLogRecord
+            => PostCopyToTail(ref srcLogRecord, ref stackCtx, stackCtx.hei.Address);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostCopyToTail(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, long highestReadCacheAddressChecked)
+        private void PostCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long highestReadCacheAddressChecked)
+            where TSourceLogRecord : ISourceLogRecord
         {
             // Nothing required here if not using ReadCache
             if (!UseReadCache)
                 return;
 
+            // We're using the read cache, so any insertion must check that a readcache insertion wasn't done
             if (stackCtx.recSrc.HasReadCacheSrc)
             {
                 // If we already have a readcache source, there will not be another inserted, so we can just invalidate the source directly.
-                srcRecordInfo.SetInvalidAtomic();
+                srcLogRecord.InfoRef.SetInvalidAtomic();
             }
             else
             {
                 // We did not have a readcache source, so while we spliced a new record into the readcache/mainlog gap a competing readcache record may have been inserted at the tail.
                 // If so, invalidate it. highestReadCacheAddressChecked is hei.Address unless we are from ConditionalCopyToTail, which may have skipped the readcache before this.
                 // See "Consistency Notes" in TryCopyToReadCache for a discussion of why there ie no "momentary inconsistency" possible here.
-                ReadCacheCheckTailAfterSplice(key, ref stackCtx.hei, highestReadCacheAddressChecked);
+                ReadCacheCheckTailAfterSplice(srcLogRecord.Key, ref stackCtx.hei, highestReadCacheAddressChecked);
             }
         }
 

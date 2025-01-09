@@ -489,7 +489,7 @@ namespace Tsavorite.core
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
             var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
+            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.logicalAddress) : default;
             return status;
         }
 
@@ -520,7 +520,7 @@ namespace Tsavorite.core
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
             var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
+            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.logicalAddress) : default;
             return status;
         }
 
@@ -552,7 +552,7 @@ namespace Tsavorite.core
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
             var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
+            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.logicalAddress) : default;
             return status;
         }
 
@@ -569,7 +569,7 @@ namespace Tsavorite.core
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
             var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
+            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.logicalAddress) : default;
             return status;
         }
 
