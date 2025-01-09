@@ -59,6 +59,20 @@ namespace Garnet.server
         /// <param name="id">ID if found, otherwise -1</param>
         /// <returns>True if ID found</returns>
         bool TryGetFirstId(Func<T, bool> predicate, out int id);
+
+        /// <summary>
+        /// Maps underlying map index to item ID
+        /// </summary>
+        /// <param name="index">Map index</param>
+        /// <returns>Item ID</returns>
+        int GetIdFromIndex(int index);
+
+        /// <summary>
+        /// Maps an item ID to underlying map index
+        /// </summary>
+        /// <param name="id">Item ID</param>
+        /// <returns>Map index</returns>
+        int GetIndexFromId(int id);
     }
 
     /// <summary>
@@ -168,6 +182,12 @@ namespace Garnet.server
             return false;
         }
 
+        /// <inheritdoc />
+        public int GetIdFromIndex(int index) => descIds ? minId - index : index;
+
+        /// <inheritdoc />
+        public int GetIndexFromId(int id) => descIds ? minId - id : id;
+
         /// <summary>
         /// Get next item ID for assignment with atomic incrementation of underlying index
         /// </summary>
@@ -247,20 +267,6 @@ namespace Garnet.server
             if (updateSize) TryUpdateSize(id);
             return true;
         }
-
-        /// <summary>
-        /// Maps map index to item ID
-        /// </summary>
-        /// <param name="index">Map index</param>
-        /// <returns>Item ID</returns>
-        private int GetIdFromIndex(int index) => descIds ? minId - index : index;
-
-        /// <summary>
-        /// Maps an item ID to a map index
-        /// </summary>
-        /// <param name="id">Item ID</param>
-        /// <returns>Map index</returns>
-        private int GetIndexFromId(int id) => descIds ? minId - id : id;
     }
 
     /// <summary>
@@ -397,6 +403,12 @@ namespace Garnet.server
                 eMapLock.ReadUnlock();
             }
         }
+
+        /// <inheritdoc />
+        public int GetIdFromIndex(int index) => eMapUnsafe.GetIdFromIndex(index);
+
+        /// <inheritdoc />
+        public int GetIndexFromId(int id) => eMapUnsafe.GetIndexFromId(id);
     }
 
     /// <summary>

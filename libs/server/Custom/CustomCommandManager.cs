@@ -44,12 +44,13 @@ namespace Garnet.server
             if (!rawStringCommandMap.TryGetNextId(out var cmdId))
                 throw new Exception("Out of registration space");
             Debug.Assert(cmdId <= ushort.MaxValue);
-            var newCmd = new CustomRawStringCommand(name, (ushort)cmdId, type, customFunctions, expirationTicks);
+            var friendlyCmdId = GetRawStringFriendlyIdFromCommandId(cmdId);
+            var newCmd = new CustomRawStringCommand(name, (ushort)friendlyCmdId, type, customFunctions, expirationTicks);
             var setSuccessful = rawStringCommandMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
             if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
             if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
-            return cmdId;
+            return friendlyCmdId;
         }
 
         internal int Register(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
@@ -75,25 +76,31 @@ namespace Garnet.server
                 throw new Exception("Out of registration space");
             Debug.Assert(cmdId <= byte.MaxValue);
 
-            var newCmd = new CustomObjectCommandWrapper((byte)cmdId, factory);
+            var friendlyTypeId = GetTypeFriendlyIdFromCommandId(cmdId);
+            var newCmd = new CustomObjectCommandWrapper((byte)friendlyTypeId, factory);
             var setSuccessful = objectCommandMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
 
-            return cmdId;
+            return friendlyTypeId;
         }
 
         internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo, RespCommandDocs commandDocs, CustomObjectFunctions customObjectFunctions = null)
         {
+            int friendlyTypeId;
             if (!objectCommandMap.TryGetFirstId(c => c.factory == factory, out var typeId))
             {
                 if (!objectCommandMap.TryGetNextId(out typeId))
                     throw new Exception("Out of registration space");
 
                 Debug.Assert(typeId <= byte.MaxValue);
-
-                var newCmd = new CustomObjectCommandWrapper((byte)typeId, factory);
+                friendlyTypeId = GetTypeFriendlyIdFromCommandId(typeId);
+                var newCmd = new CustomObjectCommandWrapper((byte)friendlyTypeId, factory);
                 var setSuccessful = objectCommandMap.TrySetValue(typeId, ref newCmd);
                 Debug.Assert(setSuccessful);
+            }
+            else
+            {
+                friendlyTypeId = GetTypeFriendlyIdFromCommandId(typeId);
             }
 
             objectCommandMap.TryGetValue(typeId, out var wrapper);
@@ -101,7 +108,7 @@ namespace Garnet.server
                 throw new Exception("Out of registration space");
 
             Debug.Assert(scId <= byte.MaxValue);
-            var newSubCmd = new CustomObjectCommand(name, (byte)typeId, (byte)scId, commandType, wrapper.factory,
+            var newSubCmd = new CustomObjectCommand(name, (byte)friendlyTypeId, (byte)scId, commandType, wrapper.factory,
                 customObjectFunctions);
             var scSetSuccessful = wrapper.commandMap.TrySetValue(scId, ref newSubCmd);
             Debug.Assert(scSetSuccessful);
@@ -109,7 +116,7 @@ namespace Garnet.server
             if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
             if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
 
-            return (typeId, scId);
+            return (friendlyTypeId, scId);
         }
 
         /// <summary>
@@ -177,5 +184,17 @@ namespace Garnet.server
         {
             return this.customCommandsDocs.TryGetValue(cmdName, out respCommandsDocs);
         }
+
+        internal int GetRawStringCommandIdFromFriendlyId(int friendlyId)
+            => rawStringCommandMap.GetIdFromIndex(friendlyId);
+
+        internal int GetTypeIdFromFriendlyId(int friendlyId)
+            => objectCommandMap.GetIdFromIndex(friendlyId);
+
+        private int GetRawStringFriendlyIdFromCommandId(int cmdId)
+            => rawStringCommandMap.GetIndexFromId(cmdId);
+
+        private int GetTypeFriendlyIdFromCommandId(int cmdId)
+            => objectCommandMap.GetIndexFromId(cmdId);
     }
 }
