@@ -102,6 +102,13 @@ namespace Garnet.server
         private static partial int lua_pcallk(lua_State luaState, int nargs, int nresults, int msgh, nint ctx, nint k);
 
         /// <summary>
+        /// see: https://www.lua.org/manual/5.4/manual.html#lua_callk
+        /// </summary>
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+        private static partial int lua_callk(lua_State luaState, int nargs, int nresults, nint ctx, nint k);
+
+        /// <summary>
         /// see: https://www.lua.org/manual/5.4/manual.html#lua_rawseti
         /// </summary>
         [LibraryImport(LuaLibraryName)]
@@ -180,7 +187,7 @@ namespace Garnet.server
         /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_gettop
         /// </summary>
         [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvSuppressGCTransition)])]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial int lua_gettop(lua_State luaState);
 
         /// <summary>
@@ -192,7 +199,7 @@ namespace Garnet.server
         /// see: https://www.lua.org/source/5.4/lapi.c.html#index2value
         /// </summary>
         [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvSuppressGCTransition)])]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial LuaType lua_type(lua_State L, int index);
 
         /// <summary>
@@ -202,7 +209,7 @@ namespace Garnet.server
         /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_pushnil
         /// </summary>
         [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvSuppressGCTransition)])]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial void lua_pushnil(lua_State L);
 
         /// <summary>
@@ -212,7 +219,7 @@ namespace Garnet.server
         /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_pushinteger
         /// </summary>
         [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvSuppressGCTransition)])]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial void lua_pushinteger(lua_State L, long num);
 
         /// <summary>
@@ -222,7 +229,7 @@ namespace Garnet.server
         /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_pushboolean
         /// </summary>
         [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvSuppressGCTransition)])]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial void lua_pushboolean(lua_State L, int b);
 
         /// <summary>
@@ -232,7 +239,7 @@ namespace Garnet.server
         /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_toboolean
         /// </summary>
         [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvSuppressGCTransition)])]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial int lua_toboolean(lua_State L, int ix);
 
         /// <summary>
@@ -243,7 +250,7 @@ namespace Garnet.server
         /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_tointegerx
         /// </summary>
         [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvSuppressGCTransition)])]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial long lua_tointegerx(lua_State L, int idex, intptr_t pisnum);
 
         /// <summary>
@@ -253,7 +260,7 @@ namespace Garnet.server
         /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_settop
         /// </summary>
         [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvSuppressGCTransition)])]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial void lua_settop(lua_State L, int num);
 
         /// <summary>
@@ -263,7 +270,7 @@ namespace Garnet.server
         /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_atpanic
         /// </summary>
         [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvSuppressGCTransition)])]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial lua_CFunction lua_atpanic(lua_State luaState, lua_CFunction panicf);
 
         /// <summary>
@@ -273,7 +280,7 @@ namespace Garnet.server
         /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_pushcclosure
         /// </summary>
         [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvSuppressGCTransition)])]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial void lua_pushcclosure(lua_State luaState, lua_CFunction fn, int n);
 
         // Helper methods for using the pinvokes defined above
@@ -291,19 +298,15 @@ namespace Garnet.server
         /// </summary>
         internal static bool CheckBuffer(lua_State luaState, int index, out ReadOnlySpan<byte> str)
         {
-            var type = lua_type(luaState, index);
-
-            if (type is not LuaType.String and not LuaType.Number)
-            {
-                str = [];
-                return false;
-            }
-
+            // See: https://www.lua.org/source/5.4/lapi.c.html#lua_tolstring
+            //
+            // If lua_tolstring fails, it will set len == 0 and start == NULL
             var start = lua_tolstring(luaState, index, out var len);
+            
             unsafe
             {
                 str = new ReadOnlySpan<byte>((byte*)start, (int)len);
-                return true;
+                return start != (charptr_t)(void*)null;
             }
         }
 
@@ -484,6 +487,12 @@ namespace Garnet.server
         /// </summary>
         internal static LuaStatus PCall(lua_State luaState, int nargs, int nrets)
         => (LuaStatus)lua_pcallk(luaState, nargs, nrets, 0, 0, 0);
+
+        /// <summary>
+        /// Perform a call with the given number of arguments, expecting the given number of returns.
+        /// </summary>
+        internal static void Call(lua_State luaState, int nargs, int nrets)
+        => lua_callk(luaState, nargs, nrets, 0, 0);
 
         /// <summary>
         /// Equivalent of t[i] = v, where t is the table at the given index and v is the value on the top of the stack.

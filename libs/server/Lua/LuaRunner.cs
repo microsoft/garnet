@@ -131,13 +131,6 @@ namespace Garnet.server
 
         const string LoaderBlock = @"
 import = function () end
-redis = {}
-function redis.status_reply(text)
-    return text
-end
-function redis.error_reply(text)
-    return { err = 'ERR ' .. text }
-end
 KEYS = {}
 ARGV = {}
 sandbox_env = {
@@ -161,7 +154,6 @@ sandbox_env = {
     rawequal = rawequal;
     rawget = rawget;
     rawset = rawset;
-    redis = redis;
     select = select;
     -- explicitly not allowing setfenv
     string = string;
@@ -178,46 +170,40 @@ sandbox_env = {
 }
 -- do resets in the Lua side to minimize pinvokes
 function reset_keys_and_argv(fromKey, fromArgv)
-    local keyCount = #KEYS
+    local keyRef = KEYS
+    local keyCount = #keyRef
     for i = fromKey, keyCount do
-        KEYS[i] = nil
+        table.remove(keyRef)
     end
 
-    local argvCount = #ARGV
+    local argvRef = ARGV
+    local argvCount = #argvRef
     for i = fromArgv, argvCount do
-        ARGV[i] = nil
+        table.remove(argvRef)
     end
 end
 -- responsible for sandboxing user provided code
-function load_sandboxed(source, garnetCallHandle)
-    if (not source) then return nil end
-    if (not garnetCallHandle) then return nill end
+function load_sandboxed(source)
+    -- move into a local to avoid global lookup
+    local garnetCallRef = garnet_call
 
-    local garnetCallWithHandle = function(...) 
-        return garnet_call(garnetCallHandle, ...)
-    end
+    sandbox_env.redis = {
+        status_reply = function(text)
+            return text
+        end,
 
-    sandbox_env['redis']['call'] = garnetCallWithHandle
+        error_reply = function(text)
+            return { err = 'ERR ' .. text }
+        end,
+
+        call = function(...)
+            return garnetCallRef(...)
+        end
+    }
 
     local rawFunc, err = load(source, nil, nil, sandbox_env)
 
-    -- compilation error is returned directly
-    if err then
-        return rawFunc, err
-    end
-
-    -- otherwise we wrap the compiled function in a helper
-    return function()
-        local rawRet = rawFunc()
-
-        -- handle ok response wrappers without crossing the pinvoke boundary
-        -- err response wrapper requires a bit more work, but is also rarer
-        if rawRet and type(rawRet) == ""table"" and rawRet.ok then
-            return rawRet.ok
-        end
-
-        return rawRet
-    end
+    return err, rawFunc
 end
 ";
 
@@ -228,12 +214,12 @@ end
         // These are mix of objects we regularly update,
         // constants we want to avoid copying from .NET to Lua,
         // and the compiled function definition.
-        readonly int sandboxEnvRegistryIndex;
         readonly int keysTableRegistryIndex;
         readonly int argvTableRegistryIndex;
         readonly int loadSandboxedRegistryIndex;
         readonly int resetKeysAndArgvRegistryIndex;
         readonly int okConstStringRegistryIndex;
+        readonly int okLowerConstStringRegistryIndex;
         readonly int errConstStringRegistryIndex;
         readonly int noSessionAvailableConstStringRegistryIndex;
         readonly int pleaseSpecifyRedisCallConstStringRegistryIndex;
@@ -255,10 +241,6 @@ end
 
         // This cannot be readonly, as it is a mutable struct
         LuaStateWrapper state;
-
-        // When we need a Lua callback to find this LuaRunner, we use this (Normal, NOT PINNED)
-        // GCHandle to pass it down
-        GCHandle selfHandle;
 
         // We need to temporarily store these for P/Invoke reasons
         // You shouldn't be touching them outside of the Compile and Run methods
@@ -286,13 +268,10 @@ end
 
             scratchBufferManager = respServerSession?.scratchBufferManager ?? new();
 
-            sandboxEnvRegistryIndex = -1;
             keysTableRegistryIndex = -1;
             argvTableRegistryIndex = -1;
             loadSandboxedRegistryIndex = -1;
             functionRegistryIndex = -1;
-
-            selfHandle = GCHandle.Alloc(this, GCHandleType.Normal);
 
             state = new LuaStateWrapper(memMode, memLimitBytes, this.logger);
 
@@ -326,8 +305,10 @@ end
                 string errMsg;
                 try
                 {
-                    if (state.StackTop >= 1 && state.CheckBuffer(1, out var errSpan))
+                    if (state.StackTop >= 1)
                     {
+                        // We control the definition of LoaderBlock, so we know this is a string
+                        state.KnownStringToBuffer(1, out var errSpan);
                         errMsg = Encoding.UTF8.GetString(errSpan);
                     }
                     else
@@ -346,9 +327,6 @@ end
             // Register garnet_call in global namespace
             state.Register("garnet_call\0"u8, garnetCall);
 
-            state.GetGlobal(LuaType.Table, "sandbox_env\0"u8);
-            sandboxEnvRegistryIndex = state.Ref();
-
             state.GetGlobal(LuaType.Table, "KEYS\0"u8);
             keysTableRegistryIndex = state.Ref();
 
@@ -363,6 +341,7 @@ end
 
             // Commonly used strings, register them once so we don't have to copy them over each time we need them
             okConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_OK);
+            okLowerConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ok);
             errConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_err);
             noSessionAvailableConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_No_session_available);
             pleaseSpecifyRedisCallConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call);
@@ -402,9 +381,9 @@ end
             runnerAdapter = new RunnerAdapter(scratchBufferManager);
             try
             {
+                LuaRunnerTrampolines.SetCallbackContext(this);
                 state.PushCFunction(&LuaRunnerTrampolines.CompileForRunner);
-                state.PushInteger((long)selfHandle);
-                var res = state.PCall(1, 0);
+                var res = state.PCall(0, 0);
                 if (res == LuaStatus.OK)
                 {
                     var resp = runnerAdapter.Response;
@@ -424,6 +403,7 @@ end
             finally
             {
                 runnerAdapter = default;
+                LuaRunnerTrampolines.ClearCallbackContext(this);
             }
         }
 
@@ -434,7 +414,7 @@ end
         /// 
         /// Call <see cref="CompileForRunner"/> instead.
         /// </summary>
-        internal void UnsafeCompileForRunner()
+        internal int UnsafeCompileForRunner()
         => CompileCommon(ref runnerAdapter);
 
         /// <summary>
@@ -448,9 +428,9 @@ end
 
             try
             {
+                LuaRunnerTrampolines.SetCallbackContext(this);
                 state.PushCFunction(&LuaRunnerTrampolines.CompileForSession);
-                state.PushInteger((long)selfHandle);
-                var res = state.PCall(1, 0);
+                var res = state.PCall(0, 0);
                 if (res != LuaStatus.OK)
                 {
                     while (!RespWriteUtils.WriteError("Internal Lua Error"u8, ref session.dcurr, session.dend))
@@ -464,6 +444,7 @@ end
             finally
             {
                 sessionAdapter = default;
+                LuaRunnerTrampolines.ClearCallbackContext(this);
             }
         }
 
@@ -474,7 +455,7 @@ end
         /// 
         /// Call <see cref="CompileForSession"/> instead.
         /// </summary>
-        internal void UnsafeCompileForSession()
+        internal int UnsafeCompileForSession()
         => CompileCommon(ref sessionAdapter);
 
         /// <summary>
@@ -492,106 +473,51 @@ end
         /// <summary>
         /// Compile script, writing errors out to given response.
         /// </summary>
-        private unsafe void CompileCommon<TResponse>(ref TResponse resp)
+        private unsafe int CompileCommon<TResponse>(ref TResponse resp)
             where TResponse : struct, IResponseAdapter
         {
-            const int NeededStackSpace = 3;
+            const int NeededStackSpace = 2;
 
             Debug.Assert(functionRegistryIndex == -1, "Shouldn't compile multiple times");
 
             state.ExpectLuaStackEmpty();
 
-            try
+            state.ForceMinimumStackCapacity(NeededStackSpace);
+
+            _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, loadSandboxedRegistryIndex);
+            state.PushBuffer(source.Span);
+            state.Call(1, 2);
+
+            // Now the stack will have two things on it:
+            //  1. The error (nil if not error)
+            //  2. The function (nil if error)
+
+            if (state.Type(1) == LuaType.Nil)
             {
-                state.ForceMinimumStackCapacity(NeededStackSpace);
+                // No error, success!
 
-                _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, loadSandboxedRegistryIndex);
-                state.PushBuffer(source.Span);
-                state.PushInteger((long)selfHandle);
-                var callRes = state.PCall(2, -1); // Multiple returns allowed
+                Debug.Assert(state.Type(2) == LuaType.Function, "Unexpected type returned from load_sandboxed");
 
-                if (callRes == LuaStatus.OK)
-                {
-                    var numRets = state.StackTop;
-
-                    if (numRets == 0)
-                    {
-                        while (!RespWriteUtils.WriteError("Shouldn't happen, no returns from load_sandboxed"u8, ref resp.BufferCur, resp.BufferEnd))
-                            resp.SendAndReset();
-                    }
-                    else if (numRets == 1)
-                    {
-                        var returnType = state.Type(1);
-                        if (returnType != LuaType.Function)
-                        {
-                            state.Pop(1);
-
-                            var errStr = $"Could not compile function, got back a {returnType}";
-                            while (!RespWriteUtils.WriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
-                                resp.SendAndReset();
-                        }
-                        else
-                        {
-                            functionRegistryIndex = state.Ref();
-                        }
-                    }
-                    else if (numRets == 2)
-                    {
-                        _ = state.CheckBuffer(2, out var errorBuf);
-
-                        var errStr = $"Compilation error: {Encoding.UTF8.GetString(errorBuf)}";
-                        while (!RespWriteUtils.WriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
-                            resp.SendAndReset();
-
-                        state.Pop(2);
-                    }
-                    else
-                    {
-                        state.Pop(numRets);
-
-                        logger?.LogCritical("Unexpected error compiling, got too many replies back: reply count = {numRets}", numRets);
-
-                        while (!RespWriteUtils.WriteError("Internal Lua Error"u8, ref resp.BufferCur, resp.BufferEnd))
-                            resp.SendAndReset();
-                    }
-                }
-                else
-                {
-                    // Memory or Runtime error
-
-                    var errStr = $"Lua Call error: {callRes}";
-                    while (!RespWriteUtils.WriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
-                        resp.SendAndReset();
-
-                    state.Pop(state.StackTop);
-                }
-
-                // In normal operations, we come all the way down here and the stack should be balanced
-                //
-                // It is possible for a lower LuaError to happen, and then we can't know anything about the stack.
-                // The higher caller has to deal with that.
-                state.ExpectLuaStackEmpty();
+                functionRegistryIndex = state.Ref();
             }
-            catch (Exception ex)
+            else
             {
-                logger?.LogError(ex, "CreateFunction threw an exception");
-                throw;
+                // We control the definition of load_sandboxed, so we know this will be a string
+                state.KnownStringToBuffer(1, out var errorBuf);
+
+                var errStr = $"Compilation error: {Encoding.UTF8.GetString(errorBuf)}";
+                while (!RespWriteUtils.WriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
             }
+
+            return 0;
         }
 
         /// <summary>
         /// Dispose the runner
         /// </summary>
         public void Dispose()
-        {
-            state.Dispose();
-
-            if (selfHandle.IsAllocated)
-            {
-                selfHandle.Free();
-                selfHandle = default;
-            }
-        }
+        => state.Dispose();
 
         /// <summary>
         /// Entry point for redis.call method from a Lua script (non-transactional mode)
@@ -638,14 +564,9 @@ end
         {
             const int AdditionalStackSpace = 1;
 
-            // Note that we expect a GCHandle to occupy the first slot on the stack
-            //
-            // This handle was necessary to find the LuaRunner.  We just ignore it here
-            // because cleaning it up would be wasted work.
-
             try
             {
-                var argCount = state.StackTop - 1;
+                var argCount = state.StackTop;
 
                 if (argCount <= 0)
                 {
@@ -654,7 +575,7 @@ end
 
                 state.ForceMinimumStackCapacity(AdditionalStackSpace);
 
-                if (!state.CheckBuffer(2, out var cmdSpan))
+                if (!state.CheckBuffer(1, out var cmdSpan))
                 {
                     return LuaStaticError(errBadArgConstStringRegistryIndex);
                 }
@@ -667,7 +588,7 @@ end
                         return LuaStaticError(errNoAuthConstStringRegistryIndex);
                     }
 
-                    if (!state.CheckBuffer(3, out var keySpan) || !state.CheckBuffer(4, out var valSpan))
+                    if (!state.CheckBuffer(2, out var keySpan) || !state.CheckBuffer(3, out var valSpan))
                     {
                         return LuaStaticError(errBadArgConstStringRegistryIndex);
                     }
@@ -688,7 +609,7 @@ end
                         return LuaStaticError(errNoAuthConstStringRegistryIndex);
                     }
 
-                    if (!state.CheckBuffer(3, out var keySpan))
+                    if (!state.CheckBuffer(2, out var keySpan))
                     {
                         return LuaStaticError(errBadArgConstStringRegistryIndex);
                     }
@@ -716,7 +637,7 @@ end
 
                 for (var i = 0; i < argCount - 1; i++)
                 {
-                    var argIx = 3 + i;
+                    var argIx = 2 + i;
 
                     var argType = state.Type(argIx);
                     if (argType == LuaType.Nil)
@@ -741,10 +662,10 @@ end
 
                 var request = scratchBufferManager.ViewFullArgSlice();
 
-                // Once the request is formatted, we can release all the args (including the GCHandle) on the Lua stack
+                // Once the request is formatted, we can release all the args on the Lua stack
                 //
                 // This keeps the stack size down for processing the response
-                state.Pop(argCount + 1);
+                state.Pop(argCount);
 
                 _ = respServerSession.TryConsumeMessages(request.ptr, request.length);
 
@@ -902,31 +823,39 @@ end
             preambleKeyAndArgvCount = count;
             try
             {
-                state.PushCFunction(&LuaRunnerTrampolines.RunPreambleForSession);
-                state.PushInteger((long)selfHandle);
-                var callRes = state.PCall(1, 0);
-                if (callRes != LuaStatus.OK)
-                {
-                    while (!RespWriteUtils.WriteError("Internal Lua Error"u8, ref outerSession.dcurr, outerSession.dend))
-                        outerSession.SendAndReset();
+                LuaRunnerTrampolines.SetCallbackContext(this);
 
-                    return;
+                try
+                {
+                    state.PushCFunction(&LuaRunnerTrampolines.RunPreambleForSession);
+                    var callRes = state.PCall(0, 0);
+                    if (callRes != LuaStatus.OK)
+                    {
+                        while (!RespWriteUtils.WriteError("Internal Lua Error"u8, ref outerSession.dcurr, outerSession.dend))
+                            outerSession.SendAndReset();
+
+                        return;
+                    }
+                }
+                finally
+                {
+                    preambleOuterSession = null;
+                }
+
+                var adapter = new RespResponseAdapter(outerSession);
+
+                if (txnMode && preambleNKeys > 0)
+                {
+                    RunInTransaction(ref adapter);
+                }
+                else
+                {
+                    RunCommon(ref adapter);
                 }
             }
             finally
             {
-                preambleOuterSession = null;
-            }
-
-            var adapter = new RespResponseAdapter(outerSession);
-
-            if (txnMode && preambleNKeys > 0)
-            {
-                RunInTransaction(ref adapter);
-            }
-            else
-            {
-                RunCommon(ref adapter);
+                LuaRunnerTrampolines.ClearCallbackContext(this);
             }
         }
 
@@ -937,9 +866,9 @@ end
         /// 
         /// Call <see cref="RunForSession"/> instead.
         /// </summary>
-        internal void UnsafeRunPreambleForSession(nint luaStatePtr)
+        internal int UnsafeRunPreambleForSession()
         {
-            state.CallFromLuaEntered(luaStatePtr);
+            state.ExpectLuaStackEmpty();
 
             scratchBufferManager.Reset();
 
@@ -953,8 +882,7 @@ end
             if (nKeys > 0)
             {
                 // Get KEYS on the stack
-                state.PushInteger(keysTableRegistryIndex);
-                _ = state.RawGet(LuaType.Table, (int)LuaRegistry.Index);
+                _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, keysTableRegistryIndex);
 
                 for (var i = 0; i < nKeys; i++)
                 {
@@ -983,8 +911,7 @@ end
             if (preambleKeyAndArgvCount > 0)
             {
                 // Get ARGV on the stack
-                state.PushInteger(argvTableRegistryIndex);
-                _ = state.RawGet(LuaType.Table, (int)LuaRegistry.Index);
+                _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, argvTableRegistryIndex);
 
                 for (var i = 0; i < preambleKeyAndArgvCount; i++)
                 {
@@ -1000,6 +927,8 @@ end
                 // Remove ARGV from the stack
                 state.Pop(1);
             }
+
+            return 0;
         }
 
         /// <summary>
@@ -1015,58 +944,63 @@ end
 
             try
             {
-                preambleKeys = keys;
-                preambleArgv = argv;
+                LuaRunnerTrampolines.SetCallbackContext(this);
 
-                state.PushCFunction(&LuaRunnerTrampolines.RunPreambleForRunner);
-                state.PushInteger((long)selfHandle);
-                var callRes = state.PCall(1, 0);
-                if (callRes != LuaStatus.OK)
+                try
                 {
-                    throw new GarnetException($"Internal Lua Error: {callRes}");
+                    preambleKeys = keys;
+                    preambleArgv = argv;
+
+                    state.PushCFunction(&LuaRunnerTrampolines.RunPreambleForRunner);
+                    state.Call(0, 0);
                 }
+                finally
+                {
+                    preambleKeys = preambleArgv = null;
+                }
+
+                RunnerAdapter adapter;
+                if (txnMode && keys?.Length > 0)
+                {
+                    // Add keys to the transaction
+                    foreach (var key in keys)
+                    {
+                        var _key = scratchBufferManager.CreateArgSlice(key);
+                        txnKeyEntries.AddKey(_key, false, Tsavorite.core.LockType.Exclusive);
+                        if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
+                            txnKeyEntries.AddKey(_key, true, Tsavorite.core.LockType.Exclusive);
+                    }
+
+                    adapter = new(scratchBufferManager);
+                    RunInTransaction(ref adapter);
+                }
+                else
+                {
+                    adapter = new(scratchBufferManager);
+                    RunCommon(ref adapter);
+                }
+
+                var resp = adapter.Response;
+                var respCur = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(resp));
+                var respEnd = respCur + resp.Length;
+
+                if (RespReadUtils.TryReadErrorAsSpan(out var errSpan, ref respCur, respEnd))
+                {
+                    var errStr = Encoding.UTF8.GetString(errSpan);
+                    throw new GarnetException(errStr);
+                }
+
+                var ret = MapRespToObject(ref respCur, respEnd);
+                Debug.Assert(respCur == respEnd, "Should have fully consumed response");
+
+                return ret;
             }
             finally
             {
-                preambleKeys = preambleArgv = null;
+                LuaRunnerTrampolines.ClearCallbackContext(this);
             }
 
-            RunnerAdapter adapter;
-            if (txnMode && keys?.Length > 0)
-            {
-                // Add keys to the transaction
-                foreach (var key in keys)
-                {
-                    var _key = scratchBufferManager.CreateArgSlice(key);
-                    txnKeyEntries.AddKey(_key, false, Tsavorite.core.LockType.Exclusive);
-                    if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                        txnKeyEntries.AddKey(_key, true, Tsavorite.core.LockType.Exclusive);
-                }
-
-                adapter = new(scratchBufferManager);
-                RunInTransaction(ref adapter);
-            }
-            else
-            {
-                adapter = new(scratchBufferManager);
-                RunCommon(ref adapter);
-            }
-
-            var resp = adapter.Response;
-            var respCur = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(resp));
-            var respEnd = respCur + resp.Length;
-
-            if (RespReadUtils.TryReadErrorAsSpan(out var errSpan, ref respCur, respEnd))
-            {
-                var errStr = Encoding.UTF8.GetString(errSpan);
-                throw new GarnetException(errStr);
-            }
-
-            var ret = MapRespToObject(ref respCur, respEnd);
-            Debug.Assert(respCur == respEnd, "Should have fully consumed response");
-
-            return ret;
-
+            // Convert a RESP response into an object to return
             static object MapRespToObject(ref byte* cur, byte* end)
             {
                 switch (*cur)
@@ -1128,13 +1062,13 @@ end
         /// 
         /// Call <see cref="RunForRunner"/> instead.
         /// </summary>
-        internal void UnsafeRunPreambleForRunner(nint luaStatePtr)
+        internal int UnsafeRunPreambleForRunner()
         {
-            state.CallFromLuaEntered(luaStatePtr);
+            state.ExpectLuaStackEmpty();
 
             scratchBufferManager?.Reset();
 
-            LoadParametersForRunner(preambleKeys, preambleArgv);
+            return LoadParametersForRunner(preambleKeys, preambleArgv);
         }
 
         /// <summary>
@@ -1179,8 +1113,7 @@ end
                 state.PushInteger(nKeys + 1);
                 state.PushInteger(nArgs + 1);
 
-                var resetRes = state.PCall(2, 0);
-                Debug.Assert(resetRes == LuaStatus.OK, "Resetting should never fail");
+                state.Call(2, 0);
             }
 
             keyLength = nKeys;
@@ -1190,7 +1123,7 @@ end
         /// <summary>
         /// Takes .NET strings for keys and args and pushes them into KEYS and ARGV globals.
         /// </summary>
-        private void LoadParametersForRunner(string[] keys, string[] argv)
+        private int LoadParametersForRunner(string[] keys, string[] argv)
         {
             const int NeededStackSize = 2;
 
@@ -1201,8 +1134,7 @@ end
             if (keys != null)
             {
                 // get KEYS on the stack
-                state.PushInteger(keysTableRegistryIndex);
-                _ = state.RawGet(LuaType.Table, (int)LuaRegistry.Index);
+                _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, keysTableRegistryIndex);
 
                 for (var i = 0; i < keys.Length; i++)
                 {
@@ -1219,8 +1151,7 @@ end
             if (argv != null)
             {
                 // get ARGV on the stack
-                state.PushInteger(argvTableRegistryIndex);
-                _ = state.RawGet(LuaType.Table, (int)LuaRegistry.Index);
+                _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, argvTableRegistryIndex);
 
                 for (var i = 0; i < argv.Length; i++)
                 {
@@ -1234,6 +1165,9 @@ end
                 state.Pop(1);
             }
 
+            return 0;
+
+            // Convert string into a span, using buffer for storage
             static void PrepareString(string raw, ScratchBufferManager buffer, out ReadOnlySpan<byte> strBytes)
             {
                 var maxLen = Encoding.UTF8.GetMaxByteCount(raw.Length);
@@ -1262,8 +1196,7 @@ end
             {
                 state.ForceMinimumStackCapacity(NeededStackSize);
 
-                state.PushInteger(functionRegistryIndex);
-                _ = state.RawGet(LuaType.Function, (int)LuaRegistry.Index);
+                _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, functionRegistryIndex);
 
                 var callRes = state.PCall(0, 1);
                 if (callRes == LuaStatus.OK)
@@ -1303,7 +1236,23 @@ end
                     {
                         // Redis does not respect metatables, so RAW access is ok here
 
-                        // If the key err is in there, we need to short circuit 
+                        // If the key "ok" is in there, we need to short circuit
+                        state.PushConstantString(okLowerConstStringRegistryIndex);
+                        var okType = state.RawGet(null, 1);
+                        if (okType == LuaType.String)
+                        {
+                            WriteString(this, ref resp);
+
+                            // Remove table from stack
+                            state.Pop(1);
+
+                            return;
+                        }
+
+                        // Remove whatever we read from the table under the "ok" key
+                        state.Pop(1);
+
+                        // If the key "err" is in there, we need to short circuit 
                         state.PushConstantString(errConstStringRegistryIndex);
 
                         var errType = state.RawGet(null, 1);
@@ -1337,28 +1286,28 @@ end
                     }
                     else if (state.StackTop == 1)
                     {
-                        if (state.CheckBuffer(1, out var errBuf))
+                        // PCall will put error in a string
+                        state.KnownStringToBuffer(1, out var errBuf);
+
+                        if (errBuf.Length >= 4 && MemoryMarshal.Read<int>("ERR "u8) == Unsafe.As<byte, int>(ref MemoryMarshal.GetReference(errBuf)))
                         {
-                            if (errBuf.Length >= 4 && MemoryMarshal.Read<int>("ERR "u8) == Unsafe.As<byte, int>(ref MemoryMarshal.GetReference(errBuf)))
-                            {
-                                // Response came back with a ERR, already - just pass it along
-                                while (!RespWriteUtils.WriteError(errBuf, ref resp.BufferCur, resp.BufferEnd))
-                                    resp.SendAndReset();
-                            }
-                            else
-                            {
-                                // Otherwise, this is probably a Lua error - and those aren't very descriptive
-                                // So slap some more information in
+                            // Response came back with a ERR, already - just pass it along
+                            while (!RespWriteUtils.WriteError(errBuf, ref resp.BufferCur, resp.BufferEnd))
+                                resp.SendAndReset();
+                        }
+                        else
+                        {
+                            // Otherwise, this is probably a Lua error - and those aren't very descriptive
+                            // So slap some more information in
 
-                                while (!RespWriteUtils.WriteDirect("-ERR Lua encountered an error: "u8, ref resp.BufferCur, resp.BufferEnd))
-                                    resp.SendAndReset();
+                            while (!RespWriteUtils.WriteDirect("-ERR Lua encountered an error: "u8, ref resp.BufferCur, resp.BufferEnd))
+                                resp.SendAndReset();
 
-                                while (!RespWriteUtils.WriteDirect(errBuf, ref resp.BufferCur, resp.BufferEnd))
-                                    resp.SendAndReset();
+                            while (!RespWriteUtils.WriteDirect(errBuf, ref resp.BufferCur, resp.BufferEnd))
+                                resp.SendAndReset();
 
-                                while (!RespWriteUtils.WriteDirect("\r\n"u8, ref resp.BufferCur, resp.BufferEnd))
-                                    resp.SendAndReset();
-                            }
+                            while (!RespWriteUtils.WriteDirect("\r\n"u8, ref resp.BufferCur, resp.BufferEnd))
+                                resp.SendAndReset();
                         }
 
                         state.Pop(1);
@@ -1527,6 +1476,32 @@ end
     /// </summary>
     internal static class LuaRunnerTrampolines
     {
+        [ThreadStatic]
+        private static LuaRunner callbackContext;
+
+        /// <summary>
+        /// Set a <see cref="LuaRunner"/> that will be available in trampolines.
+        /// 
+        /// This assumes the same thread is used to call into Lua.
+        /// 
+        /// Call <see cref="ClearCallbackContext"/> when finished to avoid extending
+        /// the lifetime of the <see cref="LuaRunner"/>.
+        /// </summary>
+        internal static void SetCallbackContext(LuaRunner context)
+        {
+            Debug.Assert(callbackContext == null, "Expected null context");
+            callbackContext = context;
+        }
+
+        /// <summary>
+        /// Clear a previously set 
+        /// </summary>
+        internal static void ClearCallbackContext(LuaRunner context)
+        {
+            Debug.Assert(ReferenceEquals(callbackContext, context), "Expected context to match");
+            callbackContext = null;
+        }
+
         /// <summary>
         /// Entry point for Lua PCall'ing into <see cref="LuaRunner.UnsafeCompileForRunner"/>.
         /// 
@@ -1534,20 +1509,8 @@ end
         /// without crashing the process.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        internal static int CompileForRunner(nint luaState)
-        {
-            using var wrapper = new LuaStateWrapper(luaState);
-            wrapper.CallFromLuaEntered(luaState);
-
-            var handle = (GCHandle)wrapper.ToInteger(1);
-            Debug.Assert(handle.IsAllocated, "Should always be alive");
-            wrapper.Pop(1);
-
-            var runner = (LuaRunner)handle.Target;
-            runner.UnsafeCompileForRunner();
-
-            return 0;
-        }
+        internal static int CompileForRunner(nint _)
+        => callbackContext.UnsafeCompileForRunner();
 
         /// <summary>
         /// Entry point for Lua PCall'ing into <see cref="LuaRunner.UnsafeCompileForSession"/>.
@@ -1556,20 +1519,8 @@ end
         /// without crashing the process.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        internal static int CompileForSession(nint luaState)
-        {
-            using var wrapper = new LuaStateWrapper(luaState);
-            wrapper.CallFromLuaEntered(luaState);
-
-            var handle = (GCHandle)wrapper.ToInteger(1);
-            Debug.Assert(handle.IsAllocated, "Should always be alive");
-            wrapper.Pop(1);
-
-            var runner = (LuaRunner)handle.Target;
-            runner.UnsafeCompileForSession();
-
-            return 0;
-        }
+        internal static int CompileForSession(nint _)
+        => callbackContext.UnsafeCompileForSession();
 
         /// <summary>
         /// Entry point for Lua PCall'ing into <see cref="LuaRunner.UnsafeRunPreambleForRunner"/>.
@@ -1578,20 +1529,8 @@ end
         /// without crashing the process.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        internal static int RunPreambleForRunner(nint luaState)
-        {
-            using var wrapper = new LuaStateWrapper(luaState);
-            wrapper.CallFromLuaEntered(luaState);
-
-            var handle = (GCHandle)wrapper.ToInteger(1);
-            Debug.Assert(handle.IsAllocated, "Should always be alive");
-            wrapper.Pop(1);
-
-            var runner = (LuaRunner)handle.Target;
-            runner.UnsafeRunPreambleForRunner(luaState);
-
-            return 0;
-        }
+        internal static int RunPreambleForRunner(nint _)
+        => callbackContext.UnsafeRunPreambleForRunner();
 
         /// <summary>
         /// Entry point for Lua PCall'ing into <see cref="LuaRunner.UnsafeRunPreambleForSession"/>.
@@ -1600,20 +1539,8 @@ end
         /// without crashing the process.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        internal static int RunPreambleForSession(nint luaState)
-        {
-            using var wrapper = new LuaStateWrapper(luaState);
-            wrapper.CallFromLuaEntered(luaState);
-
-            var handle = (GCHandle)wrapper.ToInteger(1);
-            Debug.Assert(handle.IsAllocated, "Should always be alive");
-            wrapper.Pop(1);
-
-            var runner = (LuaRunner)handle.Target;
-            runner.UnsafeRunPreambleForSession(luaState);
-
-            return 0;
-        }
+        internal static int RunPreambleForSession(nint _)
+        => callbackContext.UnsafeRunPreambleForSession();
 
         /// <summary>
         /// Entry point for Lua calling back into Garnet via redis.call(...).
@@ -1623,18 +1550,7 @@ end
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int GarnetCallNoSession(nint luaState)
-        {
-            using var wrapper = new LuaStateWrapper(luaState);
-            wrapper.CallFromLuaEntered(luaState);
-
-            // Very first parameter is a GCHandle, because we punch it in the preamble
-            var handle = (GCHandle)wrapper.ToInteger(1);
-            Debug.Assert(handle.IsAllocated, "Should always be alive");
-            wrapper.Pop(1);
-
-            var runner = (LuaRunner)handle.Target;
-            return runner.NoSessionResponse(luaState);
-        }
+        => callbackContext.NoSessionResponse(luaState);
 
         /// <summary>
         /// Entry point for Lua calling back into Garnet via redis.call(...).
@@ -1643,17 +1559,7 @@ end
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int GarnetCallWithTransaction(nint luaState)
-        {
-            using var wrapper = new LuaStateWrapper(luaState);
-            wrapper.CallFromLuaEntered(luaState);
-
-            // Very first parameter is a GCHandle, because we punch it in the preamble
-            var handle = (GCHandle)wrapper.ToInteger(1);
-            Debug.Assert(handle.IsAllocated, "Should always be alive");
-
-            var runner = (LuaRunner)handle.Target;
-            return runner.GarnetCallWithTransaction(luaState);
-        }
+        => callbackContext.GarnetCallWithTransaction(luaState);
 
         /// <summary>
         /// Entry point for Lua calling back into Garnet via redis.call(...).
@@ -1662,16 +1568,6 @@ end
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int GarnetCallNoTransaction(nint luaState)
-        {
-            using var wrapper = new LuaStateWrapper(luaState);
-            wrapper.CallFromLuaEntered(luaState);
-
-            // Very first parameter is a GCHandle, because we punch it in the preamble
-            var handle = (GCHandle)wrapper.ToInteger(1);
-            Debug.Assert(handle.IsAllocated, "Should always be alive");
-
-            var runner = (LuaRunner)handle.Target;
-            return runner.GarnetCall(luaState);
-        }
+        => callbackContext.GarnetCall(luaState);
     }
 }

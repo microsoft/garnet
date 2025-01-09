@@ -22,8 +22,6 @@ namespace Garnet.server
     {
         private const int LUA_MINSTACK = 20;
 
-        private readonly bool ownsState;
-
         private GCHandle customAllocatorHandle;
 
         private nint state;
@@ -63,7 +61,6 @@ namespace Garnet.server
             {
                 state = NativeMethods.NewState();
             }
-            ownsState = true;
 
             NativeMethods.OpenLibs(state);
 
@@ -75,20 +72,9 @@ namespace Garnet.server
             AssertLuaStackExpected();
         }
 
-        internal LuaStateWrapper(nint state)
-        {
-            this.state = state;
-            ownsState = false;
-        }
-
         /// <inheritdoc/>
         public void Dispose()
         {
-            if (!ownsState)
-            {
-                return;
-            }
-
             if (state != 0)
             {
                 NativeMethods.Close(state);
@@ -269,6 +255,32 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// This should be used for all Calls into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void Call(int args, int rets)
+        {
+            // We have to copy this off, as once we PCall curStackTop could be modified
+            var oldStackTop = StackTop;
+
+            NativeMethods.Call(state, args, rets);
+
+            if (rets < 0)
+            {
+                StackTop = NativeMethods.GetTop(state);
+                AssertLuaStackExpected();
+            }
+            else
+            {
+                var newPosition = oldStackTop - (args + 1) + rets;
+                var update = newPosition - StackTop;
+                UpdateStackTop(update);
+            }
+        }
+
+        /// <summary>
         /// This should be used for all RawSetIntegers into Lua.
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
@@ -280,20 +292,6 @@ namespace Garnet.server
 
             NativeMethods.RawSetInteger(state, stackIndex, tableIndex);
             UpdateStackTop(-1);
-        }
-
-        /// <summary>
-        /// This should be used for all RawSets into Lua.
-        /// 
-        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void RawSet(int stackIndex)
-        {
-            AssertLuaStackIndexInBounds(stackIndex);
-
-            NativeMethods.RawSet(state, stackIndex);
-            UpdateStackTop(-2);
         }
 
         /// <summary>
@@ -446,18 +444,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// This should be used for all ToIntegers into Lua.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly long ToInteger(int stackIndex)
-        {
-            AssertLuaStackIndexInBounds(stackIndex);
-            Debug.Assert(Type(stackIndex) == LuaType.Number, "Shouldn't call this if type isn't known to be a number");
-
-            return NativeMethods.ToInteger(state, stackIndex);
-        }
-
-        /// <summary>
         /// This should be used for all RawLens into Lua.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -549,7 +535,6 @@ namespace Garnet.server
         /// Check that the given index refers to a valid part of the stack.
         /// </summary>
         [Conditional("DEBUG")]
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private readonly void AssertLuaStackIndexInBounds(int stackIndex)
         {
             Debug.Assert(stackIndex == (int)LuaRegistry.Index || (stackIndex > 0 && stackIndex <= StackTop), "Lua stack index out of bounds");
@@ -559,7 +544,6 @@ namespace Garnet.server
         /// Check that the Lua stack top is where expected in DEBUG builds.
         /// </summary>
         [Conditional("DEBUG")]
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private readonly void AssertLuaStackExpected()
         {
             Debug.Assert(NativeMethods.GetTop(state) == StackTop, "Lua stack not where expected");
@@ -569,7 +553,6 @@ namespace Garnet.server
         /// Check that there's space to push some number of elements.
         /// </summary>
         [Conditional("DEBUG")]
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private readonly void AssertLuaStackNotFull(int probe = 1)
         {
             Debug.Assert((StackTop + probe) <= curStackSize, "Lua stack should have been grown before pushing");
