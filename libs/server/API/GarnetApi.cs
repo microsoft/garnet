@@ -73,6 +73,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus GET(byte[] key, out GarnetObjectStoreOutput value)
             => storageSession.GET(key, out value, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus LCS(ArgSlice key1, ArgSlice key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
+            => storageSession.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
         #endregion
 
         #region GETEX

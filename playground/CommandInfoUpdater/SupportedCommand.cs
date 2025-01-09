@@ -160,6 +160,7 @@ namespace CommandInfoUpdater
             new("INCRBYFLOAT", RespCommand.INCRBYFLOAT),
             new("INFO", RespCommand.INFO),
             new("KEYS", RespCommand.KEYS),
+            new("LCS", RespCommand.LCS),
             new("LASTSAVE", RespCommand.LASTSAVE),
             new("LATENCY", RespCommand.LATENCY,
             [
