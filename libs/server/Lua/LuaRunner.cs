@@ -119,7 +119,7 @@ namespace Garnet.server
                 //
                 // Since we're managing the start/end pointers outside of the buffer
                 // we need to signal that the buffer has data to copy
-                bufferManager.GrowBuffer(alwayCopy: true);
+                bufferManager.GrowBuffer(copyLengthOverride: len);
 
                 var scratchSpace = bufferManager.FullBuffer();
 

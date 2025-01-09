@@ -231,20 +231,20 @@ namespace Garnet.server
         public void StartCommand(ReadOnlySpan<byte> cmd, int argCount)
         {
             if (scratchBuffer == null)
-                ExpandScratchBuffer(64, alwaysCopy: false);
+                ExpandScratchBuffer(64);
 
             var ptr = scratchBufferHead + scratchBufferOffset;
 
             while (!RespWriteUtils.WriteArrayLength(argCount + 1, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
-                ExpandScratchBuffer(scratchBuffer.Length + 1, alwaysCopy: false);
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
             scratchBufferOffset = (int)(ptr - scratchBufferHead);
 
             while (!RespWriteUtils.WriteBulkString(cmd, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
-                ExpandScratchBuffer(scratchBuffer.Length + 1, alwaysCopy: false);
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
             scratchBufferOffset = (int)(ptr - scratchBufferHead);
@@ -259,7 +259,7 @@ namespace Garnet.server
 
             while (!RespWriteUtils.WriteNull(ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
-                ExpandScratchBuffer(scratchBuffer.Length + 1, alwaysCopy: false);
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
 
@@ -275,7 +275,7 @@ namespace Garnet.server
 
             while (!RespWriteUtils.WriteBulkString(arg, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
-                ExpandScratchBuffer(scratchBuffer.Length + 1, alwaysCopy: false);
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
 
@@ -295,23 +295,21 @@ namespace Garnet.server
         void ExpandScratchBufferIfNeeded(int newLength)
         {
             if (scratchBuffer == null || newLength > scratchBuffer.Length - scratchBufferOffset)
-                ExpandScratchBuffer(scratchBufferOffset + newLength, alwaysCopy: false);
+                ExpandScratchBuffer(scratchBufferOffset + newLength);
         }
 
-        void ExpandScratchBuffer(int newLength, bool alwaysCopy)
+        void ExpandScratchBuffer(int newLength, int? copyLengthOverride = null)
         {
             if (newLength < 64) newLength = 64;
             else newLength = (int)BitOperations.RoundUpToPowerOf2((uint)newLength + 1);
 
             var _scratchBuffer = GC.AllocateArray<byte>(newLength, true);
             var _scratchBufferHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_scratchBuffer));
-            if (alwaysCopy)
+
+            var copyLength = copyLengthOverride ?? scratchBufferOffset;
+            if (copyLength > 0)
             {
-                scratchBuffer.AsSpan().CopyTo(new Span<byte>(_scratchBufferHead, scratchBuffer.Length));
-            }
-            else if (scratchBufferOffset > 0)
-            {
-                new ReadOnlySpan<byte>(scratchBufferHead, scratchBufferOffset).CopyTo(new Span<byte>(_scratchBufferHead, scratchBufferOffset));
+                new ReadOnlySpan<byte>(scratchBufferHead, copyLength).CopyTo(new Span<byte>(_scratchBufferHead, copyLength));
             }
             scratchBuffer = _scratchBuffer;
             scratchBufferHead = _scratchBufferHead;
@@ -333,16 +331,20 @@ namespace Garnet.server
 
         /// <summary>
         /// Force backing buffer to grow.
+        /// 
+        /// <paramref name="copyLengthOverride"/> provides a way to force a chunk at the start of the
+        /// previous buffer be copied into the new buffer, even if this <see cref="ScratchBufferManager"/>
+        /// doesn't consider that chunk in use.
         /// </summary>
-        public void GrowBuffer(bool alwayCopy)
+        public void GrowBuffer(int? copyLengthOverride = null)
         {
             if (scratchBuffer == null)
             {
-                ExpandScratchBuffer(64, alwaysCopy: false);
+                ExpandScratchBuffer(64);
             }
             else
             {
-                ExpandScratchBuffer(scratchBuffer.Length + 1, alwayCopy);
+                ExpandScratchBuffer(scratchBuffer.Length + 1, copyLengthOverride);
             }
         }
     }

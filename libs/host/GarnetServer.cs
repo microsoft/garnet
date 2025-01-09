@@ -188,14 +188,41 @@ namespace Garnet
 
             var customCommandManager = new CustomCommandManager();
 
-            var setMax = opts.ThreadPoolMaxThreads <= 0 || ThreadPool.SetMaxThreads(opts.ThreadPoolMaxThreads, opts.ThreadPoolMaxThreads);
+            ThreadPool.GetMinThreads(out var minThreads, out var minCPThreads);
+            ThreadPool.GetMaxThreads(out var maxThreads, out var maxCPThreads);
 
-            if (opts.ThreadPoolMinThreads > 0 && !ThreadPool.SetMinThreads(opts.ThreadPoolMinThreads, opts.ThreadPoolMinThreads))
-                throw new Exception($"Unable to call ThreadPool.SetMinThreads with {opts.ThreadPoolMinThreads}");
+            bool minChanged = false, maxChanged = false;
+            if (opts.ThreadPoolMinThreads > 0)
+            {
+                minThreads = opts.ThreadPoolMinThreads;
+                minChanged = true;
+            }
+            if (opts.ThreadPoolMinIOCompletionThreads > 0)
+            {
+                minCPThreads = opts.ThreadPoolMinIOCompletionThreads;
+                minChanged = true;
+            }
+            if (opts.ThreadPoolMaxThreads > 0)
+            {
+                maxThreads = opts.ThreadPoolMaxThreads;
+                maxChanged = true;
+            }
+            if (opts.ThreadPoolMaxIOCompletionThreads > 0)
+            {
+                maxCPThreads = opts.ThreadPoolMaxIOCompletionThreads;
+                maxChanged = true;
+            }
 
-            // Retry to set max threads if it wasn't set in the previous step
-            if (!setMax && !ThreadPool.SetMaxThreads(opts.ThreadPoolMaxThreads, opts.ThreadPoolMaxThreads))
-                throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {opts.ThreadPoolMaxThreads}");
+            // First try to set the max threads
+            var setMax = !maxChanged || ThreadPool.SetMaxThreads(maxThreads, maxCPThreads);
+
+            // Set the min threads
+            if (minChanged && !ThreadPool.SetMinThreads(minThreads, minCPThreads))
+                throw new Exception($"Unable to call ThreadPool.SetMinThreads with {minThreads}, {minCPThreads}");
+
+            // Retry to set max threads if it wasn't set in the earlier step
+            if (!setMax && !ThreadPool.SetMaxThreads(maxThreads, maxCPThreads))
+                throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {maxThreads}, {maxCPThreads}");
 
             CreateMainStore(clusterFactory, out var checkpointDir);
             CreateObjectStore(clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker);
