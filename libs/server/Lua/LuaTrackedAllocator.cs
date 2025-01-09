@@ -14,9 +14,6 @@ namespace Garnet.server
     /// </summary>
     internal unsafe class LuaTrackedAllocator : ILuaAllocator
     {
-        // TODO: XXXMemoryPressure here might be unnecessary
-        //       Docs suggest it isn't needed - but that is... very strange, needs confirmation.
-
         private readonly int? limitBytes;
 
         private int allocatedBytes;
