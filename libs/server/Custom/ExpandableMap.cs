@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using Garnet.common;
 
@@ -59,20 +60,6 @@ namespace Garnet.server
         /// <param name="id">ID if found, otherwise -1</param>
         /// <returns>True if ID found</returns>
         bool TryGetFirstId(Func<T, bool> predicate, out int id);
-
-        /// <summary>
-        /// Maps underlying map index to item ID
-        /// </summary>
-        /// <param name="index">Map index</param>
-        /// <returns>Item ID</returns>
-        int GetIdFromIndex(int index);
-
-        /// <summary>
-        /// Maps an item ID to underlying map index
-        /// </summary>
-        /// <param name="id">Item ID</param>
-        /// <returns>Map index</returns>
-        int GetIndexFromId(int id);
     }
 
     /// <summary>
@@ -102,8 +89,6 @@ namespace Garnet.server
         readonly int minId;
         // Value of max item ID
         readonly int maxSize;
-        // True if item IDs are in descending order
-        readonly bool descIds;
 
         /// <summary>
         /// Creates a new instance of ExpandableMap
@@ -113,18 +98,19 @@ namespace Garnet.server
         /// <param name="maxId">The maximal item ID value (can be smaller than minId for descending order of IDs)</param>
         public ExpandableMap(int minSize, int minId, int maxId)
         {
+            Debug.Assert(maxId > minId);
+
             this.Map = null;
             this.minSize = minSize;
             this.minId = minId;
-            this.maxSize = Math.Abs(maxId - minId) + 1;
-            this.descIds = minId > maxId;
+            this.maxSize = maxId - minId + 1;
         }
 
         /// <inheritdoc />
         public bool TryGetValue(int id, out T value)
         {
             value = default;
-            var idx = GetIndexFromId(id);
+            var idx = id - minId;
             if (idx < 0 || idx >= ActualSize)
                 return false;
 
@@ -135,14 +121,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool Exists(int id)
         {
-            var idx = GetIndexFromId(id);
+            var idx = id - minId;
             return idx >= 0 && idx < ActualSize;
         }
 
         /// <inheritdoc />
         public ref T GetValueByRef(int id)
         {
-            var idx = GetIndexFromId(id);
+            var idx = id - minId;
             if (idx < 0 || idx >= ActualSize)
                 throw new ArgumentOutOfRangeException(nameof(idx));
 
@@ -161,7 +147,7 @@ namespace Garnet.server
 
             if (nextIdx >= maxSize)
                 return false;
-            id = GetIdFromIndex(nextIdx);
+            id = minId + nextIdx;
 
             return true;
         }
@@ -174,19 +160,13 @@ namespace Garnet.server
             {
                 if (predicate(Map[i]))
                 {
-                    id = GetIdFromIndex(i);
+                    id = minId + i;
                     return true;
                 }
             }
 
             return false;
         }
-
-        /// <inheritdoc />
-        public int GetIdFromIndex(int index) => descIds ? minId - index : index;
-
-        /// <inheritdoc />
-        public int GetIndexFromId(int id) => descIds ? minId - id : id;
 
         /// <summary>
         /// Get next item ID for assignment with atomic incrementation of underlying index
@@ -200,7 +180,7 @@ namespace Garnet.server
 
             if (nextIdx >= maxSize)
                 return false;
-            id = GetIdFromIndex(nextIdx);
+            id = minId + nextIdx;
 
             return true;
         }
@@ -213,7 +193,7 @@ namespace Garnet.server
         /// <returns>True if actual size should be updated (or was updated if noUpdate is false)</returns>
         internal bool TryUpdateSize(int id, bool noUpdate = false)
         {
-            var idx = GetIndexFromId(id);
+            var idx = id - minId;
 
             // Should not update the size if the index is out of bounds
             // or if index is smaller than the current actual size
@@ -235,7 +215,7 @@ namespace Garnet.server
         /// <returns>True if assignment succeeded</returns>
         internal bool TrySetValue(int id, ref T value, bool noExpansion, bool updateSize)
         {
-            var idx = GetIndexFromId(id);
+            var idx = id - minId;
             if (idx < 0 || idx >= maxSize) return false;
 
             // If index within array bounds, set item
@@ -403,12 +383,6 @@ namespace Garnet.server
                 eMapLock.ReadUnlock();
             }
         }
-
-        /// <inheritdoc />
-        public int GetIdFromIndex(int index) => eMapUnsafe.GetIdFromIndex(index);
-
-        /// <inheritdoc />
-        public int GetIndexFromId(int id) => eMapUnsafe.GetIndexFromId(id);
     }
 
     /// <summary>
