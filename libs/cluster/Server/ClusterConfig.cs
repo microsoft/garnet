@@ -998,9 +998,6 @@ namespace Garnet.cluster
                 // Update ownership of node
                 newSlotMap[i]._workerId = senderWorkerId;
                 newSlotMap[i]._state = SlotState.STABLE;
-
-                // Update happened, need to merge and FlushConfig
-                updated = true;
             }
 
             return updated ? new(newSlotMap, workers) : this;
