@@ -1847,6 +1847,8 @@ namespace Garnet.test.cluster
                         var node = config.GetBySlot(slot);
                         if (node != null && node.NodeId.Equals(nodeIds[_src]))
                             break;
+                        // Force set slot to src node
+                        SetSlot(_src);
                         ClusterTestUtils.BackOff(cancellationToken: cancellationToken);
                     }
 
