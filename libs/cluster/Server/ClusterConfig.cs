@@ -981,12 +981,13 @@ namespace Garnet.cluster
                 if (senderConfig.LocalNodeConfigEpoch != 0 && workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
                     continue;
 
+                // Update happened only if workerId or state changed
+                // NOTE: this avoids message flooding when sender epoch equals zero
+                updated = newSlotMap[i]._workerId != senderWorkerId || newSlotMap[i]._state != SlotState.STABLE;
+
                 // Update ownership of node
                 newSlotMap[i]._workerId = senderWorkerId;
                 newSlotMap[i]._state = SlotState.STABLE;
-
-                // Update happened, need to merge and FlushConfig
-                updated = true;
             }
 
             return updated ? new(newSlotMap, workers) : this;
