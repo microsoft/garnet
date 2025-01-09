@@ -883,7 +883,7 @@ namespace Garnet.server
                     var nilResp = CmdStrings.RESP_ERRNOTFOUND;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                     var numDigitsInEtag = NumUtils.NumDigitsInLong(newEtag);
-                    RespWriteUtils.WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, functionsState.memoryPool,writeDirect: true);
+                    RespWriteUtils.WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
                     break;
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:

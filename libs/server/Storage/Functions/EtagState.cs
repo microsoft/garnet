@@ -24,7 +24,7 @@ namespace Garnet.server
         /// Resp response methods depend on the value for end being -1 or length of the payload. This field lets you work with providing the end opaquely.
         /// </summary>
         public int etagAccountedLength { get; private set; } = -1;
-        
+
         /// <summary>
         /// Field provides access to getting an Etag from a record, hiding whether it is actually present or not.
         /// </summary>
