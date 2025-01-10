@@ -943,6 +943,8 @@ namespace Garnet.cluster
 
         public ClusterConfig MergeSlotMap(ClusterConfig senderConfig, ILogger logger = null)
         {
+            // Track if update happened to avoid expensive merge and FlushConfig operation when possible
+            var updated = false;
             var senderSlotMap = senderConfig.slotMap;
             var senderWorkerId = GetWorkerIdFromNodeId(senderConfig.LocalNodeId);
 
@@ -979,12 +981,16 @@ namespace Garnet.cluster
                 if (senderConfig.LocalNodeConfigEpoch != 0 && workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
                     continue;
 
+                // Update happened only if workerId or state changed
+                // NOTE: this avoids message flooding when sender epoch equals zero
+                updated = newSlotMap[i]._workerId != senderWorkerId || newSlotMap[i]._state != SlotState.STABLE;
+
                 // Update ownership of node
                 newSlotMap[i]._workerId = senderWorkerId;
                 newSlotMap[i]._state = SlotState.STABLE;
             }
 
-            return new(newSlotMap, workers);
+            return updated ? new(newSlotMap, workers) : this;
         }
 
         /// <summary>
