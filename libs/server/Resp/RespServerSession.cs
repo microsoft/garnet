@@ -826,8 +826,8 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomRawStringCommand((RespCommand)currentCustomRawStringCommand.id,
-                currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
+            var cmd = customCommandManagerSession.GetCustomRespCommand(currentCustomRawStringCommand.id);
+            TryCustomRawStringCommand(cmd, currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
             currentCustomRawStringCommand = null;
             return true;
         }
@@ -842,7 +842,8 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomObjectCommand((GarnetObjectType)currentCustomObjectCommand.id, currentCustomObjectCommand.subid,
+            var type = customCommandManagerSession.GetCustomGarnetObjectType(currentCustomObjectCommand.id);
+            TryCustomObjectCommand(type, currentCustomObjectCommand.subid,
                 currentCustomObjectCommand.type, ref storageApi);
             currentCustomObjectCommand = null;
             return true;

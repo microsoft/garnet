@@ -13,6 +13,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
+using GarnetJSON;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -590,6 +591,45 @@ namespace Garnet.test
             ex = Assert.Throws<RedisServerException>(() => db.ListLeftPush(mainkey, value1));
             ClassicAssert.IsNotNull(ex);
             ClassicAssert.AreEqual(expectedError, ex.Message);
+        }
+
+        [Test]
+        public void CustomObjectCommandTest4()
+        {
+            // Register sample custom command on object 1
+            var factory = new MyDictFactory();
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
+
+            // Register sample custom command on object 2
+            var jsonFactory = new JsonObjectFactory();
+            server.Register.NewCommand("JSON.SET", CommandType.ReadModifyWrite, jsonFactory, new JsonSET());
+            server.Register.NewCommand("JSON.GET", CommandType.Read, jsonFactory, new JsonGET());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Test custom commands of object 1 
+            var mainkey = "key";
+
+            var key1 = "mykey1";
+            var value1 = "foovalue1";
+            db.Execute("MYDICTSET", mainkey, key1, value1);
+
+            var retValue = db.Execute("MYDICTGET", mainkey, key1);
+            ClassicAssert.AreEqual(value1, (string)retValue);
+
+            var key2 = "mykey2";
+            var value2 = "foovalue2";
+            db.Execute("MYDICTSET", mainkey, key2, value2);
+
+            retValue = db.Execute("MYDICTGET", mainkey, key2);
+            ClassicAssert.AreEqual(value2, (string)retValue);
+
+            // Test custom commands of object 2
+            db.Execute("JSON.SET", "k1", "$", "{\"f1\": {\"a\":1}, \"f2\":{\"a\":2}}");
+            var result = db.Execute("JSON.GET", "k1");
+            ClassicAssert.AreEqual("[{\"f1\":{\"a\":1},\"f2\":{\"a\":2}}]", result.ToString());
         }
 
         [Test]
