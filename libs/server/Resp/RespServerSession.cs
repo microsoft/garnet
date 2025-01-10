@@ -562,10 +562,6 @@ namespace Garnet.server
                 RespCommand.READWRITE => NetworkREADWRITE(),
                 RespCommand.EXPIREAT => NetworkEXPIREAT(RespCommand.EXPIREAT, ref storageApi),
                 RespCommand.PEXPIREAT => NetworkEXPIREAT(RespCommand.PEXPIREAT, ref storageApi),
-                // Etag related commands
-                RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
-                RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
-                RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };
@@ -722,6 +718,11 @@ namespace Garnet.server
             containsSlowCommand = true;
             var success = command switch
             {
+                // Etag related commands
+                RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
+                RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
+                RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
+
                 RespCommand.AUTH => NetworkAUTH(),
                 RespCommand.MEMORY_USAGE => NetworkMemoryUsage(ref storageApi),
                 RespCommand.CLIENT_ID => NetworkCLIENTID(),
