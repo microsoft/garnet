@@ -2121,18 +2121,6 @@ namespace Garnet.server
                     return RespCommand.NONE;
                 }
             }
-            else if (command.SequenceEqual(CmdStrings.SETIFMATCH))
-            {
-                return RespCommand.SETIFMATCH;
-            }
-            else if (command.SequenceEqual(CmdStrings.GETWITHETAG))
-            {
-                return RespCommand.GETWITHETAG;
-            }
-            else if (command.SequenceEqual(CmdStrings.GETIFNOTMATCH))
-            {
-                return RespCommand.GETIFNOTMATCH;
-            }
             else
             {
                 // Custom commands should have never been set when we reach this point
@@ -2157,6 +2145,18 @@ namespace Garnet.server
                 else if (storeWrapper.customCommandManager.Match(command, out currentCustomProcedure))
                 {
                     return RespCommand.CustomProcedure;
+                }
+                else if (command.SequenceEqual(CmdStrings.SETIFMATCH))
+                {
+                    return RespCommand.SETIFMATCH;
+                }
+                else if (command.SequenceEqual(CmdStrings.GETWITHETAG))
+                {
+                    return RespCommand.GETWITHETAG;
+                }
+                else if (command.SequenceEqual(CmdStrings.GETIFNOTMATCH))
+                {
+                    return RespCommand.GETIFNOTMATCH;
                 }
 
             }
