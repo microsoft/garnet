@@ -40,8 +40,10 @@ namespace Garnet.server
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
                 case RespCommand.SETKEEPTTL:
-                    byte extraAllocationLen = (byte)(input.header.CheckWithEtagFlag() ? Constants.EtagSize : 0);
-                    this.functionsState.etagState.etagOffsetForVarlen = extraAllocationLen;
+                    if (input.header.CheckWithEtagFlag())
+                    {
+                        this.functionsState.etagState.etagOffsetForVarlen = Constants.EtagSize;
+                    }
                     return true;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
