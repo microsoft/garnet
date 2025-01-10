@@ -296,7 +296,7 @@ namespace Garnet.server.ACL
 
             // Some commands aren't really commands, so ACLs shouldn't accept their names
             static bool IsInvalidCommandToAcl(RespCommand command)
-            => command == RespCommand.INVALID || command == RespCommand.NONE || command.Normalize() != command;
+            => command == RespCommand.INVALID || command == RespCommand.NONE || command.NormalizeForACLs() != command;
         }
 
         /// <summary>

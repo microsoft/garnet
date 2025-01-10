@@ -442,7 +442,7 @@ namespace Garnet.server
         enum EtagOption : byte
         {
             None,
-            WITHETAG,
+            WithETag,
         }
 
         enum ExpirationOption : byte
@@ -591,7 +591,7 @@ namespace Garnet.server
                         break;
                     }
 
-                    etagOption = EtagOption.WITHETAG;
+                    etagOption = EtagOption.WithETag;
                 }
                 else
                 {
@@ -616,7 +616,7 @@ namespace Garnet.server
                 return true;
             }
 
-            bool withEtag = etagOption == EtagOption.WITHETAG;
+            bool withEtag = etagOption == EtagOption.WithETag;
 
             bool isHighPrecision = expOption == ExpirationOption.PX;
 

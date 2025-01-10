@@ -180,11 +180,11 @@ namespace Garnet.server
 
         #region RENAME
         /// <inheritdoc />
-        public GarnetStatus RENAME(ArgSlice oldKey, ArgSlice newKey, bool withEtag, StoreType storeType = StoreType.All)
+        public GarnetStatus RENAME(ArgSlice oldKey, ArgSlice newKey, bool withEtag = false, StoreType storeType = StoreType.All)
             => storageSession.RENAME(oldKey, newKey, storeType, withEtag);
 
         /// <inheritdoc />
-        public GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, out int result, bool withEtag, StoreType storeType = StoreType.All)
+        public GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, out int result, bool withEtag = false, StoreType storeType = StoreType.All)
             => storageSession.RENAMENX(oldKey, newKey, storeType, out result, withEtag);
         #endregion
 

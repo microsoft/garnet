@@ -408,7 +408,6 @@ namespace Garnet.server
 
             while (bytesRead - readHead >= 4)
             {
-                storageSession.functionsState.etagState.ResetToDefaultVals();
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
                 // On success, readHead is left at the start of the command payload for legacy operators
@@ -518,14 +517,11 @@ namespace Garnet.server
             {
                 RespCommand.GET => NetworkGET(ref storageApi),
                 RespCommand.GETEX => NetworkGETEX(ref storageApi),
-                RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
-                RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
                 RespCommand.SET => NetworkSET(ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(false, ref storageApi),
                 RespCommand.SETNX => NetworkSETNX(false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(ref storageApi),
-                RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
                 RespCommand.DEL => NetworkDEL(ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ref storageApi),
                 RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),
@@ -566,6 +562,10 @@ namespace Garnet.server
                 RespCommand.READWRITE => NetworkREADWRITE(),
                 RespCommand.EXPIREAT => NetworkEXPIREAT(RespCommand.EXPIREAT, ref storageApi),
                 RespCommand.PEXPIREAT => NetworkEXPIREAT(RespCommand.PEXPIREAT, ref storageApi),
+                // Etag related commands
+                RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
+                RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
+                RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };

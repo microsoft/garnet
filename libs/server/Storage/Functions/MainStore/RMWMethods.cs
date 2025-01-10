@@ -254,6 +254,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostInitialUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
+            // reset etag state set at need initial update
+            if (input.header.cmd is (RespCommand.SET or RespCommand.SETEXNX or RespCommand.SETKEEPTTL))
+                functionsState.etagState.ResetToDefaultVals();
+
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
@@ -288,9 +292,9 @@ namespace Garnet.server
             }
 
             RespCommand cmd = input.header.cmd;
-
-            bool hasEtagInRecord = recordInfo.ETag;
-            if (hasEtagInRecord)
+            bool hadRecordPreMutation = recordInfo.ETag;
+            bool shouldUpdateEtag = hadRecordPreMutation;
+            if (shouldUpdateEtag)
             {
                 functionsState.etagState.SetValsForRecordWithEtag(ref value);
             }
@@ -298,28 +302,29 @@ namespace Garnet.server
             switch (cmd)
             {
                 case RespCommand.SETEXNX:
-                    if (input.header.NotSetGetNorCheckWithEtag())
-                        return true;
-
                     if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref value, ref output);
                     }
-                    else
+                    else if (input.header.CheckWithEtagFlag())
                     {
                         // when called withetag all output needs to be placed on the buffer
                         // EXX when unsuccesful will write back NIL
                         CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
                     }
 
+                    // reset etag state after done using
+                    functionsState.etagState.ResetToDefaultVals();
                     // Nothing is set because being in this block means NX was already violated
                     return true;
                 case RespCommand.SETIFMATCH:
                     long etagFromClient = input.parseState.GetLong(1);
                     if (functionsState.etagState.etag != etagFromClient)
                     {
-                        RespWriteUtils.CopyRespWithEtagData(ref value, ref output, hasEtagInRecord, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
+                        CopyRespWithEtagData(ref value, ref output, shouldUpdateEtag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
+                        // reset etag state after done using
+                        functionsState.etagState.ResetToDefaultVals();
                         return true;
                     }
 
@@ -354,7 +359,9 @@ namespace Garnet.server
                     var nilResp = CmdStrings.RESP_ERRNOTFOUND;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                     var numDigitsInEtag = NumUtils.NumDigitsInLong(newEtag);
-                    RespWriteUtils.WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
+                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
+                    // reset etag state after done using
+                    functionsState.etagState.ResetToDefaultVals();
                     // early return since we already updated the ETag
                     return true;
                 case RespCommand.SET:
@@ -365,19 +372,20 @@ namespace Garnet.server
                     int nextUpdateEtagOffset = functionsState.etagState.etagSkippedStart;
 
                     // only when both are not false && false or true and true, do we need to readjust
-                    if (inputHeaderHasEtag != hasEtagInRecord)
+                    if (inputHeaderHasEtag != shouldUpdateEtag)
                     {
                         // in the common path the above condition is skipped
                         if (inputHeaderHasEtag)
                         {
                             // nextUpdate will add etag but currently there is no etag
                             nextUpdateEtagOffset = Constants.EtagSize;
-                            hasEtagInRecord = true;
+                            shouldUpdateEtag = true;
                             // if something is going to go past this into copy we need to provide offset management for its varlen during allocation
                             this.functionsState.etagState.etagOffsetForVarlen = Constants.EtagSize;
                         }
                         else
                         {
+                            shouldUpdateEtag = false;
                             // nextUpdate will remove etag but currently there is an etag
                             nextUpdateEtagOffset = 0;
                             this.functionsState.etagState.etagOffsetForVarlen = 0;
@@ -416,6 +424,8 @@ namespace Garnet.server
                         value.SetEtagInPayload(functionsState.etagState.etag + 1);
                         // withetag flag means we need to write etag back to the output buffer
                         CopyRespNumber(functionsState.etagState.etag + 1, ref output);
+                        // reset etag state after done using
+                        functionsState.etagState.ResetToDefaultVals();
                         // early return since we already updated etag
                         return true;
                     }
@@ -435,19 +445,20 @@ namespace Garnet.server
                     nextUpdateEtagOffset = functionsState.etagState.etagSkippedStart;
 
                     // only when both are not false && false or true and true, do we need to readjust
-                    if (inputHeaderHasEtag != hasEtagInRecord)
+                    if (inputHeaderHasEtag != shouldUpdateEtag)
                     {
                         // in the common path the above condition is skipped
                         if (inputHeaderHasEtag)
                         {
                             // nextUpdate will add etag but currently there is no etag
                             nextUpdateEtagOffset = Constants.EtagSize;
-                            hasEtagInRecord = true;
+                            shouldUpdateEtag = true;
                             // if something is going to go past this into copy we need to provide offset management for its varlen during allocation
                             functionsState.etagState.etagOffsetForVarlen = Constants.EtagSize;
                         }
                         else
                         {
+                            shouldUpdateEtag = true;
                             // nextUpdate will remove etag but currentyly there is an etag
                             nextUpdateEtagOffset = 0;
                             functionsState.etagState.etagOffsetForVarlen = 0;
@@ -481,6 +492,8 @@ namespace Garnet.server
                         value.SetEtagInPayload(functionsState.etagState.etag + 1);
                         // withetag flag means we need to write etag back to the output buffer
                         CopyRespNumber(functionsState.etagState.etag + 1, ref output);
+                        // reset etag state after done using
+                        functionsState.etagState.ResetToDefaultVals();
                         // early return since we already updated etag
                         return true;
                     }
@@ -502,6 +515,9 @@ namespace Garnet.server
                     var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
                     var expireOption = (ExpireOption)input.arg1;
 
+                    // reset etag state that may have been initialized earlier
+                    functionsState.etagState.ResetToDefaultVals();
+
                     if (!EvaluateExpireInPlace(expireOption, expiryExists, expiryTicks, ref value, ref output))
                         return false;
 
@@ -516,6 +532,9 @@ namespace Garnet.server
                         ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryTimestamp)
                         : ConvertUtils.UnixTimestampInSecondsToTicks(expiryTimestamp);
                     expireOption = (ExpireOption)input.arg1;
+
+                    // reset etag state that may have been initialized earlier
+                    functionsState.etagState.ResetToDefaultVals();
 
                     if (!EvaluateExpireInPlace(expireOption, expiryExists, expiryTicks, ref value, ref output))
                         return false;
@@ -534,6 +553,8 @@ namespace Garnet.server
                         output.SpanByte.AsSpan()[0] = 1;
                     }
                     // does not update etag
+                    // reset etag state that may have been initialized earlier
+                    functionsState.etagState.ResetToDefaultVals();
                     return true;
 
                 case RespCommand.INCR:
@@ -543,7 +564,10 @@ namespace Garnet.server
 
                 case RespCommand.DECR:
                     if (!TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: -1, functionsState.etagState.etagSkippedStart))
+                    {
+
                         return false;
+                    }
                     break;
 
                 case RespCommand.INCRBY:
@@ -564,6 +588,8 @@ namespace Garnet.server
                     if (!input.parseState.TryGetDouble(0, out var incrByFloat))
                     {
                         output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                        // reset etag state that may have been initialized earlier
+                        functionsState.etagState.ResetToDefaultVals();
                         return true;
                     }
                     if (!TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, incrByFloat, functionsState.etagState.etagSkippedStart))
@@ -605,6 +631,8 @@ namespace Garnet.server
                     if (overflow)
                     {
                         CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                        // reset etag state that may have been initialized earlier
+                        functionsState.etagState.ResetToDefaultVals();
                         // etag not updated
                         return true;
                     }
@@ -618,6 +646,8 @@ namespace Garnet.server
                     if (!HyperLogLog.DefaultHLL.IsValidHYLL(v, value.Length))
                     {
                         *output.SpanByte.ToPointer() = (byte)0xFF;
+                        // reset etag state that may have been initialized earlier
+                        functionsState.etagState.ResetToDefaultVals();
                         return true;
                     }
 
@@ -638,6 +668,8 @@ namespace Garnet.server
 
                     if (!HyperLogLog.DefaultHLL.IsValidHYLL(dstHLL, value.Length))
                     {
+                        // reset etag state that may have been initialized earlier
+                        functionsState.etagState.ResetToDefaultVals();
                         //InvalidType                                                
                         *(long*)output.SpanByte.ToPointer() = -1;
                         return true;
@@ -689,10 +721,14 @@ namespace Garnet.server
                             value.ShrinkSerializedLength(value.Length - value.MetadataSize);
                             value.UnmarkExtraMetadata();
                             rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
+                            // reset etag state that may have been initialized earlier
+                            functionsState.etagState.ResetToDefaultVals();
                             return true;
                         }
                     }
 
+                    // reset etag state that may have been initialized earlier
+                    functionsState.etagState.ResetToDefaultVals();
                     return true;
 
                 case RespCommand.APPEND:
@@ -702,6 +738,8 @@ namespace Garnet.server
                     if (appendSize == 0)
                     {
                         CopyValueLengthToOutput(ref value, ref output, functionsState.etagState.etagSkippedStart);
+                        // reset etag state that may have been initialized earlier
+                        functionsState.etagState.ResetToDefaultVals();
                         return true;
                     }
 
@@ -709,9 +747,11 @@ namespace Garnet.server
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
-                        if (hasEtagInRecord)
+                        if (shouldUpdateEtag)
                         {
                             CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output);
+                            // reset etag state that may have been initialized earlier
+                            functionsState.etagState.ResetToDefaultVals();
                             return true;
                         }
 
@@ -760,9 +800,15 @@ namespace Garnet.server
             }
 
             // increment the Etag transparently if in place update happened
-            if (hasEtagInRecord)
+            if (shouldUpdateEtag)
             {
                 value.SetEtagInPayload(this.functionsState.etagState.etag + 1);
+            }
+
+            if (hadRecordPreMutation)
+            {
+                // reset etag state that may have been initialized earlier
+                functionsState.etagState.ResetToDefaultVals();
             }
 
             return true;
@@ -783,7 +829,9 @@ namespace Garnet.server
                     }
                     else
                     {
-                        RespWriteUtils.CopyRespWithEtagData(ref oldValue, ref output, hasEtagInVal: rmwInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
+                        CopyRespWithEtagData(ref oldValue, ref output, hasEtagInVal: rmwInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
+                        // reset etag state that may have been initialized earlier
+                        functionsState.etagState.ResetToDefaultVals();
                         return false;
                     }
 
@@ -794,12 +842,12 @@ namespace Garnet.server
                     {
                         rmwInfo.Action = RMWAction.ExpireAndResume;
                         rmwInfo.RecordInfo.ClearHasETag();
+                        // reset etag state that may have been initialized earlier
+                        functionsState.etagState.ResetToDefaultVals();
                         return false;
                     }
 
                     // since this case is only hit when this an update, the NX is violated and so we can return early from it without setting the value
-                    if (input.header.NotSetGetNorCheckWithEtag())
-                        return false;
 
                     if (input.header.CheckSetGetFlag())
                     {
@@ -812,6 +860,8 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
                     }
 
+                    // reset etag state that may have been initialized earlier
+                    functionsState.etagState.ResetToDefaultVals();
                     return false;
                 case RespCommand.SETEXXX:
                     // Expired data, return false immediately so we do not set, since it does not exist
@@ -820,12 +870,21 @@ namespace Garnet.server
                     {
                         rmwInfo.RecordInfo.ClearHasETag();
                         rmwInfo.Action = RMWAction.ExpireAndStop;
+                        // reset etag state that may have been initialized earlier
+                        functionsState.etagState.ResetToDefaultVals();
                         return false;
                     }
                     return true;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
+                    if (rmwInfo.RecordInfo.ETag)
+                    {
+                        CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output);
+                        // reset etag state that may have been initialized earlier
+                        functionsState.etagState.ResetToDefaultVals();
+                        return false;
+                    }
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
                         var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
                             .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(functionsState.etagState.etagSkippedStart), ref outp);
@@ -845,18 +904,27 @@ namespace Garnet.server
             {
                 recordInfo.ClearHasETag();
                 rmwInfo.Action = RMWAction.ExpireAndResume;
+                // reset etag state that may have been initialized earlier
+                functionsState.etagState.ResetToDefaultVals();
                 return false;
             }
 
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref newValue, newValue.TotalSize);
 
             RespCommand cmd = input.header.cmd;
-            bool recordHasEtag = recordInfo.ETag;
+
+            bool recordHadEtagPreMutation = recordInfo.ETag;
+            bool shouldUpdateEtag = recordHadEtagPreMutation;
+            if (shouldUpdateEtag)
+            {
+                // during checkpointing we might skip the inplace calls and go directly to copy update so we need to initialize here if needed
+                functionsState.etagState.SetValsForRecordWithEtag(ref oldValue);
+            }
 
             switch (cmd)
             {
                 case RespCommand.SETIFMATCH:
-                    recordHasEtag = true;
+                    shouldUpdateEtag = true;
                     // Copy input to value
                     Span<byte> dest = newValue.AsSpan(Constants.EtagSize);
                     ReadOnlySpan<byte> src = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -883,7 +951,7 @@ namespace Garnet.server
                     var nilResp = CmdStrings.RESP_ERRNOTFOUND;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                     var numDigitsInEtag = NumUtils.NumDigitsInLong(newEtag);
-                    RespWriteUtils.WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
+                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
                     break;
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
@@ -892,14 +960,14 @@ namespace Garnet.server
                     bool inputWithEtag = input.header.CheckWithEtagFlag();
 
                     // only when both are not false && false or true and true, do we need to readjust
-                    if (inputWithEtag != recordHasEtag)
+                    if (inputWithEtag != shouldUpdateEtag)
                     {
                         // in the common path the above condition is skipped
                         if (inputWithEtag)
                         {
                             // nextUpdate will add etag but currently there is no etag
                             nextUpdateEtagOffset = Constants.EtagSize;
-                            recordHasEtag = true;
+                            shouldUpdateEtag = true;
                             recordInfo.SetHasETag();
                         }
                         else
@@ -942,18 +1010,19 @@ namespace Garnet.server
                     inputWithEtag = input.header.CheckWithEtagFlag();
 
                     // only when both are not false && false or true and true, do we need to readjust
-                    if (inputWithEtag != recordHasEtag)
+                    if (inputWithEtag != shouldUpdateEtag)
                     {
                         // in the common path the above condition is skipped
                         if (inputWithEtag)
                         {
                             // nextUpdate will add etag but currently there is no etag
                             nextUpdateEtagOffset = Constants.EtagSize;
-                            recordHasEtag = true;
+                            shouldUpdateEtag = true;
                             recordInfo.SetHasETag();
                         }
                         else
                         {
+                            shouldUpdateEtag = false;
                             // nextUpdate will remove etag but currentyly there is an etag
                             nextUpdateEtagOffset = 0;
                             recordInfo.ClearHasETag();
@@ -985,7 +1054,7 @@ namespace Garnet.server
 
                 case RespCommand.EXPIRE:
                 case RespCommand.PEXPIRE:
-                    recordHasEtag = false;
+                    shouldUpdateEtag = false;
 
                     var expiryExists = oldValue.MetadataSize > 0;
 
@@ -1002,7 +1071,7 @@ namespace Garnet.server
                 case RespCommand.PEXPIREAT:
                 case RespCommand.EXPIREAT:
                     expiryExists = oldValue.MetadataSize > 0;
-                    recordHasEtag = false;
+                    shouldUpdateEtag = false;
 
                     var expiryTimestamp = input.parseState.GetLong(0);
                     expiryTicks = input.header.cmd == RespCommand.PEXPIREAT
@@ -1014,7 +1083,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.PERSIST:
-                    recordHasEtag = false;
+                    shouldUpdateEtag = false;
                     oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                     if (oldValue.MetadataSize != 0)
                     {
@@ -1115,10 +1184,13 @@ namespace Garnet.server
                     // Then, set ExpireAndStop action to delete the record.
                     CopyRespTo(ref oldValue, ref output, functionsState.etagState.etagSkippedStart, functionsState.etagState.etagAccountedLength);
                     rmwInfo.Action = RMWAction.ExpireAndStop;
+
+                    // reset etag state that may have been initialized earlier
+                    functionsState.etagState.ResetToDefaultVals();
                     return false;
 
                 case RespCommand.GETEX:
-                    recordHasEtag = false;
+                    shouldUpdateEtag = false;
                     CopyRespTo(ref oldValue, ref output, functionsState.etagState.etagSkippedStart, functionsState.etagState.etagAccountedLength);
 
                     if (input.arg1 > 0)
@@ -1164,6 +1236,8 @@ namespace Garnet.server
                         if (recordInfo.ETag)
                         {
                             CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output);
+                            // reset etag state that may have been initialized earlier
+                            functionsState.etagState.ResetToDefaultVals();
                             return true;
                         }
 
@@ -1193,10 +1267,13 @@ namespace Garnet.server
 
             rmwInfo.SetUsedValueLength(ref recordInfo, ref newValue, newValue.TotalSize);
 
-            if (recordHasEtag)
+            if (shouldUpdateEtag)
             {
                 newValue.SetEtagInPayload(functionsState.etagState.etag + 1);
+                functionsState.etagState.ResetToDefaultVals();
             }
+            else if (recordHadEtagPreMutation)
+                functionsState.etagState.ResetToDefaultVals();
 
             return true;
         }

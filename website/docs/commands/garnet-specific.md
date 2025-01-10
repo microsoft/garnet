@@ -196,13 +196,15 @@ One of the following:
 
 ### Compatibility and Behavior with Non-ETag Commands
 
+ETags are currently not supported for servers running in Cluster mode. This will be supported soon.
+
 Below is the expected behavior of ETag-associated key-value pairs when non-ETag commands are used.
 
 - **MSET, BITOP**: These commands will replace an existing ETag-associated key-value pair with a non-ETag key-value pair, effectively removing the ETag.
 
 - **SET**: Only if used with additional option "WITHETAG" will calling SET update the etag while inserting the new key-value pair over the existing key-value pair.
 
-- **RENAME**: RENAME takes an option for WITHETAG. When called WITHETAG 
+- **RENAME**: RENAME takes an option for WITHETAG. When called WITHETAG it will rename the key with an etag if the key being renamed to did not exist, else it will increment the existing etag of the key being renamed to.
 
 - **Custom Commands**: While etag based key value pairs **can be used blindly inside of custom transactions and custom procedures**, ETag set key value pairs are **not supported to be used from inside of Custom Raw String Functions.**
 

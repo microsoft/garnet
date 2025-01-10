@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Buffers;
-using System.Net.Http;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -19,7 +18,7 @@ namespace Garnet.server
         public readonly MemoryPool<byte> memoryPool;
         public readonly CacheSizeTracker objectStoreSizeTracker;
         public readonly GarnetObjectSerializer garnetObjectSerializer;
-        public EtagState etagState;
+        public readonly EtagState etagState;
         public bool StoredProcMode;
 
         public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,

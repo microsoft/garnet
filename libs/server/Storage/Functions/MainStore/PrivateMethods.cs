@@ -671,6 +671,51 @@ namespace Garnet.server
             output.SpanByte.Length = numDigits;
         }
 
+        static void CopyRespWithEtagData(ref SpanByte value, ref SpanByteAndMemory dst, bool hasEtagInVal, int etagSkippedStart, MemoryPool<byte> memoryPool)
+        {
+            int valueLength = value.LengthWithoutMetadata;
+            // always writing an array of size 2 => *2\r\n
+            int desiredLength = 4;
+            ReadOnlySpan<byte> etagTruncatedVal;
+            // get etag to write, default etag 0 for when no etag
+            long etag = hasEtagInVal ? value.GetEtagInPayload() : 0; // BaseEtag
+            // remove the length of the ETAG
+            var etagAccountedValueLength = valueLength - etagSkippedStart;
+            if (hasEtagInVal)
+            {
+                etagAccountedValueLength = valueLength - sizeof(long); // EtagSize
+            }
+
+            // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
+            etagTruncatedVal = value.AsReadOnlySpan(etagSkippedStart);
+            // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
+            desiredLength += 1 + NumUtils.NumDigitsInLong(etag) + 2 + 1 + NumUtils.NumDigits(etagAccountedValueLength) + 2 + etagAccountedValueLength + 2;
+
+            WriteValAndEtagToDst(desiredLength, ref etagTruncatedVal, etag, ref dst, memoryPool);
+        }
+
+        static void WriteValAndEtagToDst(int desiredLength, ref ReadOnlySpan<byte> value, long etag, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool, bool writeDirect = false)
+        {
+            if (desiredLength <= dst.Length)
+            {
+                dst.Length = desiredLength;
+                byte* curr = dst.SpanByte.ToPointer();
+                byte* end = curr + dst.SpanByte.Length;
+                RespWriteUtils.WriteEtagValArray(etag, ref value, ref curr, end, writeDirect);
+                return;
+            }
+
+            dst.ConvertToHeap();
+            dst.Length = desiredLength;
+            dst.Memory = memoryPool.Rent(desiredLength);
+            fixed (byte* ptr = dst.Memory.Memory.Span)
+            {
+                byte* curr = ptr;
+                byte* end = ptr + desiredLength;
+                RespWriteUtils.WriteEtagValArray(etag, ref value, ref curr, end, writeDirect);
+            }
+        }
+
         /// <summary>
         /// Logging upsert from
         /// a. ConcurrentWriter

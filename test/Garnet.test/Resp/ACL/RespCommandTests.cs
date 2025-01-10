@@ -98,7 +98,7 @@ namespace Garnet.test.Resp.ACL
 
             // Check tests against RespCommand
             {
-                IEnumerable<RespCommand> allValues = Enum.GetValues<RespCommand>().Select(static x => x.Normalize()).Distinct();
+                IEnumerable<RespCommand> allValues = Enum.GetValues<RespCommand>().Select(static x => x.NormalizeForACLs()).Distinct();
                 IEnumerable<RespCommand> testableValues =
                     allValues
                     .Except([RespCommand.NONE, RespCommand.INVALID])

@@ -30,7 +30,7 @@ namespace Garnet.server
             if (!cmd.IsDataCommand())
                 return true;
 
-            cmd = cmd.Normalize();
+            cmd = cmd.NormalizeForACLs();
             if (!RespCommandsInfo.TryFastGetRespCommandInfo(cmd, out var commandInfo))
                 // This only happens if we failed to parse the json file
                 return false;

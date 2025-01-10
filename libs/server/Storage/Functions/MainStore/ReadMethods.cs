@@ -58,7 +58,8 @@ namespace Garnet.server
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
             if (cmd is (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
             {
-                RespWriteUtils.CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
+                CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
+                functionsState.etagState.ResetToDefaultVals();
                 return true;
             }
 
@@ -67,6 +68,11 @@ namespace Garnet.server
             else
             {
                 CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
+            }
+
+            if (readInfo.RecordInfo.ETag)
+            {
+                functionsState.etagState.ResetToDefaultVals();
             }
 
             return true;
@@ -116,7 +122,8 @@ namespace Garnet.server
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
             if (cmd is (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
             {
-                RespWriteUtils.CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
+                CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
+                functionsState.etagState.ResetToDefaultVals();
                 return true;
             }
 
@@ -126,6 +133,11 @@ namespace Garnet.server
             else
             {
                 CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
+            }
+
+            if (readInfo.RecordInfo.ETag)
+            {
+                functionsState.etagState.ResetToDefaultVals();
             }
 
             return true;
@@ -144,7 +156,7 @@ namespace Garnet.server
                 var nilResp = CmdStrings.RESP_ERRNOTFOUND;
                 // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                 var numDigitsInEtag = NumUtils.NumDigitsInLong(existingEtag);
-                RespWriteUtils.WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, existingEtag, ref dst, functionsState.memoryPool, writeDirect: true);
+                WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, existingEtag, ref dst, functionsState.memoryPool, writeDirect: true);
                 return true;
             }
 

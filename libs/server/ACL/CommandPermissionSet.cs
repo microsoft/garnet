@@ -91,7 +91,7 @@ namespace Garnet.server.ACL
         /// </summary>
         public void AddCommand(RespCommand command)
         {
-            Debug.Assert(command.Normalize() == command, "Cannot control access to this command, it's an implementation detail");
+            Debug.Assert(command.NormalizeForACLs() == command, "Cannot control access to this command, it's an implementation detail");
 
             int index = (int)command;
             int ulongIndex = index / 64;
@@ -118,7 +118,7 @@ namespace Garnet.server.ACL
         /// </summary>
         public void RemoveCommand(RespCommand command)
         {
-            Debug.Assert(command.Normalize() == command, "Cannot control access to this command, it's an implementation detail");
+            Debug.Assert(command.NormalizeForACLs() == command, "Cannot control access to this command, it's an implementation detail");
 
             // Can't remove access to these commands
             if (command.IsNoAuth())
