@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
-using System.Numerics;
 using System.Runtime.Intrinsics.X86;
 
 namespace Garnet.server
@@ -178,7 +177,7 @@ namespace Garnet.server
             if (payload == mask)
                 return pos + 0;
 
-            pos += (long)BitOperations.LeadingZeroCount((ulong)payload);
+            pos += (long)Lzcnt.X64.LeadingZeroCount((ulong)payload);
 
             return pos;
         }
