@@ -52,14 +52,14 @@ namespace Garnet.server
 
             if (readInfo.RecordInfo.ETag)
             {
-                functionsState.etagState = EtagState.SetValsForRecordWithEtag(ref value);
+                EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
             }
 
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
             if (cmd is (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
             {
                 CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
-                functionsState.etagState = EtagState.ResetState();
+                EtagState.ResetState(ref functionsState.etagState);
                 return true;
             }
 
@@ -72,7 +72,7 @@ namespace Garnet.server
 
             if (readInfo.RecordInfo.ETag)
             {
-                functionsState.etagState = EtagState.ResetState();
+                EtagState.ResetState(ref functionsState.etagState);
             }
 
             return true;
@@ -116,14 +116,14 @@ namespace Garnet.server
 
             if (readInfo.RecordInfo.ETag)
             {
-                functionsState.etagState = EtagState.SetValsForRecordWithEtag(ref value);
+                EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
             }
 
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
             if (cmd is (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
             {
                 CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
-                functionsState.etagState = EtagState.ResetState();
+                EtagState.ResetState(ref functionsState.etagState);
                 return true;
             }
 
@@ -137,7 +137,7 @@ namespace Garnet.server
 
             if (readInfo.RecordInfo.ETag)
             {
-                functionsState.etagState = EtagState.ResetState();
+                EtagState.ResetState(ref functionsState.etagState);
             }
 
             return true;
