@@ -18,7 +18,7 @@ namespace Garnet.server
         public readonly MemoryPool<byte> memoryPool;
         public readonly CacheSizeTracker objectStoreSizeTracker;
         public readonly GarnetObjectSerializer garnetObjectSerializer;
-        public readonly EtagState etagState;
+        public EtagState etagState;
         public bool StoredProcMode;
 
         public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
