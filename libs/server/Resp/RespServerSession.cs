@@ -718,11 +718,6 @@ namespace Garnet.server
             containsSlowCommand = true;
             var success = command switch
             {
-                // Etag related commands
-                RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
-                RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
-                RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
-
                 RespCommand.AUTH => NetworkAUTH(),
                 RespCommand.MEMORY_USAGE => NetworkMemoryUsage(ref storageApi),
                 RespCommand.CLIENT_ID => NetworkCLIENTID(),
@@ -764,6 +759,12 @@ namespace Garnet.server
                 RespCommand.EVALSHA => TryEVALSHA(),
                 // Slow commands
                 RespCommand.LCS => NetworkLCS(ref storageApi),
+
+                // Etag related commands
+                RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
+                RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
+                RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
+
                 _ => Process(command)
             };
 
