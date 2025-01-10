@@ -30,6 +30,13 @@ namespace Tsavorite.core
         RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(SpanByte key, TValue value, ref TInput input, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<TValue, TInput>;
 
+        /// <summary>Get record size required for a new tombstone record</summary>
+        RecordSizeInfo GetDeleteRecordSize(SpanByte key);
+
+        /// <summary>Get record size required to allocate a new record. Includes allocator-specific information such as key and value overflow.</summary>
+        /// <remarks>Requires <see cref="RecordSizeInfo.FieldInfo"/> to be populated already.</remarks>
+        void PopulateRecordSizeInfo(SpanByte key, ref RecordSizeInfo sizeInfo);
+
         /// <summary>Mark the page that contains <paramref name="logicalAddress"/> as dirty</summary>
         void MarkPage(long logicalAddress, long version);
 

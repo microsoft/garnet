@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.Utility;
 
@@ -140,6 +141,12 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly ref RecordInfo GetInfoRef() => ref Allocator.GetInfoRef(PhysicalAddress);
         internal readonly RecordInfo GetInfo() => Allocator.GetInfoRef(PhysicalAddress);
+
+        internal readonly LogRecord CreateLogRecord()
+        {
+            Debug.Assert(PhysicalAddress != 0, "Cannot CreateLogRecord until PhysicalAddress is set");
+            return Allocator.CreateLogRecord(LogicalAddress, PhysicalAddress);
+        }
 
         internal readonly bool HasInMemorySrc => (internalState & (InternalStates.MainLogSrc | InternalStates.ReadCacheSrc)) != 0;
 

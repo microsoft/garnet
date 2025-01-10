@@ -25,12 +25,12 @@ namespace Tsavorite.core
         internal int AllocatedInlineRecordSize;
 
         /// <summary>Size to allocate for ETag if it will be included, else 0.</summary>
-        internal int ETagSize => FieldInfo.HasETag ? LogRecord.ETagSize : 0;
+        internal readonly int ETagSize => FieldInfo.HasETag ? LogRecord.ETagSize : 0;
 
         /// <summary>Size to allocate for Expiration if it will be included, else 0.</summary>
-        internal int ExpirationSize => FieldInfo.HasExpiration ? LogRecord.ExpirationSize : 0;
+        internal readonly int ExpirationSize => FieldInfo.HasExpiration ? LogRecord.ExpirationSize : 0;
 
         /// <summary>Size to allocate for all optional fields that will be included; possibly 0.</summary>
-        internal int OptionalSize => ETagSize + ExpirationSize;
+        internal readonly int OptionalSize => ETagSize + ExpirationSize;
     }
 }

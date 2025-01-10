@@ -169,6 +169,23 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public RecordSizeInfo GetDeleteRecordSize(SpanByte key)
+        {
+            // Used by Delete to determine the length of a new tombstone record. Does not require an ISessionFunctions method.
+            var sizeInfo = new RecordSizeInfo()
+            {
+                FieldInfo = new()
+                {
+                    HasETag = false,
+                    HasExpiration = false,
+                    ValueSize = ObjectIdMap.ObjectIdSize
+                }
+            };
+            PopulateRecordSizeInfo(key, ref sizeInfo);
+            return sizeInfo;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PopulateRecordSizeInfo(SpanByte key, ref RecordSizeInfo sizeInfo)
         {
             var keySize = key.TotalSize;

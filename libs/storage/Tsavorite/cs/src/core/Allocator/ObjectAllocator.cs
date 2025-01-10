@@ -14,13 +14,13 @@ namespace Tsavorite.core
         /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
         private readonly ObjectAllocatorImpl<TStoreFunctions> _this;
 
-        public ObjectAllocator(AllocatorSettings settings, TStoreFunctions storeFunctions)
+        internal ObjectAllocator(AllocatorSettings settings, TStoreFunctions storeFunctions)
         {
             // Called by TsavoriteKV via allocatorCreator; must pass a wrapperCreator to AllocatorBase
             _this = new(settings, storeFunctions, @this => new ObjectAllocator<TStoreFunctions>(@this));
         }
 
-        public ObjectAllocator(object @this)
+        internal ObjectAllocator(object @this)
         {
             // Called by AllocatorBase via primary ctor wrapperCreator
             _this = (ObjectAllocatorImpl<TStoreFunctions>)@this;
@@ -88,6 +88,12 @@ namespace Tsavorite.core
             where TVariableLengthInput : IVariableLengthInput<IHeapObject, TInput>
             => _this.GetUpsertRecordSize(key, value, ref input, varlenInput);
 
+        /// <summary>Get record size required for a new tombstone record</summary>
+        public readonly RecordSizeInfo GetDeleteRecordSize(SpanByte key) => _this.GetDeleteRecordSize(key);
+
+        /// <inheritdoc/>
+        public readonly void PopulateRecordSizeInfo(SpanByte key, ref RecordSizeInfo sizeInfo) => _this.PopulateRecordSizeInfo(key, ref sizeInfo);
+
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<IHeapObject> ctx) => _this.RetrievedFullRecord(record, ref ctx);
@@ -137,7 +143,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord logRecord) => _this.SerializeKey(ref key, logicalAddress, ref logRecord);
+        public readonly void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord logRecord) => _this.SerializeKey(key, logicalAddress, ref logRecord);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

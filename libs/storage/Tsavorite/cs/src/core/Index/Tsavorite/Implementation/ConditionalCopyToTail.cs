@@ -15,9 +15,8 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="sessionFunctions">Callback functions.</param>
         /// <param name="pendingContext">pending context created when the operation goes pending.</param>
-        /// <param name="key">key of the record.</param>
+        /// <param name="srcLogRecord">key of the record.</param>
         /// <param name="input">input passed through.</param>
-        /// <param name="value">the value to insert</param>
         /// <param name="output">Location to store output computed from input and value.</param>
         /// <param name="userContext">user context corresponding to operation used during completion callback.</param>
         /// <param name="stackCtx">Contains information about the call context, record metadata, and so on</param>
@@ -26,13 +25,13 @@ namespace Tsavorite.core
         ///     is just an optimization to avoid future IOs, so if we need an IO here we just defer them to the next Read().</param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private OperationStatus ConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                ref TKey key, ref TInput input, ref TValue value, ref TOutput output, TContext userContext,
+        private OperationStatus ConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TSessionFunctionsWrapper sessionFunctions,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext, ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext,
                 ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, WriteReason writeReason, bool wantIO = true)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
         {
-            bool callerHasEphemeralLock = stackCtx.recSrc.HasEphemeralSLock;
+            var callerHasEphemeralLock = stackCtx.recSrc.HasEphemeralSLock;
 
             // We are called by one of ReadFromImmutable, CompactionConditionalCopyToTail, or ContinuePendingConditionalCopyToTail;
             // these have already searched to see if the record is present above minAddress, and stackCtx is set up for the first try.
@@ -43,18 +42,18 @@ namespace Tsavorite.core
             {
                 // ConditionalCopyToTail is different from the usual procedures, in that if we find a source record we don't lock--we exit with success.
                 // So we only lock for tag-chain stability during search.
-                if (callerHasEphemeralLock || TryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
+                if (callerHasEphemeralLock || TryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out var status))
                 {
                     try
                     {
                         RecordInfo dummyRecordInfo = default;   // TryCopyToTail only needs this for readcache record invalidation.
-                        status = TryCopyToTail(ref pendingContext, ref key, ref input, ref value, ref output, ref stackCtx, ref dummyRecordInfo, sessionFunctions, writeReason);
+                        status = TryCopyToTail(ref pendingContext, ref srcLogRecord, ref input, ref output, ref stackCtx, ref dummyRecordInfo, sessionFunctions, writeReason);
                     }
                     finally
                     {
                         stackCtx.HandleNewRecordOnException(this);
                         if (!callerHasEphemeralLock)
-                            EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                            EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
                     }
                 }
 
@@ -70,7 +69,8 @@ namespace Tsavorite.core
                 bool needIO;
                 do
                 {
-                    if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx2, stackCtx.recSrc.LogicalAddress, minAddress, out status, out needIO))
+                    if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                            sessionFunctions, srcLogRecord.Key, ref stackCtx2, stackCtx.recSrc.LogicalAddress, minAddress, out status, out needIO))
                         return OperationStatus.SUCCESS;
                 }
                 while (HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
@@ -83,7 +83,7 @@ namespace Tsavorite.core
                         return OperationStatus.SUCCESS;
                 }
                 else if (needIO)
-                    return PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, userContext,
+                    return PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, srcLogRecord.Key, ref input, value, ref output, userContext,
                                                       ref stackCtx2, minAddress, WriteReason.Compaction);
             }
         }

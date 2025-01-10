@@ -11,23 +11,24 @@ namespace Tsavorite.core
         /// Copy a record from the disk to the read cache.
         /// </summary>
         /// <param name="pendingContext"></param>
-        /// <param name="key"></param>
+        /// <param name="srcLogRecord"></param>
         /// <param name="input"></param>
-        /// <param name="recordValue"></param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TValue, TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
         /// <param name="sessionFunctions"></param>
         /// <returns>True if copied to readcache, else false; readcache is "best effort", and we don't fail the read process, or slow it down by retrying.
         /// </returns>
-        internal bool TryCopyToReadCache<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                                        SpanByte key, ref TInput input, ref TValue recordValue, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
+        internal bool TryCopyToReadCache<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                                        ref TSourceLogRecord srcLogRecord, ref TInput input, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
         {
-            var (actualSize, allocatedSize, _) = hlog.GetRecordSize(key, ref recordValue);
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = srcLogRecord.GetRecordFieldInfo() };
+            hlog.PopulateRecordSizeInfo(srcLogRecord.Key, ref sizeInfo);
 
-            if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, allocatedSize, out long newLogicalAddress, out long newPhysicalAddress, out _))
+            if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, ref sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out _))
                 return false;
-            ref var newRecordInfo = ref WriteNewRecordInfo(key, readCacheBase, newPhysicalAddress, inNewVersion: false, stackCtx.hei.Address);
+            var newLogRecord = WriteNewRecordInfo(srcLogRecord.Key, readCacheBase, newLogicalAddress, newPhysicalAddress, inNewVersion: false, previousAddress: stackCtx.hei.Address);
             stackCtx.SetNewRecord(newLogicalAddress | Constants.kReadCacheBitMask);
 
             UpsertInfo upsertInfo = new()
@@ -37,17 +38,14 @@ namespace Tsavorite.core
                 Address = Constants.kInvalidAddress,        // We do not expose readcache addresses
                 KeyHash = stackCtx.hei.hash,
             };
-            upsertInfo.SetRecordInfo(ref newRecordInfo);
 
             // Even though readcache records are immutable, we have to initialize the lengths
-            ref TValue newRecordValue = ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
-            (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
+            readcache.InitializeValue(newPhysicalAddress, newPhysicalAddress + sizeInfo.FieldInfo.ValueSize);
 
             TOutput output = default;
-            if (!sessionFunctions.SingleWriter(ref key, ref input, ref recordValue, ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize),
-                                            ref output, ref upsertInfo, WriteReason.CopyToReadCache, ref newRecordInfo))
+            if (!sessionFunctions.SingleWriter(ref newLogRecord, ref input, srcLogRecord.GetValueRef<TValue>(), ref output, ref upsertInfo, WriteReason.CopyToReadCache))
             {
-                stackCtx.SetNewRecordInvalid(ref newRecordInfo);
+                stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
                 return false;
             }
 
@@ -56,7 +54,7 @@ namespace Tsavorite.core
             var success = stackCtx.hei.TryCAS(newLogicalAddress | Constants.kReadCacheBitMask);
             var casSuccess = success;
 
-            OperationStatus failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
+            var failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
             if (success && stackCtx.recSrc.LowestReadCacheLogicalAddress != Constants.kInvalidAddress)
             {
                 // If someone added a main-log entry for this key from a CTT while we were inserting the new readcache record, then the new
@@ -68,25 +66,25 @@ namespace Tsavorite.core
                 //    a. Therefore there is no "momentary inconsistency", because the value inserted at the splice would not be changed.
                 //    b. It is not possible for another thread to update the "at tail" value to introduce inconsistency until we have released the current SLock.
                 //  - If there are two ReadCache inserts for the same key, one will fail the CAS because it will see the other's update which changed hei.entry.
-                success = EnsureNoNewMainLogRecordWasSpliced(ref key, stackCtx.recSrc, pendingContext.InitialLatestLogicalAddress, ref failStatus);
+                success = EnsureNoNewMainLogRecordWasSpliced(srcLogRecord.Key, stackCtx.recSrc, pendingContext.InitialLatestLogicalAddress, ref failStatus);
             }
 
             if (success)
             {
                 if (success)
-                    newRecordInfo.UnsealAndValidate();
+                    newLogRecord.InfoRef.UnsealAndValidate();
                 pendingContext.logicalAddress = upsertInfo.Address;
-                sessionFunctions.PostSingleWriter(ref key, ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress), ref output, ref upsertInfo, WriteReason.CopyToReadCache, ref newRecordInfo);
+                sessionFunctions.PostSingleWriter(ref newLogRecord, ref input, srcLogRecord.GetValueRef<TValue>(), ref output, ref upsertInfo, WriteReason.CopyToReadCache);
                 stackCtx.ClearNewRecord();
                 return true;
             }
 
             // CAS failure, or another record was spliced in.
-            stackCtx.SetNewRecordInvalid(ref newRecordInfo);
+            stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
             if (!casSuccess)
             {
-                storeFunctions.DisposeRecord(ref readcache.GetKey(newPhysicalAddress), ref readcache.GetValue(newPhysicalAddress), DisposeReason.SingleWriterCASFailed);
-                newRecordInfo.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
+                DisposeRecord(ref newLogRecord, DisposeReason.SingleWriterCASFailed);
+                newLogRecord.InfoRef.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
             }
             return false;
         }

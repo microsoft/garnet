@@ -29,6 +29,8 @@ namespace Tsavorite.core
 
         #region IReadOnlyRecord
         /// <inheritdoc/>
+        public readonly bool IsObjectRecord => valueObject is not null;
+        /// <inheritdoc/>
         public readonly bool IsSet => true;
         /// <inheritdoc/>
         public readonly ref RecordInfo InfoRef => ref Unsafe.AsRef<RecordInfo>((byte*)physicalAddress);
@@ -41,19 +43,29 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly IHeapObject ValueObject => valueObject;
         /// <inheritdoc/>
+        public readonly ref TValue GetValueRef<TValue>() => ref Unsafe.AsRef<TValue>((void*)ValueAddress);
+        /// <inheritdoc/>
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : 0;
         /// <inheritdoc/>
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
         /// <inheritdoc/>
+        public readonly int ActualRecordSize => *(int*)physicalAddress + RecordInfo.GetLength();
+        /// <inheritdoc/>
         public readonly LogRecord AsLogRecord() => throw new TsavoriteException("DiskLogRecord cannot be converted to AsLogRecord");
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        RecordFieldInfo GetRecordFieldInfo() => new()
+        {
+            ValueSize = IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalSize,
+            HasETag = Info.HasETag,
+            HasExpiration = Info.HasExpiration
+        };
         #endregion //IReadOnlyRecord
 
         const int FullRecordLenSize = sizeof(int);
 
-        /// <summary>The used length of the record</summary>
-        public readonly int FullRecordLen => *(int*)physicalAddress + RecordInfo.GetLength();
         /// <summary>The used length of the record rounded up to record-alignment boundary</summary>
-        public readonly int AlignedFullRecordLen => RoundUp(FullRecordLen, Constants.kRecordAlignment);
+        public readonly int AlignedFullRecordLen => RoundUp(ActualRecordSize, Constants.kRecordAlignment);
 
         readonly long KeyAddress => physicalAddress + RecordInfo.GetLength() + FullRecordLenSize + ETagLen + ExpirationLen;
 
@@ -62,7 +74,7 @@ namespace Tsavorite.core
         /// <summary>The value; unlike in-memory, this is always an inline stream of bytes, but not a SpanByte; to avoid redundantly storing length,
         /// we calculate the SpanByte length from FullRecordLen, because Value is the last field in the record.</summary>
         /// <remarks>Not a ref return as it cannot be changed</remarks>
-        public readonly SpanByte Value => new(FullRecordLen - (int)(ValueAddress - physicalAddress), (IntPtr)ValueAddress);
+        public readonly SpanByte Value => new(ActualRecordSize - (int)(ValueAddress - physicalAddress), (IntPtr)ValueAddress);
 
         private readonly int ETagLen => Info.HasETag ? LogRecord.ETagSize : 0;
         private readonly int ExpirationLen => Info.HasExpiration ? LogRecord.ExpirationSize : 0;

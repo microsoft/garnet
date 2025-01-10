@@ -51,6 +51,8 @@ namespace Tsavorite.core
                                                        out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
+            // TODO: This must handle out-of-line allocations for key and value (get overflow allocator for logicalAddress' page
+
             status = OperationStatus.SUCCESS;
 
             // MinRevivAddress is also needed for pendingContext-based record reuse.
@@ -113,12 +115,12 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool TryAllocateRecordReadCache<TInput, TOutput, TContext>(ref PendingContext<TInput, TOutput, TContext> pendingContext, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx,
-                                                       int allocatedSize, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
+                                                       ref RecordSizeInfo recordSizeInfo, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
         {
             // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.
             for (; ; Thread.Yield())
             {
-                if (!TryBlockAllocate(readCacheBase, allocatedSize, out newLogicalAddress, ref pendingContext, out status))
+                if (!TryBlockAllocate(readCacheBase, recordSizeInfo.ActualInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
                     break;
 
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);

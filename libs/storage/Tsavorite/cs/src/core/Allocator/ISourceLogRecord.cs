@@ -6,14 +6,17 @@ namespace Tsavorite.core
     /// <summary>An interface to cover either an in-memory or on-disk log record for RCU</summary>
     public interface ISourceLogRecord
     {
+        /// <summary>Whether this is a record for an object or a SpanByte value</summary>
+        bool IsObjectRecord { get; }
+
         /// <summary>A ref to the record header</summary>
-        public ref RecordInfo InfoRef { get; }
+        ref RecordInfo InfoRef { get; }
 
         /// <summary>Fast access returning a copy of the record header</summary>
-        public RecordInfo Info { get; }
+        RecordInfo Info { get; }
 
         /// <summary>Whether there is actually a record here</summary>
-        public bool IsSet { get; }
+        bool IsSet { get; }
 
         /// <summary>The key:
         ///     <list type="bullet">
@@ -22,23 +25,32 @@ namespace Tsavorite.core
         ///     </list>
         /// </summary>
         /// <remarks>Not a ref return as it cannot be changed</remarks>
-        public SpanByte Key { get; }
+        SpanByte Key { get; }
 
         /// <summary>The value <see cref="SpanByte"/>, if this is a String LogRecord; an assertion is raised if it is an Object LogRecord.</summary>
         /// <remarks>Not a ref return as it cannot be changed</remarks>
-        public SpanByte ValueSpan { get; }
+        SpanByte ValueSpan { get; }
 
         /// <summary>The value object, if this is an Object LogRecord; an exception is thrown if it is a String LogRecord.</summary>
-        public IHeapObject ValueObject { get; }
+        IHeapObject ValueObject { get; }
+
+        /// <summary>Get a reference to the value; useful when the generic type is needed.</summary>
+        ref TValue GetValueRef<TValue>();
 
         /// <summary>The ETag of the record, if any (see <see cref="RecordInfo.HasETag"/>; 0 by default.</summary>
-        public long ETag { get; }
+        long ETag { get; }
 
         /// <summary>The Expiration of the record, if any (see <see cref="RecordInfo.HasExpiration"/>; 0 by default.</summary>
-        public long Expiration { get; }
+        long Expiration { get; }
+
+        /// <summary>The actual size of the main-log (inline) portion of the record; for in-memory records it does not include filler length.</summary>
+        int ActualRecordSize { get; }
 
         /// <summary>A shim to "convert" a TSourceLogRecord generic that is a <see cref="LogRecord"/> to a <see cref="LogRecord"/> type.
         /// Should throw if the TSourceLogRecord is a <see cref="DiskLogRecord"/>.</summary>
-        public LogRecord AsLogRecord();
+        LogRecord AsLogRecord();
+
+        /// <summary>Get the record's field info, for use in calculating required record size</summary>
+        RecordFieldInfo GetRecordFieldInfo();
     }
 }

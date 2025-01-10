@@ -60,14 +60,10 @@ namespace Tsavorite.core
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
-            if (!FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
+            if (!FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out var status))
                 return status;
-            stackCtx.SetRecordSourceToHashEntry(hlogBase);
 
-            // We have to assign a reference on declaration, so assign it here before we know whether LogicalAddress is above or below HeadAddress.
-            // It must be at this scope so it can be unlocked in 'finally'.
-            RecordInfo dummyRecordInfo = RecordInfo.InitialValid;
-            ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
+            LogRecord srcLogRecord = default;
 
             ReadInfo readInfo = new()
             {
@@ -80,19 +76,15 @@ namespace Tsavorite.core
             {
                 if (stackCtx.hei.IsReadCache)
                 {
-                    if (FindInReadCache(ref key, ref stackCtx, minAddress: Constants.kInvalidAddress, alwaysFindLatestLA: false))
+                    if (FindInReadCache(key, ref stackCtx, minAddress: Constants.kInvalidAddress, alwaysFindLatestLA: false))
                     {
                         // Note: When session is in PREPARE phase, a read-cache record cannot be new-version. This is because a new-version record
                         // insertion would have invalidated the read-cache entry, and before the new-version record can go to disk become eligible
                         // to enter the read-cache, the PREPARE phase for that session will be over due to an epoch refresh.
-
-                        // This is not called when looking up by address, so we can set pendingContext.recordInfo.
-                        srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-                        readInfo.SetRecordInfo(ref srcRecordInfo);
-
                         readInfo.Address = Constants.kInvalidAddress;   // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
 
-                        if (sessionFunctions.SingleReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref readInfo))
+                        srcLogRecord = stackCtx.recSrc.CreateLogRecord();
+                        if (sessionFunctions.SingleReader(ref srcLogRecord, ref input, ref output, ref readInfo))
                             return OperationStatus.SUCCESS;
                         return readInfo.Action == ReadAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.NOTFOUND;
                     }
@@ -102,7 +94,7 @@ namespace Tsavorite.core
                 }
 
                 // recSrc.LogicalAddress is set and is not in the readcache. Traceback for key match.
-                if (!TryFindRecordForRead(ref key, ref stackCtx, hlogBase.HeadAddress, out status))
+                if (!TryFindRecordForRead(key, ref stackCtx, hlogBase.HeadAddress, out status))
                     return status;
 
                 // Track the latest searched-below addresses. They are the same if there are no readcache records.
@@ -117,29 +109,28 @@ namespace Tsavorite.core
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.SafeReadOnlyAddress)
                 {
                     // Mutable region (even fuzzy region is included here)
-                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+                    srcLogRecord = stackCtx.recSrc.CreateLogRecord();
 
-                    if (srcRecordInfo.IsClosedOrTombstoned(ref status))
+                    if (srcLogRecord.Info.IsClosedOrTombstoned(ref status))
                         return status;
 
-                    if (sessionFunctions.ConcurrentReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref readInfo, ref srcRecordInfo))
-                        return OperationStatus.SUCCESS;
-                    return CheckFalseActionStatus(readInfo);
+                    return sessionFunctions.ConcurrentReader(ref srcLogRecord, ref input, ref output, ref readInfo)
+                        ? OperationStatus.SUCCESS
+                        : CheckFalseActionStatus(readInfo);
                 }
 
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
                 {
                     // Immutable region
-                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-
-                    if (srcRecordInfo.IsClosedOrTombstoned(ref status))
+                    srcLogRecord = stackCtx.recSrc.CreateLogRecord();
+                    if (srcLogRecord.Info.IsClosedOrTombstoned(ref status))
                         return status;
 
-                    if (sessionFunctions.SingleReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref readInfo))
+                    if (sessionFunctions.SingleReader(ref srcLogRecord, ref input, ref output, ref readInfo))
                     {
-                        if (pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.AllImmutable)
-                            return OperationStatus.SUCCESS;
-                        return CopyFromImmutable(ref key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, ref stackCtx, ref status, stackCtx.recSrc.GetValue());
+                        return pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.AllImmutable
+                            ? OperationStatus.SUCCESS
+                            : CopyFromImmutable(ref srcLogRecord, ref input, ref output, userContext, ref pendingContext, sessionFunctions, ref stackCtx, ref status);
                     }
                     return CheckFalseActionStatus(readInfo);
                 }
@@ -152,7 +143,7 @@ namespace Tsavorite.core
                     // Note: we do not lock here; we wait until reading from disk, then lock in the ContinuePendingRead chain.
                     if (hlogBase.IsNullDevice)
                         return OperationStatus.NOTFOUND;
-                    CreatePendingReadContext(ref key, ref input, output, userContext, ref pendingContext, sessionFunctions, stackCtx.recSrc.LogicalAddress);
+                    CreatePendingReadContext(key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, stackCtx.recSrc.LogicalAddress);
                     return OperationStatus.RECORD_ON_DISK;
                 }
 
@@ -163,26 +154,26 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
             }
         }
 
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalRead to have this be a virtcall.
-        private OperationStatus CopyFromImmutable<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext userContext,
+        private OperationStatus CopyFromImmutable<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, TValue recordValue)
+                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
             {
-                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref key, ref input, ref recordValue, ref output, userContext, ref stackCtx,
+                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref srcLogRecord, ref input, ref output, userContext, ref stackCtx,
                                                WriteReason.CopyToTail, wantIO: false);
                 if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)    // May happen due to CopyToTailFromReadOnly
-                    CreatePendingReadContext(ref key, ref input, output, userContext, ref pendingContext, sessionFunctions, stackCtx.recSrc.LogicalAddress);
+                    CreatePendingReadContext(srcLogRecord.Key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, stackCtx.recSrc.LogicalAddress);
                 return status;
             }
             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache
-                    && TryCopyToReadCache(sessionFunctions, ref pendingContext, ref key, ref input, ref recordValue, ref stackCtx))
+                    && TryCopyToReadCache(sessionFunctions, ref pendingContext, ref srcLogRecord, ref input, ref stackCtx))
             {
                 // Copy to read cache is "best effort"; we don't return an error if it fails.
                 return OperationStatus.SUCCESS | OperationStatus.COPIED_RECORD_TO_READ_CACHE;
@@ -256,36 +247,30 @@ namespace Tsavorite.core
                 // Do not trace back in the pending callback if it is a key mismatch.
                 pendingContext.NoKey = true;
 
-                CreatePendingReadContext(ref key, ref input, output, userContext, ref pendingContext, sessionFunctions, readAtAddress);
+                CreatePendingReadContext(key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, readAtAddress);
                 return OperationStatus.RECORD_ON_DISK;
             }
 
             // We're in-memory, so it is safe to get the address now.
-            var physicalAddress = hlog.GetPhysicalAddress(readAtAddress);
+            var srcLogRecord = hlog.CreateLogRecord(readAtAddress);
 
-            TKey defaultKey = default;
+            // Get the key hash.
             if (readOptions.KeyHash.HasValue)
                 pendingContext.keyHash = readOptions.KeyHash.Value;
             else if (!pendingContext.NoKey)
-                pendingContext.keyHash = storeFunctions.GetKeyHashCode64(ref key);
+                pendingContext.keyHash = storeFunctions.GetKeyHashCode64(key);
             else
             {
                 // We have NoKey and an in-memory address so we must get the record to get the key to get the hashcode check for index growth,
                 // possibly lock the bucket, etc.
-                pendingContext.keyHash = storeFunctions.GetKeyHashCode64(ref hlog.GetKey(physicalAddress));
-
-#pragma warning disable CS9085 // "This ref-assigns a value that has a narrower escape scope than the target", but we don't return the reference.
-                // Note: With bucket-based locking the key is not used for Ephemeral locks (only the key's hashcode is used). A key-based locking system
-                // would require this to be the actual key. We do *not* set this to the record key in case that is reclaimed by revivification.
-                key = ref defaultKey;
-#pragma warning restore CS9085
+                pendingContext.keyHash = storeFunctions.GetKeyHashCode64(srcLogRecord.Key);
             }
 
             OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
-            if (!FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
+            if (!FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out var status))
                 return status;
 
             stackCtx.SetRecordSourceToHashEntry(hlogBase);
@@ -294,14 +279,11 @@ namespace Tsavorite.core
 
             // Note: We read directly from the address either in memory or pending, so do not do any ReadCache operations.
 
-            // srcRecordInfo must be at scope above 'try' so 'finally' can see it for record unlocking.
-            ref RecordInfo srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-
             try
             {
                 // We're not doing RETRY_LATER if there is a Closed record; we only return valid records here.
                 // Closed records may be reclaimed by revivification, so we do not return them.
-                if (srcRecordInfo.IsClosed)
+                if (srcLogRecord.Info.IsClosed)
                     return OperationStatus.NOTFOUND;
                 // We do not check for Tombstone here; we return the record to the caller.
 
@@ -320,30 +302,30 @@ namespace Tsavorite.core
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.SafeReadOnlyAddress)
                 {
                     // Mutable region (even fuzzy region is included here).
-                    sessionFunctions.ConcurrentReader(ref stackCtx.recSrc.GetKey(), ref input, ref stackCtx.recSrc.GetValue(), ref output, ref readInfo, ref srcRecordInfo);
+                    _ = sessionFunctions.ConcurrentReader(ref srcLogRecord, ref input, ref output, ref readInfo);
                 }
                 else
                 {
                     // Immutable region (we tested for < HeadAddress above).
-                    sessionFunctions.SingleReader(ref stackCtx.recSrc.GetKey(), ref input, ref stackCtx.recSrc.GetValue(), ref output, ref readInfo);
+                    _ = sessionFunctions.SingleReader(ref srcLogRecord, ref input, ref output, ref readInfo);
                 }
             }
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
             }
             return status;
         }
 
         // No AggressiveInlining; this is called only for the pending case and may improve inlining of InternalRead in the normal case if the compiler decides not to inline this.
-        private void CreatePendingReadContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref TInput input, TOutput output, TContext userContext,
+        private void CreatePendingReadContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SpanByte key, ref TInput input, ref TOutput output, TContext userContext,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, long logicalAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.READ;
             if (!pendingContext.NoKey && pendingContext.key == default)    // If this is true, we don't have a valid key
-                pendingContext.key = hlog.GetKeyContainer(ref key);
+                pendingContext.key = hlog.GetKeyContainer(key);
             if (pendingContext.input == default)
                 pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
 

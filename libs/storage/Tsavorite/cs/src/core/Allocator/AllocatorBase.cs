@@ -1758,7 +1758,7 @@ namespace Tsavorite.core
             {
                 var record = ctx.record.GetValidPointer();
                 var diskLogRecord = new DiskLogRecord((long)record);
-                int requiredBytes = diskLogRecord.FullRecordLen;
+                int requiredBytes = diskLogRecord.ActualRecordSize;
                 if (ctx.record.available_bytes >= requiredBytes)
                 {
                     Debug.Assert(!_wrapper.GetInfoRefFromBytePointer(record).Invalid, "Invalid records should not be in the hash chain for pending IO");
