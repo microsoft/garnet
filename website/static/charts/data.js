@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736553400613,
+  "lastUpdate": 1736553446827,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -44201,6 +44201,102 @@ window.BENCHMARK_DATA = {
             "value": 110716.60342610677,
             "unit": "ns",
             "range": "± 438.45067017736915"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "42720645+hamdaankhalid@users.noreply.github.com",
+            "name": "Hamdaan Khalid",
+            "username": "hamdaankhalid"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ae13046b4d747624724f465f05c0021e3335e8dc",
+          "message": "Temp fix Tsavorite CI (#909)\n\nCo-authored-by: Hamdaan Khalid <hkhalid@microsoft.com>",
+          "timestamp": "2025-01-10T15:51:23-08:00",
+          "tree_id": "68a6294545c462e16ed54ce0cf4f05259e518c92",
+          "url": "https://github.com/microsoft/garnet/commit/ae13046b4d747624724f465f05c0021e3335e8dc"
+        },
+        "date": 1736553442245,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomRawStringCommand(Params: ACL)",
+            "value": 61762.981144831734,
+            "unit": "ns",
+            "range": "± 173.139970248383"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomObjectCommand(Params: ACL)",
+            "value": 238886.12273297991,
+            "unit": "ns",
+            "range": "± 1571.6449037484365"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomTransaction(Params: ACL)",
+            "value": 121234.28630183294,
+            "unit": "ns",
+            "range": "± 234.74548088253425"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomProcedure(Params: ACL)",
+            "value": 108513.16038411458,
+            "unit": "ns",
+            "range": "± 396.77046035456505"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomRawStringCommand(Params: AOF)",
+            "value": 60145.88982340495,
+            "unit": "ns",
+            "range": "± 221.08771280928121"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomObjectCommand(Params: AOF)",
+            "value": 245682.16552734375,
+            "unit": "ns",
+            "range": "± 1807.605028986237"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomTransaction(Params: AOF)",
+            "value": 132183.2725016276,
+            "unit": "ns",
+            "range": "± 762.1106432272967"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomProcedure(Params: AOF)",
+            "value": 138285.45486215444,
+            "unit": "ns",
+            "range": "± 357.1881854340751"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomRawStringCommand(Params: None)",
+            "value": 58905.48444475447,
+            "unit": "ns",
+            "range": "± 209.5116626067939"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomObjectCommand(Params: None)",
+            "value": 245259.64528245194,
+            "unit": "ns",
+            "range": "± 831.0178333577592"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomTransaction(Params: None)",
+            "value": 121537.45026855469,
+            "unit": "ns",
+            "range": "± 1663.41854173803"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomProcedure(Params: None)",
+            "value": 111652.82932942708,
+            "unit": "ns",
+            "range": "± 485.5425360489678"
           }
         ]
       }
