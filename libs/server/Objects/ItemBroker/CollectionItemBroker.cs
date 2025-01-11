@@ -397,7 +397,7 @@ namespace Garnet.server
             {
                 case RespCommand.BZPOPMIN:
                 case RespCommand.BZPOPMAX:
-                    var element = sortedSetObj.Pop(command == RespCommand.BZPOPMAX);
+                    var element = sortedSetObj.PopMinOrMax(command == RespCommand.BZPOPMAX);
                     result = new CollectionItemResult(key, [element]);
                     return true;
 
@@ -410,7 +410,7 @@ namespace Garnet.server
 
                     for (int i = 0; i < popCount; i++)
                     {
-                        scoredItems[i] = sortedSetObj.Pop(!lowScoresFirst);
+                        scoredItems[i] = sortedSetObj.PopMinOrMax(!lowScoresFirst);
                     }
 
                     result = new CollectionItemResult(key, scoredItems);

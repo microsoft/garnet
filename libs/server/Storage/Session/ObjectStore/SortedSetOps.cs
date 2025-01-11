@@ -612,7 +612,6 @@ namespace Garnet.server
                 }
 
                 count = pairs?.Count ?? 0;
-                var destinationKeyBty = destinationKey.ToArray();
                 if (count > 0)
                 {
                     SortedSetObject newSetObject = new();
@@ -620,15 +619,16 @@ namespace Garnet.server
                     {
                         newSetObject.Add(element, score);
                     }
-                    _ = SET(destinationKeyBty, newSetObject, ref objectContext);
+
+                    var destinationKeyBytes = destinationKey.ToArray();
+                    _ = SET(destinationKeyBytes, newSetObject, ref objectContext);
+                    itemBroker.HandleCollectionUpdate(destinationKeyBytes);
                 }
                 else
                 {
                     _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
                         ref lockableContext, ref objectContext);
                 }
-
-                itemBroker.HandleCollectionUpdate(destinationKeyBty);
 
                 return status;
             }
@@ -1072,7 +1072,10 @@ namespace Garnet.server
                     {
                         newSortedSetObject.Add(element, score);
                     }
-                    _ = SET(destinationKey.ToArray(), newSortedSetObject, ref objectContext);
+
+                    var destinationKeyBytes = destinationKey.ToArray();
+                    _ = SET(destinationKeyBytes, newSortedSetObject, ref objectContext);
+                    itemBroker.HandleCollectionUpdate(destinationKeyBytes);
                 }
                 else
                 {
@@ -1314,7 +1317,10 @@ namespace Garnet.server
                     {
                         newSortedSetObject.Add(element, score);
                     }
-                    _ = SET(destinationKey.ToArray(), newSortedSetObject, ref objectContext);
+
+                    var destinationKeyBytes = destinationKey.ToArray();
+                    _ = SET(destinationKeyBytes, newSortedSetObject, ref objectContext);
+                    itemBroker.HandleCollectionUpdate(destinationKeyBytes);
                 }
                 else
                 {

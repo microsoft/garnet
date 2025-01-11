@@ -10,7 +10,7 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
-    public class RespBlockingTests
+    public class RespBlockingCollectionTests
     {
         GarnetServer server;
         private TaskFactory taskFactory = new();
@@ -389,7 +389,7 @@ namespace Garnet.test
             var pushingTask = taskFactory.StartNew(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
-                Task.Delay(TimeSpan.FromSeconds(5)).Wait();
+                Task.Delay(TimeSpan.FromSeconds(2)).Wait();
                 return lcr.SendCommand($"RPUSH {key} {string.Join(" ", values)}");
             });
 

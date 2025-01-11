@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Linq;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -1530,9 +1529,17 @@ namespace Garnet.server
         /// </summary>
         private unsafe bool SortedSetBlockingPop(RespCommand command)
         {
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
             if (parseState.Count < 2)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString());
+            }
+
+            if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
             }
 
             var keysBytes = new byte[parseState.Count - 1][];
@@ -1541,14 +1548,6 @@ namespace Garnet.server
             {
                 keysBytes[i] = parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
             }
-
-            if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout))
-            {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
-            }
-
-            if (storeWrapper.itemBroker == null)
-                throw new GarnetException("Object store is disabled");
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
 
