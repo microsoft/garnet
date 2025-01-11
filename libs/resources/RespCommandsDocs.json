@@ -2827,6 +2827,12 @@
     ]
   },
   {
+    "Command": "HCOLLECT",
+    "Name": "HCOLLECT",
+    "Summary": "Manually trigger deletion of expired fields from memory",
+    "Group": "Hash"
+  },
+  {
     "Command": "HEXISTS",
     "Name": "HEXISTS",
     "Summary": "Determines whether a field exists in a hash.",
