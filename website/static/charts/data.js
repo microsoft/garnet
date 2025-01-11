@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736554366916,
+  "lastUpdate": 1736557559906,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -47473,6 +47473,36 @@ window.BENCHMARK_DATA = {
             "value": 94.46540048122407,
             "unit": "ns",
             "range": "± 0.42506899258644054"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "42720645+hamdaankhalid@users.noreply.github.com",
+            "name": "Hamdaan Khalid",
+            "username": "hamdaankhalid"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9f9080305799f3cc351e8b8ade00732f8c2de8b9",
+          "message": "Native ETag Support (#908)\n\n* init etag impl\r\n\r\n* WIP tests\r\n\r\n* complete test coverage and bugfixes\r\n\r\n* add edge case handling for etag override set\r\n\r\n* Add documentation\r\n\r\n* fix etag clearing\r\n\r\n* Format\r\n\r\n* fix build warnings\r\n\r\n* Update test\r\n\r\n* Update tests for badrish reqs\r\n\r\n* Update mainstore ops fixing rename bug and remove unnecessary GetForEtagCmd\r\n\r\n* add read nil test\r\n\r\n* fmt\r\n\r\n* Update docs and add more tests for edgecase\r\n\r\n* fix renamenx and etag compat\r\n\r\n* Add more etag edge case tests\r\n\r\n* remove shifting in network buffer in setifmatch\r\n\r\n* Fix named parameters for readability\r\n\r\n* use constants for etag size\r\n\r\n* update read nil to be a faster\r\n\r\n* format\r\n\r\n* pr feedback\r\n\r\n* remove redundant ternary\r\n\r\n* update tests for transaction\r\n\r\n* Add test to make sure etag data works with recovery scenarios\r\n\r\n* WIP\r\n\r\n* WIP\r\n\r\n* unit tests working\r\n\r\n* fmt\r\n\r\n* Fix boundary condition for bitmanager\r\n\r\n* fix rename edgecase\r\n\r\n* Add custom txn, proc, and cmd handling\r\n\r\n* update docs\r\n\r\n* Finish website and nits\r\n\r\n* nit\r\n\r\n* big ole refactor\r\n\r\n* Beautiful patter matching done\r\n\r\n* SET working, todo remaining tests fix\r\n\r\n* Fix all tests\r\n\r\n* Got everythign working\r\n\r\n* reuse code smartly\r\n\r\n* update documentation\r\n\r\n* Finish documentation\r\n\r\n* wip\r\n\r\n* branchless programming in hot path\r\n\r\n* branchless programming in more hoptpath\r\n\r\n* More branchlessness\r\n\r\n* reduce branching for set_conditional\r\n\r\n* fmt\r\n\r\n* experiment with calling the accessor only once\r\n\r\n* more branchless\r\n\r\n* reduce branchless because branchless has more instructions\r\n\r\n* reduce branching\r\n\r\n* remoove reinterpret casting more\r\n\r\n* fix read\r\n\r\n* precompute offsets\r\n\r\n* Fix bugs\r\n\r\n* wippy\r\n\r\n* Try adding switch case\r\n\r\n* remove redundant metadatasize calc\r\n\r\n* add flag for set to parser\r\n\r\n* fix bugs and add comments\r\n\r\n* Fix ACL and Txn unit test\r\n\r\n* remove leftover\r\n\r\n* reduce extra comparison\r\n\r\n* leave input header alone\r\n\r\n* wip\r\n\r\n* wip\r\n\r\n* reduce common path logic\r\n\r\n* WIP\r\n\r\n* WIP try rearranging at server session level\r\n\r\n* reduce branching in rmw\r\n\r\n* add back bdn benchmarks\r\n\r\n* go back to using branching again\r\n\r\n* Big ole refactor\r\n\r\n* Badrish PR feedback\r\n\r\n* format\r\n\r\n* pr feedback\r\n\r\n* use const\r\n\r\n* copy struct experiment\r\n\r\n* Experiment with mutable struct\r\n\r\n* minor fix\r\n\r\n* add comment\r\n\r\n* remove unnecessary change\r\n\r\n* prove that I am not crazy\r\n\r\n* LETS GOI FIX UBUNTU ISSUE\r\n\r\n* add feedback\r\n\r\n* rearrange for better parsing speed for common path\r\n\r\n* move etag commands away from resp server session too\r\n\r\n* move parsing further away\r\n\r\n* Lowest in parsing layer\r\n\r\n* Move reps server sessino etag cases further down too\r\n\r\n---------\r\n\r\nCo-authored-by: Hamdaan Khalid <hkhalid@microsoft.com>",
+          "timestamp": "2025-01-10T18:03:32-07:00",
+          "tree_id": "105cbedc585143aae84a5afd5e5e7c0147af5739",
+          "url": "https://github.com/microsoft/garnet/commit/9f9080305799f3cc351e8b8ade00732f8c2de8b9"
+        },
+        "date": 1736557555165,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Network.BasicOperations.InlinePing(Params: None)",
+            "value": 91.82227029970714,
+            "unit": "ns",
+            "range": "± 0.5692655010162797"
           }
         ]
       }
