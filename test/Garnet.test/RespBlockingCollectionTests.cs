@@ -10,7 +10,7 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
-    public class RespBlockingListTests
+    public class RespBlockingCollectionTests
     {
         GarnetServer server;
         private TaskFactory taskFactory = new();
@@ -393,10 +393,150 @@ namespace Garnet.test
                 return lcr.SendCommand($"RPUSH {key} {string.Join(" ", values)}");
             });
 
+            Task.WaitAll([blockingTask, pushingTask], TimeSpan.FromSeconds(10));
+            ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(pushingTask.IsCompletedSuccessfully);
+        }
+
+        [Test]
+        [TestCase("MIN", "value1", 1.5, Description = "Pop minimum score")]
+        [TestCase("MAX", "value3", 3.5, Description = "Pop maximum score")]
+        public void BasicBzmpopTest(string mode, string expectedValue, double expectedScore)
+        {
+            var key = "mykey";
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommand($"ZADD {key} 1.5 value1 2.5 value2 3.5 value3");
+            var response = lightClientRequest.SendCommand($"BZMPOP 1 1 {key} {mode}");
+            var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*1\r\n*2\r\n${expectedValue.Length}\r\n{expectedValue}\r\n${expectedScore.ToString().Length}\r\n{expectedScore}\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        [TestCase(1, "key1", "value1", 1.5, Description = "First key has minimum value")]
+        [TestCase(2, "key2", "value2", 2.5, Description = "Second key has minimum value")]
+        public void BzmpopMultipleKeysTest(int valueKeyIndex, string expectedKey, string expectedValue, double expectedScore)
+        {
+            var keys = new[] { "key1", "key2", "key3" };
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommand($"ZADD {keys[valueKeyIndex - 1]} {expectedScore} {expectedValue}");
+            var response = lightClientRequest.SendCommand($"BZMPOP 1 {keys.Length} {string.Join(" ", keys)} MIN");
+            var expectedResponse = $"*2\r\n${expectedKey.Length}\r\n{expectedKey}\r\n*1\r\n*2\r\n${expectedValue.Length}\r\n{expectedValue}\r\n${expectedScore.ToString().Length}\r\n{expectedScore}\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void BzmpopTimeoutTest()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("BZMPOP 1 1 nonexistentkey MIN");
+            var expectedResponse = "$-1\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void BzmpopBlockingBehaviorTest()
+        {
+            var key = "blockingzset";
+            var value = "testvalue";
+            var score = 1.5;
+
+            var blockingTask = taskFactory.StartNew(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                var response = lcr.SendCommand($"BZMPOP 30 1 {key} MIN COUNT 2");
+                var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*1\r\n*2\r\n${value.Length}\r\n{value}\r\n${score.ToString().Length}\r\n{score}\r\n";
+                var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+                ClassicAssert.AreEqual(expectedResponse, actualValue);
+            });
+
+            var pushingTask = taskFactory.StartNew(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                Task.Delay(TimeSpan.FromSeconds(2)).Wait();
+                var result = lcr.SendCommand($"ZADD {key} {score} {value}");
+                return result;
+            });
+
+            Task.WaitAll([blockingTask, pushingTask], TimeSpan.FromSeconds(10));
+            ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(pushingTask.IsCompletedSuccessfully);
+        }
+
+        [Test]
+        [TestCase("BZPOPMIN", "value1", 1.5, Description = "Pop minimum score")]
+        [TestCase("BZPOPMAX", "value3", 3.5, Description = "Pop maximum score")]
+        public void BasicBzpopMinMaxTest(string command, string expectedValue, double expectedScore)
+        {
+            var key = "zsettestkey";
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommand($"ZADD {key} 1.5 value1 2.5 value2 3.5 value3");
+            var response = lightClientRequest.SendCommand($"{command} {key} 1");
+            var expectedResponse = $"*3\r\n${key.Length}\r\n{key}\r\n${expectedValue.Length}\r\n{expectedValue}\r\n${expectedScore.ToString().Length}\r\n{expectedScore}\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        [TestCase("BZPOPMIN", 1, "key1", "value1", 1.5, Description = "First key has minimum")]
+        [TestCase("BZPOPMAX", 2, "key2", "value2", 3.5, Description = "Second key has maximum")]
+        public void BzpopMinMaxMultipleKeysTest(string command, int valueKeyIndex, string expectedKey, string expectedValue, double expectedScore)
+        {
+            var keys = new[] { "key1", "key2", "key3" };
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommand($"ZADD {keys[valueKeyIndex - 1]} {expectedScore} {expectedValue}");
+            var response = lightClientRequest.SendCommand($"{command} {string.Join(" ", keys)} 1");
+            var expectedResponse = $"*3\r\n${expectedKey.Length}\r\n{expectedKey}\r\n${expectedValue.Length}\r\n{expectedValue}\r\n${expectedScore.ToString().Length}\r\n{expectedScore}\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        [TestCase("BZPOPMIN", Description = "Blocking pop minimum")]
+        [TestCase("BZPOPMAX", Description = "Blocking pop maximum")]
+        public void BzpopMinMaxBlockingTest(string command)
+        {
+            var key = "blockingzset2";
+            var value = "testvalue";
+            var score = 2.5;
+
+            var blockingTask = taskFactory.StartNew(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                var response = lcr.SendCommand($"{command} {key} 30");
+                var expectedResponse = $"*3\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n${score.ToString().Length}\r\n{score}\r\n";
+                var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+                ClassicAssert.AreEqual(expectedResponse, actualValue);
+            });
+
+            var pushingTask = taskFactory.StartNew(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                Task.Delay(TimeSpan.FromSeconds(2)).Wait();
+                return lcr.SendCommand($"ZADD {key} {score} {value}");
+            });
+
             Task.WaitAll([blockingTask, pushingTask], TimeSpan.FromSeconds(5));
             ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
             ClassicAssert.IsTrue(pushingTask.IsCompletedSuccessfully);
         }
 
+        [Test]
+        [TestCase("BZPOPMIN", Description = "Timeout on minimum")]
+        [TestCase("BZPOPMAX", Description = "Timeout on maximum")]
+        public void BzpopMinMaxTimeoutTest(string command)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand($"{command} nonexistentkey 1");
+            var expectedResponse = "$-1\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
     }
 }

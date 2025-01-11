@@ -1523,5 +1523,164 @@ namespace Garnet.server
 
             return true;
         }
+
+        /// <summary>
+        /// BZPOPMIN/BZPOPMAX key [key ...] timeout
+        /// </summary>
+        private unsafe bool SortedSetBlockingPop(RespCommand command)
+        {
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            if (parseState.Count < 2)
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString());
+            }
+
+            if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
+            }
+
+            var keysBytes = new byte[parseState.Count - 1][];
+
+            for (var i = 0; i < keysBytes.Length; i++)
+            {
+                keysBytes[i] = parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+            }
+
+            var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
+
+            if (!result.Found)
+            {
+                while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.WriteBulkString(result.Key, ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.WriteBulkString(result.Item, ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.TryWriteDoubleBulkString(result.Score, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// BZMPOP timeout numkeys key [key ...] &lt;MIN | MAX&gt; [COUNT count]
+        /// </summary>
+        private unsafe bool SortedSetBlockingMPop()
+        {
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            if (parseState.Count < 4)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BZMPOP));
+            }
+
+            var currTokenId = 0;
+
+            // Read timeout
+            if (!parseState.TryGetDouble(currTokenId++, out var timeout))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
+            }
+
+            // Read count of keys
+            if (!parseState.TryGetInt(currTokenId++, out var numKeys))
+            {
+                var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys");
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
+            }
+
+            // Should have MAX|MIN or it should contain COUNT + value
+            if (parseState.Count != numKeys + 3 && parseState.Count != numKeys + 5)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            var keysBytes = new byte[numKeys][];
+            for (var i = 0; i < keysBytes.Length; i++)
+            {
+                keysBytes[i] = parseState.GetArgSliceByRef(currTokenId++).SpanByte.ToByteArray();
+            }
+
+            var cmdArgs = new ArgSlice[2];
+
+            var orderArg = parseState.GetArgSliceByRef(currTokenId++);
+            var orderSpan = orderArg.ReadOnlySpan;
+            bool lowScoresFirst;
+
+            if (orderSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MIN))
+                lowScoresFirst = true;
+            else if (orderSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MAX))
+                lowScoresFirst = false;
+            else
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            cmdArgs[0] = new ArgSlice((byte*)&lowScoresFirst, 1);
+
+            var popCount = 1;
+
+            if (parseState.Count == numKeys + 5)
+            {
+                var countKeyword = parseState.GetArgSliceByRef(currTokenId++);
+
+                if (!countKeyword.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                }
+
+                if (!parseState.TryGetInt(currTokenId, out popCount) || popCount < 1)
+                {
+                    var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "count");
+                    return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
+                }
+            }
+
+            cmdArgs[1] = new ArgSlice((byte*)&popCount, sizeof(int));
+
+            var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BZMPOP, keysBytes, this, timeout, cmdArgs).Result;
+
+            if (!result.Found)
+            {
+                while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // Write array with 2 elements: key and array of member-score pairs
+            while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.WriteBulkString(result.Key, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.WriteArrayLength(result.Items.Length, ref dcurr, dend))
+                SendAndReset();
+
+            for (var i = 0; i < result.Items.Length; i += 2)
+            {
+                while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                    SendAndReset();
+                while (!RespWriteUtils.WriteBulkString(result.Items[i], ref dcurr, dend))
+                    SendAndReset();
+                while (!RespWriteUtils.TryWriteDoubleBulkString(result.Scores[i], ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
     }
 }

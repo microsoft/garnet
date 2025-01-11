@@ -318,9 +318,9 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | HELP | ➖ |  |
 |  | LEN | ➖ |  |
 |  | RESET | ➖ |  |
-| <span id="sorted-set">**SORTED SET**</span> | BZMPOP | ➖ |  |
-|  | BZPOPMAX | ➖ |  |
-|  | BZPOPMIN | ➖ |  |
+| <span id="sorted-set">**SORTED SET**</span> | [BZMPOP](data-structures.md#bzmpop) | ➕ |  |
+|  | [BZPOPMAX](data-structures.md#bzpopmax) | ➕ |  |
+|  | [BZPOPMIN](data-structures.md#bzpopmin) | ➕ |  |
 |  | [ZADD](data-structures.md#zadd) | ➕ |  |
 |  | [ZCARD](data-structures.md#zcard) | ➕ |  |
 |  | [ZCOUNT](data-structures.md#zcount) | ➕ |  |
