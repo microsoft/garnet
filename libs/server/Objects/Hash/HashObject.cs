@@ -414,21 +414,21 @@ namespace Garnet.server
 
         private int Count()
         {
-            if (expirationTimes is not null)
+            if (expirationTimes is null)
             {
-                var expiredKeysCount = 0;
-                foreach (var item in expirationTimes)
-                {
-                    if (IsExpired(item.Key))
-                    {
-                        expiredKeysCount++;
-                    }
-                }
-
-                return hash.Count - expiredKeysCount;
+                return hash.Count;
             }
 
-            return hash.Count;
+            var expiredKeysCount = 0;
+            foreach (var item in expirationTimes)
+            {
+                if (IsExpired(item.Key))
+                {
+                    expiredKeysCount++;
+                }
+            }
+
+            return hash.Count - expiredKeysCount;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -486,32 +486,24 @@ namespace Garnet.server
         {
             if (!ContainsKey(key))
             {
-                return -2;
+                return (int)ExpireResult.KeyNotFound;
             }
 
             if (expiration <= DateTimeOffset.UtcNow.Ticks)
             {
                 Remove(key, out _);
-                return 2;
+                return (int)ExpireResult.KeyAlreadyExpired;
             }
 
             InitializeExpirationStructures();
 
             if (expirationTimes.TryGetValue(key, out var currentExpiration))
             {
-                if (expireOption.HasFlag(ExpireOption.NX))
+                if (expireOption.HasFlag(ExpireOption.NX) ||
+                    expireOption.HasFlag(ExpireOption.GT) && expiration <= currentExpiration ||
+                    expireOption.HasFlag(ExpireOption.LT) && expiration >= currentExpiration)
                 {
-                    return 0;
-                }
-
-                if (expireOption.HasFlag(ExpireOption.GT) && expiration <= currentExpiration)
-                {
-                    return 0;
-                }
-
-                if (expireOption.HasFlag(ExpireOption.LT) && expiration >= currentExpiration)
-                {
-                    return 0;
+                    return (int)ExpireResult.ExpireConditionNotMet;
                 }
 
                 expirationTimes[key] = expiration;
@@ -521,14 +513,9 @@ namespace Garnet.server
             }
             else
             {
-                if (expireOption.HasFlag(ExpireOption.XX))
+                if (expireOption.HasFlag(ExpireOption.XX) || expireOption.HasFlag(ExpireOption.GT))
                 {
-                    return 0;
-                }
-
-                if (expireOption.HasFlag(ExpireOption.GT))
-                {
-                    return 0;
+                    return (int)ExpireResult.ExpireConditionNotMet;
                 }
 
                 expirationTimes[key] = expiration;
@@ -536,7 +523,7 @@ namespace Garnet.server
                 UpdateExpirationSize(key);
             }
 
-            return 1;
+            return (int)ExpireResult.ExpireUpdated;
         }
 
         private int Persist(byte[] key)
@@ -595,5 +582,13 @@ namespace Garnet.server
 
             return hash.ElementAt(index);
         }
+    }
+
+    enum ExpireResult
+    {
+        KeyNotFound = -2,
+        ExpireConditionNotMet = 0,
+        ExpireUpdated = 1,
+        KeyAlreadyExpired = 2,
     }
 }

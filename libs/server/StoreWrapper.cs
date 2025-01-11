@@ -17,7 +17,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using static System.Reflection.Metadata.BlobBuilder;
     using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
@@ -424,24 +423,24 @@ namespace Garnet.server
                 var scratchBufferManager = new ScratchBufferManager();
                 using var storageSession = new StorageSession(this, scratchBufferManager, null, null, logger);
 
+                if (objectStore is null)
+                {
+                    logger?.LogWarning("HashCollectFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
+                    return;
+                }
+
                 while (true)
                 {
                     if (token.IsCancellationRequested) return;
-
-                    if (objectStore is null)
-                    {
-                        logger?.LogWarning("HashCollectFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
-                        return;
-                    }
 
                     ExecuteHashCollect(scratchBufferManager, storageSession);
 
                     await Task.Delay(TimeSpan.FromSeconds(hashCollectFrequencySecs), token);
                 }
             }
-            catch (TaskCanceledException ex) when (token.IsCancellationRequested)
+            catch (TaskCanceledException) when (token.IsCancellationRequested)
             {
-                logger?.LogError(ex, "CompactionTask exception received for background hash collect task.");
+                // Suppress the exception if the task was cancelled because of store wrapper disposal
             }
             catch (Exception ex)
             {
