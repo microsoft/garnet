@@ -759,6 +759,12 @@ namespace Garnet.server
                 RespCommand.EVALSHA => TryEVALSHA(),
                 // Slow commands
                 RespCommand.LCS => NetworkLCS(ref storageApi),
+
+                // Etag related commands
+                RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
+                RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
+                RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
+
                 _ => Process(command)
             };
 

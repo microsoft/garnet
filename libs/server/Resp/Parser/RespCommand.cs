@@ -33,7 +33,9 @@ namespace Garnet.server
         GEOSEARCH,
         GET,
         GETBIT,
+        GETIFNOTMATCH,
         GETRANGE,
+        GETWITHETAG,
         HEXISTS,
         HGET,
         HGETALL,
@@ -153,6 +155,7 @@ namespace Garnet.server
         SETEXNX,
         SETEXXX,
         SETNX,
+        SETIFMATCH,
         SETKEEPTTL,
         SETKEEPTTLXX,
         SETRANGE,
@@ -432,7 +435,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Turns any not-quite-a-real-command entries in <see cref="RespCommand"/> into the equivalent command
-        /// for ACL'ing purposes.
+        /// for ACL'ing purposes and reading command info purposes
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static RespCommand NormalizeForACLs(this RespCommand cmd)
@@ -676,8 +679,6 @@ namespace Garnet.server
                         (2 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nPFADD\r\n"u8) => RespCommand.PFADD,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("INCRBY\r\n"u8) => RespCommand.INCRBY,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("DECRBY\r\n"u8) => RespCommand.DECRBY,
-                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("RENAME\r\n"u8) => RespCommand.RENAME,
-                        (2 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("NAMENX\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("RE"u8) => RespCommand.RENAMENX,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETBIT\r\n"u8) => RespCommand.GETBIT,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("APPEND\r\n"u8) => RespCommand.APPEND,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETSET\r\n"u8) => RespCommand.GETSET,
@@ -694,7 +695,9 @@ namespace Garnet.server
                         _ => ((length << 4) | count) switch
                         {
                             // Commands with dynamic number of arguments
-                            >= ((3 << 4) | 3) and <= ((3 << 4) | 6) when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SETEXNX,
+                            >= ((6 << 4) | 2) and <= ((6 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("RENAME\r\n"u8) => RespCommand.RENAME,
+                            >= ((8 << 4) | 2) and <= ((8 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("NAMENX\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("RE"u8) => RespCommand.RENAMENX,
+                            >= ((3 << 4) | 3) and <= ((3 << 4) | 7) when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SETEXNX,
                             >= ((5 << 4) | 1) and <= ((5 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("\nGETEX\r\n"u8) => RespCommand.GETEX,
                             >= ((6 << 4) | 0) and <= ((6 << 4) | 9) when lastWord == MemoryMarshal.Read<ulong>("RUNTXP\r\n"u8) => RespCommand.RUNTXP,
                             >= ((6 << 4) | 2) and <= ((6 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) => RespCommand.EXPIRE,
@@ -1452,7 +1455,6 @@ namespace Garnet.server
                                     return RespCommand.ZINTERCARD;
                                 }
                                 break;
-
                             case 11:
                                 if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nUNSUB"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("SCRIBE\r\n"u8))
                                 {
@@ -2143,6 +2145,18 @@ namespace Garnet.server
                 else if (storeWrapper.customCommandManager.Match(command, out currentCustomProcedure))
                 {
                     return RespCommand.CustomProcedure;
+                }
+                else if (command.SequenceEqual(CmdStrings.SETIFMATCH))
+                {
+                    return RespCommand.SETIFMATCH;
+                }
+                else if (command.SequenceEqual(CmdStrings.GETWITHETAG))
+                {
+                    return RespCommand.GETWITHETAG;
+                }
+                else if (command.SequenceEqual(CmdStrings.GETIFNOTMATCH))
+                {
+                    return RespCommand.GETIFNOTMATCH;
                 }
 
             }

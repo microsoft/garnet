@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -440,6 +439,12 @@ namespace Garnet.server
             return NetworkSETEXNX(ref storageApi);
         }
 
+        enum EtagOption : byte
+        {
+            None,
+            WithETag,
+        }
+
         enum ExpirationOption : byte
         {
             None,
@@ -458,7 +463,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// SET EX NX
+        /// SET EX NX [WITHETAG]
         /// </summary>
         private bool NetworkSETEXNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
@@ -473,6 +478,7 @@ namespace Garnet.server
             ReadOnlySpan<byte> errorMessage = default;
             var existOptions = ExistOptions.None;
             var expOption = ExpirationOption.None;
+            var etagOption = EtagOption.None;
             var getValue = false;
 
             var tokenIdx = 2;
@@ -561,8 +567,31 @@ namespace Garnet.server
                 }
                 else if (nextOpt.SequenceEqual(CmdStrings.GET))
                 {
-                    tokenIdx++;
+                    if (etagOption != EtagOption.None)
+                    {
+                        // cannot do withEtag and getValue since withEtag SET already returns ETag in response
+                        errorMessage = CmdStrings.RESP_ERR_WITHETAG_AND_GETVALUE;
+                        break;
+                    }
+
                     getValue = true;
+                }
+                else if (nextOpt.SequenceEqual(CmdStrings.WITHETAG))
+                {
+                    if (etagOption != EtagOption.None)
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                        break;
+                    }
+
+                    if (getValue)
+                    {
+                        // cannot do withEtag and getValue since withEtag SET already returns ETag in response
+                        errorMessage = CmdStrings.RESP_ERR_WITHETAG_AND_GETVALUE;
+                        break;
+                    }
+
+                    etagOption = EtagOption.WithETag;
                 }
                 else
                 {
@@ -587,60 +616,45 @@ namespace Garnet.server
                 return true;
             }
 
+            bool withEtag = etagOption == EtagOption.WithETag;
+
+            bool isHighPrecision = expOption == ExpirationOption.PX;
+
             switch (expOption)
             {
                 case ExpirationOption.None:
                 case ExpirationOption.EX:
-                    switch (existOptions)
-                    {
-                        case ExistOptions.None:
-                            return getValue
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, true,
-                                    false, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, expOption, expiry, ref sbKey, ref sbVal, ref storageApi); // Can perform a blind update
-                        case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey, getValue, false,
-                                ref storageApi);
-                        case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey, getValue, false,
-                                ref storageApi);
-                    }
-
-                    break;
                 case ExpirationOption.PX:
                     switch (existOptions)
                     {
                         case ExistOptions.None:
-                            return getValue
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, true,
-                                    true, ref storageApi)
+                            return getValue || withEtag
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, getValue,
+                                    isHighPrecision, withEtag, ref storageApi)
                                 : NetworkSET_EX(RespCommand.SET, expOption, expiry, ref sbKey, ref sbVal, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey, getValue, true,
-                                ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey,
+                                getValue, isHighPrecision, withEtag, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey, getValue, true,
-                                ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey,
+                                getValue, isHighPrecision, withEtag, ref storageApi);
                     }
-
                     break;
-
                 case ExpirationOption.KEEPTTL:
                     Debug.Assert(expiry == 0); // no expiration if KEEPTTL
                     switch (existOptions)
                     {
                         case ExistOptions.None:
                             // We can never perform a blind update due to KEEPTTL
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, ref sbKey, getValue, false,
-                                ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, ref sbKey
+                                , getValue, highPrecision: false, withEtag, ref storageApi);
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, ref sbKey, getValue, false,
-                                ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, ref sbKey,
+                                getValue, highPrecision: false, withEtag, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey, getValue, false,
-                                ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey,
+                                getValue, highPrecision: false, withEtag, ref storageApi);
                     }
-
                     break;
             }
 
@@ -670,7 +684,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, ref SpanByte key, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
+        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, ref SpanByte key, bool getValue, bool highPrecision, bool withEtag, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var inputArg = expiry == 0
@@ -682,54 +696,61 @@ namespace Garnet.server
 
             var input = new RawStringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
-            if (getValue)
-                input.header.SetSetGetFlag();
-
-            if (getValue)
+            if (!getValue && !withEtag)
             {
-                var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.SET_Conditional(ref key,
-                    ref input, ref o);
+                // the following debug assertion is the catch any edge case leading to SETIFMATCH skipping the above block
+                Debug.Assert(cmd != RespCommand.SETIFMATCH, "SETIFMATCH should have gone though pointing to right output variable");
 
-                // Status tells us whether an old image was found during RMW or not
-                if (status == GarnetStatus.NOTFOUND)
-                {
-                    Debug.Assert(o.IsSpanByte);
-                    while (!RespWriteUtils.WriteNull(ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    if (!o.IsSpanByte)
-                        SendAndReset(o.Memory, o.Length);
-                    else
-                        dcurr += o.Length;
-                }
-            }
-            else
-            {
-                var status = storageApi.SET_Conditional(ref key, ref input);
+                GarnetStatus status = storageApi.SET_Conditional(ref key, ref input);
 
-                var ok = status != GarnetStatus.NOTFOUND;
+                bool ok = status != GarnetStatus.NOTFOUND;
 
-                // Status tells us whether an old image was found during RMW or not
-                // For a "set if not exists", NOTFOUND means the operation succeeded
-                // So we invert the ok flag
                 if (cmd == RespCommand.SETEXNX)
                     ok = !ok;
-                if (!ok)
-                {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
+
+                if (ok)
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
+                else
+                {
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                }
+                return true;
             }
+            else
+            {
+                if (withEtag)
+                    input.header.SetWithEtagFlag();
 
-            return true;
+                if (getValue)
+                    input.header.SetSetGetFlag();
+
+                // anything with getValue or withEtag always writes to the buffer in the happy path
+                SpanByteAndMemory outputBuffer = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+                GarnetStatus status = storageApi.SET_Conditional(ref key,
+                    ref input, ref outputBuffer);
+
+                // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
+                bool ok = status != GarnetStatus.NOTFOUND || withEtag;
+
+                if (ok)
+                {
+                    if (!outputBuffer.IsSpanByte)
+                        SendAndReset(outputBuffer.Memory, outputBuffer.Length);
+                    else
+                        dcurr += outputBuffer.Length;
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                }
+
+                return true;
+            }
         }
 
         /// <summary>

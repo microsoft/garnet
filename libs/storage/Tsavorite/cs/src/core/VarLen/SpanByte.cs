@@ -175,26 +175,32 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Get Span&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (excluding metadata if any)
+        /// <paramref name="offset">
+        /// Optional Parameter to avoid having to call slice when wanting to interact directly with payload skipping ETag at the front of the payload
+        /// </paramref>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Span<byte> AsSpan()
+        public Span<byte> AsSpan(int offset = 0)
         {
             if (Serialized)
-                return new Span<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref payload), Length - MetadataSize);
+                return new Span<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref payload) + offset, Length - MetadataSize - offset);
             else
-                return new Span<byte>(MetadataSize + (byte*)payload, Length - MetadataSize);
+                return new Span<byte>(MetadataSize + (byte*)payload + offset, Length - MetadataSize - offset);
         }
 
         /// <summary>
         /// Get ReadOnlySpan&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (excluding metadata if any)
+        /// <paramref name="offset">
+        /// Optional Parameter to avoid having to call slice when wanting to interact directly with payload skipping ETag at the front of the payload
+        /// </paramref>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ReadOnlySpan<byte> AsReadOnlySpan()
+        public ReadOnlySpan<byte> AsReadOnlySpan(int offset = 0)
         {
             if (Serialized)
-                return new ReadOnlySpan<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref payload), Length - MetadataSize);
+                return new ReadOnlySpan<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref payload) + offset, Length - MetadataSize - offset);
             else
-                return new ReadOnlySpan<byte>(MetadataSize + (byte*)payload, Length - MetadataSize);
+                return new ReadOnlySpan<byte>(MetadataSize + (byte*)payload + offset, Length - MetadataSize - offset);
         }
 
         /// <summary>
@@ -491,6 +497,19 @@ namespace Tsavorite.core
                 Buffer.MemoryCopy((void*)payload, destination + sizeof(int), Length, Length);
             }
         }
+
+        /// <summary>
+        /// Gets an Etag from the payload of the SpanByte, caller should make sure the SpanByte has an Etag for the record by checking RecordInfo
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetEtagInPayload() => *(long*)this.ToPointer();
+
+        /// <summary>
+        /// Gets an Etag from the payload of the SpanByte, caller should make sure the SpanByte has an Etag for the record by checking RecordInfo
+        /// </summary>
+        /// <param name="etag">The Etag value to set</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetEtagInPayload(long etag) => *(long*)this.ToPointer() = etag;
 
         /// <inheritdoc/>
         public override string ToString()
