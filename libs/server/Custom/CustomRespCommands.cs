@@ -54,7 +54,6 @@ namespace Garnet.server
             var proc = customCommandManagerSession
                 .GetCustomTransactionProcedure(id, this, txnManager, scratchBufferManager, out _);
             return txnManager.RunTransactionProc(id, ref procInput, proc, ref output);
-
         }
 
         private void TryCustomProcedure(CustomProcedure proc, int startIdx = 0)
@@ -226,7 +225,8 @@ namespace Garnet.server
             var sbKey = key.SpanByte;
             var inputArg = customCommand.expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + customCommand.expirationTicks : customCommand.expirationTicks;
             customCommandParseState.InitializeWithArguments(args);
-            var rawStringInput = new RawStringInput((RespCommand)customCommand.id, ref customCommandParseState, arg1: inputArg);
+            var cmd = customCommandManagerSession.GetCustomRespCommand(customCommand.id);
+            var rawStringInput = new RawStringInput(cmd, ref customCommandParseState, arg1: inputArg);
 
             var _output = new SpanByteAndMemory(null);
             GarnetStatus status;
@@ -290,7 +290,8 @@ namespace Garnet.server
             var keyBytes = key.ToArray();
 
             // Prepare input
-            var header = new RespInputHeader((GarnetObjectType)customObjCommand.id) { SubId = customObjCommand.subid };
+            var type = customCommandManagerSession.GetCustomGarnetObjectType(customObjCommand.id);
+            var header = new RespInputHeader(type) { SubId = customObjCommand.subid };
             customCommandParseState.InitializeWithArguments(args);
             var input = new ObjectInput(header, ref customCommandParseState);
 
