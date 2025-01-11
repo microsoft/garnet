@@ -44,11 +44,10 @@ namespace Tsavorite.core
                 }
 
                 await sessionFunctions.Ctx.WaitPendingAsync(token).ConfigureAwait(false);
-
-                if (sessionFunctions.Ctx.HasNoPendingRequests) return;
+                if (sessionFunctions.Ctx.HasNoPendingRequests) 
+                    return;
 
                 InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
-
                 Thread.Yield();
             }
         }

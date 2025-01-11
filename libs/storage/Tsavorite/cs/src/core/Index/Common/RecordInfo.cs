@@ -166,7 +166,7 @@ namespace Tsavorite.core
             return expected_word == Interlocked.CompareExchange(ref word, newRI.word, expected_word);
         }
 
-        public readonly bool IsNull() => word == 0;
+        public readonly bool IsNull => word == 0;
 
         public readonly bool Tombstone
         {

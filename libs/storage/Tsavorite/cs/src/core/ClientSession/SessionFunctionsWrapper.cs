@@ -45,6 +45,11 @@ namespace Tsavorite.core
             => _clientSession.functions.SingleWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo, reason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref UpsertInfo upsertInfo, WriteReason reason)
+            where TSourceLogRecord : ISourceLogRecord
+            => _clientSession.functions.SingleCopyWriter(ref srcLogRecord, ref dstLogRecord, ref upsertInfo, reason);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostSingleWriter(ref LogRecord logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             logRecord.InfoRef.SetDirtyAndModified();

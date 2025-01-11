@@ -247,9 +247,10 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ScanCursorState<TValue> scanCursorState,
-                SpanByte key, TValue value, long currentAddress, long minAddress)
+        internal Status ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TSessionFunctionsWrapper sessionFunctions,
+                ScanCursorState<TValue> scanCursorState, ref TSourceLogRecord srcLogRecord, long currentAddress, long minAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup so the epoch should be protected");
             TsavoriteKV<TValue, TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext = new(_storeFunctions.GetKeyHashCode64(key));
@@ -271,7 +272,7 @@ namespace Tsavorite.core
             if (needIO)
             {
                 // A more recent version of the key was not (yet) found and we need another IO to continue searching.
-                internalStatus = PrepareIOForConditionalScan(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default,
+                internalStatus = PrepareIOForConditionalScan(sessionFunctions, ref pendingContext, ref srcLogRecord, ref input, ref output, default,
                                 ref stackCtx, minAddress, scanCursorState);
             }
             else
@@ -279,16 +280,15 @@ namespace Tsavorite.core
                 // A more recent version of the key was not found. recSrc.LogicalAddress is the correct address, because minAddress was examined
                 // and this is the previous record in the tag chain. Push this record to the user.
                 RecordMetadata recordMetadata = new(stackCtx.recSrc.LogicalAddress);
-                var logRecord = stackCtx.recSrc.CreateLogRecord();
                 var stop = (stackCtx.recSrc.LogicalAddress >= HeadAddress)
-                    ? !scanCursorState.functions.ConcurrentReader(ref logRecord, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult)
-                    : !scanCursorState.functions.SingleReader(ref logRecord, recordMetadata, scanCursorState.acceptedCount, out cursorRecordResult);
+                    ? !scanCursorState.functions.ConcurrentReader(ref srcLogRecord, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult)
+                    : !scanCursorState.functions.SingleReader(ref srcLogRecord, recordMetadata, scanCursorState.acceptedCount, out cursorRecordResult);
                 if (stop)
                     scanCursorState.stop = true;
                 else
                 {
                     if ((cursorRecordResult & CursorRecordResult.Accept) != 0)
-                        Interlocked.Increment(ref scanCursorState.acceptedCount);
+                        _ = Interlocked.Increment(ref scanCursorState.acceptedCount);
                     if ((cursorRecordResult & CursorRecordResult.EndBatch) != 0)
                         scanCursorState.endBatch = true;
                 }
@@ -298,14 +298,15 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static OperationStatus PrepareIOForConditionalScan<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+        internal static OperationStatus PrepareIOForConditionalScan<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TSessionFunctionsWrapper sessionFunctions,
                                         ref TsavoriteKV<TValue, TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext,
-                                        SpanByte key, ref TInput input, ref TValue value, ref TOutput output, TContext userContext,
+                                        ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext,
                                         ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, ScanCursorState<TValue> scanCursorState)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
         {
             // WriteReason is not surfaced for this operation, so pick anything.
-            var status = sessionFunctions.Store.PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output,
+            var status = sessionFunctions.Store.PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref srcLogRecord, ref input, ref output,
                     userContext, ref stackCtx, minAddress, WriteReason.Compaction, OperationType.CONDITIONAL_SCAN_PUSH);
             pendingContext.scanCursorState = scanCursorState;
             return status;

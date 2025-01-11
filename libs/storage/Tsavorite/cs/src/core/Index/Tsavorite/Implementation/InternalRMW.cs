@@ -109,7 +109,6 @@ namespace Tsavorite.core
                         SessionID = sessionFunctions.Ctx.sessionID,
                         Address = stackCtx.recSrc.LogicalAddress,
                         KeyHash = stackCtx.hei.hash,
-                        IsFromPending = pendingContext.type != OperationType.NONE,
                     };
 
                     if (srcLogRecord.Info.Tombstone)
@@ -351,7 +350,6 @@ namespace Tsavorite.core
                 SessionID = sessionFunctions.Ctx.sessionID,
                 Address = doingCU && !stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress,
                 KeyHash = stackCtx.hei.hash,
-                IsFromPending = pendingContext.type != OperationType.NONE,
             };
 
             // Perform Need*

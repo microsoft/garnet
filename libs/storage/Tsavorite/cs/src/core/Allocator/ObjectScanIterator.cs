@@ -160,7 +160,7 @@ namespace Tsavorite.core
                 currentFrame = currentPage % frameSize;
                 recordInfo = frame.GetInfo(currentFrame, currentOffset);
                 var skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
-                if (skipOnScan || recordInfo.IsNull())
+                if (skipOnScan || recordInfo.IsNull)
                 {
                     epoch?.Suspend();
                     continue;
@@ -216,7 +216,7 @@ namespace Tsavorite.core
                 nextAddress = currentAddress + recordSize;
 
                 bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
-                if (skipOnScan || recordInfo.IsNull() || !hlog._storeFunctions.KeysEqual(currentKey, key))
+                if (skipOnScan || recordInfo.IsNull || !hlog._storeFunctions.KeysEqual(currentKey, key))
                 {
                     epoch?.Suspend();
                     continue;

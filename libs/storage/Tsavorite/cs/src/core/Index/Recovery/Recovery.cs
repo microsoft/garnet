@@ -1073,7 +1073,7 @@ namespace Tsavorite.core
                 ref RecordInfo info = ref hlog.GetInfo(recordStart);
                 info.ClearBitsForDiskImages();
 
-                if (info.IsNull())
+                if (info.IsNull)
                     pointer += RecordInfo.GetLength();
                 else
                 {
@@ -1105,7 +1105,7 @@ namespace Tsavorite.core
                 recordStart = pagePhysicalAddress + pointer;
                 ref RecordInfo info = ref hlog.GetInfoRef(recordStart);
 
-                if (info.IsNull())
+                if (info.IsNull)
                 {
                     pointer += RecordInfo.GetLength();
                     continue;

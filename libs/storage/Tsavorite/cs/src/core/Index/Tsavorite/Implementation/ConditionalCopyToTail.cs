@@ -83,44 +83,46 @@ namespace Tsavorite.core
                         return OperationStatus.SUCCESS;
                 }
                 else if (needIO)
-                    return PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, srcLogRecord.Key, ref input, value, ref output, userContext,
+                    return PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref srcLogRecord, ref input, ref output, userContext,
                                                       ref stackCtx2, minAddress, WriteReason.Compaction);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status CompactionConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key, ref TInput input, ref TValue value,
+        internal Status CompactionConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
+                TSessionFunctionsWrapper sessionFunctions, ref TSourceLogRecord srcLogRecord, ref TInput input,
                 ref TOutput output, long currentAddress, long minAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
             PendingContext<TInput, TOutput, TContext> pendingContext = new();
 
-            OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
+            OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(srcLogRecord.Key));
             OperationStatus status;
             bool needIO;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, currentAddress, minAddress, out status, out needIO))
+                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, srcLogRecord.Key, ref stackCtx, currentAddress, minAddress, out status, out needIO))
                     return Status.CreateFound();
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
 
             if (needIO)
-                status = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default,
-                                                    ref stackCtx, minAddress, WriteReason.Compaction);
+                status = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref srcLogRecord, ref input, ref output, default, ref stackCtx, minAddress, WriteReason.Compaction);
             else
-                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default, ref stackCtx, WriteReason.Compaction);
+                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref srcLogRecord, ref input, ref output, default, ref stackCtx, WriteReason.Compaction);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, status, out _);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus PrepareIOForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                        ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                                        SpanByte key, ref TInput input, ref TValue value, ref TOutput output, TContext userContext,
+        internal OperationStatus PrepareIOForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
+                                        TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                                        ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext,
                                         ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, WriteReason writeReason,
                                         OperationType opType = OperationType.CONDITIONAL_INSERT)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
         {
             pendingContext.type = opType;
             pendingContext.minAddress = minAddress;
@@ -128,15 +130,23 @@ namespace Tsavorite.core
             pendingContext.InitialEntryAddress = Constants.kInvalidAddress;
             pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
 
-            if (!pendingContext.NoKey && pendingContext.key == default)    // If this is true, we don't have a valid key
-                pendingContext.key = hlog.GetKeyContainer(ref key);
-            if (pendingContext.input == default)
+            // if pendingContext.IsSet, then we are reissuing IO after previously doing so, and srcLogRecord is probably pendingContext.
+            if (!pendingContext.IsSet)
+            {
+                pendingContext.recordInfo = srcLogRecord.Info;
+                Debug.Assert(pendingContext.key == default, "Key unexpectedly set");
+                pendingContext.key = hlog.GetKeyContainer(srcLogRecord.Key);
+                Debug.Assert(pendingContext.input == default, "Input unexpectedly set");
                 pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
-            if (pendingContext.value == default)
-                pendingContext.value = hlog.GetValueContainer(ref value);
+                Debug.Assert(pendingContext.value == default, "Value unexpectedly set");
+                pendingContext.value = hlog.GetValueContainer(srcLogRecord.GetValueRef<TValue>());
 
-            pendingContext.output = output;
-            sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);
+                pendingContext.output = output;
+                sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);
+
+                pendingContext.eTag = srcLogRecord.ETag;
+                pendingContext.expiration = srcLogRecord.Expiration;
+            }
 
             pendingContext.userContext = userContext;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;

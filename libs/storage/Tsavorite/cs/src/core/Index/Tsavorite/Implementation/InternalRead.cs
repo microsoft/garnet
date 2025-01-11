@@ -245,7 +245,7 @@ namespace Tsavorite.core
             if (readAtAddress < hlogBase.HeadAddress)
             {
                 // Do not trace back in the pending callback if it is a key mismatch.
-                pendingContext.NoKey = true;
+                pendingContext.SetIsNoKey();
 
                 CreatePendingReadContext(key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, readAtAddress);
                 return OperationStatus.RECORD_ON_DISK;
@@ -257,7 +257,7 @@ namespace Tsavorite.core
             // Get the key hash.
             if (readOptions.KeyHash.HasValue)
                 pendingContext.keyHash = readOptions.KeyHash.Value;
-            else if (!pendingContext.NoKey)
+            else if (!pendingContext.IsNoKey)
                 pendingContext.keyHash = storeFunctions.GetKeyHashCode64(key);
             else
             {
@@ -324,7 +324,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.READ;
-            if (!pendingContext.NoKey && pendingContext.key == default)    // If this is true, we don't have a valid key
+            if (!pendingContext.IsNoKey && pendingContext.key == default)    // If this is true, we don't have a valid key
                 pendingContext.key = hlog.GetKeyContainer(key);
             if (pendingContext.input == default)
                 pendingContext.input = sessionFunctions.GetHeapContainer(ref input);

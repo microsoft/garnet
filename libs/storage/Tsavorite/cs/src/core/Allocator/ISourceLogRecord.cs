@@ -43,11 +43,8 @@ namespace Tsavorite.core
         /// <summary>The Expiration of the record, if any (see <see cref="RecordInfo.HasExpiration"/>; 0 by default.</summary>
         long Expiration { get; }
 
-        /// <summary>The actual size of the main-log (inline) portion of the record; for in-memory records it does not include filler length.</summary>
-        int ActualRecordSize { get; }
-
         /// <summary>A shim to "convert" a TSourceLogRecord generic that is a <see cref="LogRecord"/> to a <see cref="LogRecord"/> type.
-        /// Should throw if the TSourceLogRecord is a <see cref="DiskLogRecord"/>.</summary>
+        /// Should throw if the TSourceLogRecord is not a <see cref="LogRecord"/>.</summary>
         LogRecord AsLogRecord();
 
         /// <summary>Get the record's field info, for use in calculating required record size</summary>

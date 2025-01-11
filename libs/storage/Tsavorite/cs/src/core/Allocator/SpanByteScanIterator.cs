@@ -171,7 +171,7 @@ namespace Tsavorite.core
 
                 recordInfo = LogRecord.GetInfo(physicalAddress);
                 var skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
-                if (skipOnScan || recordInfo.IsNull())
+                if (skipOnScan || recordInfo.IsNull)
                 {
                     epoch?.Suspend();
                     continue;
@@ -243,7 +243,7 @@ namespace Tsavorite.core
                 recordInfo = LogRecord.GetInfo(physicalAddress);
                 nextAddress = recordInfo.PreviousAddress;
                 var skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
-                if (skipOnScan || recordInfo.IsNull() || !hlog._storeFunctions.KeysEqual(LogRecord.GetKey(physicalAddress), key))
+                if (skipOnScan || recordInfo.IsNull || !hlog._storeFunctions.KeysEqual(LogRecord.GetKey(physicalAddress), key))
                 {
                     epoch?.Suspend();
                     continue;

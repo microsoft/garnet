@@ -343,11 +343,6 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal unsafe void ResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, SpanByte key)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            => ResetModified(sessionFunctions, ref key);
-
-        /// <inheritdoc/>
         internal bool IsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, SpanByte key)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -372,11 +367,6 @@ namespace Tsavorite.core
             while (store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
             return modifiedInfo.Modified;
         }
-
-        /// <inheritdoc/>
-        internal unsafe bool IsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, SpanByte key)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            => IsModified(sessionFunctions, key);
 
         /// <summary>
         /// Wait for commit of all operations completed until the current point in session.
@@ -432,7 +422,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
-        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
+        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{TValue}"/>).</param>
         /// <returns>Address until which compaction was done</returns>
         public long Compact<CompactionFunctions>(long untilAddress, CompactionType compactionType, CompactionFunctions compactionFunctions)
             where CompactionFunctions : ICompactionFunctions<TValue>
@@ -450,7 +440,7 @@ namespace Tsavorite.core
         /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
-        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
+        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{TValue}"/>).</param>
         /// <returns>Address until which compaction was done</returns>
         public long Compact<CompactionFunctions>(ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType, CompactionFunctions compactionFunctions)
             where CompactionFunctions : ICompactionFunctions<TValue>

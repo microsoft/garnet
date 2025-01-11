@@ -59,18 +59,24 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
             => default;
         public RecordFieldInfo GetRMWInitialFieldInfo(ref TInput input) => default;
-        public RecordFieldInfo GetUpsertFieldInfo(TValue value, ref TInput input) => _functions.GetUpsertValueLength(value, ref input);
+        public RecordFieldInfo GetUpsertFieldInfo(TValue value, ref TInput input) => _functions.GetUpsertFieldInfo(value, ref input);
 
         /// <summary>
         /// No reads during compaction
         /// </summary>
-        public bool SingleReader(ref LogRecord logRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo) => true;
+        public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo)
+            where TSourceLogRecord : ISourceLogRecord
+            => true;
 
         /// <summary>
         /// Write compacted live value to store
         /// </summary>
         public bool SingleWriter(ref LogRecord logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             => _functions.SingleWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo, reason);
+
+        public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref UpsertInfo upsertInfo, WriteReason reason)
+            where TSourceLogRecord : ISourceLogRecord
+            => _functions.SingleCopyWriter(ref srcLogRecord, ref dstLogRecord, ref upsertInfo, reason);
 
         public void PostSingleWriter(ref LogRecord logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 

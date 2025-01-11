@@ -50,7 +50,7 @@ namespace Tsavorite.core
 
             hlog.InitializeValue(newPhysicalAddress, newPhysicalAddress + sizeInfo.FieldInfo.ValueSize);
 
-            if (!sessionFunctions.SingleWriter(ref newLogRecord, ref input, srcLogRecord.GetValueRef<TValue>(), ref output, ref upsertInfo, reason))
+            if (!sessionFunctions.SingleCopyWriter(ref srcLogRecord, ref newLogRecord, ref upsertInfo, reason))
             {
                 // Save allocation for revivification (not retry, because we won't retry here), or abandon it if that fails.
                 if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, sizeInfo.AllocatedInlineRecordSize, ref sessionFunctions.Ctx.RevivificationStats))

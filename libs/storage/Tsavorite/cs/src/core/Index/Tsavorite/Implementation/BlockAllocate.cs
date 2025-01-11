@@ -182,7 +182,7 @@ namespace Tsavorite.core
             var newLogRecord = new LogRecord(newPhysicalAddress);
             // TODO...
             ref var recordInfo = ref hlog.GetInfoRef(newPhysicalAddress);
-            Debug.Assert(!recordInfo.IsNull(), "RecordInfo should not be IsNull");
+            Debug.Assert(!recordInfo.IsNull, "RecordInfo should not be IsNull");
             ref var recordValue = ref hlog.GetValue(newPhysicalAddress);
             (int usedValueLength, int fullValueLength, int fullRecordLength) = GetRecordLengths(newPhysicalAddress, ref recordValue, ref recordInfo);
 

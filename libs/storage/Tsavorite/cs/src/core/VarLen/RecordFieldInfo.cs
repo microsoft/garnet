@@ -8,6 +8,9 @@ namespace Tsavorite.core
     /// </summary>
     public struct RecordFieldInfo
     {
+        /// <summary>The length of the key for the new record.</summary>
+        public int KeySize;
+
         /// <summary>The length of the value for the new record.</summary>
         public int ValueSize;
 

@@ -6,10 +6,6 @@ namespace Tsavorite.core
     /// <summary>
     /// Callback functions to Tsavorite
     /// </summary>
-    /// <typeparam name="TValue"></typeparam>
-    /// <typeparam name="TInput"></typeparam>
-    /// <typeparam name="TOutput"></typeparam>
-    /// <typeparam name="TContext"></typeparam>
     public interface ISessionFunctions<TValue, TInput, TOutput, TContext> : IVariableLengthInput<TValue, TInput>
     {
         #region Reads
@@ -58,6 +54,15 @@ namespace Tsavorite.core
         /// <param name="reason">The operation for which this write is being done</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
         bool SingleWriter(ref LogRecord dstLogRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
+
+        /// <summary>Non-concurrent writer; called when copying a record to tail or readcache. The caller should be aware of ETag and Expiration in the source record</summary>
+        /// <param name="srcLogRecord">The log record being copied from</param>
+        /// <param name="dstLogRecord">The destination log record being copied to</param>
+        /// <param name="upsertInfo">Information about this update operation and its context</param>
+        /// <param name="reason">The operation for which this write is being done</param>
+        /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
+        bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref UpsertInfo upsertInfo, WriteReason reason)
+            where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
         /// Called after SingleWriter when a record containing an upsert of a new key has been successfully inserted at the tail of the log.

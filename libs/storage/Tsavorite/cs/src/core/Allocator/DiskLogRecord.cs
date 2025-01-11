@@ -49,32 +49,31 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
         /// <inheritdoc/>
-        public readonly int ActualRecordSize => *(int*)physicalAddress + RecordInfo.GetLength();
-        /// <inheritdoc/>
         public readonly LogRecord AsLogRecord() => throw new TsavoriteException("DiskLogRecord cannot be converted to AsLogRecord");
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        RecordFieldInfo GetRecordFieldInfo() => new()
-        {
-            ValueSize = IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalSize,
-            HasETag = Info.HasETag,
-            HasExpiration = Info.HasExpiration
-        };
+        public readonly RecordFieldInfo GetRecordFieldInfo() => new()
+            {
+                KeySize = Key.TotalSize,
+                ValueSize = IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalSize,
+                HasETag = Info.HasETag,
+                HasExpiration = Info.HasExpiration
+            };
         #endregion //IReadOnlyRecord
 
         const int FullRecordLenSize = sizeof(int);
 
-        /// <summary>The used length of the record rounded up to record-alignment boundary</summary>
-        public readonly int AlignedFullRecordLen => RoundUp(ActualRecordSize, Constants.kRecordAlignment);
+
+        // TODO: LOgRec ActualRecordSize ignores params bc it is already encoded into the key/value
+        //      Disk/PendingCOntext need to calc on the fly tho
+        // Add KeySize to GetRecordFieldInfo bc it is needed for PendingContext to avoid special-case handling 
 
         readonly long KeyAddress => physicalAddress + RecordInfo.GetLength() + FullRecordLenSize + ETagLen + ExpirationLen;
 
         internal readonly long ValueAddress => KeyAddress + Key.TotalInlineSize;
 
-        /// <summary>The value; unlike in-memory, this is always an inline stream of bytes, but not a SpanByte; to avoid redundantly storing length,
-        /// we calculate the SpanByte length from FullRecordLen, because Value is the last field in the record.</summary>
-        /// <remarks>Not a ref return as it cannot be changed</remarks>
-        public readonly SpanByte Value => new(ActualRecordSize - (int)(ValueAddress - physicalAddress), (IntPtr)ValueAddress);
+        private readonly int ValueLength => IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalInlineSize;
+        public readonly int OptionalLength => (Info.HasETag ? LogRecord.ETagSize : 0) + (Info.HasExpiration ? LogRecord.ExpirationSize : 0);
 
         private readonly int ETagLen => Info.HasETag ? LogRecord.ETagSize : 0;
         private readonly int ExpirationLen => Info.HasExpiration ? LogRecord.ExpirationSize : 0;
@@ -88,14 +87,15 @@ namespace Tsavorite.core
 
         internal static SpanByte GetContextRecordKey<TValue>(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).Key;
 
-        internal static SpanByte GetContextRecordValueT<TValue>(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).Value;
+        internal static SpanByte GetContextRecordValue<TValue>(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).ValueSpan;
 
         /// <inheritdoc/>
         public override readonly string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
+            var valueString = IsObjectRecord ? ValueObject.ToString() : ValueSpan.ToString();
 
-            return $"ri {Info} | key {Key.ToShortString(20)} | val {Value.ToShortString(20)} | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpiration {bstr(Info.HasExpiration)}:{Expiration}";
+            return $"ri {Info} | key {Key.ToShortString(20)} | val {valueString} | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpiration {bstr(Info.HasExpiration)}:{Expiration}";
         }
     }
 }

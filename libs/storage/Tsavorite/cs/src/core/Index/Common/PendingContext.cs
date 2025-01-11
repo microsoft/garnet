@@ -9,16 +9,19 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TValue>
         where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
-        internal struct PendingContext<TInput, TOutput, TContext>
+        internal struct PendingContext<TInput, TOutput, TContext> : ISourceLogRecord
         {
             // User provided information
             internal OperationType type;
+            internal RecordInfo recordInfo;
             internal IHeapContainer<SpanByte> key;
             internal IHeapContainer<TValue> value;
             internal IHeapContainer<TInput> input;
             internal TOutput output;
             internal TContext userContext;
             internal long keyHash;
+            internal long eTag;
+            internal long expiration;
 
             // Some additional information about the previous attempt
             internal long id;
@@ -28,9 +31,10 @@ namespace Tsavorite.core
             // operationFlags values
             internal ushort operationFlags;
             internal const ushort kNoOpFlags = 0;
-            internal const ushort kNoKey = 0x0001;
+            internal const ushort kIsNoKey = 0x0001;
             internal const ushort kIsAsync = 0x0002;
             internal const ushort kIsReadAtAddress = 0x0004;
+            internal const ushort kIsObjectRecord = 0x0008;
 
             internal ReadCopyOptions readCopyOptions;   // Two byte enums
             internal WriteReason writeReason;   // for ConditionalCopyToTail; one byte enum
@@ -55,7 +59,7 @@ namespace Tsavorite.core
             internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions, bool isAsync = false, bool noKey = false)
             {
                 // The async flag is often set when the PendingContext is created, so preserve that.
-                operationFlags = (ushort)((noKey ? kNoKey : kNoOpFlags) | (isAsync ? kIsAsync : kNoOpFlags));
+                operationFlags = (ushort)((noKey ? kIsNoKey : kNoOpFlags) | (isAsync ? kIsAsync : kNoOpFlags));
                 readCopyOptions = ReadCopyOptions.Merge(sessionReadCopyOptions, readOptions.CopyOptions);
             }
 
@@ -63,29 +67,22 @@ namespace Tsavorite.core
             internal PendingContext(ReadCopyOptions readCopyOptions, bool isAsync = false, bool noKey = false)
             {
                 // The async flag is often set when the PendingContext is created, so preserve that.
-                operationFlags = (ushort)((noKey ? kNoKey : kNoOpFlags) | (isAsync ? kIsAsync : kNoOpFlags));
+                operationFlags = (ushort)((noKey ? kIsNoKey : kNoOpFlags) | (isAsync ? kIsAsync : kNoOpFlags));
                 this.readCopyOptions = readCopyOptions;
             }
 
-            internal bool NoKey
-            {
-                readonly get => (operationFlags & kNoKey) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kNoKey) : (ushort)(operationFlags & ~kNoKey);
-            }
+            internal readonly bool IsNoKey => (operationFlags & kIsNoKey) != 0;
+            internal void SetIsNoKey() => operationFlags |= kIsNoKey;
 
             internal readonly bool HasMinAddress => minAddress != Constants.kInvalidAddress;
 
-            internal bool IsAsync
-            {
-                readonly get => (operationFlags & kIsAsync) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kIsAsync) : (ushort)(operationFlags & ~kIsAsync);
-            }
+            internal readonly bool IsAsync => (operationFlags & kIsAsync) != 0;
 
-            internal bool IsReadAtAddress
-            {
-                readonly get => (operationFlags & kIsReadAtAddress) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kIsReadAtAddress) : (ushort)(operationFlags & ~kIsReadAtAddress);
-            }
+            internal readonly bool IsReadAtAddress => (operationFlags & kIsReadAtAddress) != 0;
+            internal void SetIsReadAtAddress() => operationFlags |= kIsReadAtAddress;
+
+            // Getter is in ISourceLogRecord region
+            internal void SetIsObjectRecord() => operationFlags |= kIsObjectRecord;
 
             public void Dispose()
             {
@@ -96,6 +93,50 @@ namespace Tsavorite.core
                 input?.Dispose();
                 input = default;
             }
+
+            #region ISourceLogRecord
+            /// <inheritdoc/>
+            public readonly bool IsObjectRecord => (operationFlags & kIsObjectRecord) != 0;
+            /// <inheritdoc/>
+            public readonly ref RecordInfo InfoRef => throw new TsavoriteException("Cannot call InfoRef on PendingContext"); // Cannot return ref to 'this'
+            /// <inheritdoc/>
+            public readonly RecordInfo Info => recordInfo;
+
+            /// <inheritdoc/>
+            public readonly bool IsSet => !recordInfo.IsNull;
+
+            /// <inheritdoc/>
+            public readonly SpanByte Key => key.Get();
+
+            /// <inheritdoc/>
+            public readonly unsafe SpanByte ValueSpan => IsObjectRecord ? throw new TsavoriteException("Cannot use ValueSpan on an Object record") : *(SpanByte*)Unsafe.AsPointer(ref value.Get());
+
+            /// <inheritdoc/>
+            public readonly IHeapObject ValueObject => value.Get() as IHeapObject;
+
+            // TV will be TValue, but we don't want LogRecord to require a TValue type parameter just for this one method
+            /// <inheritdoc/>
+            public readonly unsafe ref TV GetValueRef<TV>() => ref Unsafe.As<TValue, TV>(ref value.Get());
+
+            /// <inheritdoc/>
+            public readonly long ETag => eTag;
+
+            /// <inheritdoc/>
+            public readonly long Expiration => expiration;
+
+            /// <inheritdoc/>
+            public readonly LogRecord AsLogRecord() => throw new TsavoriteException("PendingContext cannot be converted to AsLogRecord");
+
+            /// <inheritdoc/>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public readonly RecordFieldInfo GetRecordFieldInfo() => new()
+                {
+                    KeySize = Key.TotalSize,
+                    ValueSize = IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalSize,
+                    HasETag = Info.HasETag,
+                    HasExpiration = Info.HasExpiration
+                };
+            #endregion // ISourceLogRecord
         }
     }
 }

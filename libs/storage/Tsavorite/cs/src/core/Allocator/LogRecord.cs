@@ -34,8 +34,6 @@ namespace Tsavorite.core
         /// <summary>The ObjectIdMap if this is a record in the object log.</summary>
         readonly ObjectIdMap objectIdMap;
 
-        private readonly int ValueLen => IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalInlineSize;
-
         /// <summary>Address-only ctor, usually used for simple record parsing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord(long physicalAddress) => this.physicalAddress = physicalAddress;
@@ -87,14 +85,13 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
         /// <inheritdoc/>
-        public readonly int ActualRecordSize => RecordInfo.GetLength() + Key.TotalInlineSize + ValueLen + OptionalLength;
-        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly LogRecord AsLogRecord() => this;
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        RecordFieldInfo GetRecordFieldInfo() => new()
+        public readonly RecordFieldInfo GetRecordFieldInfo() => new()
             {
+                KeySize = Key.TotalSize,
                 ValueSize = IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalSize,
                 HasETag = Info.HasETag,
                 HasExpiration = Info.HasExpiration
@@ -133,6 +130,8 @@ namespace Tsavorite.core
         /// <summary>The span of the value; may be inline-serialized or out-of-line overflow</summary>
         public readonly ref SpanByte ValueSpanRef => ref *(SpanByte*)ValueAddress;
 
+        private readonly int ValueLength => IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalInlineSize;
+
         internal readonly int* ValueObjectIdAddress => (int*)ValueAddress;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int* GetValueObjectIdAddress(long physicalAddress) => (int*)GetValueAddress(physicalAddress);
@@ -149,16 +148,20 @@ namespace Tsavorite.core
 
         internal readonly ref IHeapObject ObjectRef => ref objectIdMap.GetRef(ValueObjectId);
 
+        /// <summary>The actual size of the main-log (inline) portion of the record; for in-memory records it does not include filler length.</summary>
+        public readonly int ActualRecordSize => RecordInfo.GetLength() + Key.TotalInlineSize + ValueLength + OptionalLength;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TrySetValueSpanLength(int newValueLen)
         {
             Debug.Assert(!IsObjectRecord, "ValueSpan cannot be used with Object log records");
 
             // Do nothing if no size change. Growth and fillerLen may be negative if shrinking.
-            var growth = newValueLen - ValueLen;
+            var growth = newValueLen - ValueLength;
             if (growth == 0)
                 return true;
 
+            // TODO: handle the overflow-ness of this size changing
             var recordLen = ActualRecordSize;
             var fillerLenAddress = physicalAddress + recordLen;
             var maxLen = recordLen + GetFillerLen(fillerLenAddress);
@@ -250,7 +253,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly long GetOptionalStartAddress() => physicalAddress + RecordInfo.GetLength() + Key.TotalInlineSize + ValueLen;
+        internal readonly long GetOptionalStartAddress() => physicalAddress + RecordInfo.GetLength() + Key.TotalInlineSize + ValueLength;
 
         public readonly int OptionalLength => ETagLen + ExpirationLen;
 
@@ -394,6 +397,7 @@ namespace Tsavorite.core
             if (Info.HasFiller)
                 *(int*)address = 0;
             //  - Set Expiration
+            InfoRef.SetHasExpiration();
             *(long*)address = expiration;
             address += ExpirationLen;
             //  - Set the new (reduced) FillerLength if there is still space for it.
@@ -436,7 +440,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool HasEnoughSpace(int newValueLen, bool withETag, bool withExpiration)
         {
-            var growth = newValueLen - ValueLen;
+            var growth = newValueLen - ValueLength;
             if (Info.HasETag != withETag)
                 growth += withETag ? ETagSize : -ETagSize;
             if (Info.HasExpiration != withExpiration)

@@ -124,7 +124,7 @@ namespace Tsavorite.core
         {
             // Used by RMW to determine the length of copy destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
             var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetRMWModifiedFieldInfo(ref srcLogRecord, ref input) };
-            PopulateRecordSizeInfo(srcLogRecord.Key, ref sizeInfo);
+            PopulateRecordSizeInfo(ref sizeInfo);
             return sizeInfo;
         }
 
@@ -134,7 +134,7 @@ namespace Tsavorite.core
         {
             // Used by RMW to determine the length of initial destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
             var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetRMWInitialFieldInfo(ref input) };
-            PopulateRecordSizeInfo(key, ref sizeInfo);
+            PopulateRecordSizeInfo(ref sizeInfo);
             return sizeInfo;
         }
 
@@ -144,7 +144,7 @@ namespace Tsavorite.core
         {
             // Used by Upsert to determine the length of insert destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
             var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(value, ref input) };
-            PopulateRecordSizeInfo(key, ref sizeInfo);
+            PopulateRecordSizeInfo(ref sizeInfo);
             return sizeInfo;
         }
 
@@ -156,18 +156,19 @@ namespace Tsavorite.core
             {
                 FieldInfo = new()
                 {
+                    KeySize = key.TotalSize,
+                    ValueSize = sizeof(int), // No payload for the default value
                     HasETag = false,
-                    HasExpiration = false,
-                    ValueSize = sizeof(int) // No payload for the default value
+                    HasExpiration = false
                 }
             };
-            PopulateRecordSizeInfo(key, ref sizeInfo);
+            PopulateRecordSizeInfo(ref sizeInfo);
             return sizeInfo;
         }
 
-        public void PopulateRecordSizeInfo(SpanByte key, ref RecordSizeInfo sizeInfo)
+        public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
-            var keySize = key.TotalSize;
+            var keySize = sizeInfo.FieldInfo.KeySize;
             if (keySize > maxInlineKeySize)
             {
                 keySize = Constants.kUnserializedSpanByteSize;

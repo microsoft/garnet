@@ -148,7 +148,7 @@ namespace Tsavorite.core
 
             // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
             // With the new overload of CompletePending that returns CompletedOutputs, pendingContext must have the key.
-            if (pendingContext.NoKey && pendingContext.key == default)
+            if (pendingContext.IsNoKey && pendingContext.key == default)
                 pendingContext.key = hlog.GetKeyContainer(ref hlog.GetContextRecordKey(ref request));
             ref TKey key = ref pendingContext.key.Get();
 

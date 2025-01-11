@@ -49,9 +49,6 @@ namespace Tsavorite.core
         public long GetKeyHash(SpanByte key) => clientSession.store.GetKeyHash(key);
 
         /// <inheritdoc/>
-        public long GetKeyHash(SpanByte key) => clientSession.store.GetKeyHash(key);
-
-        /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
             => clientSession.CompletePending(sessionFunctions, wait, spinWaitForCommit);
 
@@ -74,7 +71,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return clientSession.store.ContextRead(ref key, ref input, ref output, userContext, sessionFunctions);
+                return clientSession.store.ContextRead(key, ref input, ref output, userContext, sessionFunctions);
             }
             finally
             {
@@ -217,7 +214,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return store.ContextUpsert(key, keyHash, ref input, ref desiredValue, ref output, userContext, sessionFunctions);
+                return store.ContextUpsert(key, keyHash, ref input, desiredValue, ref output, userContext, sessionFunctions);
             }
             finally
             {
@@ -242,7 +239,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return store.ContextUpsert(key, keyHash, ref input, ref desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
+                return store.ContextUpsert(key, keyHash, ref input, desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
@@ -365,38 +362,35 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetModified(SpanByte key)
-            => clientSession.ResetModified(sessionFunctions, key);
+        public void ResetModified(SpanByte key) => clientSession.ResetModified(sessionFunctions, key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsModified(SpanByte key)
-            => clientSession.IsModified(sessionFunctions, key);
+        internal bool IsModified(SpanByte key) => clientSession.IsModified(sessionFunctions, key);
 
         /// <inheritdoc/>
-        public void Refresh()
-            => clientSession.Refresh(sessionFunctions);
+        public void Refresh() => clientSession.Refresh(sessionFunctions);
 
         #endregion ITsavoriteContext
 
         /// <summary>
         /// Copy key and value to tail, succeed only if key is known to not exist in between expectedLogicalAddress and tail.
         /// </summary>
-        /// <param name="key"></param>
+        /// <param name="srcLogRecord"></param>
         /// <param name="input"></param>
         /// <param name="output"></param>
-        /// <param name="value"></param>
         /// <param name="currentAddress">LogicalAddress of the record to be copied</param>
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status CompactionCopyToTail(SpanByte key, ref TInput input, ref TValue value, ref TOutput output, long currentAddress, long untilAddress)
+        internal Status CompactionCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, long currentAddress, long untilAddress)
+            where TSourceLogRecord : ISourceLogRecord
         {
             UnsafeResumeThread();
             try
             {
-                // TODO make this a LogRecord?
-                return store.CompactionConditionalCopyToTail<TInput, TOutput, TContext, SessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
-                        sessionFunctions, key, ref input, ref value, ref output, currentAddress, untilAddress);
+                return store.CompactionConditionalCopyToTail<TInput, TOutput, TContext, SessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TFunctions,
+                        BasicSessionLocker<TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(
+                    sessionFunctions, ref srcLogRecord, ref input, ref output, currentAddress, untilAddress);
             }
             finally
             {
@@ -408,20 +402,18 @@ namespace Tsavorite.core
         /// Push a scan record to client if key is known to not exist in between expectedLogicalAddress and tail.
         /// </summary>
         /// <param name="scanCursorState">Scan cursor tracking state, from the session on which this scan was initiated</param>
-        /// <param name="recordInfo"></param>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
+        /// <param name="srcLogRecord"></param>
         /// <param name="currentAddress">LogicalAddress of the record to be copied</param>
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ConditionalScanPush(ScanCursorState<TValue> scanCursorState, RecordInfo recordInfo, SpanByte key, ref TValue value, long currentAddress, long untilAddress)
+        internal Status ConditionalScanPush<TSourceLogRecord>(ScanCursorState<TValue> scanCursorState, ref TSourceLogRecord srcLogRecord, long currentAddress, long untilAddress)
+            where TSourceLogRecord : ISourceLogRecord
         {
             UnsafeResumeThread();
             try
             {
-                // TODO make this a LogRecord?
-                return store.hlogBase.ConditionalScanPush<TInput, TOutput, TContext, SessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
-                        sessionFunctions, scanCursorState, recordInfo, ref key, ref value, currentAddress, untilAddress);
+                return store.hlogBase.ConditionalScanPush<TInput, TOutput, TContext, SessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(
+                        sessionFunctions, scanCursorState, ref srcLogRecord, currentAddress, untilAddress);
             }
             finally
             {
@@ -443,7 +435,7 @@ namespace Tsavorite.core
             {
                 // TODO make this a LogRecord?
                 return store.InternalContainsKeyInMemory<TInput, TOutput, TContext, SessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
-                        ref key, sessionFunctions, out logicalAddress, fromAddress);
+                        key, sessionFunctions, out logicalAddress, fromAddress);
             }
             finally
             {
