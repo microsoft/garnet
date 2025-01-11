@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -197,6 +198,43 @@ namespace Garnet.cluster
             finally
             {
                 resp.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Forward message by issuing CLUSTER PUBLISH|SPUBLISH
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <param name="channel"></param>
+        /// <param name="message"></param>
+        public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
+        {
+            var conf = CurrentConfig;
+            List<string> nodeIds = null;
+            if (cmd == RespCommand.PUBLISH)
+                conf.GetAllNodeIds(out nodeIds);
+            else
+                conf.GetNodeIdsForShard(out nodeIds);
+            foreach (var nodeId in nodeIds)
+            {
+                try
+                {
+                    _ = clusterConnectionStore.GetConnection(nodeId, out var gsn);
+
+                    if (gsn == null)
+                        continue;
+
+                    // Initialize GarnetServerNode
+                    // Thread-Safe initialization executes only once
+                    gsn.Initialize();
+
+                    // Publish to remote nodes
+                    gsn.TryClusterPublish(cmd, ref channel, ref message);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, $"{nameof(ClusterManager)}.{nameof(TryClusterPublish)}");
+                }
             }
         }
 
