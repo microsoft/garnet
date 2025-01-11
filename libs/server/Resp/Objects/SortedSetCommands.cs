@@ -1564,11 +1564,10 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteBulkString(result.Key, ref dcurr, dend))
                     SendAndReset();
 
-                var memberAndScore = result.ScoredItems;
-                while (!RespWriteUtils.WriteBulkString(memberAndScore[0].Element, ref dcurr, dend))
+                while (!RespWriteUtils.WriteBulkString(result.Item, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.TryWriteDoubleBulkString(memberAndScore[0].Score, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDoubleBulkString(result.Score, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -1668,17 +1667,16 @@ namespace Garnet.server
             while (!RespWriteUtils.WriteBulkString(result.Key, ref dcurr, dend))
                 SendAndReset();
 
-            var pairs = result.ScoredItems;
-            while (!RespWriteUtils.WriteArrayLength(pairs.Length, ref dcurr, dend))
+            while (!RespWriteUtils.WriteArrayLength(result.Items.Length, ref dcurr, dend))
                 SendAndReset();
 
-            for (var i = 0; i < pairs.Length; i += 2)
+            for (var i = 0; i < result.Items.Length; i += 2)
             {
                 while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.WriteBulkString(pairs[i].Element, ref dcurr, dend))
+                while (!RespWriteUtils.WriteBulkString(result.Items[i], ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.TryWriteDoubleBulkString(pairs[i].Score, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDoubleBulkString(result.Scores[i], ref dcurr, dend))
                     SendAndReset();
             }
 
