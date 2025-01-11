@@ -415,6 +415,49 @@ namespace Garnet.server
             }
         }
 
+        async Task HashCollectTask(int hashCollectFrequencySecs, CancellationToken token = default)
+        {
+            Debug.Assert(hashCollectFrequencySecs > 0);
+            try
+            {
+                var scratchBufferManager = new ScratchBufferManager();
+                using var storageSession = new StorageSession(this, scratchBufferManager, null, null, logger);
+
+                if (objectStore is null)
+                {
+                    logger?.LogWarning("HashCollectFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
+                    return;
+                }
+
+                while (true)
+                {
+                    if (token.IsCancellationRequested) return;
+
+                    ExecuteHashCollect(scratchBufferManager, storageSession);
+
+                    await Task.Delay(TimeSpan.FromSeconds(hashCollectFrequencySecs), token);
+                }
+            }
+            catch (TaskCanceledException) when (token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled because of store wrapper disposal
+            }
+            catch (Exception ex)
+            {
+                logger?.LogCritical(ex, "Unknown exception received for background hash collect task. Hash collect task won't be resumed.");
+            }
+
+            static void ExecuteHashCollect(ScratchBufferManager scratchBufferManager, StorageSession storageSession)
+            {
+                var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
+                var input = new ObjectInput(header);
+
+                ReadOnlySpan<ArgSlice> key = [ArgSlice.FromPinnedSpan("*"u8)];
+                storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
+                scratchBufferManager.Reset();
+            }
+        }
+
         void DoCompaction()
         {
             // Periodic compaction -> no need to compact before checkpointing
@@ -567,6 +610,11 @@ namespace Garnet.server
             if (serverOptions.CompactionFrequencySecs > 0 && serverOptions.CompactionType != LogCompactionType.None)
             {
                 Task.Run(async () => await CompactionTask(serverOptions.CompactionFrequencySecs, ctsCommit.Token));
+            }
+
+            if (serverOptions.HashCollectFrequencySecs > 0)
+            {
+                Task.Run(async () => await HashCollectTask(serverOptions.HashCollectFrequencySecs, ctsCommit.Token));
             }
 
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
