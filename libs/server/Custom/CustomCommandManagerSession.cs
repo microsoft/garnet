@@ -59,6 +59,12 @@ namespace Garnet.server
             return GetCustomTransactionProcedureAndSetArity(entry, respServerSession, txnManager, scratchBufferManager, cmdInfo?.Arity ?? 0);
         }
 
+        public RespCommand GetCustomRespCommand(int id)
+            => customCommandManager.GetCustomRespCommand(id);
+
+        public GarnetObjectType GetCustomGarnetObjectType(int id)
+            => customCommandManager.GetCustomGarnetObjectType(id);
+
         private CustomTransactionProcedure GetCustomTransactionProcedureAndSetArity(CustomTransaction entry, RespServerSession respServerSession, TransactionManager txnManager, ScratchBufferManager scratchBufferManager, int arity)
         {
             int id = entry.id;

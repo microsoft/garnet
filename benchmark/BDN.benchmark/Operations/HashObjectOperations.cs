@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using BenchmarkDotNet.Attributes;
+using Embedded.server;
 
 namespace BDN.benchmark.Operations
 {
@@ -12,83 +13,68 @@ namespace BDN.benchmark.Operations
     public unsafe class HashObjectOperations : OperationsBase
     {
         static ReadOnlySpan<byte> HSETDEL => "*4\r\n$4\r\nHSET\r\n$1\r\nf\r\n$1\r\na\r\n$1\r\na\r\n*3\r\n$4\r\nHDEL\r\n$1\r\nf\r\n$1\r\na\r\n"u8;
-        byte[] hSetDelRequestBuffer;
-        byte* hSetDelRequestBufferPointer;
+        Request hSetDel;
 
         static ReadOnlySpan<byte> HEXISTS => "*3\r\n$7\r\nHEXISTS\r\n$1\r\nf\r\n$1\r\na\r\n"u8;
-        byte[] hExistsRequestBuffer;
-        byte* hExistsRequestBufferPointer;
+        Request hExists;
 
         static ReadOnlySpan<byte> HGET => "*3\r\n$4\r\nHGET\r\n$1\r\nf\r\n$1\r\na\r\n"u8;
-        byte[] hGetRequestBuffer;
-        byte* hGetRequestBufferPointer;
+        Request hGet;
 
         static ReadOnlySpan<byte> HGETALL => "*2\r\n$7\r\nHGETALL\r\n$1\r\nf\r\n"u8;
-        byte[] hGetAllRequestBuffer;
-        byte* hGetAllRequestBufferPointer;
+        Request hGetAll;
 
         static ReadOnlySpan<byte> HINCRBY => "*4\r\n$7\r\nHINCRBY\r\n$1\r\nf\r\n$1\r\nc\r\n$1\r\n1\r\n"u8;
-        byte[] hIncrbyRequestBuffer;
-        byte* hIncrbyRequestBufferPointer;
+        Request hIncrby;
 
         static ReadOnlySpan<byte> HINCRBYFLOAT => "*4\r\n$12\r\nHINCRBYFLOAT\r\n$1\r\nf\r\n$1\r\nd\r\n$3\r\n1.5\r\n"u8;
-        byte[] hIncrbyFloatRequestBuffer;
-        byte* hIncrbyFloatRequestBufferPointer;
+        Request hIncrbyFloat;
 
         static ReadOnlySpan<byte> HKEYS => "*2\r\n$5\r\nHKEYS\r\n$1\r\nf\r\n"u8;
-        byte[] hKeysRequestBuffer;
-        byte* hKeysRequestBufferPointer;
+        Request hKeys;
 
         static ReadOnlySpan<byte> HLEN => "*2\r\n$4\r\nHLEN\r\n$1\r\nf\r\n"u8;
-        byte[] hLenRequestBuffer;
-        byte* hLenRequestBufferPointer;
+        Request hLen;
 
         static ReadOnlySpan<byte> HMGET => "*4\r\n$5\r\nHMGET\r\n$1\r\nf\r\n$1\r\na\r\n$1\r\nb\r\n"u8;
-        byte[] hMGetRequestBuffer;
-        byte* hMGetRequestBufferPointer;
+        Request hMGet;
 
         static ReadOnlySpan<byte> HMSET => "*6\r\n$5\r\nHMSET\r\n$1\r\nf\r\n$1\r\na\r\n$1\r\n1\r\n$1\r\nb\r\n$1\r\n2\r\n"u8;
-        byte[] hMSetRequestBuffer;
-        byte* hMSetRequestBufferPointer;
+        Request hMSet;
 
         static ReadOnlySpan<byte> HRANDFIELD => "*2\r\n$10\r\nHRANDFIELD\r\n$1\r\nf\r\n"u8;
-        byte[] hRandFieldRequestBuffer;
-        byte* hRandFieldRequestBufferPointer;
+        Request hRandField;
 
         static ReadOnlySpan<byte> HSCAN => "*6\r\n$5\r\nHSCAN\r\n$1\r\nf\r\n$1\r\n0\r\n$5\r\nCOUNT\r\n$1\r\n5\r\n"u8;
-        byte[] hScanRequestBuffer;
-        byte* hScanRequestBufferPointer;
+        Request hScan;
 
         static ReadOnlySpan<byte> HSETNX => "*4\r\n$6\r\nHSETNX\r\n$1\r\nf\r\n$1\r\nx\r\n$1\r\n1\r\n"u8;
-        byte[] hSetNxRequestBuffer;
-        byte* hSetNxRequestBufferPointer;
+        Request hSetNx;
 
         static ReadOnlySpan<byte> HSTRLEN => "*3\r\n$7\r\nHSTRLEN\r\n$1\r\nf\r\n$1\r\na\r\n"u8;
-        byte[] hStrLenRequestBuffer;
-        byte* hStrLenRequestBufferPointer;
+        Request hStrLen;
 
         static ReadOnlySpan<byte> HVALS => "*2\r\n$5\r\nHVALS\r\n$1\r\nf\r\n"u8;
-        byte[] hValsRequestBuffer;
-        byte* hValsRequestBufferPointer;
+        Request hVals;
 
         public override void GlobalSetup()
         {
             base.GlobalSetup();
-            SetupOperation(ref hSetDelRequestBuffer, ref hSetDelRequestBufferPointer, HSETDEL);
-            SetupOperation(ref hExistsRequestBuffer, ref hExistsRequestBufferPointer, HEXISTS);
-            SetupOperation(ref hGetRequestBuffer, ref hGetRequestBufferPointer, HGET);
-            SetupOperation(ref hGetAllRequestBuffer, ref hGetAllRequestBufferPointer, HGETALL);
-            SetupOperation(ref hIncrbyRequestBuffer, ref hIncrbyRequestBufferPointer, HINCRBY);
-            SetupOperation(ref hIncrbyFloatRequestBuffer, ref hIncrbyFloatRequestBufferPointer, HINCRBYFLOAT);
-            SetupOperation(ref hKeysRequestBuffer, ref hKeysRequestBufferPointer, HKEYS);
-            SetupOperation(ref hLenRequestBuffer, ref hLenRequestBufferPointer, HLEN);
-            SetupOperation(ref hMGetRequestBuffer, ref hMGetRequestBufferPointer, HMGET);
-            SetupOperation(ref hMSetRequestBuffer, ref hMSetRequestBufferPointer, HMSET);
-            SetupOperation(ref hRandFieldRequestBuffer, ref hRandFieldRequestBufferPointer, HRANDFIELD);
-            SetupOperation(ref hScanRequestBuffer, ref hScanRequestBufferPointer, HSCAN);
-            SetupOperation(ref hSetNxRequestBuffer, ref hSetNxRequestBufferPointer, HSETNX);
-            SetupOperation(ref hStrLenRequestBuffer, ref hStrLenRequestBufferPointer, HSTRLEN);
-            SetupOperation(ref hValsRequestBuffer, ref hValsRequestBufferPointer, HVALS);
+            SetupOperation(ref hSetDel, HSETDEL);
+            SetupOperation(ref hExists, HEXISTS);
+            SetupOperation(ref hGet, HGET);
+            SetupOperation(ref hGetAll, HGETALL);
+            SetupOperation(ref hIncrby, HINCRBY);
+            SetupOperation(ref hIncrbyFloat, HINCRBYFLOAT);
+            SetupOperation(ref hKeys, HKEYS);
+            SetupOperation(ref hLen, HLEN);
+            SetupOperation(ref hMGet, HMGET);
+            SetupOperation(ref hMSet, HMSET);
+            SetupOperation(ref hRandField, HRANDFIELD);
+            SetupOperation(ref hScan, HSCAN);
+            SetupOperation(ref hSetNx, HSETNX);
+            SetupOperation(ref hStrLen, HSTRLEN);
+            SetupOperation(ref hVals, HVALS);
 
             // Pre-populate data
             SlowConsumeMessage("*3\r\n$4\r\nHSET\r\n$1\r\nf\r\n$1\r\nb\r\n$1\r\nb\r\n"u8);
@@ -99,91 +85,91 @@ namespace BDN.benchmark.Operations
         [Benchmark]
         public void HSetDel()
         {
-            _ = session.TryConsumeMessages(hSetDelRequestBufferPointer, hSetDelRequestBuffer.Length);
+            Send(hSetDel);
         }
 
         [Benchmark]
         public void HExists()
         {
-            _ = session.TryConsumeMessages(hExistsRequestBufferPointer, hExistsRequestBuffer.Length);
+            Send(hExists);
         }
 
         [Benchmark]
         public void HGet()
         {
-            _ = session.TryConsumeMessages(hGetRequestBufferPointer, hGetRequestBuffer.Length);
+            Send(hGet);
         }
 
         [Benchmark]
         public void HGetAll()
         {
-            _ = session.TryConsumeMessages(hGetAllRequestBufferPointer, hGetAllRequestBuffer.Length);
+            Send(hGetAll);
         }
 
         [Benchmark]
         public void HIncrby()
         {
-            _ = session.TryConsumeMessages(hIncrbyRequestBufferPointer, hIncrbyRequestBuffer.Length);
+            Send(hIncrby);
         }
 
         [Benchmark]
         public void HIncrbyFloat()
         {
-            _ = session.TryConsumeMessages(hIncrbyFloatRequestBufferPointer, hIncrbyFloatRequestBuffer.Length);
+            Send(hIncrbyFloat);
         }
 
         [Benchmark]
         public void HKeys()
         {
-            _ = session.TryConsumeMessages(hKeysRequestBufferPointer, hKeysRequestBuffer.Length);
+            Send(hKeys);
         }
 
         [Benchmark]
         public void HLen()
         {
-            _ = session.TryConsumeMessages(hLenRequestBufferPointer, hLenRequestBuffer.Length);
+            Send(hLen);
         }
 
         [Benchmark]
         public void HMGet()
         {
-            _ = session.TryConsumeMessages(hMGetRequestBufferPointer, hMGetRequestBuffer.Length);
+            Send(hMGet);
         }
 
         [Benchmark]
         public void HMSet()
         {
-            _ = session.TryConsumeMessages(hMSetRequestBufferPointer, hMSetRequestBuffer.Length);
+            Send(hMSet);
         }
 
         [Benchmark]
         public void HRandField()
         {
-            _ = session.TryConsumeMessages(hRandFieldRequestBufferPointer, hRandFieldRequestBuffer.Length);
+            Send(hRandField);
         }
 
         [Benchmark]
         public void HScan()
         {
-            _ = session.TryConsumeMessages(hScanRequestBufferPointer, hScanRequestBuffer.Length);
+            Send(hScan);
         }
 
         [Benchmark]
         public void HSetNx()
         {
-            _ = session.TryConsumeMessages(hSetNxRequestBufferPointer, hSetNxRequestBuffer.Length);
+            Send(hSetNx);
         }
 
         [Benchmark]
         public void HStrLen()
         {
-            _ = session.TryConsumeMessages(hStrLenRequestBufferPointer, hStrLenRequestBuffer.Length);
+            Send(hStrLen);
         }
 
         [Benchmark]
         public void HVals()
         {
-            _ = session.TryConsumeMessages(hValsRequestBufferPointer, hValsRequestBuffer.Length);
+            Send(hVals);
         }
     }
 }

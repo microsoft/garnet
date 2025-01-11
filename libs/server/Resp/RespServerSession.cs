@@ -760,6 +760,14 @@ namespace Garnet.server
 
                 RespCommand.EVAL => TryEVAL(),
                 RespCommand.EVALSHA => TryEVALSHA(),
+                // Slow commands
+                RespCommand.LCS => NetworkLCS(ref storageApi),
+
+                // Etag related commands
+                RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
+                RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
+                RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
+
                 _ => Process(command)
             };
 
@@ -827,8 +835,8 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomRawStringCommand((RespCommand)currentCustomRawStringCommand.id,
-                currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
+            var cmd = customCommandManagerSession.GetCustomRespCommand(currentCustomRawStringCommand.id);
+            TryCustomRawStringCommand(cmd, currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
             currentCustomRawStringCommand = null;
             return true;
         }
@@ -843,7 +851,8 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomObjectCommand((GarnetObjectType)currentCustomObjectCommand.id, currentCustomObjectCommand.subid,
+            var type = customCommandManagerSession.GetCustomGarnetObjectType(currentCustomObjectCommand.id);
+            TryCustomObjectCommand(type, currentCustomObjectCommand.subid,
                 currentCustomObjectCommand.type, ref storageApi);
             currentCustomObjectCommand = null;
             return true;
