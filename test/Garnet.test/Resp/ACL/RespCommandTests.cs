@@ -3974,6 +3974,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task LCSACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "LCS",
+                [DoLCSAsync]
+            );
+
+            static async Task DoLCSAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("LCS", ["foo", "bar"]);
+                ClassicAssert.AreEqual("", val);
+            }
+        }
+
+        [Test]
         public async Task LLenACLsAsync()
         {
             await CheckCommandsAsync(
@@ -5039,6 +5054,51 @@ namespace Garnet.test.Resp.ACL
             {
                 string val = await client.ExecuteForStringResultAsync("SET", ["foo", "bar", "XX", "KEEPTTL"]);
                 ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
+        public async Task SetIfMatchACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "SETIFMATCH",
+               [DoSetIfMatchAsync]
+           );
+
+            static async Task DoSetIfMatchAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringResultAsync("SETIFMATCH", ["foo", "rizz", "0"]);
+                ClassicAssert.IsNull(res);
+            }
+        }
+
+        [Test]
+        public async Task GetIfNotMatchACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "GETIFNOTMATCH",
+               [DoGetIfNotMatchAsync]
+           );
+
+            static async Task DoGetIfNotMatchAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringResultAsync("GETIFNOTMATCH", ["foo", "0"]);
+                ClassicAssert.IsNull(res);
+            }
+        }
+
+        [Test]
+        public async Task GetWithEtagACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "GETWITHETAG",
+               [DoGetWithEtagAsync]
+           );
+
+            static async Task DoGetWithEtagAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringResultAsync("GETWITHETAG", ["foo"]);
+                ClassicAssert.IsNull(res);
             }
         }
 

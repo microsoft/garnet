@@ -12,13 +12,20 @@ namespace Garnet.server
     /// </summary>
     public class CustomCommandManager
     {
-        internal static readonly int MinMapSize = 8;
-        internal static readonly byte TypeIdStartOffset = byte.MaxValue - (byte)GarnetObjectTypeExtensions.FirstSpecialObjectType;
+        private static readonly int MaxCustomRawStringCommands = 256;
+
+        private static readonly int CustomRawStringCommandMinId = (ushort)RespCommand.INVALID - MaxCustomRawStringCommands;
+        private static readonly int CustomRawStringCommandMaxId = (ushort)RespCommand.INVALID - 1;
+        private static readonly int CustomObjectTypeMinId = (byte)GarnetObjectTypeExtensions.LastObjectType + 1;
+        private static readonly int CustomObjectTypeMaxId = (byte)GarnetObjectTypeExtensions.FirstSpecialObjectType - 1;
 
         private ConcurrentExpandableMap<CustomRawStringCommand> rawStringCommandMap;
         private ConcurrentExpandableMap<CustomObjectCommandWrapper> objectCommandMap;
         private ConcurrentExpandableMap<CustomTransaction> transactionProcMap;
         private ConcurrentExpandableMap<CustomProcedureWrapper> customProcedureMap;
+
+        internal static readonly int MinMapSize = 8;
+        internal static readonly byte CustomTypeIdStartOffset = (byte)CustomObjectTypeMinId;
 
         internal int CustomCommandsInfoCount => customCommandsInfo.Count;
         internal readonly ConcurrentDictionary<string, RespCommandsInfo> customCommandsInfo = new(StringComparer.OrdinalIgnoreCase);
@@ -29,30 +36,35 @@ namespace Garnet.server
         /// </summary>
         public CustomCommandManager()
         {
+            Debug.Assert(CustomRawStringCommandMinId > (ushort)RespCommandExtensions.LastValidCommand);
+
             rawStringCommandMap = new ConcurrentExpandableMap<CustomRawStringCommand>(MinMapSize,
-                (ushort)RespCommand.INVALID - 1,
-                (ushort)RespCommandExtensions.LastValidCommand + 1);
+                CustomRawStringCommandMinId, CustomRawStringCommandMaxId);
+
             objectCommandMap = new ConcurrentExpandableMap<CustomObjectCommandWrapper>(MinMapSize,
-                (byte)GarnetObjectTypeExtensions.FirstSpecialObjectType - 1,
-                (byte)GarnetObjectTypeExtensions.LastObjectType + 1);
+                CustomObjectTypeMinId, CustomObjectTypeMaxId);
+
             transactionProcMap = new ConcurrentExpandableMap<CustomTransaction>(MinMapSize, 0, byte.MaxValue);
             customProcedureMap = new ConcurrentExpandableMap<CustomProcedureWrapper>(MinMapSize, 0, byte.MaxValue);
         }
 
-        internal int Register(string name, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo, RespCommandDocs commandDocs, long expirationTicks)
+        internal int Register(string name, CommandType type, CustomRawStringFunctions customFunctions,
+            RespCommandsInfo commandInfo, RespCommandDocs commandDocs, long expirationTicks)
         {
             if (!rawStringCommandMap.TryGetNextId(out var cmdId))
                 throw new Exception("Out of registration space");
             Debug.Assert(cmdId <= ushort.MaxValue);
-            var newCmd = new CustomRawStringCommand(name, (ushort)cmdId, type, customFunctions, expirationTicks);
+            var extId = cmdId - CustomRawStringCommandMinId;
+            var newCmd = new CustomRawStringCommand(name, (ushort)extId, type, customFunctions, expirationTicks);
             var setSuccessful = rawStringCommandMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
             if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
             if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
-            return cmdId;
+            return extId;
         }
 
-        internal int Register(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
+        internal int Register(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null,
+            RespCommandDocs commandDocs = null)
         {
             if (!transactionProcMap.TryGetNextId(out var cmdId))
                 throw new Exception("Out of registration space");
@@ -71,37 +83,25 @@ namespace Garnet.server
             if (objectCommandMap.TryGetFirstId(c => c.factory == factory, out var dupRegistrationId))
                 throw new Exception($"Type already registered with ID {dupRegistrationId}");
 
-            if (!objectCommandMap.TryGetNextId(out var cmdId))
-                throw new Exception("Out of registration space");
-            Debug.Assert(cmdId <= byte.MaxValue);
-
-            var newCmd = new CustomObjectCommandWrapper((byte)cmdId, factory);
-            var setSuccessful = objectCommandMap.TrySetValue(cmdId, ref newCmd);
-            Debug.Assert(setSuccessful);
-
-            return cmdId;
+            var typeId = RegisterNewType(factory);
+            return typeId - CustomObjectTypeMinId;
         }
 
         internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo, RespCommandDocs commandDocs, CustomObjectFunctions customObjectFunctions = null)
         {
             if (!objectCommandMap.TryGetFirstId(c => c.factory == factory, out var typeId))
             {
-                if (!objectCommandMap.TryGetNextId(out typeId))
-                    throw new Exception("Out of registration space");
-
-                Debug.Assert(typeId <= byte.MaxValue);
-
-                var newCmd = new CustomObjectCommandWrapper((byte)typeId, factory);
-                var setSuccessful = objectCommandMap.TrySetValue(typeId, ref newCmd);
-                Debug.Assert(setSuccessful);
+                typeId = RegisterNewType(factory);
             }
+
+            var extId = typeId - CustomObjectTypeMinId;
 
             objectCommandMap.TryGetValue(typeId, out var wrapper);
             if (!wrapper.commandMap.TryGetNextId(out var scId))
                 throw new Exception("Out of registration space");
 
             Debug.Assert(scId <= byte.MaxValue);
-            var newSubCmd = new CustomObjectCommand(name, (byte)typeId, (byte)scId, commandType, wrapper.factory,
+            var newSubCmd = new CustomObjectCommand(name, (byte)extId, (byte)scId, commandType, wrapper.factory,
                 customObjectFunctions);
             var scSetSuccessful = wrapper.commandMap.TrySetValue(scId, ref newSubCmd);
             Debug.Assert(scSetSuccessful);
@@ -109,7 +109,7 @@ namespace Garnet.server
             if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
             if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
 
-            return (typeId, scId);
+            return (extId, scId);
         }
 
         /// <summary>
@@ -176,6 +176,26 @@ namespace Garnet.server
         internal bool TryGetCustomCommandDocs(string cmdName, out RespCommandDocs respCommandsDocs)
         {
             return this.customCommandsDocs.TryGetValue(cmdName, out respCommandsDocs);
+        }
+
+        internal RespCommand GetCustomRespCommand(int id)
+            => (RespCommand)(CustomRawStringCommandMinId + id);
+
+        internal GarnetObjectType GetCustomGarnetObjectType(int id)
+            => (GarnetObjectType)(CustomObjectTypeMinId + id);
+
+        private int RegisterNewType(CustomObjectFactory factory)
+        {
+            if (!objectCommandMap.TryGetNextId(out var typeId))
+                throw new Exception("Out of registration space");
+            Debug.Assert(typeId <= byte.MaxValue);
+
+            var extId = typeId - CustomObjectTypeMinId;
+            var newCmd = new CustomObjectCommandWrapper((byte)extId, factory);
+            var setSuccessful = objectCommandMap.TrySetValue(typeId, ref newCmd);
+            Debug.Assert(setSuccessful);
+
+            return typeId;
         }
     }
 }

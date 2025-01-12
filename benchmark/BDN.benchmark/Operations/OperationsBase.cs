@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using System.Text;
 using BenchmarkDotNet.Attributes;
 using Embedded.server;
 using Garnet.server;
@@ -97,25 +98,42 @@ namespace BDN.benchmark.Operations
             server.Dispose();
         }
 
-        protected void Send(byte[] requestBuffer, byte* requestBufferPointer, int length)
+        protected void Send(Request request)
         {
-            _ = session.TryConsumeMessages(requestBufferPointer, length);
+            _ = session.TryConsumeMessages(request.bufferPtr, request.buffer.Length);
         }
 
-        protected void SetupOperation(ref byte[] requestBuffer, ref byte* requestBufferPointer, ReadOnlySpan<byte> operation)
+        protected unsafe void SetupOperation(ref Request request, ReadOnlySpan<byte> operation, int batchSize = batchSize)
         {
-            requestBuffer = GC.AllocateArray<byte>(operation.Length * batchSize, pinned: true);
-            requestBufferPointer = (byte*)Unsafe.AsPointer(ref requestBuffer[0]);
+            request.buffer = GC.AllocateArray<byte>(operation.Length * batchSize, pinned: true);
+            request.bufferPtr = (byte*)Unsafe.AsPointer(ref request.buffer[0]);
             for (int i = 0; i < batchSize; i++)
-                operation.CopyTo(new Span<byte>(requestBuffer).Slice(i * operation.Length));
+                operation.CopyTo(new Span<byte>(request.buffer).Slice(i * operation.Length));
+        }
+
+        protected unsafe void SetupOperation(ref Request request, string operation, int batchSize = batchSize)
+        {
+            request.buffer = GC.AllocateUninitializedArray<byte>(operation.Length * batchSize, pinned: true);
+            for (var i = 0; i < batchSize; i++)
+            {
+                var start = i * operation.Length;
+                Encoding.UTF8.GetBytes(operation, request.buffer.AsSpan().Slice(start, operation.Length));
+            }
+            request.bufferPtr = (byte*)Unsafe.AsPointer(ref request.buffer[0]);
+        }
+
+        protected unsafe void SetupOperation(ref Request request, List<byte> operationBytes)
+        {
+            request.buffer = GC.AllocateUninitializedArray<byte>(operationBytes.Count, pinned: true);
+            operationBytes.CopyTo(request.buffer);
+            request.bufferPtr = (byte*)Unsafe.AsPointer(ref request.buffer[0]);
         }
 
         protected void SlowConsumeMessage(ReadOnlySpan<byte> message)
         {
-            var buffer = GC.AllocateArray<byte>(message.Length, pinned: true);
-            var bufferPointer = (byte*)Unsafe.AsPointer(ref buffer[0]);
-            message.CopyTo(new Span<byte>(buffer));
-            _ = session.TryConsumeMessages(bufferPointer, buffer.Length);
+            Request request = default;
+            SetupOperation(ref request, message, 1);
+            Send(request);
         }
     }
 }
