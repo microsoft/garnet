@@ -481,5 +481,51 @@ Integer reply: the number of keys that were unlinked.
 
 ---
 
+### DUMP
+
+> [!IMPORTANT]  
+> DUMP currently only supports string types without lzf compression
+
+#### Syntax
+
+```bash
+DUMP mykey
+```
+
+Serialize the value stored at key in a Redis-specific format and return it to the user. The returned value can be synthesized back into a Redis key using the [RESTORE](#restore) command.
+
+#### Resp Reply
+
+String reply: The serialization format is opaque and non-standard, however it has a few semantic characteristics:
+
+- It contains a 64-bit checksum that is used to make sure errors will be detected. The [RESTORE](#restore) command makes sure to check the checksum before synthesizing a key using the serialized value.
+- Values are encoded in the same format used by RDB.
+- An RDB version is encoded inside the serialized value, so that different Redis versions with incompatible RDB formats will refuse to process the serialized value.
+
+---
+
+### RESTORE
+
+> [!IMPORTANT]  
+> RESTORE currently only supports string types without lzf compression
+
+#### Syntax
+
+```bash
+restore mykey 0 "\x00\x0evallllllllllll\x0b\x00|\xeb\xe2|\xd2.\xfa7"
+```
+
+Create a key associated with a value that is obtained by deserializing the provided serialized value (obtained via [DUMP](#dump)).
+
+If ttl is 0 the key is created without any expire, otherwise the specified expire time (in milliseconds) is set.
+
+#### Resp Reply
+
+Simple string reply: OK.
+
+---
+
+
+
 
 
