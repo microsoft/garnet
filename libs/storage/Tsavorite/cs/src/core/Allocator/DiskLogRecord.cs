@@ -25,7 +25,11 @@ namespace Tsavorite.core
         internal IHeapObject valueObject;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal DiskLogRecord(long physicalAddress) => this.physicalAddress = physicalAddress;
+        internal DiskLogRecord(long physicalAddress)
+        {
+            this.physicalAddress = physicalAddress;
+            InfoRef.ClearBitsForDiskImages();
+        }
 
         #region IReadOnlyRecord
         /// <inheritdoc/>

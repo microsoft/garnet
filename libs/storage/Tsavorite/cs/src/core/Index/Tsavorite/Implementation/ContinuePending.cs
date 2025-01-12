@@ -33,7 +33,6 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var diskRecord = new DiskLogRecord((long)request.record.GetValidPointer());
-            diskRecord.InfoRef.ClearBitsForDiskImages();
 
             if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.key.Get(), diskRecord.Key))
                 goto NotFound;
@@ -188,7 +187,6 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var diskRecord = new DiskLogRecord((long)request.record.GetValidPointer());
-            diskRecord.InfoRef.ClearBitsForDiskImages();
 
             SpinWaitUntilClosed(request.logicalAddress);
 
@@ -222,16 +220,15 @@ namespace Tsavorite.core
 
                     // Here, the input data for 'doingCU' is the from the request, so populate the RecordSource copy from that, preserving LowestReadCache*.
                     stackCtx.recSrc.LogicalAddress = request.logicalAddress;
-                    stackCtx.recSrc.PhysicalAddress = (long)recordPointer;
 
-                    status = CreateNewRecordRMW(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output,
-                                                ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo,
-                                                doingCU: request.logicalAddress >= hlogBase.BeginAddress && !srcRecordInfo.Tombstone);
+                    status = CreateNewRecordRMW(diskRecord.Key, ref diskRecord, ref pendingContext.input.Get(), ref pendingContext.output,
+                                                ref pendingContext, sessionFunctions, ref stackCtx,
+                                                doingCU: request.logicalAddress >= hlogBase.BeginAddress && !diskRecord.Info.Tombstone);
                 }
                 finally
                 {
                     stackCtx.HandleNewRecordOnException(this);
-                    EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                    EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
                 }
 
             // Must do this *after* Unlocking.
@@ -243,7 +240,7 @@ namespace Tsavorite.core
             // Unfortunately, InternalRMW will go through the lookup process again. But we're only here in the case another record was added or we went below
             // HeadAddress, and this should be rare.
             do
-                status = InternalRMW(ref key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, sessionFunctions);
+                status = InternalRMW(diskRecord.Key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, sessionFunctions);
             while (HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext));
             return status;
         }
@@ -281,23 +278,24 @@ namespace Tsavorite.core
                 return OperationStatus.SUCCESS;
 
             // Prepare to copy to tail. Use data from pendingContext, not request; we're only made it to this line if the key was not found, and thus the request was not populated.
-            ref TKey key = ref pendingContext.key.Get();
-            OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
+            var diskRecord = new DiskLogRecord((long)request.record.GetValidPointer());
+            OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
 
             // See if the record was added above the highest address we checked before issuing the IO.
             var minAddress = pendingContext.InitialLatestLogicalAddress + 1;
             OperationStatus internalStatus;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, currentAddress: request.logicalAddress, minAddress, out internalStatus, out bool needIO))
+                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, diskRecord.Key, ref stackCtx, 
+                        currentAddress: request.logicalAddress, minAddress, out internalStatus, out var needIO))
                     return OperationStatus.SUCCESS;
                 if (!OperationStatusUtils.IsRetry(internalStatus))
                 {
                     // HeadAddress may have risen above minAddress; if so, we need IO.
                     internalStatus = needIO
-                        ? PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref pendingContext.input.Get(), ref pendingContext.value.Get(),
+                        ? PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref diskRecord, ref pendingContext.input.Get(),
                                                             ref pendingContext.output, pendingContext.userContext, ref stackCtx, minAddress, WriteReason.Compaction)
-                        : ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref key, ref pendingContext.input.Get(), ref pendingContext.value.Get(),
+                        : ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref diskRecord, ref pendingContext.input.Get(),
                                                             ref pendingContext.output, pendingContext.userContext, ref stackCtx, pendingContext.writeReason);
                 }
             }
@@ -340,7 +338,7 @@ namespace Tsavorite.core
             // Prepare to push to caller's iterator functions. Use data from pendingContext, not request; we're only made it to this line if the key was not found,
             // and thus the request was not populated. The new minAddress should be the highest logicalAddress we previously saw, because we need to make sure the
             // record was not added to the log after we initialized the pending IO.
-            hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper, PendingContext<TInput, TOutput, TContext>>(sessionFunctions,
+            _ = hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper, PendingContext<TInput, TOutput, TContext>>(sessionFunctions,
                 pendingContext.scanCursorState, ref pendingContext, currentAddress: request.logicalAddress, minAddress: pendingContext.InitialLatestLogicalAddress + 1);
 
             // ConditionalScanPush has already called HandleOperationStatus, so return SUCCESS here.

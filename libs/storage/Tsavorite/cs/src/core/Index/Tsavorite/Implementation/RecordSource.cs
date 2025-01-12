@@ -81,7 +81,7 @@ namespace Tsavorite.core
                     {
                         if (sb.Length > 0)
                             sb.Append(", ");
-                        sb.Append(name);
+                        _ = sb.Append(name);
                     }
                 }
 
@@ -145,6 +145,7 @@ namespace Tsavorite.core
         internal readonly LogRecord CreateLogRecord()
         {
             Debug.Assert(PhysicalAddress != 0, "Cannot CreateLogRecord until PhysicalAddress is set");
+            Debug.Assert(HasInMemorySrc, "Can only create a LogRecord for a record in main log memory");
             return Allocator.CreateLogRecord(LogicalAddress, PhysicalAddress);
         }
 
@@ -171,8 +172,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetAllocator(AllocatorBase<TValue, TStoreFunctions, TAllocator> srcAllocatorBase)
         {
-            this.AllocatorBase = srcAllocatorBase;
-            this.Allocator = AllocatorBase._wrapper;
+            AllocatorBase = srcAllocatorBase;
+            Allocator = AllocatorBase._wrapper;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
