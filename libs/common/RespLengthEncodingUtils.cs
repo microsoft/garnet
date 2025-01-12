@@ -9,7 +9,7 @@ namespace Garnet.common;
 /// <summary>
 /// Utils for working with redis length encoding
 /// </summary>
-public static class RedisLengthEncodingUtils
+public static class RespLengthEncodingUtils
 {
     /// <summary>
     /// Decodes the redis length encoded length and returns payload start
@@ -21,9 +21,11 @@ public static class RedisLengthEncodingUtils
     {
         // remove the value type byte
         var encoded = buff.Slice(1);
-        
+
         if (encoded.Length == 0)
+        {
             throw new ArgumentException("Encoded length cannot be empty.", nameof(encoded));
+        }
 
         var firstByte = encoded[0];
         return (firstByte >> 6) switch
@@ -69,10 +71,12 @@ public static class RedisLengthEncodingUtils
                     {
                         Array.Reverse(lengthBytes); // Convert to big-endian
                     }
-                    return new[] { firstByte }.Concat(lengthBytes).ToArray();
+
+                    return new[] {firstByte}.Concat(lengthBytes).ToArray();
                 }
             default:
-                throw new ArgumentOutOfRangeException("Length exceeds maximum allowed for Redis encoding (4,294,967,295).");
+                throw new ArgumentOutOfRangeException(
+                    nameof(length), "Length exceeds maximum allowed for Redis encoding (4,294,967,295).");
         }
     }
 }

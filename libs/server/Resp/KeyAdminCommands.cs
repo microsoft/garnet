@@ -90,7 +90,7 @@ namespace Garnet.server
             }
             
             // decode the length of payload
-            var (length, payloadStart) = RedisLengthEncodingUtils.DecodeLength(ref valueSpan);
+            var (length, payloadStart) = RespLengthEncodingUtils.DecodeLength(ref valueSpan);
             
             // Start from payload start and skip the value type byte
             var val = value.ReadOnlySpan.Slice(payloadStart + 1, (int)length);
@@ -135,7 +135,7 @@ namespace Garnet.server
                     return true;
             }
             
-            var encodedLength = RedisLengthEncodingUtils.EncodeLength(value.ReadOnlySpan.Length);
+            var encodedLength = RespLengthEncodingUtils.EncodeLength(value.ReadOnlySpan.Length);
             
             // Len of the dump (payload type + redis encoded payload len + payload len + rdb version + crc64)
             var len = 1 + encodedLength.Length + value.ReadOnlySpan.Length + 2 + 8;
