@@ -366,10 +366,13 @@ One of the following:
 #### Syntax
 
 ```bash
-    RENAME key newkey
+    RENAME key newkey [WITHETAG]
 ```
 
 Renames key to newkey. It returns an error when key does not exist. If newkey already exists it is overwritten, when this happens RENAME executes an implicit [DEL](#del) operation.
+
+#### **Options:**
+* WITHETAG - If the newkey did not exist, the newkey will now have an ETag associated with it after the rename. If the newkey existed before with an ETag the RENAME will update the ETag. If the newkey existed before without an ETag, then after the RENAME the newkey would have an ETag associated with it. You can read more about ETags [here](../commands/garnet-specific-commands#native-etag-support).
 
 #### Resp Reply
 
@@ -382,10 +385,13 @@ Simple string reply: OK.
 #### Syntax
 
 ```bash
-    RENAME key newkey
+    RENAMENX key newkey [WITHETAG]
 ```
 
 Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
+
+#### **Options:**
+* WITHETAG - The newkey will now have an ETag associated with it after the rename. You can read more about ETags [here](../commands/garnet-specific-commands#native-etag-support).
 
 #### Resp Reply
 

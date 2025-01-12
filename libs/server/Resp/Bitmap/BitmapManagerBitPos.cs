@@ -94,7 +94,9 @@ namespace Garnet.server
                     return -1;
 
                 endOffset = endOffset >= valLen ? valLen : endOffset;
-                return BitPosByte(value, setVal, startOffset, endOffset);
+                long pos = BitPosByte(value, setVal, startOffset, endOffset);
+                // check if position is exceeding the last byte in acceptable range
+                return pos >= ((endOffset + 1) * 8) ? -1 : pos;
             }
 
             startOffset = startOffset < 0 ? ProcessNegativeOffset(startOffset, valLen * 8) : startOffset;
@@ -119,7 +121,8 @@ namespace Garnet.server
             var _startOffset = (startOffset / 8) + 1;
             var _endOffset = (endOffset / 8) - 1;
             var _bpos = BitPosByte(value, setVal, _startOffset, _endOffset);
-            if (_bpos != -1) return _bpos;
+
+            if (_bpos != -1 && _bpos < (_endOffset + 1) * 8) return _bpos;
 
             // Search suffix
             var _spos = BitPosIndexBitSearch(value, setVal, endOffset);
@@ -130,7 +133,7 @@ namespace Garnet.server
         /// Find pos of set/clear bit in a sequence of bytes.
         /// </summary>
         /// <param name="value">Pointer to start of bitmap.</param>
-        /// <param name="bSetVal"></param>
+        /// <param name="bSetVal">The bit value to search for (0 for cleared bit or 1 for set bit).</param>
         /// <param name="startOffset">Starting offset into bitmap.</param>
         /// <param name="endOffset">End offset into bitmap.</param>
         /// <returns></returns>

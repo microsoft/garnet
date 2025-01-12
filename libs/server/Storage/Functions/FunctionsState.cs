@@ -18,6 +18,7 @@ namespace Garnet.server
         public readonly MemoryPool<byte> memoryPool;
         public readonly CacheSizeTracker objectStoreSizeTracker;
         public readonly GarnetObjectSerializer garnetObjectSerializer;
+        public EtagState etagState;
         public bool StoredProcMode;
 
         public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
@@ -29,6 +30,7 @@ namespace Garnet.server
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
             this.objectStoreSizeTracker = objectStoreSizeTracker;
             this.garnetObjectSerializer = garnetObjectSerializer;
+            this.etagState = new EtagState();
         }
 
         public CustomRawStringFunctions GetCustomCommandFunctions(int id)
