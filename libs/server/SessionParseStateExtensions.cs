@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Garnet.common;
 
 namespace Garnet.server
@@ -233,6 +234,38 @@ namespace Garnet.server
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MAX))
                 value = SortedSetAggregateType.Max;
             else return false;
+
+            return true;
+        }
+ 
+        /// <summary>
+        /// Given the parseState and an index, potentially get the expiration option at that index.
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The argument index</param>
+        /// <param name="value">Parsed expiration option value</param>
+        /// <returns>if the argument at that index is a valid expiration option set it to value and return true, else returns false</returns>
+        internal static bool TryGetExpirationOption(this SessionParseState parseState, int idx, out ExpirationOption value)
+        {
+            var sbArg = parseState.GetArgSliceByRef(idx).Span;
+            return parseState.TryGetExpirationOptionWithToken(ref sbArg, out value);
+        }
+
+        internal static bool TryGetExpirationOptionWithToken(this SessionParseState parseState, ref Span<byte> token, out ExpirationOption value)
+        {
+            value = default;
+            if (token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EX))
+                value = ExpirationOption.EX;
+            else if (token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PX))
+                value = ExpirationOption.PX;
+            else if (token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EXAT))
+                value = ExpirationOption.EXAT;
+            else if (token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PXAT))
+                value = ExpirationOption.PXAT;
+            else if (token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.KEEPTTL))
+                value = ExpirationOption.KEEPTTL;
+            else
+                return false;
 
             return true;
         }
