@@ -7,12 +7,12 @@ using System.Linq;
 namespace Garnet.common;
 
 /// <summary>
-/// Utils for working with redis length encoding
+/// Utils for working with RESP length encoding
 /// </summary>
 public static class RespLengthEncodingUtils
 {
     /// <summary>
-    /// Decodes the redis length encoded length and returns payload start
+    /// Decodes the RESP-encoded length and returns payload start
     /// </summary>
     /// <param name="buff"></param>
     /// <returns></returns>
@@ -43,7 +43,7 @@ public static class RespLengthEncodingUtils
     }
 
     /// <summary>
-    /// Encoded payload length to redis encoded payload length
+    /// Encoded payload length to RESP-encoded payload length
     /// </summary>
     /// <param name="length"></param>
     /// <returns></returns>
