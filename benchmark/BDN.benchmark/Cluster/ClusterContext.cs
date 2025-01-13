@@ -20,7 +20,6 @@ namespace BDN.benchmark.Cluster
         public static ReadOnlySpan<byte> keyTag => "{0}"u8;
         public Request[] singleGetSet;
         public Request[] singleMGetMSet;
-        public Request singlePublish;
         public Request singleCTXNSET;
 
         public void Dispose()
@@ -162,32 +161,6 @@ namespace BDN.benchmark.Cluster
             }
 
             singleCTXNSET = ctxnsetReq;
-        }
-
-        public void CreatePublish(int keySize = 8, int valueSize = 32, int batchSize = 100)
-        {
-            var pairs = new (byte[], byte[])[batchSize];
-            for (var i = 0; i < batchSize; i++)
-            {
-                pairs[i] = (new byte[keySize], new byte[valueSize]);
-
-                keyTag.CopyTo(pairs[i].Item1.AsSpan());
-                benchUtils.RandomBytes(ref pairs[i].Item1, startOffset: keyTag.Length);
-                benchUtils.RandomBytes(ref pairs[i].Item2);
-            }
-
-            var publishByteCount = batchSize * ("*3\r\n$7\r\nPUBLISH\r\n"u8.Length + 1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2 + 1 + NumUtils.NumDigits(valueSize) + 2 + valueSize + 2);
-            var publishReq = new Request(publishByteCount);
-            var curr = publishReq.ptr;
-            var end = curr + publishReq.buffer.Length;
-            for (var i = 0; i < batchSize; i++)
-            {
-                _ = RespWriteUtils.WriteArrayLength(3, ref curr, end);
-                _ = RespWriteUtils.WriteBulkString("PUBLISH"u8, ref curr, end);
-                _ = RespWriteUtils.WriteBulkString(pairs[i].Item1, ref curr, end);
-                _ = RespWriteUtils.WriteBulkString(pairs[i].Item2, ref curr, end);
-            }
-            singlePublish = publishReq;
         }
 
         public void Consume(byte* ptr, int length)
