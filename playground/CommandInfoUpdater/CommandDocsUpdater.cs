@@ -215,7 +215,7 @@ namespace CommandInfoUpdater
                     : existingCommandsDocs[command.Command].SubCommands.Select(sc => sc.Name).ToArray();
                 var remainingSubCommands = existingSubCommands == null ? null :
                     command.SubCommands == null ? existingSubCommands :
-                    existingSubCommands.Except(command.SubCommands.Keys).ToArray();
+                    [.. existingSubCommands.Except(command.SubCommands.Keys)];
 
                 // Create updated command docs based on existing command
                 var existingCommandDoc = existingCommandsDocs[command.Command];
@@ -230,7 +230,7 @@ namespace CommandInfoUpdater
                     existingCommandDoc.Arguments,
                     remainingSubCommands == null || remainingSubCommands.Length == 0
                         ? null
-                        : existingCommandDoc.SubCommands.Where(sc => remainingSubCommands.Contains(sc.Name)).ToArray());
+                        : [.. existingCommandDoc.SubCommands.Where(sc => remainingSubCommands.Contains(sc.Name))]);
 
                 updatedCommandsDocs.Add(updatedCommandDoc.Name, updatedCommandDoc);
             }
@@ -270,7 +270,7 @@ namespace CommandInfoUpdater
                     // Update sub-commands to contain supported sub-commands only
                     updatedSubCommandsDocs = command.SubCommands == null
                         ? null
-                        : baseCommandDocs.SubCommands.Where(sc => command.SubCommands.Keys.Contains(sc.Name)).ToList();
+                        : [.. baseCommandDocs.SubCommands.Where(sc => command.SubCommands.Keys.Contains(sc.Name))];
                 }
 
                 // Create updated command docs based on base command & updated sub-commands
