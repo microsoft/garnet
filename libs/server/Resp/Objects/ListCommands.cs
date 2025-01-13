@@ -304,7 +304,7 @@ namespace Garnet.server
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
 
-            if (result.IsError)
+            if (result.IsForceUnblocked)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
                     SendAndReset();
@@ -986,7 +986,7 @@ namespace Garnet.server
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs).Result;
 
-            if (result.IsError)
+            if (result.IsForceUnblocked)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
                     SendAndReset();

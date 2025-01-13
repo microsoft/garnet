@@ -20,9 +20,9 @@ namespace Garnet.server
             Items = items;
         }
 
-        private CollectionItemResult(bool isError)
+        private CollectionItemResult(bool isForceUnblocked)
         {
-            IsError = isError;
+            IsForceUnblocked = isForceUnblocked;
         }
 
         /// <summary>
@@ -46,9 +46,9 @@ namespace Garnet.server
         internal byte[][] Items { get; }
 
         /// <summary>
-        /// Indicates whether the result represents an error.
+        /// Gets a value indicating whether the item retrieval was force unblocked.
         /// </summary>
-        internal readonly bool IsError { get; }
+        internal readonly bool IsForceUnblocked { get; }
 
         /// <summary>
         /// Instance of empty result

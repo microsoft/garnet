@@ -46,6 +46,12 @@ namespace Garnet.server
         private bool disposed = false;
         private bool isStarted = false;
 
+        /// <summary>
+        /// Tries to get the observer associated with the given session ID.
+        /// </summary>
+        /// <param name="sessionId">The ID of the session to retrieve the observer for.</param>
+        /// <param name="observer">When this method returns, contains the observer associated with the specified session ID, if the session ID is found; otherwise, null. This parameter is passed uninitialized.</param>
+        /// <returns>true if the observer is found; otherwise, false.</returns>
         internal bool TryGetObserver(int sessionId, out CollectionItemObserver observer)
         {
             return SessionIdToObserver.TryGetValue(sessionId, out observer);
@@ -123,7 +129,7 @@ namespace Garnet.server
                 ? TimeSpan.FromMilliseconds(-1)
                 : TimeSpan.FromSeconds(timeoutInSeconds);
 
-            var isError = false;
+            var isForceUnblocked = false;
             try
             {
                 // Wait for either the result found notification or the timeout to expire
@@ -131,7 +137,7 @@ namespace Garnet.server
             }
             catch (OperationCanceledException) when (observer.CancellationTokenSource.IsCancellationRequested)
             {
-                isError = true;
+                isForceUnblocked = true;
             }
 
             SessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
@@ -143,7 +149,7 @@ namespace Garnet.server
                 observer.HandleSetResult(CollectionItemResult.Empty);
             }
 
-            if (isError)
+            if (isForceUnblocked)
             {
                 return CollectionItemResult.Error;
             }
