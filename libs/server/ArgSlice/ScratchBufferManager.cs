@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 
@@ -297,15 +298,19 @@ namespace Garnet.server
                 ExpandScratchBuffer(scratchBufferOffset + newLength);
         }
 
-        void ExpandScratchBuffer(int newLength)
+        void ExpandScratchBuffer(int newLength, int? copyLengthOverride = null)
         {
             if (newLength < 64) newLength = 64;
             else newLength = (int)BitOperations.RoundUpToPowerOf2((uint)newLength + 1);
 
             var _scratchBuffer = GC.AllocateArray<byte>(newLength, true);
-            var _scratchBufferHead = (byte*)Unsafe.AsPointer(ref _scratchBuffer[0]);
-            if (scratchBufferOffset > 0)
-                new ReadOnlySpan<byte>(scratchBufferHead, scratchBufferOffset).CopyTo(new Span<byte>(_scratchBufferHead, scratchBufferOffset));
+            var _scratchBufferHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_scratchBuffer));
+
+            var copyLength = copyLengthOverride ?? scratchBufferOffset;
+            if (copyLength > 0)
+            {
+                new ReadOnlySpan<byte>(scratchBufferHead, copyLength).CopyTo(new Span<byte>(_scratchBufferHead, copyLength));
+            }
             scratchBuffer = _scratchBuffer;
             scratchBufferHead = _scratchBufferHead;
         }
@@ -326,8 +331,12 @@ namespace Garnet.server
 
         /// <summary>
         /// Force backing buffer to grow.
+        /// 
+        /// <paramref name="copyLengthOverride"/> provides a way to force a chunk at the start of the
+        /// previous buffer be copied into the new buffer, even if this <see cref="ScratchBufferManager"/>
+        /// doesn't consider that chunk in use.
         /// </summary>
-        public void GrowBuffer()
+        public void GrowBuffer(int? copyLengthOverride = null)
         {
             if (scratchBuffer == null)
             {
@@ -335,7 +344,7 @@ namespace Garnet.server
             }
             else
             {
-                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ExpandScratchBuffer(scratchBuffer.Length + 1, copyLengthOverride);
             }
         }
     }

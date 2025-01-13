@@ -563,4 +563,42 @@ namespace Garnet
             return base.IsValid(value, validationContext);
         }
     }
+
+    /// <summary>
+    /// Forbids a config option from being set if the another option has particular values.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    internal sealed class ForbiddenWithOptionAttribute : ValidationAttribute
+    {
+        private readonly string otherOptionName;
+        private readonly string[] forbiddenValues;
+
+        internal ForbiddenWithOptionAttribute(string otherOptionName, string forbiddenValue, params string[] otherForbiddenValues)
+        {
+            this.otherOptionName = otherOptionName;
+            forbiddenValues = [forbiddenValue, .. otherForbiddenValues];
+        }
+
+        /// <inheritdoc/>
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            var optionIsSet = value != null && !(value is string valueStr && string.IsNullOrEmpty(valueStr));
+            if (optionIsSet)
+            {
+                var propAccessor = validationContext.ObjectInstance?.GetType()?.GetProperty(otherOptionName, BindingFlags.Instance | BindingFlags.Public);
+                if (propAccessor != null)
+                {
+                    var otherOptionValue = propAccessor.GetValue(validationContext.ObjectInstance);
+                    var otherOptionValueAsString = otherOptionValue is string strVal ? strVal : otherOptionValue?.ToString();
+
+                    if (forbiddenValues.Contains(otherOptionValueAsString, StringComparer.OrdinalIgnoreCase))
+                    {
+                        return new ValidationResult($"{nameof(validationContext.DisplayName)} cannot be set with {otherOptionName} has value '{otherOptionValueAsString}'");
+                    }
+                }
+            }
+
+            return ValidationResult.Success;
+        }
+    }
 }

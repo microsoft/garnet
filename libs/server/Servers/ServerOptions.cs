@@ -228,7 +228,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="value"></param>
         /// <returns></returns>
-        protected static long ParseSize(string value)
+        public static long ParseSize(string value)
         {
             char[] suffix = ['k', 'm', 'g', 't', 'p'];
             long result = 0;

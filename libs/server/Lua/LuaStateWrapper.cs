@@ -4,9 +4,11 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 using KeraLua;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -20,25 +22,12 @@ namespace Garnet.server
     {
         private const int LUA_MINSTACK = 20;
 
-        private readonly Lua state;
+        private readonly bool ownsState;
 
+        private GCHandle customAllocatorHandle;
+
+        private nint state;
         private int curStackSize;
-
-        internal LuaStateWrapper(Lua state)
-        {
-            this.state = state;
-
-            curStackSize = LUA_MINSTACK;
-            StackTop = 0;
-
-            AssertLuaStackExpected();
-        }
-
-        /// <inheritdoc/>
-        public readonly void Dispose()
-        {
-            state.Dispose();
-        }
 
         /// <summary>
         /// Current top item in the stack.
@@ -46,6 +35,72 @@ namespace Garnet.server
         /// 0 implies the stack is empty.
         /// </summary>
         internal int StackTop { get; private set; }
+
+        internal unsafe LuaStateWrapper(LuaMemoryManagementMode memMode, int? memLimitBytes, ILogger logger)
+        {
+            // As an emergency thing, we need a logger (any logger) if Lua is going to panic
+            // TODO: Consider a better way to do this?
+            LuaStateWrapperTrampolines.PanicLogger ??= logger;
+
+            ILuaAllocator customAllocator =
+                (memMode, memLimitBytes) switch
+                {
+                    (LuaMemoryManagementMode.Native, null) => null,
+                    (LuaMemoryManagementMode.Tracked, _) => new LuaTrackedAllocator(memLimitBytes),
+                    (LuaMemoryManagementMode.Managed, null) => new LuaManagedAllocator(),
+                    (LuaMemoryManagementMode.Managed, _) => new LuaLimitedManagedAllocator(memLimitBytes.Value),
+                    _ => throw new InvalidOperationException($"Unexpected mode/limit combination: {memMode}/{memLimitBytes}")
+                };
+
+            if (customAllocator != null)
+            {
+                customAllocatorHandle = GCHandle.Alloc(customAllocator, GCHandleType.Normal);
+                var stateUserData = (nint)customAllocatorHandle;
+
+                state = NativeMethods.NewState(&LuaStateWrapperTrampolines.LuaAllocateBytes, stateUserData);
+            }
+            else
+            {
+                state = NativeMethods.NewState();
+            }
+            ownsState = true;
+
+            NativeMethods.OpenLibs(state);
+
+            _ = NativeMethods.AtPanic(state, &LuaStateWrapperTrampolines.LuaAtPanic);
+
+            curStackSize = LUA_MINSTACK;
+            StackTop = 0;
+
+            AssertLuaStackExpected();
+        }
+
+        internal LuaStateWrapper(nint state)
+        {
+            this.state = state;
+            ownsState = false;
+        }
+
+        /// <inheritdoc/>
+        public void Dispose()
+        {
+            if (!ownsState)
+            {
+                return;
+            }
+
+            if (state != 0)
+            {
+                NativeMethods.Close(state);
+                state = 0;
+            }
+
+            if (customAllocatorHandle.IsAllocated)
+            {
+                customAllocatorHandle.Free();
+                customAllocatorHandle = default;
+            }
+        }
 
         /// <summary>
         /// Call when ambient state indicates that the Lua stack is in fact empty.
@@ -77,7 +132,7 @@ namespace Garnet.server
             }
 
             var needed = additionalCapacity - availableSpace;
-            if (!state.CheckStack(needed))
+            if (!NativeMethods.CheckStack(state, needed))
             {
                 throw new GarnetException("Could not reserve additional capacity on the Lua stack");
             }
@@ -93,9 +148,9 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void CallFromLuaEntered(IntPtr luaStatePtr)
         {
-            Debug.Assert(luaStatePtr == state.Handle, "Unexpected Lua state presented");
+            Debug.Assert(luaStatePtr == state, "Unexpected Lua state presented");
 
-            StackTop = NativeMethods.GetTop(state.Handle);
+            StackTop = NativeMethods.GetTop(state);
             curStackSize = StackTop > LUA_MINSTACK ? StackTop : LUA_MINSTACK;
         }
 
@@ -107,7 +162,7 @@ namespace Garnet.server
         {
             AssertLuaStackIndexInBounds(index);
 
-            return NativeMethods.CheckBuffer(state.Handle, index, out str);
+            return NativeMethods.CheckBuffer(state, index, out str);
         }
 
         /// <summary>
@@ -118,7 +173,7 @@ namespace Garnet.server
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
-            return NativeMethods.Type(state.Handle, stackIndex);
+            return NativeMethods.Type(state, stackIndex);
         }
 
         /// <summary>
@@ -131,7 +186,7 @@ namespace Garnet.server
         {
             AssertLuaStackNotFull();
 
-            NativeMethods.PushBuffer(state.Handle, buffer);
+            _ = ref NativeMethods.PushBuffer(state, buffer);
             UpdateStackTop(1);
         }
 
@@ -143,7 +198,7 @@ namespace Garnet.server
         {
             AssertLuaStackNotFull();
 
-            NativeMethods.PushNil(state.Handle);
+            NativeMethods.PushNil(state);
             UpdateStackTop(1);
         }
 
@@ -155,7 +210,7 @@ namespace Garnet.server
         {
             AssertLuaStackNotFull();
 
-            NativeMethods.PushInteger(state.Handle, number);
+            NativeMethods.PushInteger(state, number);
 
             UpdateStackTop(1);
         }
@@ -168,7 +223,7 @@ namespace Garnet.server
         {
             AssertLuaStackNotFull();
 
-            NativeMethods.PushBoolean(state.Handle, b);
+            NativeMethods.PushBoolean(state, b);
             UpdateStackTop(1);
         }
 
@@ -180,34 +235,9 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Pop(int num)
         {
-            NativeMethods.Pop(state.Handle, num);
+            NativeMethods.Pop(state, num);
 
             UpdateStackTop(-num);
-        }
-
-        /// <summary>
-        /// This should be used for all Calls into Lua.
-        /// 
-        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Call(int args, int rets)
-        {
-            // We have to copy this off, as once we Call curStackTop could be modified
-            var oldStackTop = StackTop;
-            state.Call(args, rets);
-
-            if (rets < 0)
-            {
-                StackTop = NativeMethods.GetTop(state.Handle);
-                AssertLuaStackExpected();
-            }
-            else
-            {
-                var newPosition = oldStackTop - (args + 1) + rets;
-                var update = newPosition - StackTop;
-                UpdateStackTop(update);
-            }
         }
 
         /// <summary>
@@ -218,13 +248,14 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LuaStatus PCall(int args, int rets)
         {
-            // We have to copy this off, as once we Call curStackTop could be modified
+            // We have to copy this off, as once we PCall curStackTop could be modified
             var oldStackTop = StackTop;
-            var res = state.PCall(args, rets, 0);
+
+            var res = NativeMethods.PCall(state, args, rets);
 
             if (res != LuaStatus.OK || rets < 0)
             {
-                StackTop = NativeMethods.GetTop(state.Handle);
+                StackTop = NativeMethods.GetTop(state);
                 AssertLuaStackExpected();
             }
             else
@@ -247,7 +278,7 @@ namespace Garnet.server
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
-            state.RawSetInteger(stackIndex, tableIndex);
+            NativeMethods.RawSetInteger(state, stackIndex, tableIndex);
             UpdateStackTop(-1);
         }
 
@@ -261,7 +292,7 @@ namespace Garnet.server
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
-            state.RawSet(stackIndex);
+            NativeMethods.RawSet(state, stackIndex);
             UpdateStackTop(-2);
         }
 
@@ -276,7 +307,7 @@ namespace Garnet.server
             AssertLuaStackIndexInBounds(stackIndex);
             AssertLuaStackNotFull();
 
-            var actual = state.RawGetInteger(stackIndex, tableIndex);
+            var actual = NativeMethods.RawGetInteger(state, stackIndex, tableIndex);
             Debug.Assert(expectedType == null || actual == expectedType, "Unexpected type received");
 
             UpdateStackTop(1);
@@ -294,7 +325,7 @@ namespace Garnet.server
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
-            var actual = state.RawGet(stackIndex);
+            var actual = NativeMethods.RawGet(state, stackIndex);
             Debug.Assert(expectedType == null || actual == expectedType, "Unexpected type received");
 
             AssertLuaStackExpected();
@@ -310,7 +341,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal int Ref()
         {
-            var ret = state.Ref(LuaRegistry.Index);
+            var ret = NativeMethods.Ref(state, (int)LuaRegistry.Index);
             UpdateStackTop(-1);
 
             return ret;
@@ -323,9 +354,7 @@ namespace Garnet.server
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly void Unref(LuaRegistry registry, int reference)
-        {
-            state.Unref(registry, reference);
-        }
+        => NativeMethods.Unref(state, (int)registry, reference);
 
         /// <summary>
         /// This should be used for all CreateTables into Lua.
@@ -337,7 +366,7 @@ namespace Garnet.server
         {
             AssertLuaStackNotFull();
 
-            state.CreateTable(numArr, numRec);
+            NativeMethods.CreateTable(state, numArr, numRec);
             UpdateStackTop(1);
         }
 
@@ -346,11 +375,11 @@ namespace Garnet.server
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
         /// </summary>
-        internal void GetGlobal(LuaType expectedType, string globalName)
+        internal void GetGlobal(LuaType expectedType, ReadOnlySpan<byte> nullTerminatedGlobalName)
         {
             AssertLuaStackNotFull();
 
-            var type = state.GetGlobal(globalName);
+            var type = NativeMethods.GetGlobal(state, nullTerminatedGlobalName);
             Debug.Assert(type == expectedType, "Unexpected type received");
 
             UpdateStackTop(1);
@@ -368,7 +397,7 @@ namespace Garnet.server
         {
             AssertLuaStackNotFull();
 
-            var ret = NativeMethods.LoadBuffer(state.Handle, buffer);
+            var ret = NativeMethods.LoadBuffer(state, buffer);
 
             UpdateStackTop(1);
 
@@ -389,9 +418,9 @@ namespace Garnet.server
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
-            Debug.Assert(NativeMethods.Type(state.Handle, stackIndex) is LuaType.String or LuaType.Number, "Called with non-string, non-number");
+            Debug.Assert(Type(stackIndex) is LuaType.String or LuaType.Number, "Called with non-string, non-number");
 
-            NativeMethods.KnownStringToBuffer(state.Handle, stackIndex, out str);
+            NativeMethods.KnownStringToBuffer(state, stackIndex, out str);
         }
 
         /// <summary>
@@ -402,7 +431,7 @@ namespace Garnet.server
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
-            return state.CheckNumber(stackIndex);
+            return NativeMethods.CheckNumber(state, stackIndex);
         }
 
         /// <summary>
@@ -413,7 +442,19 @@ namespace Garnet.server
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
-            return NativeMethods.ToBoolean(state.Handle, stackIndex);
+            return NativeMethods.ToBoolean(state, stackIndex);
+        }
+
+        /// <summary>
+        /// This should be used for all ToIntegers into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly long ToInteger(int stackIndex)
+        {
+            AssertLuaStackIndexInBounds(stackIndex);
+            Debug.Assert(Type(stackIndex) == LuaType.Number, "Shouldn't call this if type isn't known to be a number");
+
+            return NativeMethods.ToInteger(state, stackIndex);
         }
 
         /// <summary>
@@ -424,14 +465,29 @@ namespace Garnet.server
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
-            return state.RawLen(stackIndex);
+            return NativeMethods.RawLen(state, stackIndex);
+        }
+
+        /// <summary>
+        /// This should be used for all PushCFunctions into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal unsafe void PushCFunction(delegate* unmanaged[Cdecl]<nint, int> function)
+        {
+            NativeMethods.PushCFunction(state, (nint)function);
+            UpdateStackTop(1);
         }
 
         /// <summary>
         /// Call to register a function in the Lua global namespace.
         /// </summary>
-        internal readonly void Register(string name, LuaFunction func)
-        => state.Register(name, func);
+        internal unsafe void Register(ReadOnlySpan<byte> nullTerminatedName, delegate* unmanaged[Cdecl]<nint, int> function)
+        {
+            PushCFunction(function);
+
+            NativeMethods.SetGlobal(state, nullTerminatedName);
+            UpdateStackTop(-1);
+        }
 
         /// <summary>
         /// This should be used to push all known constants strings into Lua.
@@ -439,7 +495,7 @@ namespace Garnet.server
         /// This avoids extra copying of data between .NET and Lua.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void PushConstantString(int constStringRegistryIndex, [CallerFilePath] string file = null, [CallerMemberName] string method = null, [CallerLineNumber] int line = -1)
+        internal void PushConstantString(int constStringRegistryIndex)
         => RawGetInteger(LuaType.String, (int)LuaRegistry.Index, constStringRegistryIndex);
 
         // Rarely used
@@ -449,7 +505,7 @@ namespace Garnet.server
         /// </summary>
         internal void ClearStack()
         {
-            state.SetTop(0);
+            NativeMethods.SetTop(state, 0);
             StackTop = 0;
 
             AssertLuaStackExpected();
@@ -463,6 +519,7 @@ namespace Garnet.server
             ClearStack();
 
             var b = Encoding.UTF8.GetBytes(msg);
+            PushBuffer(b);
             return RaiseErrorFromStack();
         }
 
@@ -473,7 +530,7 @@ namespace Garnet.server
         {
             Debug.Assert(StackTop != 0, "Expected error message on the stack");
 
-            return state.Error();
+            return NativeMethods.Error(state);
         }
 
         /// <summary>
@@ -505,7 +562,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.NoInlining)]
         private readonly void AssertLuaStackExpected()
         {
-            Debug.Assert(NativeMethods.GetTop(state.Handle) == StackTop, "Lua stack not where expected");
+            Debug.Assert(NativeMethods.GetTop(state) == StackTop, "Lua stack not where expected");
         }
 
         /// <summary>
@@ -516,6 +573,121 @@ namespace Garnet.server
         private readonly void AssertLuaStackNotFull(int probe = 1)
         {
             Debug.Assert((StackTop + probe) <= curStackSize, "Lua stack should have been grown before pushing");
+        }
+    }
+
+    /// <summary>
+    /// Holds static functions for Lua-to-.NET interop.
+    /// 
+    /// We annotate these as "unmanaged callers only" as a micro-optimization.
+    /// See: https://devblogs.microsoft.com/dotnet/improvements-in-native-code-interop-in-net-5-0/#unmanagedcallersonly
+    /// </summary>
+    internal static class LuaStateWrapperTrampolines
+    {
+        /// <summary>
+        /// Controls the singular logger that will be used for panic invocations.
+        /// 
+        /// Because Lua is panic'ing, we're about to crash.  This being process wide is hacky,
+        /// but we're in hacky situtation.
+        /// </summary>
+        internal static ILogger PanicLogger { get; set; }
+
+        /// <summary>
+        /// Called when Lua encounters an unrecoverable error.
+        /// 
+        /// When this returns, Lua is going to terminate the process, so plan accordingly.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int LuaAtPanic(nint luaState)
+        {
+            // See: https://www.lua.org/manual/5.4/manual.html#4.4
+
+            string errorMsg;
+
+            var stackTop = NativeMethods.GetTop(luaState);
+            if (stackTop >= 1)
+            {
+                if (NativeMethods.CheckBuffer(luaState, stackTop, out var msgBuf))
+                {
+                    errorMsg = Encoding.UTF8.GetString(msgBuf);
+                }
+                else
+                {
+                    var type = NativeMethods.Type(luaState, stackTop);
+
+                    errorMsg = $"Unexpected error type: {type}";
+                }
+            }
+            else
+            {
+                errorMsg = "No error on stack";
+            }
+
+            PanicLogger?.LogCritical("Lua Panic '{errorMsg}', stack size {stackTop}", errorMsg, stackTop);
+
+            return 0;
+        }
+
+        /// <summary>
+        /// Provides data for Lua allocations.
+        /// 
+        /// All returns data must be PINNED or unmanaged, Lua does not allow it to move.
+        /// 
+        /// If allocation cannot be performed, null is returned.
+        /// </summary>
+        /// <param name="udPtr">Pointer to user data provided during <see cref="Lua.SetAllocFunction"/></param>
+        /// <param name="ptr">Either null (if new alloc) or pointer to existing allocation being resized or freed.</param>
+        /// <param name="osize">If <paramref name="ptr"/> is not null, the <paramref name="nsize"/> value passed when allocation was obtained or resized.</param>
+        /// <param name="nsize">The desired size of the allocation, in bytes.</param>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static unsafe nint LuaAllocateBytes(nint udPtr, nint ptr, nuint osize, nuint nsize)
+        {
+            // See: https://www.lua.org/manual/5.4/manual.html#lua_Alloc
+
+            var handle = (GCHandle)udPtr;
+            Debug.Assert(handle.IsAllocated, "GCHandle should always be valid");
+
+            var customAllocator = (ILuaAllocator)handle.Target;
+
+            if (ptr != IntPtr.Zero)
+            {
+                // Now osize is the size used to (re)allocate ptr last
+
+                ref var dataRef = ref Unsafe.AsRef<byte>((void*)ptr);
+
+                if (nsize == 0)
+                {
+                    customAllocator.Free(ref dataRef, (int)osize);
+
+                    return 0;
+                }
+                else
+                {
+                    ref var ret = ref customAllocator.ResizeAllocation(ref dataRef, (int)osize, (int)nsize, out var failed);
+                    if (failed)
+                    {
+                        return 0;
+                    }
+
+                    var retPtr = (nint)Unsafe.AsPointer(ref ret);
+
+                    return retPtr;
+                }
+            }
+            else
+            {
+                // Now osize is the size of the object being allocated, but nsize is the desired size
+
+                ref var ret = ref customAllocator.AllocateNew((int)nsize, out var failed);
+                if (failed)
+                {
+                    return 0;
+                }
+
+                var retPtr = (nint)Unsafe.AsPointer(ref ret);
+
+                return retPtr;
+            }
         }
     }
 }

@@ -22,9 +22,13 @@ namespace BDN.benchmark.Lua
         /// Lua parameters provider
         /// </summary>
         public IEnumerable<LuaParams> LuaParamsProvider()
-        {
-            yield return new();
-        }
+        => [
+            new(LuaMemoryManagementMode.Native, false),
+            new(LuaMemoryManagementMode.Tracked, false),
+            new(LuaMemoryManagementMode.Tracked, true),
+            new(LuaMemoryManagementMode.Managed, false),
+            new(LuaMemoryManagementMode.Managed, true),
+        ];
 
         LuaRunner r1, r2, r3, r4;
         readonly string[] keys = ["key1"];
@@ -32,13 +36,15 @@ namespace BDN.benchmark.Lua
         [GlobalSetup]
         public void GlobalSetup()
         {
-            r1 = new LuaRunner("return");
+            var options = Params.CreateOptions();
+
+            r1 = new LuaRunner(options, "return");
             r1.CompileForRunner();
-            r2 = new LuaRunner("return 1 + 1");
+            r2 = new LuaRunner(options, "return 1 + 1");
             r2.CompileForRunner();
-            r3 = new LuaRunner("return KEYS[1]");
+            r3 = new LuaRunner(options, "return KEYS[1]");
             r3.CompileForRunner();
-            r4 = new LuaRunner("return redis.call(KEYS[1])");
+            r4 = new LuaRunner(options, "return redis.call(KEYS[1])");
             r4.CompileForRunner();
         }
 
