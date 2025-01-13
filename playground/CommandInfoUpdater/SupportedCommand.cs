@@ -47,6 +47,7 @@ namespace CommandInfoUpdater
                 new("CLIENT|GETNAME", RespCommand.CLIENT_GETNAME),
                 new("CLIENT|SETNAME", RespCommand.CLIENT_SETNAME),
                 new("CLIENT|SETINFO", RespCommand.CLIENT_SETINFO),
+                new("CLIENT|UNBLOCK", RespCommand.CLIENT_UNBLOCK),
             ]),
             new("CLUSTER", RespCommand.CLUSTER,
             [
