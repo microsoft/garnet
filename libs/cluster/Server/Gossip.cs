@@ -210,23 +210,28 @@ namespace Garnet.cluster
         public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
         {
             var conf = CurrentConfig;
-            List<string> nodeIds = null;
+            List<(string, string, int)> nodeEntries = null;
             if (cmd == RespCommand.PUBLISH)
-                conf.GetAllNodeIds(out nodeIds);
+                conf.GetAllNodeIds(out nodeEntries);
             else
-                conf.GetNodeIdsForShard(out nodeIds);
-            foreach (var nodeId in nodeIds)
+                conf.GetNodeIdsForShard(out nodeEntries);
+            foreach (var entry in nodeEntries)
             {
                 try
                 {
-                    _ = clusterConnectionStore.GetConnection(nodeId, out var gsn);
+                    var nodeId = entry.Item1;
+                    var address = entry.Item2;
+                    var port = entry.Item3;
+                    GarnetServerNode gsn = null;
+                    while (!clusterConnectionStore.GetOrAdd(clusterProvider, address, port, tlsOptions, nodeId, out gsn, logger: logger))
+                        Thread.Yield();
 
                     if (gsn == null)
                         continue;
 
                     // Initialize GarnetServerNode
                     // Thread-Safe initialization executes only once
-                    gsn.Initialize();
+                    gsn.InitializeAsync().GetAwaiter().GetResult();
 
                     // Publish to remote nodes
                     gsn.TryClusterPublish(cmd, ref channel, ref message);
@@ -295,20 +300,25 @@ namespace Garnet.cluster
                     // Establish new connection only if it is not in banlist and not in dictionary
                     if (!workerBanList.ContainsKey(nodeId) && !clusterConnectionStore.GetConnection(nodeId, out var _))
                     {
-                        var gsn = new GarnetServerNode(clusterProvider, address, port, tlsOptions?.TlsClientOptions, logger: logger)
-                        {
-                            NodeId = nodeId
-                        };
                         try
                         {
+                            GarnetServerNode gsn = null;
+                            while (!clusterConnectionStore.GetOrAdd(clusterProvider, address, port, tlsOptions, nodeId, out gsn, logger: logger))
+                                await Task.Yield();
+
+                            if (gsn == null)
+                            {
+                                logger?.LogWarning("InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
+                                _ = clusterConnectionStore.TryRemove(nodeId);
+                                continue;
+                            }
+
                             await gsn.InitializeAsync();
-                            if (!clusterConnectionStore.AddConnection(gsn))
-                                gsn.Dispose();
                         }
                         catch (Exception ex)
                         {
-                            logger?.LogWarning("Connection to remote node [{nodeId} {address}:{port}] failed with message:{msg}", nodeId, address, port, ex.Message);
-                            gsn?.Dispose();
+                            logger?.LogWarning(ex, "InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
+                            _ = clusterConnectionStore.TryRemove(nodeId);
                         }
                     }
                 }
