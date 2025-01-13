@@ -87,7 +87,7 @@ namespace Garnet.cluster
             this.gc = new GarnetClient(
                 address, port, tlsOptions,
                 sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
-                maxOutstandingTasks: opts.DisablePubSub ? defaultMaxOutstandingTask : Math.Max(defaultMaxOutstandingTask, opts.MaxPubSubTasks),
+                maxOutstandingTasks: defaultMaxOutstandingTask,
                 timeoutMilliseconds: opts.ClusterTimeout <= 0 ? 0 : TimeSpan.FromSeconds(opts.ClusterTimeout).Milliseconds,
                 authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
