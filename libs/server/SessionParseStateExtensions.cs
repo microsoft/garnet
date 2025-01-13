@@ -237,7 +237,7 @@ namespace Garnet.server
 
             return true;
         }
- 
+
         /// <summary>
         /// Given the parseState and an index, potentially get the expiration option at that index.
         /// </summary>
