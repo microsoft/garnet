@@ -35,10 +35,10 @@ namespace Garnet.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             extTestDir = Path.Combine(TestUtils.MethodTestDir, "test");
-            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo, externalOnly: false));
-            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespSubCommandsInfo(out respSubCommandsInfo, externalOnly: false));
-            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespCommandsDocs(out respCommandsDocs, externalOnly: false));
-            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespSubCommandsDocs(out respSubCommandsDocs, externalOnly: false));
+            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo, externalOnly: true));
+            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespSubCommandsInfo(out respSubCommandsInfo, externalOnly: true));
+            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespCommandsDocs(out respCommandsDocs, externalOnly: true));
+            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespSubCommandsDocs(out respSubCommandsDocs, externalOnly: true));
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsDocs(out respCustomCommandsDocs));
             ClassicAssert.IsNotNull(respCommandsInfo);
