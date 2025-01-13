@@ -4579,7 +4579,7 @@ namespace Garnet.test
             using var blockingClient = TestUtils.CreateRequest();
             var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"));
             var clientId = clientIdResponse.Substring(1, clientIdResponse.IndexOf("\r\n") - 1);
-            
+
             string blockingResult = null;
             var blockingTask = Task.Run(() => {
                 var response = blockingClient.SendCommand($"BLMPOP 10 1 {key} LEFT COUNT 30");
