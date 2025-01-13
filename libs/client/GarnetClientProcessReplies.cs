@@ -236,9 +236,6 @@ namespace Garnet.client
                 {
                     case TaskType.None:
                         return readHead;
-                    case TaskType.NoResponse:
-                        ConsumeTcsOffset(shortTaskId);
-                        continue;
                     case TaskType.StringCallback:
                         if (!ProcessReplyAsString(ref ptr, end, out var resultString, out var error))
                             return readHead;

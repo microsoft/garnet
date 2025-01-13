@@ -22,7 +22,6 @@ namespace Garnet.client
         MemoryByteArrayAsync,
         LongAsync,
         LongCallback,
-        NoResponse,
     }
 
     /// <summary>
@@ -107,13 +106,6 @@ namespace Garnet.client
             taskType = source.taskType;
             //NOTE: prevTaskId should be set last
             nextTaskId = source.nextTaskId;
-        }
-
-        public void LoadFrom(TaskType taskType, int nextTaskId)
-        {
-            this.taskType = taskType;
-            //NOTE: prevTaskId should be set last
-            this.nextTaskId = nextTaskId;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
