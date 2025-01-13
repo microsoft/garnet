@@ -79,7 +79,7 @@ namespace Garnet.cluster
                     {
                         csvi.keyNumOffset = -1;
                         clusterProvider.ExtractKeySpecs(commandInfo, command, ref parseState, ref csvi);
-                        if (NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref this.dcurr, ref this.dend))
+                        if (NetworkMultiKeySlotVerifyNoResponse(ref parseState, ref csvi, ref this.dcurr, ref this.dend))
                             return;
                     }
 
