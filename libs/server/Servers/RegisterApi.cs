@@ -91,6 +91,6 @@ namespace Garnet.server
         /// <param name="errorMessage"></param>
         /// <returns></returns>
         public bool NewModule(ModuleBase module, string[] moduleArgs, out ReadOnlySpan<byte> errorMessage, ILogger logger = null)
-            => ModuleRegistrar.Instance.RegisterModule(provider.StoreWrapper.customCommandManager, module, moduleArgs, logger, out errorMessage);
+            => provider.StoreWrapper.customCommandManager.RegisterModule(module, moduleArgs, logger, out errorMessage);
     }
 }
