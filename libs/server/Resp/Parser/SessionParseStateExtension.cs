@@ -23,7 +23,7 @@ namespace Garnet.server
 
             foreach (var spec in keySpecs)
             {
-                if(!ExtractKeysFromSpec(ref state, keys, spec))
+                if (!ExtractKeysFromSpec(ref state, keys, spec))
                 {
                     return false;
                 }
