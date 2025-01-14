@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736894824252,
+  "lastUpdate": 1736894827619,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -8861,6 +8861,54 @@ window.BENCHMARK_DATA = {
             "value": 284.2391109466553,
             "unit": "ns",
             "range": "± 0.9994438215935887"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "42720645+hamdaankhalid@users.noreply.github.com",
+            "name": "Hamdaan Khalid",
+            "username": "hamdaankhalid"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b5997ae88f7782a301144c95a2144ef04b229953",
+          "message": "ETag Follow Up: Address Open Comments (#912)\n\n* ETag Follow Up: Address Open Comments\r\n\r\n* fmt\r\n\r\n* PR feedback:\r\n\r\n* definitely an issue with pattern matching precedence\r\n\r\n---------\r\n\r\nCo-authored-by: Hamdaan Khalid <hkhalid@microsoft.com>\r\nCo-authored-by: Tal Zaccai <talzacc@microsoft.com>",
+          "timestamp": "2025-01-14T15:42:10-07:00",
+          "tree_id": "41bd3dd1d5c72789b6fce8dd130be30f5a5b584e",
+          "url": "https://github.com/microsoft/garnet/commit/b5997ae88f7782a301144c95a2144ef04b229953"
+        },
+        "date": 1736894813605,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "value": 138.6244407066932,
+            "unit": "ns",
+            "range": "± 1.6003754248078879"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "value": 206.0977734052218,
+            "unit": "ns",
+            "range": "± 0.5389610130180728"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "value": 315.5099528176444,
+            "unit": "ns",
+            "range": "± 1.3900394279186539"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "value": 294.09696261088055,
+            "unit": "ns",
+            "range": "± 1.1065356592618865"
           }
         ]
       }
