@@ -30,11 +30,6 @@ namespace Garnet.cluster
         ClusterConfig lastConfig = null;
 
         /// <summary>
-        /// Gossip with meet command lock
-        /// </summary>
-        SingleWriterMultiReaderLock meetLock;
-
-        /// <summary>
         /// Outstanding gossip task if any
         /// </summary>
         Task gossipTask = null;
@@ -202,17 +197,9 @@ namespace Garnet.cluster
         /// <returns></returns>
         public MemoryResult<byte> TryMeet(byte[] configByteArray)
         {
-            try
-            {
-                _ = meetLock.TryWriteLock();
-                UpdateGossipSend();
-                var resp = gc.GossipWithMeet(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token).GetAwaiter().GetResult();
-                return resp;
-            }
-            finally
-            {
-                meetLock.WriteUnlock();
-            }
+            UpdateGossipSend();
+            var resp = gc.GossipWithMeet(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token).GetAwaiter().GetResult();
+            return resp;
         }
 
         /// <summary>
