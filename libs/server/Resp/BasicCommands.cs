@@ -11,16 +11,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    internal enum ExpirationOption : byte
-    {
-        None,
-        EX,
-        PX,
-        EXAT,
-        PXAT,
-        KEEPTTL
-    }
-
     /// <summary>
     /// Server session for RESP protocol - basic commands are in this file
     /// </summary>
@@ -449,19 +439,6 @@ namespace Garnet.server
             return NetworkSETEXNX(ref storageApi);
         }
 
-        enum EtagOption : byte
-        {
-            None,
-            WithETag,
-        }
-
-        enum ExistOptions : byte
-        {
-            None,
-            NX,
-            XX
-        }
-
         /// <summary>
         /// SET EX NX [WITHETAG]
         /// </summary>
@@ -495,13 +472,15 @@ namespace Garnet.server
                 if (parseState.TryGetExpirationOptionWithToken(ref nextOpt, out ExpirationOption parsedOption))
                 {
                     // Make sure there aren't multiple expiration options in the options sent by user
-                    if (expOption != ExpirationOption.None || parsedOption == ExpirationOption.EXAT || parsedOption == ExpirationOption.PXAT)
+                    // and that whatever parsedOption we have recieved is one of the acceptable ones only
+                    if (expOption != ExpirationOption.None || (parsedOption is not ExpirationOption.EX or ExpirationOption.PX or ExpirationOption.KEEPTTL))
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
                         break;
                     }
 
                     expOption = parsedOption;
+                    // based on above check if it is not KEEPTTL, it has to be either EX or PX
                     if (expOption != ExpirationOption.KEEPTTL)
                     {
                         // EX and PX optionare followed by an expiry argument; account for the expiry argument by moving past the tokenIdx

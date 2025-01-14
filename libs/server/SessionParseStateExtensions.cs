@@ -244,13 +244,20 @@ namespace Garnet.server
         /// <param name="parseState">The parse state</param>
         /// <param name="idx">The argument index</param>
         /// <param name="value">Parsed expiration option value</param>
-        /// <returns>if the argument at that index is a valid expiration option set it to value and return true, else returns false</returns>
+        /// <returns>If the argument at that index is a valid expiration option return true, else return false</returns>
         internal static bool TryGetExpirationOption(this SessionParseState parseState, int idx, out ExpirationOption value)
         {
             var sbArg = parseState.GetArgSliceByRef(idx).Span;
             return parseState.TryGetExpirationOptionWithToken(ref sbArg, out value);
         }
 
+        /// <summary>
+        /// Given the parse state and a token, potentially get the expiration option represented by the token.
+        /// </summary>
+        /// <param name="parseState">The parse state (used only to provide the dot notation for this method)</param>
+        /// <param name="token">The token to parse</param>
+        /// <param name="value">Parsed expiration option value</param>
+        /// <returns>If the token is a valid expiration option return true, else false</returns>
         internal static bool TryGetExpirationOptionWithToken(this SessionParseState parseState, ref Span<byte> token, out ExpirationOption value)
         {
             value = default;
