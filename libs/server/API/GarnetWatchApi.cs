@@ -49,6 +49,14 @@ namespace Garnet.server
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.GET(key, out value);
         }
+
+        /// <inheritdoc />
+        public GarnetStatus LCS(ArgSlice key1, ArgSlice key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
+        {
+            garnetApi.WATCH(key1, StoreType.Object);
+            garnetApi.WATCH(key2, StoreType.Object);
+            return garnetApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
+        }
         #endregion
 
         #region GETRANGE

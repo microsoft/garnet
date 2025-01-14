@@ -13,6 +13,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
+using GarnetJSON;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -138,6 +139,86 @@ namespace Garnet.test
             }
 
             return true;
+        }
+    }
+
+    public class CustomIncrProc : CustomProcedure
+    {
+        public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        {
+            var offset = 0;
+            var keyToIncrement = GetNextArg(ref procInput, ref offset);
+
+            // should update etag invisibly
+            garnetApi.Increment(keyToIncrement, out long _, 1);
+
+            var keyToReturn = GetNextArg(ref procInput, ref offset);
+            garnetApi.GET(keyToReturn, out ArgSlice outval);
+            WriteBulkString(ref output, outval.Span);
+            return true;
+        }
+    }
+
+    public class RandomSubstituteOrExpandValForKeyTxn : CustomTransactionProcedure
+    {
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
+        {
+            int offset = 0;
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, false);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, false);
+            return true;
+        }
+
+        public override unsafe void Main<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        {
+            Random rnd = new Random();
+
+            int offset = 0;
+            var key = GetNextArg(ref procInput, ref offset);
+
+            // key will have an etag associated with it already but the transaction should not be able to see it.
+            // if the transaction needs to see it, then it can send GET with cmd as GETWITHETAG
+            garnetApi.GET(key, out ArgSlice outval);
+
+            List<byte> valueToMessWith = outval.ToArray().ToList();
+
+            // random decision of either substitute, expand, or reduce value
+            char randChar = (char)('a' + rnd.Next(0, 26));
+            int decision = rnd.Next(0, 100);
+            if (decision < 33)
+            {
+                // substitute
+                int idx = rnd.Next(0, valueToMessWith.Count);
+                valueToMessWith[idx] = (byte)randChar;
+            }
+            else if (decision < 66)
+            {
+                valueToMessWith.Add((byte)randChar);
+            }
+            else
+            {
+                valueToMessWith.RemoveAt(valueToMessWith.Count - 1);
+            }
+
+            RawStringInput input = new RawStringInput(RespCommand.SET);
+            input.header.cmd = RespCommand.SET;
+            // if we send a SET we must explictly ask it to retain etag, and use conditional set
+            input.header.SetWithEtagFlag();
+
+            fixed (byte* valuePtr = valueToMessWith.ToArray())
+            {
+                ArgSlice valForKey1 = new ArgSlice(valuePtr, valueToMessWith.Count);
+                input.parseState.InitializeWithArgument(valForKey1);
+                // since we are setting with retain to etag, this change should be reflected in an etag update
+                SpanByte sameKeyToUse = key.SpanByte;
+                garnetApi.SET_Conditional(ref sameKeyToUse, ref input);
+            }
+
+
+            var keyToIncrment = GetNextArg(ref procInput, ref offset);
+
+            // for a non SET command the etag should be invisible and be updated automatically
+            garnetApi.Increment(keyToIncrment, out long _, 1);
         }
     }
 
@@ -590,6 +671,45 @@ namespace Garnet.test
             ex = Assert.Throws<RedisServerException>(() => db.ListLeftPush(mainkey, value1));
             ClassicAssert.IsNotNull(ex);
             ClassicAssert.AreEqual(expectedError, ex.Message);
+        }
+
+        [Test]
+        public void CustomObjectCommandTest4()
+        {
+            // Register sample custom command on object 1
+            var factory = new MyDictFactory();
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
+
+            // Register sample custom command on object 2
+            var jsonFactory = new JsonObjectFactory();
+            server.Register.NewCommand("JSON.SET", CommandType.ReadModifyWrite, jsonFactory, new JsonSET());
+            server.Register.NewCommand("JSON.GET", CommandType.Read, jsonFactory, new JsonGET());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Test custom commands of object 1 
+            var mainkey = "key";
+
+            var key1 = "mykey1";
+            var value1 = "foovalue1";
+            db.Execute("MYDICTSET", mainkey, key1, value1);
+
+            var retValue = db.Execute("MYDICTGET", mainkey, key1);
+            ClassicAssert.AreEqual(value1, (string)retValue);
+
+            var key2 = "mykey2";
+            var value2 = "foovalue2";
+            db.Execute("MYDICTSET", mainkey, key2, value2);
+
+            retValue = db.Execute("MYDICTGET", mainkey, key2);
+            ClassicAssert.AreEqual(value2, (string)retValue);
+
+            // Test custom commands of object 2
+            db.Execute("JSON.SET", "k1", "$", "{\"f1\": {\"a\":1}, \"f2\":{\"a\":2}}");
+            var result = db.Execute("JSON.GET", "k1");
+            ClassicAssert.AreEqual("[{\"f1\":{\"a\":1},\"f2\":{\"a\":2}}]", result.ToString());
         }
 
         [Test]
@@ -1277,6 +1397,85 @@ namespace Garnet.test
                 // Include non-existent and string keys as well
                 var retValue = db.Execute($"SUM{i + 1}", "key1", "key2", "key3", "key4");
                 ClassicAssert.AreEqual("65", retValue.ToString());
+            }
+        }
+
+        [Test]
+        public void CustomTxnEtagInteractionTest()
+        {
+            server.Register.NewTransactionProc("RANDOPS", () => new RandomSubstituteOrExpandValForKeyTxn());
+
+            var key1 = "key1";
+            var value1 = "thisisstarting";
+
+            var key2 = "key2";
+            var value2 = "17";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            try
+            {
+                db.Execute("SET", key1, value1, "WITHETAG");
+                db.Execute("SET", key2, value2, "WITHETAG");
+
+                RedisResult result = db.Execute("RANDOPS", key1, key2);
+
+                ClassicAssert.AreEqual("OK", result.ToString());
+
+                // check GETWITHETAG shows updated etag and expected values for both
+                RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", key1);
+                ClassicAssert.AreEqual("2", res[0].ToString());
+                ClassicAssert.IsTrue(res[1].ToString().All(c => c - 'a' >= 0 && c - 'a' < 26));
+
+                res = (RedisResult[])db.Execute("GETWITHETAG", key2);
+                ClassicAssert.AreEqual("2", res[0].ToString());
+                ClassicAssert.AreEqual("18", res[1].ToString());
+            }
+            catch (RedisServerException rse)
+            {
+                ClassicAssert.Fail(rse.Message);
+            }
+        }
+
+        [Test]
+        public void CustomProcEtagInteractionTest()
+        {
+            server.Register.NewProcedure("INCRGET", () => new CustomIncrProc());
+
+            var key1 = "key1";
+            var value1 = "thisisstarting";
+
+            var key2 = "key2";
+            var value2 = "256";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            try
+            {
+                db.Execute("SET", key1, value1, "WITHETAG");
+                db.Execute("SET", key2, value2, "WITHETAG");
+
+                // incr key2, and just get key1
+                RedisResult result = db.Execute("INCRGET", key2, key1);
+
+                ClassicAssert.AreEqual(value1, result.ToString());
+
+                // check GETWITHETAG shows updated etag and expected values for both
+                RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", key1);
+                // etag not updated for this
+                ClassicAssert.AreEqual("1", res[0].ToString());
+                ClassicAssert.AreEqual(value1, res[1].ToString());
+
+                res = (RedisResult[])db.Execute("GETWITHETAG", key2);
+                // etag updated for this
+                ClassicAssert.AreEqual("2", res[0].ToString());
+                ClassicAssert.AreEqual("257", res[1].ToString());
+            }
+            catch (RedisServerException rse)
+            {
+                ClassicAssert.Fail(rse.Message);
             }
         }
     }

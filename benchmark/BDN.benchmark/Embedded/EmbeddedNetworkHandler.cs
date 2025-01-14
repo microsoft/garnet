@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
@@ -11,8 +12,11 @@ namespace Embedded.server
 {
     internal class EmbeddedNetworkHandler : NetworkHandler<GarnetServerEmbedded, EmbeddedNetworkSender>
     {
+        readonly bool useTLS;
+
         public EmbeddedNetworkHandler(GarnetServerEmbedded serverHook, EmbeddedNetworkSender networkSender, NetworkBufferSettings networkBufferSettings, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer = null, ILogger logger = null) : base(serverHook, networkSender, networkBufferSettings, networkPool, useTLS, messageConsumer, logger)
         {
+            this.useTLS = useTLS;
         }
 
         public override string RemoteEndpointName => throw new NotImplementedException();
@@ -24,13 +28,16 @@ namespace Embedded.server
 
         public override bool TryClose() => throw new NotImplementedException();
 
-        public unsafe void Send(byte[] buffer, byte* bufferPtr, int length)
+        public async ValueTask Send(Request request)
         {
-            networkReceiveBuffer = buffer;
-            networkReceiveBufferPtr = bufferPtr;
-            OnNetworkReceive(length);
+            networkReceiveBuffer = request.buffer;
+            unsafe { networkReceiveBufferPtr = request.bufferPtr; }
 
-            // We should have consumed the entire buffer
+            if (useTLS)
+                await OnNetworkReceiveWithTLSAsync(request.buffer.Length);
+            else
+                OnNetworkReceiveWithoutTLS(request.buffer.Length);
+
             Debug.Assert(networkBytesRead == 0);
             Debug.Assert(networkReadHead == 0);
         }

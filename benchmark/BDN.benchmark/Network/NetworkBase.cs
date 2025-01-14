@@ -28,15 +28,10 @@ namespace BDN.benchmark.Network
         }
 
         /// <summary>
-        /// Batch size per method invocation
-        /// With a batchSize of 100, we have a convenient conversion of latency to throughput:
-        ///   5 us = 20 Mops/sec
-        ///  10 us = 10 Mops/sec
-        ///  20 us =  5 Mops/sec
-        ///  25 us =  4 Mops/sec
-        /// 100 us =  1 Mops/sec
+        /// Batch size per method invocation - we use a batch size of 1 for network BDNs
+        /// in order to stress the network layer.
         /// </summary>
-        const int batchSize = 100;
+        const int batchSize = 1;
         EmbeddedRespServer server;
         EmbeddedNetworkHandler networkHandler;
 
@@ -69,25 +64,21 @@ namespace BDN.benchmark.Network
             server.Dispose();
         }
 
-        protected void Send(byte[] requestBuffer, byte* requestBufferPointer, int length)
-        {
-            networkHandler.Send(requestBuffer, requestBufferPointer, length);
-        }
+        protected ValueTask Send(Request request) => networkHandler.Send(request);
 
-        protected void SetupOperation(ref byte[] requestBuffer, ref byte* requestBufferPointer, ReadOnlySpan<byte> operation)
+        protected unsafe void SetupOperation(ref Request request, ReadOnlySpan<byte> operation, int batchSize = batchSize)
         {
-            requestBuffer = GC.AllocateArray<byte>(operation.Length * batchSize, pinned: true);
-            requestBufferPointer = (byte*)Unsafe.AsPointer(ref requestBuffer[0]);
+            request.buffer = GC.AllocateArray<byte>(operation.Length * batchSize, pinned: true);
+            request.bufferPtr = (byte*)Unsafe.AsPointer(ref request.buffer[0]);
             for (int i = 0; i < batchSize; i++)
-                operation.CopyTo(new Span<byte>(requestBuffer).Slice(i * operation.Length));
+                operation.CopyTo(new Span<byte>(request.buffer).Slice(i * operation.Length));
         }
 
         protected void SlowConsumeMessage(ReadOnlySpan<byte> message)
         {
-            var buffer = GC.AllocateArray<byte>(message.Length, pinned: true);
-            var bufferPointer = (byte*)Unsafe.AsPointer(ref buffer[0]);
-            message.CopyTo(new Span<byte>(buffer));
-            Send(buffer, bufferPointer, buffer.Length);
+            Request request = default;
+            SetupOperation(ref request, message, 1);
+            Send(request);
         }
     }
 }

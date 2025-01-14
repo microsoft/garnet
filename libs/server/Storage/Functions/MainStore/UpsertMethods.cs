@@ -12,7 +12,11 @@ namespace Garnet.server
     {
         /// <inheritdoc />
         public bool SingleWriter(ref SpanByte key, ref RawStringInput input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-            => SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo, input.arg1);
+        {
+            // Since upsert may be on existing key we need to wipe out the record info property
+            recordInfo.ClearHasETag();
+            return SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo, input.arg1);
+        }
 
         /// <inheritdoc />
         public void PostSingleWriter(ref SpanByte key, ref RawStringInput input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
@@ -25,6 +29,8 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ConcurrentWriter(ref SpanByte key, ref RawStringInput input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
         {
+            // Since upsert may be on existing key we need to wipe out the record info property
+            recordInfo.ClearHasETag();
             if (ConcurrentWriterWorker(ref src, ref dst, ref input, ref upsertInfo, ref recordInfo))
             {
                 if (!upsertInfo.RecordInfo.Modified)
