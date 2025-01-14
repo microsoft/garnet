@@ -473,7 +473,7 @@ namespace Garnet.server
                 {
                     // Make sure there aren't multiple expiration options in the options sent by user
                     // and that whatever parsedOption we have recieved is one of the acceptable ones only
-                    if (expOption != ExpirationOption.None || (parsedOption is not ExpirationOption.EX or ExpirationOption.PX or ExpirationOption.KEEPTTL))
+                    if (expOption != ExpirationOption.None || (parsedOption is not (ExpirationOption.EX or ExpirationOption.PX or ExpirationOption.KEEPTTL)))
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
                         break;
