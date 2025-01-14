@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736558676531,
+  "lastUpdate": 1736891435559,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -49627,6 +49627,36 @@ window.BENCHMARK_DATA = {
             "value": 91.82227029970714,
             "unit": "ns",
             "range": "± 0.5692655010162797"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "talzacc@microsoft.com",
+            "name": "Tal Zaccai",
+            "username": "TalZaccai"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e61bc7cb5c5b7e2bb7ad5d4e62cf2863920d78bc",
+          "message": "Commands Info/Docs Update (#913)\n\n* Some small changes to CommandInfoUpdater tool + updating CommandsInfo/Docs JSON files\r\n\r\n* format\r\n\r\n* test fix\r\n\r\n* fix\r\n\r\n* Added command metadata coverage tests\r\n\r\n* added comment",
+          "timestamp": "2025-01-14T14:48:15-07:00",
+          "tree_id": "b86648205f92253956ed5d0ca9965358a8d7ebce",
+          "url": "https://github.com/microsoft/garnet/commit/e61bc7cb5c5b7e2bb7ad5d4e62cf2863920d78bc"
+        },
+        "date": 1736891432813,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Network.BasicOperations.InlinePing(Params: None)",
+            "value": 94.52119061946868,
+            "unit": "ns",
+            "range": "± 0.5808241983505725"
           }
         ]
       }
