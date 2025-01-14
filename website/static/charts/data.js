@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736891435559,
+  "lastUpdate": 1736891479780,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -2789,6 +2789,54 @@ window.BENCHMARK_DATA = {
             "value": 32169.518393380302,
             "unit": "ns",
             "range": "± 216.83400679178135"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "talzacc@microsoft.com",
+            "name": "Tal Zaccai",
+            "username": "TalZaccai"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e61bc7cb5c5b7e2bb7ad5d4e62cf2863920d78bc",
+          "message": "Commands Info/Docs Update (#913)\n\n* Some small changes to CommandInfoUpdater tool + updating CommandsInfo/Docs JSON files\r\n\r\n* format\r\n\r\n* test fix\r\n\r\n* fix\r\n\r\n* Added command metadata coverage tests\r\n\r\n* added comment",
+          "timestamp": "2025-01-14T14:48:15-07:00",
+          "tree_id": "b86648205f92253956ed5d0ca9965358a8d7ebce",
+          "url": "https://github.com/microsoft/garnet/commit/e61bc7cb5c5b7e2bb7ad5d4e62cf2863920d78bc"
+        },
+        "date": 1736891477205,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.Get(Params: None)",
+            "value": 37687.392598470055,
+            "unit": "ns",
+            "range": "± 47.005456536820596"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.Set(Params: None)",
+            "value": 40607.697517903645,
+            "unit": "ns",
+            "range": "± 286.6519840821914"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.MGet(Params: None)",
+            "value": 32321.96159871419,
+            "unit": "ns",
+            "range": "± 27.7664520402523"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.MSet(Params: None)",
+            "value": 32089.668404134114,
+            "unit": "ns",
+            "range": "± 280.61838527015044"
           }
         ]
       }
