@@ -692,5 +692,30 @@
         "Flags": "RW, Access, Update, VariableFlags"
       }
     ]
+  },
+  {
+    "Command": "WATCH",
+    "Name": "WATCH",
+    "Arity": -2,
+    "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Transaction",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO"
+      }
+    ]
   }
 ]
