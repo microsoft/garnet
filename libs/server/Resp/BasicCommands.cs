@@ -1160,7 +1160,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMAND_GETKEYS));
             }
 
-            var cmdName = parseState.GetString(0).ToUpperInvariant();
+            var cmdName = parseState.GetString(0);
             bool cmdFound = RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
                           storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo);
 
@@ -1199,7 +1199,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMAND_GETKEYSANDFLAGS));
             }
 
-            var cmdName = parseState.GetString(0).ToUpperInvariant();
+            var cmdName = parseState.GetString(0);
             bool cmdFound = RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
                           storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo);
 
