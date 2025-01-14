@@ -34,6 +34,8 @@ namespace Garnet.test
         private HashSet<RespCommand> internalOnlyCommands;
 
         // List of commands that don't require metadata (info / docs)
+        // These are either marker commands (e.g. NONE, INVALID)
+        // or pseudo-commands or subcommands that are only used internally (e.g. SETEXNX, SETEXXX, etc.)
         private readonly HashSet<RespCommand> noMetadataCommands =
         [
             RespCommand.NONE,
