@@ -2,10 +2,13 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Azure;
 using Garnet.common;
 
 namespace Garnet.server
@@ -50,6 +53,9 @@ namespace Garnet.server
         /// </summary>
         [JsonIgnore]
         public string RespFormat => respFormat ??= ToRespFormat();
+
+        [JsonIgnore]
+        public string[] RespFormatFlags => respFormatFlags;
 
         private string respFormat;
         private readonly KeySpecificationFlags flags;
@@ -223,6 +229,16 @@ namespace Garnet.server
         {
             this.Index = index;
         }
+
+        public int GetIndex(ref SessionParseState parseState)
+        {
+            if (Index < 0)
+            {
+                return parseState.Count + Index;
+            }
+
+            return Index;
+        }
     }
 
     /// <summary>
@@ -262,6 +278,32 @@ namespace Garnet.server
         {
             this.Keyword = keyword;
             this.StartFrom = startFrom;
+        }
+
+        public bool TryGetStartFrom(ref SessionParseState parseState, out int index)
+        {
+            var keyword = Encoding.UTF8.GetBytes(Keyword);
+
+            // Handle negative StartFrom by converting to positive index from end
+            int searchStartIndex = StartFrom < 0 ? parseState.Count + StartFrom : StartFrom;
+
+            // Determine the search direction
+            int increment = StartFrom < 0 ? -1 : 1;
+            int start = StartFrom < 0 ? searchStartIndex : searchStartIndex;
+            int end = StartFrom < 0 ? -1 : parseState.Count;
+
+            // Search for the keyword
+            for (int i = start; i != end; i += increment)
+            {
+                if (parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(keyword))
+                {
+                    index = i + 1;
+                    return true;
+                }
+            }
+
+            index = default;
+            return false;
         }
     }
 
@@ -339,6 +381,35 @@ namespace Garnet.server
             this.KeyStep = keyStep;
             this.Limit = limit;
         }
+
+        public void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys)
+        {
+            int lastKey;
+            if (LastKey < 0)
+            {
+                // For negative LastKey, calculate limit based on the factor
+                int availableArgs = state.Count - startIndex;
+                int limitFactor = Limit <= 1 ? availableArgs : availableArgs / Limit;
+
+                // Calculate available slots based on keyStep
+                int slotsAvailable = (limitFactor + KeyStep - 1) / KeyStep;
+                lastKey = startIndex + (slotsAvailable * KeyStep) - KeyStep;
+                lastKey = Math.Min(lastKey, state.Count - 1);
+            }
+            else
+            {
+                lastKey = Math.Min(startIndex + LastKey, state.Count - 1);
+            }
+
+            for (int i = startIndex; i <= lastKey; i += KeyStep)
+            {
+                var argSlice = state.GetArgSliceByRef(i);
+                if (argSlice.length > 0)
+                {
+                    keys.Add(argSlice);
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -384,6 +455,45 @@ namespace Garnet.server
             this.KeyNumIdx = keyNumIdx;
             this.FirstKey = firstKey;
             this.KeyStep = keyStep;
+        }
+
+        public void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys)
+        {
+            int numKeys = 0;
+            int firstKey = startIndex + FirstKey;
+
+            // Handle negative FirstKey
+            if (FirstKey < 0)
+                firstKey = state.Count + FirstKey;
+
+            // Get number of keys from the KeyNumIdx
+            if (KeyNumIdx >= 0)
+            {
+                var keyNumPos = startIndex + KeyNumIdx;
+                if (keyNumPos < state.Count && state.TryGetInt(keyNumPos, out var count))
+                {
+                    numKeys = count;
+                }
+            }
+            else
+            {
+                // Negative KeyNumIdx means count from the end
+                var keyNumPos = state.Count + KeyNumIdx;
+                if (keyNumPos >= 0 && state.TryGetInt(keyNumPos, out var count))
+                {
+                    numKeys = count;
+                }
+            }
+
+            // Extract keys based on numKeys, firstKey, and keyStep
+            if (numKeys > 0 && firstKey >= 0)
+            {
+                for (int i = 0; i < numKeys && firstKey + i * KeyStep < state.Count; i++)
+                {
+                    var keyIndex = firstKey + i * KeyStep;
+                    keys.Add(state.GetArgSliceByRef(keyIndex));
+                }
+            }
         }
     }
 

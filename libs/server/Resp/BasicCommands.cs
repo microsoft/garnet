@@ -1174,18 +1174,15 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
             }
 
-            var keyList = new List<byte[]>();
-            foreach (var spec in cmdInfo.KeySpecifications)
-            {
-                ExtractKeys(spec, keyList);
-            }
+            parseState.TryExtractKeysFromSpecs(cmdInfo.KeySpecifications, out var keys);
 
-            while (!RespWriteUtils.WriteArrayLength(keyList.Count, ref dcurr, dend))
+
+            while (!RespWriteUtils.WriteArrayLength(keys.Count, ref dcurr, dend))
                 SendAndReset();
 
-            foreach (var key in keyList)
+            foreach (var key in keys)
             {
-                while (!RespWriteUtils.WriteBulkString(key, ref dcurr, dend))
+                while (!RespWriteUtils.WriteBulkString(key.Span, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -1216,35 +1213,23 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
             }
 
-            var keyList = new List<byte[]>();
-            var flagsList = new List<string[]>();
+            parseState.TryExtractKeyandFlagsFromSpecs(cmdInfo.KeySpecifications, out var keys, out var flags);
 
-            foreach (var spec in cmdInfo.KeySpecifications)
-            {
-                var keyCount = keyList.Count;
-                ExtractKeys(spec, keyList);
-                var flags = EnumUtils.GetEnumDescriptions(spec.Flags);
-                for (int i = keyCount; i < keyList.Count; i++)
-                {
-                    flagsList.Add(flags);
-                }
-            }
-
-            while (!RespWriteUtils.WriteArrayLength(keyList.Count, ref dcurr, dend))
+            while (!RespWriteUtils.WriteArrayLength(keys.Count, ref dcurr, dend))
                 SendAndReset();
 
-            for (int i = 0; i < keyList.Count; i++)
+            for (int i = 0; i < keys.Count; i++)
             {
                 while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.WriteBulkString(keyList[i], ref dcurr, dend))
+                while (!RespWriteUtils.WriteBulkString(keys[i].Span, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.WriteArrayLength(flagsList[i].Length, ref dcurr, dend))
+                while (!RespWriteUtils.WriteArrayLength(flags[i].Length, ref dcurr, dend))
                     SendAndReset();
 
-                foreach (var flag in flagsList[i])
+                foreach (var flag in flags[i])
                 {
                     while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(flag), ref dcurr, dend))
                         SendAndReset();
@@ -1252,126 +1237,6 @@ namespace Garnet.server
             }
 
             return true;
-        }
-
-        private void ExtractKeys(RespCommandKeySpecification spec, List<byte[]> keyList)
-        {
-            int startIndex = 0;
-
-            if (spec.BeginSearch is BeginSearchIndex bsIndex)
-            {
-                startIndex = bsIndex.Index;
-                if (startIndex < 0)
-                    startIndex = parseState.Count + startIndex;
-            }
-            else if (spec.BeginSearch is BeginSearchKeyword bsKeyword)
-            {
-                // Handle negative StartFrom by converting to positive index from end
-                int searchStartIndex = bsKeyword.StartFrom;
-                if (searchStartIndex < 0)
-                {
-                    // Convert negative index to positive from end
-                    searchStartIndex = parseState.Count + searchStartIndex;
-
-                    // Search backwards from the calculated start position for the keyword
-                    for (int i = searchStartIndex; i >= 0; i--)
-                    {
-                        if (parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(Encoding.ASCII.GetBytes(bsKeyword.Keyword)))
-                        {
-                            startIndex = i + 1;
-                            break;
-                        }
-                    }
-                }
-                else
-                {
-                    // Search forwards from start position for the keyword
-                    for (int i = searchStartIndex; i < parseState.Count; i++)
-                    {
-                        if (parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(Encoding.ASCII.GetBytes(bsKeyword.Keyword)))
-                        {
-                            startIndex = i + 1;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (startIndex < 0 || startIndex >= parseState.Count)
-                return;
-
-            if (spec.FindKeys is FindKeysRange range)
-            {
-                int lastKey;
-                if (range.LastKey < 0)
-                {
-                    // For negative LastKey, calculate limit based on the factor
-                    int availableArgs = parseState.Count - startIndex;
-                    int limitFactor = range.Limit <= 1 ? availableArgs : availableArgs / range.Limit;
-
-                    // Calculate available slots based on keyStep
-                    int slotsAvailable = (limitFactor + range.KeyStep - 1) / range.KeyStep;
-                    lastKey = startIndex + (slotsAvailable * range.KeyStep) - range.KeyStep;
-                }
-                else
-                {
-                    lastKey = Math.Min(startIndex + range.LastKey, parseState.Count - 1);
-                }
-
-                for (int i = startIndex; i <= lastKey; i += range.KeyStep)
-                {
-                    if (i < parseState.Count)
-                    {
-                        var value = parseState.GetArgSliceByRef(i).ToArray();
-                        if (value.Length != 0)
-                        {
-                            keyList.Add(value);
-                        }
-                    }
-                }
-            }
-            else if (spec.FindKeys is FindKeysKeyNum keyNum)
-            {
-                int numKeys = 0;
-                int firstKey = startIndex + keyNum.FirstKey;
-
-                // Handle negative FirstKey
-                if (keyNum.FirstKey < 0)
-                    firstKey = parseState.Count + keyNum.FirstKey;
-
-                // Get number of keys from the KeyNumIdx
-                if (keyNum.KeyNumIdx >= 0)
-                {
-                    var keyNumPos = startIndex + keyNum.KeyNumIdx;
-                    if (keyNumPos < parseState.Count && parseState.TryGetInt(keyNumPos, out var count))
-                    {
-                        numKeys = count;
-                    }
-                }
-                else
-                {
-                    // Negative KeyNumIdx means count from the end
-                    var keyNumPos = parseState.Count + keyNum.KeyNumIdx;
-                    if (keyNumPos >= 0 && parseState.TryGetInt(keyNumPos, out var count))
-                    {
-                        numKeys = count;
-                    }
-                }
-
-                // Extract keys based on numKeys, firstKey, and keyStep
-                if (numKeys > 0 && firstKey >= 0)
-                {
-                    for (int i = 0; i < numKeys && firstKey + i * keyNum.KeyStep < parseState.Count; i++)
-                    {
-                        var keyIndex = firstKey + i * keyNum.KeyStep;
-                        var value = parseState.GetArgSliceByRef(keyIndex).ToArray();
-                        if (value.Length != 0)
-                        {
-                            keyList.Add(value);
-                        }
-                    }
-                }
-            }
         }
 
         private bool NetworkECHO()
