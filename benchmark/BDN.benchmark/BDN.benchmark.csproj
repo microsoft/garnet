@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
     <ProjectReference Include="..\..\libs\common\Garnet.common.csproj" />
     <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
+    <ProjectReference Include="..\..\NoOpModule\NoOpModule.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -15,15 +16,17 @@ namespace Garnet.test
     {
         GarnetServer server;
         private string testModuleDir;
+        string binPath;
 
         [SetUp]
         public void Setup()
         {
             testModuleDir = Path.Combine(TestUtils.MethodTestDir, "testModules");
+            binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 disablePubSub: true,
-                extensionBinPaths: [testModuleDir],
+                extensionBinPaths: [testModuleDir, binPath],
                 extensionAllowUnsignedAssemblies: true);
             server.Start();
         }
@@ -303,6 +306,41 @@ namespace Garnet.test
             {
                 ClassicAssert.AreEqual("ERR unable to access one or more binary files.", ex.Message);
             }
+        }
+
+        [Test]
+        public void TestNoOpModule()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Test loading no-op module
+            var noOpModulePath = Path.Join(binPath, "NoOpModule.dll");
+            db.Execute($"MODULE", "LOADCS", noOpModulePath);
+
+            // Test raw string command in no-op module
+            var key = $"mykey";
+            var value = $"myval";
+            db.StringSet(key, value);
+
+            var retValue = db.Execute("NoOpModule.NOOPCMD", key);
+            ClassicAssert.AreEqual("OK", (string)retValue);
+
+            // Test object commands in no-op module
+            var objKey = "myobjkey";
+            retValue = db.Execute("NoOpModule.NOOPOBJRMW", objKey);
+            ClassicAssert.AreEqual("OK", (string)retValue);
+
+            retValue = db.Execute("NoOpModule.NOOPOBJREAD", objKey);
+            ClassicAssert.IsNull((string)retValue);
+
+            // Test transaction in no-op module
+            retValue = db.Execute("NoOpModule.NOOPTXN");
+            ClassicAssert.AreEqual("SUCCESS", (string)retValue);
+
+            // Test procedure in no-op module
+            retValue = db.Execute("NoOpModule.NOOPPROC");
+            ClassicAssert.AreEqual("OK", (string)retValue);
         }
     }
 }
