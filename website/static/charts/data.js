@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736891587104,
+  "lastUpdate": 1736891594343,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -7019,6 +7019,90 @@ window.BENCHMARK_DATA = {
             "value": 129847.55044320914,
             "unit": "ns",
             "range": "± 247.74128503846563"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "talzacc@microsoft.com",
+            "name": "Tal Zaccai",
+            "username": "TalZaccai"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e61bc7cb5c5b7e2bb7ad5d4e62cf2863920d78bc",
+          "message": "Commands Info/Docs Update (#913)\n\n* Some small changes to CommandInfoUpdater tool + updating CommandsInfo/Docs JSON files\r\n\r\n* format\r\n\r\n* test fix\r\n\r\n* fix\r\n\r\n* Added command metadata coverage tests\r\n\r\n* added comment",
+          "timestamp": "2025-01-14T14:48:15-07:00",
+          "tree_id": "b86648205f92253956ed5d0ca9965358a8d7ebce",
+          "url": "https://github.com/microsoft/garnet/commit/e61bc7cb5c5b7e2bb7ad5d4e62cf2863920d78bc"
+        },
+        "date": 1736891591831,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
+            "value": 17155.436285836357,
+            "unit": "ns",
+            "range": "± 80.40870789487968"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: DSV)",
+            "value": 16568.382662259617,
+            "unit": "ns",
+            "range": "± 106.77936461751668"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: DSV)",
+            "value": 15153.484217325846,
+            "unit": "ns",
+            "range": "± 54.93701132236411"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: DSV)",
+            "value": 13946.9056833903,
+            "unit": "ns",
+            "range": "± 67.72690342281352"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: DSV)",
+            "value": 122483.66009521484,
+            "unit": "ns",
+            "range": "± 260.61372426292934"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: None)",
+            "value": 21942.465214029948,
+            "unit": "ns",
+            "range": "± 88.94097363963273"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: None)",
+            "value": 20915.385314941406,
+            "unit": "ns",
+            "range": "± 103.5182854092932"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: None)",
+            "value": 16024.893018450055,
+            "unit": "ns",
+            "range": "± 15.021482253470644"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: None)",
+            "value": 16095.641599527995,
+            "unit": "ns",
+            "range": "± 89.84846770114913"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: None)",
+            "value": 133787.66983468193,
+            "unit": "ns",
+            "range": "± 706.9832637582855"
           }
         ]
       }
