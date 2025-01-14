@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736891787099,
+  "lastUpdate": 1736891791651,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -19373,6 +19373,84 @@ window.BENCHMARK_DATA = {
             "value": 95106.14095052083,
             "unit": "ns",
             "range": "± 374.37263998372964"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "talzacc@microsoft.com",
+            "name": "Tal Zaccai",
+            "username": "TalZaccai"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e61bc7cb5c5b7e2bb7ad5d4e62cf2863920d78bc",
+          "message": "Commands Info/Docs Update (#913)\n\n* Some small changes to CommandInfoUpdater tool + updating CommandsInfo/Docs JSON files\r\n\r\n* format\r\n\r\n* test fix\r\n\r\n* fix\r\n\r\n* Added command metadata coverage tests\r\n\r\n* added comment",
+          "timestamp": "2025-01-14T14:48:15-07:00",
+          "tree_id": "b86648205f92253956ed5d0ca9965358a8d7ebce",
+          "url": "https://github.com/microsoft/garnet/commit/e61bc7cb5c5b7e2bb7ad5d4e62cf2863920d78bc"
+        },
+        "date": 1736891781769,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: ACL)",
+            "value": 117319.50596400669,
+            "unit": "ns",
+            "range": "± 184.3501603774314"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: ACL)",
+            "value": 100261.50841346153,
+            "unit": "ns",
+            "range": "± 148.15375070786553"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: ACL)",
+            "value": 98048.65275065105,
+            "unit": "ns",
+            "range": "± 214.34569668883776"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: AOF)",
+            "value": 130445.28459821429,
+            "unit": "ns",
+            "range": "± 301.26959316892965"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: AOF)",
+            "value": 115657.28934151786,
+            "unit": "ns",
+            "range": "± 475.06701017159884"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: AOF)",
+            "value": 110647.38507952009,
+            "unit": "ns",
+            "range": "± 344.3176253153619"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: None)",
+            "value": 114862.2835599459,
+            "unit": "ns",
+            "range": "± 155.17228285660042"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: None)",
+            "value": 103246.15478515625,
+            "unit": "ns",
+            "range": "± 136.71562627221098"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: None)",
+            "value": 95346.28993443081,
+            "unit": "ns",
+            "range": "± 174.36935516335507"
           }
         ]
       }
