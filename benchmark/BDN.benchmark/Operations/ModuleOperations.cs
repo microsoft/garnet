@@ -17,15 +17,18 @@ namespace BDN.benchmark.Operations
         static ReadOnlySpan<byte> NOOPCMD => "*2\r\n$18\r\nNoOpModule.NOOPCMD\r\n$1\r\nk\r\n"u8;
         Request noOpCmd;
 
+        private void RegisterModules()
+        {
+            var result = server.Register.NewModule(new NoOpModule.NoOpModule(), [], out _);
+        }
+
         public override void GlobalSetup()
         {
             base.GlobalSetup();
+            RegisterModules();
 
             SetupOperation(ref noOpCmd, NOOPCMD);
 
-            var noOpModulePath = Path.Join(moduleLoadPath, "NoOpModule.dll");
-            SlowConsumeMessage(Encoding.ASCII.GetBytes(
-                $"*3\r\n$6\r\nMODULE\r\n$6\r\nLOADCS\r\n${noOpModulePath.Length}\r\n{noOpModulePath}\r\n"));
             SlowConsumeMessage("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nc"u8);
         }
 

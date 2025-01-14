@@ -17,17 +17,21 @@ namespace NoOpModule
                 return;
             }
 
-            context.RegisterCommand("NoOpModule.NOOPCMD", new NoOpCommand());
+            context.RegisterCommand("NoOpModule.NOOPCMD", new NoOpCommand(), CommandType.ReadModifyWrite,
+                new RespCommandsInfo { Arity = 2 });
 
-            context.RegisterTransaction("NoOpModule.NOOPTXN", () => new NoOpTxn());
+            context.RegisterTransaction("NoOpModule.NOOPTXN", () => new NoOpTxn(),
+                new RespCommandsInfo { Arity = 1 });
 
             var factory = new DummyObjectFactory();
             context.RegisterType(factory);
 
-            context.RegisterCommand("NoOpModule.NOOPOBJRMW", factory, new DummyObjectNoOpRMW());
-            context.RegisterCommand("NoOpModule.NOOPOBJREAD", factory, new DummyObjectNoOpRead(), CommandType.Read);
+            context.RegisterCommand("NoOpModule.NOOPOBJRMW", factory, new DummyObjectNoOpRMW(),
+                CommandType.ReadModifyWrite, new RespCommandsInfo { Arity = 2 });
+            context.RegisterCommand("NoOpModule.NOOPOBJREAD", factory, new DummyObjectNoOpRead(), CommandType.Read,
+                new RespCommandsInfo { Arity = 2 });
 
-            context.RegisterProcedure("NoOpModule.NOOPPROC", () => new NoOpProc());
+            context.RegisterProcedure("NoOpModule.NOOPPROC", () => new NoOpProc(), new RespCommandsInfo { Arity = 1 });
         }
     }
 }

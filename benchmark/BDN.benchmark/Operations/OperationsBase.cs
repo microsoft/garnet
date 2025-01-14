@@ -52,17 +52,6 @@ namespace BDN.benchmark.Operations
         [GlobalSetup]
         public virtual void GlobalSetup()
         {
-            string[] modules = [ "NoOpModule.dll" ];
-            var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            moduleLoadPath = Path.Join(binPath, "modules");
-            if (!Directory.Exists(moduleLoadPath)) 
-                Directory.CreateDirectory(moduleLoadPath);
-
-            foreach (var module in modules)
-            {
-                File.Copy(Path.Combine(binPath, module), Path.Combine(moduleLoadPath, module), true);
-            }
-
             var opts = new GarnetServerOptions
             {
                 QuietMode = true,
@@ -77,8 +66,6 @@ namespace BDN.benchmark.Operations
                 opts.CommitFrequencyMs = -1;
                 opts.AofPageSize = "128m";
                 opts.AofMemorySize = "256m";
-                opts.ExtensionAllowUnsignedAssemblies = true;
-                opts.ExtensionBinPaths = [ moduleLoadPath ];
             }
 
             string aclFile = null;

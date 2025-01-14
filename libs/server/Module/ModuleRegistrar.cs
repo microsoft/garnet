@@ -177,7 +177,7 @@ namespace Garnet.server
 
     public sealed class ModuleRegistrar
     {
-        private static readonly Lazy<ModuleRegistrar> lazy = new Lazy<ModuleRegistrar>(() => new ModuleRegistrar());
+        private static readonly Lazy<ModuleRegistrar> lazy = new(() => new ModuleRegistrar());
 
         public static ModuleRegistrar Instance { get { return lazy.Value; } }
 
@@ -187,6 +187,34 @@ namespace Garnet.server
         }
 
         private readonly ConcurrentDictionary<string, ModuleLoadContext> modules;
+
+        public bool RegisterModule(CustomCommandManager customCommandManager, ModuleBase module, string[] moduleArgs, ILogger logger,
+            out ReadOnlySpan<byte> errorMessage)
+        {
+            errorMessage = default;
+
+            var moduleLoadContext = new ModuleLoadContext(this, customCommandManager, logger);
+            try
+            {
+                module.OnLoad(moduleLoadContext, moduleArgs);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Error loading module");
+                errorMessage = CmdStrings.RESP_ERR_MODULE_ONLOAD;
+                return false;
+            }
+
+            if (!moduleLoadContext.Initialized)
+            {
+                errorMessage = CmdStrings.RESP_ERR_MODULE_ONLOAD;
+                logger?.LogError("Module {0} failed to initialize", moduleLoadContext.Name);
+                return false;
+            }
+
+            logger?.LogInformation("Module {0} version {1} loaded", moduleLoadContext.Name, moduleLoadContext.Version);
+            return true;
+        }
 
         public bool LoadModule(CustomCommandManager customCommandManager, Assembly loadedAssembly, string[] moduleArgs, ILogger logger, out ReadOnlySpan<byte> errorMessage)
         {
@@ -225,27 +253,7 @@ namespace Garnet.server
                 return false;
             }
 
-            var moduleLoadContext = new ModuleLoadContext(this, customCommandManager, logger);
-            try
-            {
-                instance.OnLoad(moduleLoadContext, moduleArgs);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "Error loading module");
-                errorMessage = CmdStrings.RESP_ERR_MODULE_ONLOAD;
-                return false;
-            }
-
-            if (!moduleLoadContext.Initialized)
-            {
-                errorMessage = CmdStrings.RESP_ERR_MODULE_ONLOAD;
-                logger?.LogError("Module {0} failed to initialize", moduleLoadContext.Name);
-                return false;
-            }
-
-            logger?.LogInformation("Module {0} version {1} loaded", moduleLoadContext.Name, moduleLoadContext.Version);
-            return true;
+            return RegisterModule(customCommandManager, instance, moduleArgs, logger, out errorMessage);
         }
 
         internal bool TryAdd(ModuleLoadContext moduleLoadContext)
