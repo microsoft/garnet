@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -23,6 +24,8 @@ namespace Garnet.server
         private ConcurrentExpandableMap<CustomObjectCommandWrapper> objectCommandMap;
         private ConcurrentExpandableMap<CustomTransaction> transactionProcMap;
         private ConcurrentExpandableMap<CustomProcedureWrapper> customProcedureMap;
+
+        private readonly ConcurrentDictionary<string, ModuleLoadContext> modules;
 
         internal static readonly int MinMapSize = 8;
         internal static readonly byte CustomTypeIdStartOffset = (byte)CustomObjectTypeMinId;
@@ -46,6 +49,8 @@ namespace Garnet.server
 
             transactionProcMap = new ConcurrentExpandableMap<CustomTransaction>(MinMapSize, 0, byte.MaxValue);
             customProcedureMap = new ConcurrentExpandableMap<CustomProcedureWrapper>(MinMapSize, 0, byte.MaxValue);
+
+            modules = new();
         }
 
         internal int Register(string name, CommandType type, CustomRawStringFunctions customFunctions,
@@ -135,6 +140,39 @@ namespace Garnet.server
             if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
             if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
             return cmdId;
+        }
+
+        public bool RegisterModule(ModuleBase module, string[] moduleArgs, ILogger logger,
+            out ReadOnlySpan<byte> errorMessage)
+        {
+            errorMessage = default;
+
+            var moduleLoadContext = new ModuleLoadContext(this, logger);
+            try
+            {
+                module.OnLoad(moduleLoadContext, moduleArgs);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Error loading module");
+                errorMessage = CmdStrings.RESP_ERR_MODULE_ONLOAD;
+                return false;
+            }
+
+            if (!moduleLoadContext.Initialized)
+            {
+                errorMessage = CmdStrings.RESP_ERR_MODULE_ONLOAD;
+                logger?.LogError("Module {0} failed to initialize", moduleLoadContext.Name);
+                return false;
+            }
+
+            logger?.LogInformation("Module {0} version {1} loaded", moduleLoadContext.Name, moduleLoadContext.Version);
+            return true;
+        }
+
+        internal bool TryAddModule(ModuleLoadContext moduleLoadContext)
+        {
+            return modules.TryAdd(moduleLoadContext.Name, moduleLoadContext);
         }
 
         internal bool TryGetCustomProcedure(int id, out CustomProcedureWrapper value)
