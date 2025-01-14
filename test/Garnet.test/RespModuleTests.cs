@@ -39,7 +39,7 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(Directory.GetParent(testModuleDir)?.FullName);
         }
 
-        private string CreateTestModule(string onLoadBody, string moduleName = "TestModule.dll")
+        private string CreateTestModule(string onLoadBody, string moduleName)
         {
             var runtimePath = RuntimeEnvironment.GetRuntimeDirectory();
             var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
@@ -251,7 +251,7 @@ namespace Garnet.test
         [Test]
         public void TestUninitializedModule()
         {
-            var modulePath = CreateTestModule("");
+            var modulePath = CreateTestModule("", "TestModule4.dll");
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -271,7 +271,7 @@ namespace Garnet.test
         public void TestAlreadyLoadedModule()
         {
             var modulePath = CreateTestModule(
-                @"context.Initialize(""TestAlreadyLoadedModule"", 1);");
+                @"context.Initialize(""TestAlreadyLoadedModule"", 1);", "TestModule5.dll");
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
