@@ -42,7 +42,7 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTL:
                     if (input.header.CheckWithEtagFlag())
                     {
-                        this.functionsState.etagState.etagOffsetForVarlen = Constants.EtagSize;
+                        this.functionsState.etagState.etagOffsetForVarlen = EtagConstants.EtagSize;
                     }
                     return true;
                 default:
@@ -103,10 +103,10 @@ namespace Garnet.server
                     {
                         recordInfo.SetHasETag();
                         // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
-                        value.SetEtagInPayload(Constants.BaseEtag + 1);
+                        value.SetEtagInPayload(EtagConstants.BaseEtag + 1);
                         EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
                         // Copy initial etag to output only for SET + WITHETAG and not SET NX or XX 
-                        CopyRespNumber(Constants.BaseEtag + 1, ref output);
+                        CopyRespNumber(EtagConstants.BaseEtag + 1, ref output);
                     }
 
                     break;
@@ -120,10 +120,10 @@ namespace Garnet.server
                     if (spaceForEtag != 0)
                     {
                         recordInfo.SetHasETag();
-                        value.SetEtagInPayload(Constants.BaseEtag + 1);
+                        value.SetEtagInPayload(EtagConstants.BaseEtag + 1);
                         EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
                         // Copy initial etag to output
-                        CopyRespNumber(Constants.BaseEtag + 1, ref output);
+                        CopyRespNumber(EtagConstants.BaseEtag + 1, ref output);
                     }
 
                     break;
@@ -284,6 +284,7 @@ namespace Garnet.server
             return false;
         }
 
+        // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with TRUE, you must make sure you must reset etagState in FunctionState
         private bool InPlaceUpdaterWorker(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             // Expired data
@@ -337,7 +338,7 @@ namespace Garnet.server
                     // retain metadata unless metadata sent
                     int metadataSize = input.arg1 != 0 ? sizeof(long) : value.MetadataSize;
 
-                    if (value.Length < inputValue.length + Constants.EtagSize + metadataSize)
+                    if (value.Length < inputValue.length + EtagConstants.EtagSize + metadataSize)
                         return false;
 
                     if (input.arg1 != 0)
@@ -350,13 +351,13 @@ namespace Garnet.server
                     // Increment the ETag
                     long newEtag = functionsState.etagState.etag + 1;
 
-                    value.ShrinkSerializedLength(metadataSize + inputValue.Length + Constants.EtagSize);
+                    value.ShrinkSerializedLength(metadataSize + inputValue.Length + EtagConstants.EtagSize);
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
 
                     value.SetEtagInPayload(newEtag);
 
-                    inputValue.ReadOnlySpan.CopyTo(value.AsSpan(Constants.EtagSize));
+                    inputValue.ReadOnlySpan.CopyTo(value.AsSpan(EtagConstants.EtagSize));
 
                     // write back array of the format [etag, nil]
                     var nilResp = CmdStrings.RESP_ERRNOTFOUND;
@@ -381,10 +382,10 @@ namespace Garnet.server
                         if (inputHeaderHasEtag)
                         {
                             // nextUpdate will add etag but currently there is no etag
-                            nextUpdateEtagOffset = Constants.EtagSize;
+                            nextUpdateEtagOffset = EtagConstants.EtagSize;
                             shouldUpdateEtag = true;
                             // if something is going to go past this into copy we need to provide offset management for its varlen during allocation
-                            this.functionsState.etagState.etagOffsetForVarlen = Constants.EtagSize;
+                            this.functionsState.etagState.etagOffsetForVarlen = EtagConstants.EtagSize;
                         }
                         else
                         {
@@ -454,10 +455,10 @@ namespace Garnet.server
                         if (inputHeaderHasEtag)
                         {
                             // nextUpdate will add etag but currently there is no etag
-                            nextUpdateEtagOffset = Constants.EtagSize;
+                            nextUpdateEtagOffset = EtagConstants.EtagSize;
                             shouldUpdateEtag = true;
                             // if something is going to go past this into copy we need to provide offset management for its varlen during allocation
-                            this.functionsState.etagState.etagOffsetForVarlen = Constants.EtagSize;
+                            this.functionsState.etagState.etagOffsetForVarlen = EtagConstants.EtagSize;
                         }
                         else
                         {
@@ -817,6 +818,7 @@ namespace Garnet.server
             return true;
         }
 
+        // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with FALSE, you must make sure you must reset etagState in FunctionState
         /// <inheritdoc />
         public bool NeedCopyUpdate(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
@@ -899,6 +901,7 @@ namespace Garnet.server
             }
         }
 
+        // NOTE: Before doing any return from this method, please make sure you are calling reset on etagState in functionsState.
         /// <inheritdoc />
         public bool CopyUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
@@ -929,13 +932,13 @@ namespace Garnet.server
                 case RespCommand.SETIFMATCH:
                     shouldUpdateEtag = true;
                     // Copy input to value
-                    Span<byte> dest = newValue.AsSpan(Constants.EtagSize);
+                    Span<byte> dest = newValue.AsSpan(EtagConstants.EtagSize);
                     ReadOnlySpan<byte> src = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
                     // retain metadata unless metadata sent
                     int metadataSize = input.arg1 != 0 ? sizeof(long) : oldValue.MetadataSize;
 
-                    Debug.Assert(src.Length + Constants.EtagSize + metadataSize == newValue.Length);
+                    Debug.Assert(src.Length + EtagConstants.EtagSize + metadataSize == newValue.Length);
 
                     src.CopyTo(dest);
 
@@ -969,7 +972,7 @@ namespace Garnet.server
                         if (inputWithEtag)
                         {
                             // nextUpdate will add etag but currently there is no etag
-                            nextUpdateEtagOffset = Constants.EtagSize;
+                            nextUpdateEtagOffset = EtagConstants.EtagSize;
                             shouldUpdateEtag = true;
                             recordInfo.SetHasETag();
                         }
@@ -1020,7 +1023,7 @@ namespace Garnet.server
                         if (inputWithEtag)
                         {
                             // nextUpdate will add etag but currently there is no etag
-                            nextUpdateEtagOffset = Constants.EtagSize;
+                            nextUpdateEtagOffset = EtagConstants.EtagSize;
                             shouldUpdateEtag = true;
                             recordInfo.SetHasETag();
                         }

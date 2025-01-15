@@ -647,7 +647,6 @@ namespace Garnet.server
 
                                     if (isNX)
                                     {
-
                                         // For SET NX `NOTFOUND` means the operation succeeded
                                         result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
                                         returnStatus = GarnetStatus.OK;

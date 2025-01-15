@@ -439,29 +439,6 @@ namespace Garnet.server
             return NetworkSETEXNX(ref storageApi);
         }
 
-        enum EtagOption : byte
-        {
-            None,
-            WithETag,
-        }
-
-        enum ExpirationOption : byte
-        {
-            None,
-            EX,
-            PX,
-            EXAT,
-            PXAT,
-            KEEPTTL
-        }
-
-        enum ExistOptions : byte
-        {
-            None,
-            NX,
-            XX
-        }
-
         /// <summary>
         /// SET EX NX [WITHETAG]
         /// </summary>
@@ -491,59 +468,34 @@ namespace Garnet.server
                     nextOpt = parseState.GetArgSliceByRef(tokenIdx++).Span;
                 }
 
-                if (nextOpt.SequenceEqual(CmdStrings.EX))
+                // nextOpt was an expiration option
+                if (parseState.TryGetExpirationOptionWithToken(ref nextOpt, out ExpirationOption parsedOption))
                 {
-                    // Validate expiry
-                    if (!parseState.TryGetInt(tokenIdx++, out expiry))
-                    {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
-                        break;
-                    }
-
-                    if (expOption != ExpirationOption.None)
+                    // Make sure there aren't multiple expiration options in the options sent by user
+                    // and that whatever parsedOption we have recieved is one of the acceptable ones only
+                    if (expOption != ExpirationOption.None || (parsedOption is not (ExpirationOption.EX or ExpirationOption.PX or ExpirationOption.KEEPTTL)))
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
                         break;
                     }
 
-                    expOption = ExpirationOption.EX;
-                    if (expiry <= 0)
+                    expOption = parsedOption;
+                    // based on above check if it is not KEEPTTL, it has to be either EX or PX
+                    if (expOption != ExpirationOption.KEEPTTL)
                     {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET;
-                        break;
-                    }
-                }
-                else if (nextOpt.SequenceEqual(CmdStrings.PX))
-                {
-                    // Validate expiry
-                    if (!parseState.TryGetInt(tokenIdx++, out expiry))
-                    {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
-                        break;
-                    }
+                        // EX and PX optionare followed by an expiry argument; account for the expiry argument by moving past the tokenIdx
+                        if (!parseState.TryGetInt(tokenIdx++, out expiry))
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                            break;
+                        }
 
-                    if (expOption != ExpirationOption.None)
-                    {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
-                        break;
+                        if (expiry <= 0)
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET;
+                            break;
+                        }
                     }
-
-                    expOption = ExpirationOption.PX;
-                    if (expiry <= 0)
-                    {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET;
-                        break;
-                    }
-                }
-                else if (nextOpt.SequenceEqual(CmdStrings.KEEPTTL))
-                {
-                    if (expOption != ExpirationOption.None)
-                    {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
-                        break;
-                    }
-
-                    expOption = ExpirationOption.KEEPTTL;
                 }
                 else if (nextOpt.SequenceEqual(CmdStrings.NX))
                 {
@@ -705,6 +657,7 @@ namespace Garnet.server
 
                 bool ok = status != GarnetStatus.NOTFOUND;
 
+                // the status returned for SETEXNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
                 if (cmd == RespCommand.SETEXNX)
                     ok = !ok;
 
