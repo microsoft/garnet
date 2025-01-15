@@ -72,7 +72,7 @@ public static class RespLengthEncodingUtils
                         Array.Reverse(lengthBytes); // Convert to big-endian
                     }
 
-                    return new[] {firstByte}.Concat(lengthBytes).ToArray();
+                    return [firstByte, .. lengthBytes];
                 }
             default:
                 throw new ArgumentOutOfRangeException(

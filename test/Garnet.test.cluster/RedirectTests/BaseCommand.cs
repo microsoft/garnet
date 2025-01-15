@@ -662,7 +662,7 @@ namespace Garnet.test.cluster
 
         public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
     }
-    
+
     internal class DUMP : BaseCommand
     {
         public override bool IsArrayCommand => false;
@@ -679,7 +679,7 @@ namespace Garnet.test.cluster
 
         public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
     }
-    
+
     internal class RESTORE : BaseCommand
     {
         public override bool IsArrayCommand => false;
@@ -696,7 +696,7 @@ namespace Garnet.test.cluster
 
         public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
     }
-    
+
     internal class WATCH : BaseCommand
     {
         public override bool IsArrayCommand => true;

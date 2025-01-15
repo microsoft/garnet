@@ -38,7 +38,7 @@ public static class Crc64
     private static ulong Crc64Bitwise(ReadOnlySpan<byte> data)
     {
         ulong crc = 0;
-        
+
         foreach (var c in data)
         {
             for (byte i = 1; i != 0; i <<= 1)
@@ -68,7 +68,7 @@ public static class Crc64
         crc = Reflect64(crc) ^ 0x0000000000000000UL;
         return crc;
     }
-    
+
     /// <summary>
     /// Computes crc64
     /// </summary>

@@ -14,7 +14,7 @@ namespace Garnet.server
         /// RDB format version
         /// </summary>
         private readonly byte RDB_VERSION = 11;
-        
+
         /// <summary>
         /// RESTORE
         /// </summary>
@@ -37,9 +37,9 @@ namespace Garnet.server
                     SendAndReset();
                 return true;
             }
-            
+
             var value = parseState.GetArgSliceByRef(2);
-            
+
             // return error if key already exists 
             var keyExists = storageApi.EXISTS(key);
             switch (keyExists)
@@ -49,13 +49,13 @@ namespace Garnet.server
                         SendAndReset();
                     return true;
             }
-            
+
             var valueSpan = value.ReadOnlySpan;
 
             // Restore is only implemented for string type
             if (valueSpan[0] != 0x00)
             {
-                while(!RespWriteUtils.WriteError("ERR RESTORE currently only supports string types", ref dcurr, dend))
+                while (!RespWriteUtils.WriteError("ERR RESTORE currently only supports string types", ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -67,7 +67,7 @@ namespace Garnet.server
 
             if (rdbVersion > RDB_VERSION)
             {
-                while(!RespWriteUtils.WriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
+                while (!RespWriteUtils.WriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -77,24 +77,24 @@ namespace Garnet.server
                 // crc is calculated over the encoded payload length, payload and the rdb version bytes
                 // skip's the value type byte and crc64 bytes
                 var calculatedCrc = new ReadOnlySpan<byte>(Crc64.Hash(valueSpan.Slice(0, valueSpan.Length - 8)));
-                
+
                 // skip's rdb version bytes
                 var payloadCrc = footer[2..];
 
                 if (calculatedCrc.SequenceCompareTo(payloadCrc) != 0)
                 {
-                    while(!RespWriteUtils.WriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
             }
-            
+
             // decode the length of payload
             var (length, payloadStart) = RespLengthEncodingUtils.DecodeLength(ref valueSpan);
-            
+
             // Start from payload start and skip the value type byte
             var val = value.ReadOnlySpan.Slice(payloadStart + 1, (int)length);
-            
+
             var valArgSlice = scratchBufferManager.CreateArgSlice(val);
 
             if (ttl > 0)
@@ -105,13 +105,13 @@ namespace Garnet.server
             {
                 storageApi.SET(key, valArgSlice);
             }
-            
+
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;
         }
-        
+
         /// <summary>
         /// DUMP 
         /// </summary>
@@ -122,7 +122,7 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.DUMP));
             }
-            
+
             var key = parseState.GetArgSliceByRef(0);
 
             var status = storageApi.GET(key, out var value);
@@ -134,19 +134,19 @@ namespace Garnet.server
                         SendAndReset();
                     return true;
             }
-            
+
             var encodedLength = RespLengthEncodingUtils.EncodeLength(value.ReadOnlySpan.Length);
-            
+
             // Len of the dump (payload type + redis encoded payload len + payload len + rdb version + crc64)
             var len = 1 + encodedLength.Length + value.ReadOnlySpan.Length + 2 + 8;
             var lengthInASCIIBytes = new Span<byte>(new byte[NumUtils.NumDigitsInLong(len)]);
             var lengthInASCIIBytesLen = NumUtils.LongToSpanByte(len, lengthInASCIIBytes);
-            
+
             // Total len (% + length of ascii bytes + CR LF + payload type + redis encoded payload len + payload len + rdb version + crc64 + CR LF)
             var totalLength = 1 + lengthInASCIIBytesLen + 2 + 1 + encodedLength.Length + value.ReadOnlySpan.Length + 2 + 8 + 2;
             Span<byte> buffer = stackalloc byte[totalLength];
             var offset = 0;
-            
+
             // Write RESP bulk string prefix and length
             buffer[offset++] = 0x24; // '$'
             lengthInASCIIBytes.CopyTo(buffer[offset..]);
@@ -156,11 +156,11 @@ namespace Garnet.server
 
             // value type byte
             buffer[offset++] = 0x00;
-            
+
             // length of the span
             foreach (var b in encodedLength)
                 buffer[offset++] = b;
-            
+
             // copy value to buffer
             value.ReadOnlySpan.CopyTo(buffer[offset..]);
             offset += value.ReadOnlySpan.Length;
@@ -168,11 +168,11 @@ namespace Garnet.server
             // Write RDB version
             buffer[offset++] = (byte)(RDB_VERSION & 0xff);
             buffer[offset++] = (byte)((RDB_VERSION >> 8) & 0xff);
-            
+
             // Compute and write CRC64 checksum
             var payloadToHash = buffer.Slice(1 + lengthInASCIIBytes.Length + 2 + 1,
                 encodedLength.Length + value.ReadOnlySpan.Length + 2);
-            
+
             var crcBytes = Crc64.Hash(payloadToHash);
             crcBytes.CopyTo(buffer[offset..]);
             offset += crcBytes.Length;
@@ -183,10 +183,10 @@ namespace Garnet.server
 
             while (!RespWriteUtils.WriteDirect(buffer, ref dcurr, dend))
                 SendAndReset();
-            
+
             return true;
         }
-        
+
         /// <summary>
         /// TryRENAME
         /// </summary>

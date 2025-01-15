@@ -102,9 +102,9 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus PTTL(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
             => storageSession.TTL(ref key, storeType, ref output, ref context, ref objectContext, milliseconds: true);
-        
+
         #endregion
-        
+
         #region EXPIRETIME
 
         /// <inheritdoc />

@@ -82,7 +82,7 @@ namespace Garnet.server
             garnetApi.WATCH(new ArgSlice(ref key), storeType);
             return garnetApi.PTTL(ref key, storeType, ref output);
         }
-        
+
         #endregion
 
         #region EXPIRETIME

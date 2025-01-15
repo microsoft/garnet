@@ -137,7 +137,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(expectedRes, actualRes, $"Mismatch for {cmd}");
             }
         }
-        
+
         /// <summary>
         /// Tests RESTORE value that is not string
         /// </summary>
@@ -154,7 +154,7 @@ namespace Garnet.test
 
             Assert.Throws<RedisServerException>(() => db.KeyRestore("mykey", payload));
         }
-        
+
         /// <summary>
         /// Tests RESTORE command on existing key
         /// </summary>
@@ -170,7 +170,7 @@ namespace Garnet.test
 
             Assert.Throws<RedisConnectionException>(() => db.KeyRestore("mykey", dump));
         }
-        
+
         /// <summary>
         /// Tests RESTORE command that restores payload with 32 bit encoded length
         /// </summary>
@@ -192,14 +192,14 @@ namespace Garnet.test
             var dump = db.KeyDump("mykey")!;
 
             db.KeyDelete("mykey");
-            
+
             db.KeyRestore("mykey", dump);
 
             var value = db.StringGet("mykey");
-            
+
             ClassicAssert.AreEqual(val, value.ToString());
         }
-        
+
         /// <summary>
         /// Tests RESTORE command that restores payload with 14 bit encoded length
         /// </summary>
@@ -221,11 +221,11 @@ namespace Garnet.test
             var dump = db.KeyDump("mykey")!;
 
             db.KeyDelete("mykey");
-            
+
             db.KeyRestore("mykey", dump);
 
             var value = db.StringGet("mykey");
-            
+
             ClassicAssert.AreEqual(val, value.ToString());
         }
 
@@ -243,11 +243,11 @@ namespace Garnet.test
             var dump = db.KeyDump("mykey")!;
 
             db.KeyDelete("mykey");
-            
+
             db.KeyRestore("mykey", dump, TimeSpan.FromHours(3));
 
             var value = db.StringGet("mykey");
-            
+
             ClassicAssert.AreEqual("val", value.ToString());
         }
 
@@ -257,23 +257,23 @@ namespace Garnet.test
         [Test]
         public void SingleDump6Bit()
         {
-             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-             var db = redis.GetDatabase(0);
- 
-             db.StringSet("mykey", "val");
- 
-             var dump = db.KeyDump("mykey");
-             
-             var expectedValue = new byte[]
-             {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+
+            var dump = db.KeyDump("mykey");
+
+            var expectedValue = new byte[]
+            {
                  0x00, // value type 
                  0x03, // length of payload
                  0x76, 0x61, 0x6C,       // 'v', 'a', 'l'
                  0x0B, 0x00, // RDB version
-             };
+            };
 
-             var crc = new byte[]
-             {
+            var crc = new byte[]
+            {
                  0xDB,
                  0x82,
                  0x3C,
@@ -282,46 +282,46 @@ namespace Garnet.test
                  0x78,
                  0x5A,
                  0x99
-             };
+            };
 
-             expectedValue = [..expectedValue, ..crc];
-             
-             ClassicAssert.AreEqual(expectedValue, dump);
+            expectedValue = [.. expectedValue, .. crc];
+
+            ClassicAssert.AreEqual(expectedValue, dump);
         }
-        
+
         /// <summary>
         /// Tests DUMP command that returns payload with 14 bit encoded length
         /// </summary>
-        [Test] 
+        [Test]
         public void SingleDump14Bit()
-        { 
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()); 
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             var valueBuilder = new StringBuilder();
-            
-            for (var i = 0; i < 16_383 - 1; i++) 
+
+            for (var i = 0; i < 16_383 - 1; i++)
                 valueBuilder.Append('a');
-            
+
             var value = valueBuilder.ToString();
-            
+
             db.StringSet("mykey", value);
-            
+
             var dump = db.KeyDump("mykey");
-            
-            var expectedValue = new byte[] 
+
+            var expectedValue = new byte[]
             {
                 0x00, // value type
                 0x7F, 0xFE, // length of payload
             };
 
-            expectedValue = [..expectedValue, ..Encoding.UTF8.GetBytes(value)];
-         
+            expectedValue = [.. expectedValue, .. Encoding.UTF8.GetBytes(value)];
+
             var rdbVersion = new byte[]
             {
                 0x0B, 0x00, // RDB version
             };
-            
-            expectedValue = [..expectedValue, ..rdbVersion];
+
+            expectedValue = [.. expectedValue, .. rdbVersion];
 
             var crc = new byte[]
             {
@@ -334,45 +334,45 @@ namespace Garnet.test
                 0x7C,
                 0xCF
             };
-            
-            expectedValue = [..expectedValue, ..crc];
-            
+
+            expectedValue = [.. expectedValue, .. crc];
+
             ClassicAssert.AreEqual(expectedValue, dump);
         }
-         
+
         /// <summary>
         /// Tests DUMP command that returns payload with 32 bit encoded length
         /// </summary>
         [Test]
         public void SingleDump32Bit()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()); 
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             var valueBuilder = new StringBuilder();
-            
-            for (var i = 0; i < 16_383 + 1; i++) 
+
+            for (var i = 0; i < 16_383 + 1; i++)
                 valueBuilder.Append('a');
-            
+
             var value = valueBuilder.ToString();
-            
+
             db.StringSet("mykey", value);
-            
+
             var dump = db.KeyDump("mykey");
-            
-            var expectedValue = new byte[] 
+
+            var expectedValue = new byte[]
             {
                 0x00, // value type
                 0x80, 0x00, 0x00, 0x40, 0x00, // length of payload
             };
 
-            expectedValue = [..expectedValue, ..Encoding.UTF8.GetBytes(value)];
-         
+            expectedValue = [.. expectedValue, .. Encoding.UTF8.GetBytes(value)];
+
             var rdbVersion = new byte[]
             {
                 0x0B, 0x00, // RDB version
             };
-            
-            expectedValue = [..expectedValue, ..rdbVersion];
+
+            expectedValue = [.. expectedValue, .. rdbVersion];
 
             var crc = new byte[]
             {
@@ -385,43 +385,43 @@ namespace Garnet.test
                 0x90,
                 0x14
             };
-            
-            expectedValue = [..expectedValue, ..crc];
-            
+
+            expectedValue = [.. expectedValue, .. crc];
+
             ClassicAssert.AreEqual(expectedValue, dump);
         }
-        
+
         /// <summary>
         /// Tests DUMP on non string type which is currently not supported
         /// </summary>
         [Test]
         public void TryDumpKeyNonString()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()); 
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             db.SetAdd("mykey", "val1");
             db.SetAdd("mykey", "val2");
-            
+
             var value = db.KeyDump("mykey");
-            
+
             ClassicAssert.AreEqual(null, value);
         }
-        
+
         /// <summary>
         /// Try DUMP key that does not exist
         /// </summary>
         [Test]
         public void TryDumpKeyThatDoesNotExist()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()); 
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             var value = db.KeyDump("mykey");
-            
+
             ClassicAssert.AreEqual(null, value);
         }
-        
+
         [Test]
         public void SingleSetGet()
         {
