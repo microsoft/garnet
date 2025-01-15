@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using BenchmarkDotNet.Attributes;
@@ -44,7 +43,6 @@ namespace BDN.benchmark.Operations
         internal const int batchSize = 100;
         internal EmbeddedRespServer server;
         internal RespServerSession session;
-        internal string moduleLoadPath;
 
         /// <summary>
         /// Setup
