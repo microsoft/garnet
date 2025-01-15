@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736975126221,
+  "lastUpdate": 1736975132787,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -55601,6 +55601,90 @@ window.BENCHMARK_DATA = {
             "value": 382.82228603363035,
             "unit": "ns",
             "range": "± 2.440834934993346"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "badrishc@microsoft.com",
+            "name": "Badrish Chandramouli",
+            "username": "badrishc"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "373c4c3178ccc758e3d46a2162f5402aff45ea7d",
+          "message": "Speed up scan (#916)\n\n* Speed up scan\r\n\r\nAvoid buffer pool allocation per GetNext and reuse memory to speed up scan\r\n\r\n* nit\r\n\r\n* avoid two counters for DBScan.\r\n\r\n* update version\r\n\r\n* Revert \"update version\"\r\n\r\nThis reverts commit 718059a8c39a2ced726594a129c65da661b6bc92.\r\n\r\n* update version",
+          "timestamp": "2025-01-15T13:00:26-08:00",
+          "tree_id": "6e4a879c235f41537438ebee885cc820f5659148",
+          "url": "https://github.com/microsoft/garnet/commit/373c4c3178ccc758e3d46a2162f5402aff45ea7d"
+        },
+        "date": 1736975129259,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.Set(Params: None)",
+            "value": 238.51793043954032,
+            "unit": "ns",
+            "range": "± 0.6169890923738229"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.SetEx(Params: None)",
+            "value": 283.1307685534159,
+            "unit": "ns",
+            "range": "± 2.8184329972746767"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.SetNx(Params: None)",
+            "value": 312.12533586819967,
+            "unit": "ns",
+            "range": "± 1.9845598883311784"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.SetXx(Params: None)",
+            "value": 322.88738911946615,
+            "unit": "ns",
+            "range": "± 2.459988833947122"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.GetFound(Params: None)",
+            "value": 245.467738032341,
+            "unit": "ns",
+            "range": "± 0.31895034944769207"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.GetNotFound(Params: None)",
+            "value": 189.02365841184343,
+            "unit": "ns",
+            "range": "± 1.6114511893638352"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.Increment(Params: None)",
+            "value": 319.01025181550244,
+            "unit": "ns",
+            "range": "± 0.6578468308278299"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.Decrement(Params: None)",
+            "value": 314.27990198135376,
+            "unit": "ns",
+            "range": "± 1.855230065169177"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.IncrementBy(Params: None)",
+            "value": 387.2857667037419,
+            "unit": "ns",
+            "range": "± 1.9754369441683903"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.DecrementBy(Params: None)",
+            "value": 377.24069396654767,
+            "unit": "ns",
+            "range": "± 0.4131645554861484"
           }
         ]
       }
