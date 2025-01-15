@@ -210,7 +210,7 @@ namespace Garnet.server
                     case RespCommand.SETIFMATCH:
                         var newValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                         int metadataSize = input.arg1 == 0 ? t.MetadataSize : sizeof(long);
-                        return sizeof(int) + newValue.Length + Constants.EtagSize + metadataSize;
+                        return sizeof(int) + newValue.Length + EtagConstants.EtagSize + metadataSize;
                     case RespCommand.EXPIRE:
                     case RespCommand.PEXPIRE:
                     case RespCommand.EXPIREAT:
