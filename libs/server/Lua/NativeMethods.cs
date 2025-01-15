@@ -302,7 +302,7 @@ namespace Garnet.server
             //
             // If lua_tolstring fails, it will set len == 0 and start == NULL
             var start = lua_tolstring(luaState, index, out var len);
-            
+
             unsafe
             {
                 str = new ReadOnlySpan<byte>((byte*)start, (int)len);
