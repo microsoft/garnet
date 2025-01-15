@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736975175118,
+  "lastUpdate": 1736975186772,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -10565,6 +10565,48 @@ window.BENCHMARK_DATA = {
             "value": 1741.6442462376185,
             "unit": "ns",
             "range": "± 2.5638955611134437"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "badrishc@microsoft.com",
+            "name": "Badrish Chandramouli",
+            "username": "badrishc"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "373c4c3178ccc758e3d46a2162f5402aff45ea7d",
+          "message": "Speed up scan (#916)\n\n* Speed up scan\r\n\r\nAvoid buffer pool allocation per GetNext and reuse memory to speed up scan\r\n\r\n* nit\r\n\r\n* avoid two counters for DBScan.\r\n\r\n* update version\r\n\r\n* Revert \"update version\"\r\n\r\nThis reverts commit 718059a8c39a2ced726594a129c65da661b6bc92.\r\n\r\n* update version",
+          "timestamp": "2025-01-15T13:00:26-08:00",
+          "tree_id": "6e4a879c235f41537438ebee885cc820f5659148",
+          "url": "https://github.com/microsoft/garnet/commit/373c4c3178ccc758e3d46a2162f5402aff45ea7d"
+        },
+        "date": 1736975171845,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: ACL)",
+            "value": 1895.290308732253,
+            "unit": "ns",
+            "range": "± 2.260858053136386"
+          },
+          {
+            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: AOF)",
+            "value": 1832.1551102858323,
+            "unit": "ns",
+            "range": "± 3.579435625572173"
+          },
+          {
+            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: None)",
+            "value": 1710.2081553141277,
+            "unit": "ns",
+            "range": "± 3.5856677693591235"
           }
         ]
       }
