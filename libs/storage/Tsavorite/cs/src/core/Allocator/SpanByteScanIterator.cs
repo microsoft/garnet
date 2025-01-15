@@ -203,7 +203,7 @@ namespace Tsavorite.core
                         // GetKey() should work but for safety and consistency with other allocators use physicalAddress.
                         if (currentAddress >= headAddress && store is not null)
                             store.LockForScan(ref stackCtx, ref hlog._wrapper.GetKey(physicalAddress));
-                        
+
                         unsafe
                         {
                             Buffer.MemoryCopy((byte*)currentPhysicalAddress, memory.aligned_pointer, recordSize, recordSize);
