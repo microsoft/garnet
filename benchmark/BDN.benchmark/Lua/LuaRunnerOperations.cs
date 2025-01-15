@@ -165,6 +165,7 @@ return returnValue
             server = new EmbeddedRespServer(new GarnetServerOptions() { EnableLua = true, QuietMode = true, LuaOptions = opts });
 
             session = server.GetRespSession();
+
             paramsRunner = new LuaRunner(opts, "return nil");
 
             smallCompileRunner = new LuaRunner(opts, SmallScript);
@@ -177,6 +178,18 @@ return returnValue
             session.Dispose();
             server.Dispose();
             paramsRunner.Dispose();
+        }
+
+        [IterationSetup]
+        public void IterationSetup()
+        {
+            session.EnterAndGetResponseObject();
+        }
+
+        [IterationCleanup]
+        public void IterationCleanup()
+        {
+            session.ExitAndReturnResponseObject();
         }
 
         [Benchmark]
