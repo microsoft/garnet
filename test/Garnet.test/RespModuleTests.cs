@@ -323,7 +323,10 @@ namespace Garnet.test
             var value = $"myval";
             db.StringSet(key, value);
 
-            var retValue = db.Execute("NoOpModule.NOOPCMD", key);
+            var retValue = db.Execute("NoOpModule.NOOPCMDREAD", key);
+            ClassicAssert.IsNull((string)retValue);
+
+            retValue = db.Execute("NoOpModule.NOOPCMDRMW", key);
             ClassicAssert.AreEqual("OK", (string)retValue);
 
             // Test object commands in no-op module

@@ -7,7 +7,7 @@ using Tsavorite.core;
 
 namespace NoOpModule
 {
-    public class NoOpCommand : CustomRawStringFunctions
+    public class NoOpCommandRMW : CustomRawStringFunctions
     {
         /// <inheritdoc />
         public override bool Reader(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)

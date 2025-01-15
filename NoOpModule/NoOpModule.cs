@@ -17,7 +17,10 @@ namespace NoOpModule
                 return;
             }
 
-            context.RegisterCommand("NoOpModule.NOOPCMD", new NoOpCommand(), CommandType.ReadModifyWrite,
+            context.RegisterCommand("NoOpModule.NOOPCMDREAD", new NoOpCommandRead(), CommandType.Read,
+                new RespCommandsInfo { Arity = 2 });
+
+            context.RegisterCommand("NoOpModule.NOOPCMDRMW", new NoOpCommandRMW(), CommandType.ReadModifyWrite,
                 new RespCommandsInfo { Arity = 2 });
 
             context.RegisterTransaction("NoOpModule.NOOPTXN", () => new NoOpTxn(),

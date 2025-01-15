@@ -14,8 +14,11 @@ namespace BDN.benchmark.Operations
     [MemoryDiagnoser]
     public class ModuleOperations : OperationsBase
     {
-        static ReadOnlySpan<byte> NOOPCMD => "*2\r\n$18\r\nNoOpModule.NOOPCMD\r\n$2\r\nk1\r\n"u8;
-        Request noOpCmd;
+        static ReadOnlySpan<byte> NOOPCMDREAD => "*2\r\n$22\r\nNoOpModule.NOOPCMDREAD\r\n$2\r\nk1\r\n"u8;
+        Request noOpCmdRead;
+
+        static ReadOnlySpan<byte> NOOPCMDRMW => "*2\r\n$21\r\nNoOpModule.NOOPCMDRMW\r\n$2\r\nk1\r\n"u8;
+        Request noOpCmdRmw;
 
         static ReadOnlySpan<byte> NOOPOBJRMW => "*2\r\n$21\r\nNoOpModule.NOOPOBJRMW\r\n$2\r\nk2\r\n"u8;
         Request noOpObjRmw;
@@ -29,9 +32,16 @@ namespace BDN.benchmark.Operations
         static ReadOnlySpan<byte> NOOPTXN => "*1\r\n$18\r\nNoOpModule.NOOPTXN\r\n"u8;
         Request noOpTxn;
 
+        static ReadOnlySpan<byte> JSONGETCMD => "*3\r\n$8\r\nJSON.GET\r\n$2\r\nk3\r\n$1\r\n$\r\n"u8;
+        Request jsonGetCmd;
+
+        static ReadOnlySpan<byte> JSONSETCMD => "*4\r\n$8\r\nJSON.SET\r\n$2\r\nk3\r\n$4\r\n$.f2\r\n$1\r\n2\r\n"u8;
+        Request jsonSetCmd;
+
         private void RegisterModules()
         {
             server.Register.NewModule(new NoOpModule.NoOpModule(), [], out _);
+            server.Register.NewModule(new GarnetJSON.Module(), [], out _);
         }
 
         public override void GlobalSetup()
@@ -39,20 +49,31 @@ namespace BDN.benchmark.Operations
             base.GlobalSetup();
             RegisterModules();
 
-            SetupOperation(ref noOpCmd, NOOPCMD);
+            SetupOperation(ref noOpCmdRead, NOOPCMDREAD);
+            SetupOperation(ref noOpCmdRmw, NOOPCMDRMW);
             SetupOperation(ref noOpObjRead, NOOPOBJREAD);
             SetupOperation(ref noOpObjRmw, NOOPOBJRMW);
             SetupOperation(ref noOpProc, NOOPPROC);
             SetupOperation(ref noOpTxn, NOOPTXN);
 
+            SetupOperation(ref jsonGetCmd, JSONGETCMD);
+            SetupOperation(ref jsonSetCmd, JSONSETCMD);
+
             SlowConsumeMessage("*3\r\n$3\r\nSET\r\n$2\r\nk1\r\n$1\r\nc\r\n"u8);
             SlowConsumeMessage(NOOPOBJRMW);
+            SlowConsumeMessage("*4\r\n$8\r\nJSON.SET\r\n$2\r\nk3\r\n$1\r\n$\r\n$14\r\n{\"f1\":{\"a\":1}}\r\n"u8);
         }
 
         [Benchmark]
-        public void ModuleNoOpRawStringCommand()
+        public void ModuleNoOpRawStringReadCommand()
         {
-            Send(noOpCmd);
+            Send(noOpCmdRead);
+        }
+
+        [Benchmark]
+        public void ModuleNoOpRawStringRmwCommand()
+        {
+            Send(noOpCmdRmw);
         }
 
         [Benchmark]
@@ -77,6 +98,18 @@ namespace BDN.benchmark.Operations
         public void ModuleNoOpTxn()
         {
             Send(noOpTxn);
+        }
+
+        [Benchmark]
+        public void ModuleJsonGetCommand()
+        {
+            Send(jsonGetCmd);
+        }
+
+        [Benchmark]
+        public void ModuleJsonSetCommand()
+        {
+            Send(jsonSetCmd);
         }
     }
 }
