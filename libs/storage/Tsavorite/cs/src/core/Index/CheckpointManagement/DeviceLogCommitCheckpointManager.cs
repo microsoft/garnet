@@ -428,7 +428,7 @@ namespace Tsavorite.core
             if (errorCode != 0)
             {
                 var errorMessage = new Win32Exception((int)errorCode).Message;
-                logger?.LogError("[DeviceLogCheckpointManager] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
+                logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             semaphore.Release();
         }

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Text;
 using Garnet.common;
 using Garnet.server;
@@ -40,6 +39,7 @@ namespace Garnet.cluster
                     }
                     clusterProvider.clusterManager.TryResetReplica();
                     clusterProvider.replicationManager.TryUpdateForFailover();
+                    clusterProvider.replicationManager.ResetReplayIterator();
                     UnsafeBumpAndWaitForEpochTransition();
                 }
                 finally

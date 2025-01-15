@@ -211,6 +211,7 @@ One of the following:
 * Null reply: if the key does not exist.
 
 ---
+
 ### REPLICAOF
 
 #### Syntax
@@ -220,6 +221,22 @@ REPLICAOF <host port | NO ONE>
 ```
 
 The REPLICAOF command can change the replication settings of a replica on the fly.
+
+#### Resp Reply
+
+Simple string reply: OK.
+
+---
+
+### SLAVEOF
+
+#### Syntax
+
+```bash
+SLAVEOF <host port | NO ONE>
+```
+
+The SLAVEOF command can change the replication settings of a slave on the fly.
 
 #### Resp Reply
 

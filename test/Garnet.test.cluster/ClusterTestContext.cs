@@ -18,7 +18,7 @@ using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
-    internal class ClusterTestContext
+    public class ClusterTestContext
     {
         public CredentialManager credManager;
         public string TestFolder;
@@ -38,14 +38,18 @@ namespace Garnet.test.cluster
 
         public ClusterTestUtils clusterTestUtils = null;
 
-        public void Setup(Dictionary<string, LogLevel> monitorTests)
+        public CancellationTokenSource cts;
+
+        public void Setup(Dictionary<string, LogLevel> monitorTests, int testTimeoutSeconds = 60)
         {
+            cts = new CancellationTokenSource(TimeSpan.FromSeconds(testTimeoutSeconds));
+
             TestFolder = TestUtils.UnitTestWorkingDir() + "\\";
             var logLevel = LogLevel.Error;
             if (!string.IsNullOrEmpty(TestContext.CurrentContext.Test.MethodName) && monitorTests.TryGetValue(TestContext.CurrentContext.Test.MethodName, out var value))
                 logLevel = value;
-            loggerFactory = TestUtils.CreateLoggerFactoryInstance(logTextWriter, logLevel, scope: TestContext.CurrentContext.Test.Name);
-            logger = loggerFactory.CreateLogger(TestContext.CurrentContext.Test.Name);
+            loggerFactory = TestUtils.CreateLoggerFactoryInstance(logTextWriter, logLevel, scope: TestContext.CurrentContext.Test.FullName);
+            logger = loggerFactory.CreateLogger(TestContext.CurrentContext.Test.FullName);
             logger.LogDebug("0. Setup >>>>>>>>>>>>");
             r = new Random(674386);
             waiter = new ManualResetEventSlim();
@@ -54,6 +58,8 @@ namespace Garnet.test.cluster
 
         public void TearDown()
         {
+            cts.Cancel();
+            cts.Dispose();
             logger.LogDebug("0. Dispose <<<<<<<<<<<");
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
@@ -119,7 +125,8 @@ namespace Garnet.test.cluster
             AadAuthenticationSettings authenticationSettings = null,
             bool disablePubSub = true,
             int metricsSamplingFrequency = 0,
-            bool enableLua = false)
+            bool enableLua = false,
+            bool asyncReplay = false)
         {
             endpoints = TestUtils.GetEndPoints(shards, 7000);
             nodes = TestUtils.CreateGarnetCluster(
@@ -151,7 +158,8 @@ namespace Garnet.test.cluster
                 certificates: certificates,
                 authenticationSettings: authenticationSettings,
                 metricsSamplingFrequency: metricsSamplingFrequency,
-                enableLua: enableLua);
+                enableLua: enableLua,
+                asyncReplay: asyncReplay);
 
             foreach (var node in nodes)
                 node.Start();
@@ -186,6 +194,7 @@ namespace Garnet.test.cluster
         public GarnetServer CreateInstance(
             int Port,
             bool cleanClusterConfig = true,
+            bool disableEpochCollision = false,
             bool tryRecover = false,
             bool disableObjects = false,
             bool lowMemory = false,
@@ -204,6 +213,7 @@ namespace Garnet.test.cluster
             int gossipDelay = 5,
             bool useTLS = false,
             bool useAcl = false,
+            bool asyncReplay = false,
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential())
         {
@@ -232,6 +242,7 @@ namespace Garnet.test.cluster
                 EnableIncrementalSnapshots: EnableIncrementalSnapshots,
                 FastCommit: FastCommit,
                 useAcl: useAcl,
+                asyncReplay: asyncReplay,
                 aclFile: credManager.aclFilePath,
                 authUsername: clusterCreds.user,
                 authPassword: clusterCreds.password,
@@ -275,6 +286,7 @@ namespace Garnet.test.cluster
             clusterTestUtils?.Dispose();
             clusterTestUtils = new ClusterTestUtils(
                 endpoints,
+                context: this,
                 textWriter: logTextWriter,
                 UseTLS: useTLS,
                 authUsername: clientCreds.user,
@@ -435,7 +447,7 @@ namespace Garnet.test.cluster
                 while (responseState != ResponseState.OK || retVal == null || (value != int.Parse(retVal)))
                 {
                     retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out var _, out var _, out var _, out responseState, logger: logger);
-                    ClusterTestUtils.BackOff();
+                    ClusterTestUtils.BackOff(cancellationToken: cts.Token);
                 }
                 ClassicAssert.AreEqual(ResponseState.OK, responseState);
                 ClassicAssert.AreEqual(value, int.Parse(retVal), $"replOffset > p:{clusterTestUtils.GetReplicationOffset(primaryIndex, logger: logger)}, s[{replicaIndex}]:{clusterTestUtils.GetReplicationOffset(replicaIndex)}");
@@ -459,7 +471,7 @@ namespace Garnet.test.cluster
                         result = clusterTestUtils.Lrange(nodeIndex, key, logger);
                     else
                         result = clusterTestUtils.Smembers(nodeIndex, key, logger);
-                    ClusterTestUtils.BackOff();
+                    ClusterTestUtils.BackOff(cancellationToken: cts.Token);
                 }
                 if (!set)
                     ClassicAssert.AreEqual(elements, result);
@@ -484,7 +496,7 @@ namespace Garnet.test.cluster
                 while (responseState != ResponseState.OK || retVal == null || (value != int.Parse(retVal)))
                 {
                     retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out int _, out string _, out int _, out responseState, logger: logger);
-                    ClusterTestUtils.BackOff();
+                    ClusterTestUtils.BackOff(cancellationToken: cts.Token);
                 }
                 ClassicAssert.AreEqual(ResponseState.OK, responseState);
                 ClassicAssert.AreEqual(value, int.Parse(retVal), $"replOffset > p:{clusterTestUtils.GetReplicationOffset(primaryIndex, logger: logger)}, s[{replicaIndex}]:{clusterTestUtils.GetReplicationOffset(replicaIndex)}");

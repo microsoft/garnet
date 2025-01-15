@@ -4,8 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -237,17 +235,17 @@ namespace Garnet.server
                 return true;
             }
 
-            if (storeWrapper.serverOptions.EnableCluster)
+            if (index < storeWrapper.databaseNum)
             {
-                // Cluster mode does not allow DBID
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                if (index == 0)
+                if (storeWrapper.serverOptions.EnableCluster)
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    // Cluster mode does not allow DBID
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
@@ -381,7 +379,7 @@ namespace Garnet.server
                     SendAndReset();
 
                 if (keys.Count > 0)
-                    WriteOutputForScan(cursor, keys, ref dcurr, dend);
+                    WriteOutputForScan(cursor, keys);
             }
 
             return true;
@@ -417,24 +415,21 @@ namespace Garnet.server
         /// </summary>
         /// <param name="cursorValue">Cursor value to write to the output</param>
         /// <param name="keys">Keys to write to the output</param>
-        /// <param name="curr">Pointer to output buffer</param>
-        /// <param name="end">End of the output buffer</param>
-        private void WriteOutputForScan(long cursorValue, List<byte[]> keys, ref byte* curr, byte* end)
+        private void WriteOutputForScan(long cursorValue, List<byte[]> keys)
         {
             // The output is an array of two elements: cursor value and an array of keys
             // Note the cursor value should be formatted as bulk string ('$')
-            while (!RespWriteUtils.WriteIntegerAsBulkString(cursorValue, ref curr, end, out _))
+            while (!RespWriteUtils.WriteIntegerAsBulkString(cursorValue, ref dcurr, dend, out _))
                 SendAndReset();
 
             // Write size of the array
-            while (!RespWriteUtils.WriteArrayLength(keys.Count, ref curr, end))
+            while (!RespWriteUtils.WriteArrayLength(keys.Count, ref dcurr, dend))
                 SendAndReset();
 
             // Write the keys matching the pattern
             for (int i = 0; i < keys.Count; i++)
             {
-                while (!RespWriteUtils.WriteBulkString(keys[i], ref curr, end))
-                    SendAndReset();
+                WriteDirectLargeRespString(keys[i]);
             }
         }
 
@@ -453,6 +448,78 @@ namespace Garnet.server
 
             var message = parseState.GetArgSliceByRef(0).ReadOnlySpan;
             WriteDirectLargeRespString(message);
+            return true;
+        }
+
+        private bool NetworkLCS<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 2)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.LCS));
+
+            var key1 = parseState.GetArgSliceByRef(0);
+            var key2 = parseState.GetArgSliceByRef(1);
+
+            // Parse options
+            var lenOnly = false;
+            var withIndices = false;
+            var minMatchLen = 0;
+            var withMatchLen = false;
+            var tokenIdx = 2;
+            while (tokenIdx < parseState.Count)
+            {
+                var option = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
+
+                if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LEN))
+                {
+                    lenOnly = true;
+                }
+                else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.IDX))
+                {
+                    withIndices = true;
+                }
+                else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MINMATCHLEN))
+                {
+                    if (tokenIdx + 1 > parseState.Count)
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                    }
+
+                    if (!parseState.TryGetInt(tokenIdx++, out var minLen))
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                    }
+
+                    if (minLen < 0)
+                    {
+                        minLen = 0;
+                    }
+
+                    minMatchLen = minLen;
+                }
+                else if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMATCHLEN))
+                {
+                    withMatchLen = true;
+                }
+                else
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                }
+            }
+
+            if (lenOnly && withIndices)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_LENGTH_AND_INDEXES);
+            }
+
+            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var status = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
+
+            if (!output.IsSpanByte)
+                SendAndReset(output.Memory, output.Length);
+            else
+                dcurr += output.Length;
+
             return true;
         }
     }

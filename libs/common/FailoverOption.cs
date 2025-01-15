@@ -12,6 +12,8 @@ namespace Garnet.common
     /// </summary>
     public enum FailoverOption : byte
     {
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (SessionParseStateExtensions.TryGetFailoverOption)
+
         /// <summary>
         /// Internal use only
         /// </summary>
@@ -58,22 +60,5 @@ namespace Garnet.common
         /// <returns></returns>
         public static byte[] GetRespFormattedFailoverOption(FailoverOption failoverOption)
             => infoSections[(int)failoverOption];
-    }
-
-    /// <summary>
-    /// Extension methods for <see cref="FailoverOption"/>.
-    /// </summary>
-    public static class FailoverOptionExtensions
-    {
-        /// <summary>
-        /// Validate that the given <see cref="FailoverOption"/> is legal, and _could_ have come from the given <see cref="ReadOnlySpan{T}"/>.
-        /// 
-        /// TODO: Long term we can kill this and use <see cref="IUtf8SpanParsable{ClientType}"/> instead of <see cref="Enum.TryParse{TEnum}(string?, bool, out TEnum)"/>
-        /// and avoid extra validation.  See: https://github.com/dotnet/runtime/issues/81500 .
-        /// </summary>
-        public static bool IsValid(this FailoverOption type, ReadOnlySpan<byte> fromSpan)
-        {
-            return type != FailoverOption.DEFAULT && type != FailoverOption.INVALID && Enum.IsDefined(type) && !fromSpan.ContainsAnyInRange((byte)'0', (byte)'9');
-        }
     }
 }

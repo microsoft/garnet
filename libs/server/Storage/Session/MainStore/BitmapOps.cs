@@ -279,13 +279,15 @@ namespace Garnet.server
 
             for (var i = 0; i < commandArguments.Count; i++)
             {
+                var isGet = commandArguments[i].secondaryCommand == RespCommand.GET;
+
                 // Get parameter lengths
-                var op = ((RespCommand)commandArguments[i].secondaryCommand).ToString();
+                var op = commandArguments[i].secondaryCommand.ToString();
                 var encodingPrefix = (commandArguments[i].typeInfo & (byte)BitFieldSign.SIGNED) > 0 ? "i"u8 : "u"u8;
                 var encodingSuffix = commandArguments[i].typeInfo & 0x7F;
                 var encodingSuffixLength = NumUtils.NumDigits(encodingSuffix);
                 var offsetLength = NumUtils.NumDigitsInLong(commandArguments[i].offset);
-                var valueLength = NumUtils.NumDigitsInLong(commandArguments[i].value);
+                var valueLength = isGet ? 0 : NumUtils.NumDigitsInLong(commandArguments[i].value);
                 var overflowType = ((BitFieldOverflow)commandArguments[i].overflowType).ToString();
 
                 // Calculate # of bytes to store parameters
@@ -323,10 +325,14 @@ namespace Garnet.server
                 paramsSpanOffset += offsetLength;
 
                 // Value
-                var valueSpan = paramsSpan.Slice(paramsSpanOffset, valueLength);
-                NumUtils.LongToSpanByte(commandArguments[i].value, valueSpan);
-                var valueSlice = ArgSlice.FromPinnedSpan(valueSpan);
-                paramsSpanOffset += valueLength;
+                ArgSlice valueSlice = default;
+                if (!isGet)
+                {
+                    var valueSpan = paramsSpan.Slice(paramsSpanOffset, valueLength);
+                    NumUtils.LongToSpanByte(commandArguments[i].value, valueSpan);
+                    valueSlice = ArgSlice.FromPinnedSpan(valueSpan);
+                    paramsSpanOffset += valueLength;
+                }
 
                 // Overflow Type
                 var overflowTypeSpan = paramsSpan.Slice(paramsSpanOffset, overflowType.Length);
@@ -335,8 +341,15 @@ namespace Garnet.server
 
                 var output = new SpanByteAndMemory(null);
 
-                parseState.InitializeWithArguments(opSlice, encodingSlice, offsetSlice,
+                if (isGet)
+                {
+                    parseState.InitializeWithArguments(opSlice, encodingSlice, offsetSlice, overflowTypeSlice);
+                }
+                else
+                {
+                    parseState.InitializeWithArguments(opSlice, encodingSlice, offsetSlice,
                         valueSlice, overflowTypeSlice);
+                }
 
                 input.parseState = parseState;
                 var status = commandArguments[i].secondaryCommand == RespCommand.GET ?

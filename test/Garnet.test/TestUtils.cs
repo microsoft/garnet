@@ -29,6 +29,17 @@ using Tsavorite.devices;
 
 namespace Garnet.test
 {
+    public struct StoreAddressInfo
+    {
+        public long BeginAddress;
+        public long HeadAddress;
+        public long ReadOnlyAddress;
+        public long TailAddress;
+        public long MemorySize;
+        public long ReadCacheBeginAddress;
+        public long ReadCacheTailAddress;
+    }
+
     internal static class TestUtils
     {
         /// <summary>
@@ -192,6 +203,7 @@ namespace Garnet.test
             string objectStoreHeapMemorySize = default,
             string objectStoreIndexSize = "16k",
             string objectStoreIndexMaxSize = default,
+            string objectStoreReadCacheHeapMemorySize = default,
             string indexSize = "1m",
             string indexMaxSize = default,
             string[] extensionBinPaths = null,
@@ -200,8 +212,12 @@ namespace Garnet.test
             int indexResizeFrequencySecs = 60,
             IAuthenticationSettings authenticationSettings = null,
             bool enableLua = false,
+            bool enableReadCache = false,
+            bool enableObjectStoreReadCache = false,
             ILogger logger = null,
-            IEnumerable<string> loadModulePaths = null)
+            IEnumerable<string> loadModulePaths = null,
+            string pubSubPageSize = null,
+            bool asyncReplay = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -277,11 +293,20 @@ namespace Garnet.test
                 EnableScatterGatherGet = getSG,
                 IndexResizeFrequencySecs = indexResizeFrequencySecs,
                 ThreadPoolMinThreads = threadPoolMinThreads,
-                LoadModuleCS = loadModulePaths
+                LoadModuleCS = loadModulePaths,
+                EnableReadCache = enableReadCache,
+                EnableObjectStoreReadCache = enableObjectStoreReadCache,
+                ReplicationOffsetMaxLag = asyncReplay ? -1 : 0
             };
+
+            if (!string.IsNullOrEmpty(pubSubPageSize))
+                opts.PubSubPageSize = pubSubPageSize;
 
             if (!string.IsNullOrEmpty(objectStoreHeapMemorySize))
                 opts.ObjectStoreHeapMemorySize = objectStoreHeapMemorySize;
+
+            if (!string.IsNullOrEmpty(objectStoreReadCacheHeapMemorySize))
+                opts.ObjectStoreReadCacheHeapMemorySize = objectStoreReadCacheHeapMemorySize;
 
             if (indexMaxSize != default) opts.IndexMaxSize = indexMaxSize;
             if (objectStoreIndexMaxSize != default) opts.ObjectStoreIndexMaxSize = objectStoreIndexMaxSize;
@@ -290,6 +315,17 @@ namespace Garnet.test
             {
                 opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "1024" : MemorySize;
                 opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
+                if (enableReadCache)
+                {
+                    opts.ReadCacheMemorySize = opts.MemorySize;
+                    opts.ReadCachePageSize = opts.PageSize;
+                }
+
+                if (enableObjectStoreReadCache)
+                {
+                    opts.ObjectStoreReadCacheLogMemorySize = opts.MemorySize;
+                    opts.ObjectStoreReadCachePageSize = opts.PageSize;
+                }
             }
 
             if (useTestLogger)
@@ -359,7 +395,8 @@ namespace Garnet.test
             ILoggerFactory loggerFactory = null,
             AadAuthenticationSettings authenticationSettings = null,
             int metricsSamplingFrequency = 0,
-            bool enableLua = false)
+            bool enableLua = false,
+            bool asyncReplay = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -400,7 +437,8 @@ namespace Garnet.test
                     logger: loggerFactory?.CreateLogger("GarnetServer"),
                     aadAuthenticationSettings: authenticationSettings,
                     metricsSamplingFrequency: metricsSamplingFrequency,
-                    enableLua: enableLua);
+                    enableLua: enableLua,
+                    asyncReplay: asyncReplay);
 
                 ClassicAssert.IsNotNull(opts);
                 int iter = 0;
@@ -447,6 +485,7 @@ namespace Garnet.test
             AadAuthenticationSettings aadAuthenticationSettings = null,
             int metricsSamplingFrequency = 0,
             bool enableLua = false,
+            bool asyncReplay = false,
             ILogger logger = null)
         {
             if (UseAzureStorage)
@@ -532,6 +571,7 @@ namespace Garnet.test
                 ClusterUsername = authUsername,
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
+                ReplicationOffsetMaxLag = asyncReplay ? -1 : 0
             };
 
             if (lowMemory)
@@ -834,6 +874,33 @@ namespace Garnet.test
             {
                 Assert.Fail(ex.Message);
             }
+        }
+
+        public static StoreAddressInfo GetStoreAddressInfo(IServer server, bool includeReadCache = false, bool isObjectStore = false)
+        {
+            StoreAddressInfo result = default;
+            var info = isObjectStore ? server.Info("OBJECTSTORE") : server.Info("STORE");
+            foreach (var section in info)
+            {
+                foreach (var entry in section)
+                {
+                    if (entry.Key.Equals("Log.BeginAddress"))
+                        result.BeginAddress = long.Parse(entry.Value);
+                    else if (entry.Key.Equals("Log.HeadAddress"))
+                        result.HeadAddress = long.Parse(entry.Value);
+                    else if (entry.Key.Equals("Log.SafeReadOnlyAddress"))
+                        result.ReadOnlyAddress = long.Parse(entry.Value);
+                    else if (entry.Key.Equals("Log.TailAddress"))
+                        result.TailAddress = long.Parse(entry.Value);
+                    else if (entry.Key.Equals("Log.MemorySizeBytes"))
+                        result.MemorySize = long.Parse(entry.Value);
+                    else if (includeReadCache && entry.Key.Equals("ReadCache.BeginAddress"))
+                        result.ReadCacheBeginAddress = long.Parse(entry.Value);
+                    else if (includeReadCache && entry.Key.Equals("ReadCache.TailAddress"))
+                        result.ReadCacheTailAddress = long.Parse(entry.Value);
+                }
+            }
+            return result;
         }
     }
 }

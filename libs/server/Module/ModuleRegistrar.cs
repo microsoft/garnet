@@ -152,7 +152,7 @@ namespace Garnet.server
             if (string.IsNullOrEmpty(name) || factory == null || command == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
-            customCommandManager.Register(name, type, factory, command, commandInfo, commandDocs);
+            customCommandManager.Register(name, type, factory, commandInfo, commandDocs, command);
 
             return ModuleActionStatus.Success;
         }
@@ -165,7 +165,7 @@ namespace Garnet.server
         /// <param name="commandInfo">Command info</param>
         /// <param name="commandDocs">Command docs</param>
         /// <returns>Registration status</returns>
-        public ModuleActionStatus RegisterProcedure(string name, CustomProcedure customScriptProc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
+        public ModuleActionStatus RegisterProcedure(string name, Func<CustomProcedure> customScriptProc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
         {
             if (string.IsNullOrEmpty(name) || customScriptProc == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;

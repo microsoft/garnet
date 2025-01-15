@@ -333,7 +333,7 @@ namespace Garnet.test.cluster
 
                     if (count > 0)
                     {
-                        BackOff();
+                        BackOff(cancellationToken: context.cts.Token);
                         goto retry;
                     }
                 }
@@ -555,9 +555,11 @@ namespace Garnet.test.cluster
         readonly string authUsername;
         readonly string authPassword;
         readonly X509CertificateCollection certificates;
+        readonly ClusterTestContext context;
 
         public ClusterTestUtils(
             EndPointCollection endpoints,
+            ClusterTestContext context = null,
             TextWriter textWriter = null,
             bool UseTLS = false,
             string authUsername = null,
@@ -565,6 +567,7 @@ namespace Garnet.test.cluster
             X509CertificateCollection certificates = null)
         {
             r = new Random(674386);
+            this.context = context;
             this.useTLS = UseTLS;
             this.allowAdmin = true;
             this.disablePubSub = true;
@@ -576,6 +579,13 @@ namespace Garnet.test.cluster
         }
 
         public static void BackOff(TimeSpan timeSpan = default) => Thread.Sleep(timeSpan == default ? backoff : timeSpan);
+
+        public static void BackOff(CancellationToken cancellationToken, TimeSpan timeSpan = default, string msg = null)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                ClassicAssert.Fail(msg ?? "Cancellation Requested");
+            Thread.Sleep(timeSpan == default ? backoff : timeSpan);
+        }
 
         public void Connect(ILogger logger = null)
         {
@@ -1053,7 +1063,7 @@ namespace Garnet.test.cluster
                     var nodeConfig = ClusterNodes(nodeIndex, logger: logger);
                     if (!MatchConfig(fromNodeConfig, nodeConfig))
                     {
-                        BackOff();
+                        BackOff(cancellationToken: context.cts.Token);
                         goto retry;
                     }
                 }
@@ -1267,7 +1277,7 @@ namespace Garnet.test.cluster
             {
                 while (Nodes((IPEndPoint)endPoint, logger).Count != endpoints.Count)
                 {
-                    BackOff();
+                    BackOff(cancellationToken: context.cts.Token);
                 }
             }
         }
@@ -1299,7 +1309,7 @@ namespace Garnet.test.cluster
 
                 if (count == endpoints.Count - 1) break;
                 if (retry++ > 1_000_000) Assert.Fail("retry config sync at WaitUntilNodeIsKnownByAllNodes reached");
-                BackOff();
+                BackOff(cancellationToken: context.cts.Token);
             }
         }
 
@@ -1314,7 +1324,7 @@ namespace Garnet.test.cluster
                     if (node.NodeId.Equals(nodeId))
                         found = true;
                 if (found) break;
-                BackOff();
+                BackOff(cancellationToken: context.cts.Token);
             }
         }
 
@@ -1753,7 +1763,7 @@ namespace Garnet.test.cluster
 
         public void WaitForMigrationCleanup(IPEndPoint endPoint, ILogger logger)
         {
-            while (MigrateTasks(endPoint, logger) > 0) { BackOff(); }
+            while (MigrateTasks(endPoint, logger) > 0) { BackOff(cancellationToken: context.cts.Token); }
         }
 
         public void WaitForMigrationCleanup(ILogger logger)
@@ -1938,7 +1948,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; ClusterForget");
+                logger?.LogError(ex, "An error has occurred; ClusterForget");
                 Assert.Fail(ex.Message);
                 return ex.Message;
             }
@@ -1964,7 +1974,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; ClusterReset");
+                logger?.LogError(ex, "An error has occurred; ClusterReset");
                 Assert.Fail(ex.Message);
                 return ex.Message;
             }
@@ -1988,7 +1998,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; ClusterKeySlot");
+                logger?.LogError(ex, "An error has occurred; ClusterKeySlot");
                 Assert.Fail();
                 return -1;
             }
@@ -2006,7 +2016,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; FlushAllDatabases");
+                logger?.LogError(ex, "An error has occurred; FlushAllDatabases");
                 Assert.Fail();
             }
         }
@@ -2023,7 +2033,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; ClusterNodes");
+                logger?.LogError(ex, "An error has occurred; ClusterNodes");
                 Assert.Fail();
                 return null;
             }
@@ -2036,7 +2046,7 @@ namespace Garnet.test.cluster
                 var config = ClusterNodes(syncOnNodeIndex, logger);
                 if (config.Nodes.Count == count)
                     break;
-                BackOff();
+                BackOff(cancellationToken: context.cts.Token);
             }
 
         retrySync:
@@ -2054,7 +2064,7 @@ namespace Garnet.test.cluster
                 {
                     if (!configNodes[j].Equals(otherConfigNodes[j]))
                     {
-                        BackOff();
+                        BackOff(cancellationToken: context.cts.Token);
                         goto retrySync;
                     }
                 }
@@ -2679,6 +2689,30 @@ namespace Garnet.test.cluster
             return items;
         }
 
+        public string GetInfo(int nodeIndex, string section, string segment, ILogger logger = null)
+            => GetInfo(endpoints[nodeIndex].ToIPEndPoint(), section, segment, logger);
+
+        public string GetInfo(IPEndPoint endPoint, string section, string segment, ILogger logger = null)
+        {
+            try
+            {
+                var server = redis.GetServer(endPoint);
+                var result = server.Info(section);
+                ClassicAssert.AreEqual(1, result.Length, "section does not exist");
+                foreach (var item in result[0])
+                    if (item.Key.Equals(segment))
+                        return item.Value;
+                Assert.Fail($"Segment not available for {section} section");
+                return "";
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occurred; GetFailoverState");
+                Assert.Fail(ex.Message);
+                return null;
+            }
+        }
+
         public void WaitForReplicaAofSync(int primaryIndex, int secondaryIndex, ILogger logger = null)
         {
             long primaryReplicationOffset;
@@ -2688,7 +2722,7 @@ namespace Garnet.test.cluster
                 var secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
                 if (primaryReplicationOffset == secondaryReplicationOffset1)
                     break;
-                BackOff();
+                BackOff(cancellationToken: context.cts.Token);
             }
             logger?.LogInformation("Replication offset for primary {primaryIndex} and secondary {secondaryIndex} is {primaryReplicationOffset}", primaryIndex, secondaryIndex, primaryReplicationOffset);
         }
@@ -2713,7 +2747,7 @@ namespace Garnet.test.cluster
                     Assert.Fail(ex.Message);
                 }
 
-                BackOff();
+                BackOff(cancellationToken: context.cts.Token);
             }
         }
 
@@ -2735,7 +2769,7 @@ namespace Garnet.test.cluster
                         logger?.LogError(ex, "An error occurred at WaitForConnectedReplicaCount");
                         Assert.Fail(ex.Message);
                     }
-                    BackOff();
+                    BackOff(cancellationToken: context.cts.Token);
                 }
             }
         }
@@ -2746,7 +2780,7 @@ namespace Garnet.test.cluster
             {
                 var failoverState = GetFailoverState(nodeIndex, logger);
                 if (failoverState.Equals("no-failover")) break;
-                BackOff();
+                BackOff(cancellationToken: context.cts.Token);
             }
         }
 
@@ -2809,7 +2843,7 @@ namespace Garnet.test.cluster
                     var lastSaveTime = server.LastSave();
                     if (lastSaveTime >= time)
                         break;
-                    BackOff();
+                    BackOff(cancellationToken: context.cts.Token);
                 }
             }
             catch (Exception ex)

@@ -22,6 +22,8 @@ namespace Garnet.cluster
 
         readonly CancellationTokenSource ctsRepManager = new();
 
+        readonly int pageSizeBits;
+
         readonly ILogger logger;
         bool _disposed;
 
@@ -92,6 +94,7 @@ namespace Garnet.cluster
             this.logger = logger;
             this.clusterProvider = clusterProvider;
             this.storeWrapper = clusterProvider.storeWrapper;
+            this.pageSizeBits = storeWrapper.appendOnlyFile == null ? 0 : storeWrapper.appendOnlyFile.UnsafeGetLogPageSizeBits();
 
             this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
             ValidateNetworkBufferSettings();
@@ -107,7 +110,7 @@ namespace Garnet.cluster
                 clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShift = CheckpointVersionShift;
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary
-            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && !StartRecovery())
+            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !StartRecovery())
                 throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
@@ -117,20 +120,27 @@ namespace Garnet.cluster
             var clusterDataPath = opts.CheckpointDir + clusterFolder;
             var deviceFactory = opts.GetInitializedDeviceFactory(clusterDataPath);
             replicationConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "replication.conf"));
-            pool = new(1, (int)replicationConfigDevice.SectorSize);
+            replicationConfigDevicePool = new(1, (int)replicationConfigDevice.SectorSize);
 
-            var recoverConfig = replicationConfigDevice.GetFileSize(0) > 0;
-            if (!recoverConfig)
+            var canRecoverReplicationHistory = replicationConfigDevice.GetFileSize(0) > 0;
+            if (clusterProvider.serverOptions.Recover && canRecoverReplicationHistory)
             {
-                InitializeReplicationHistory();
+                logger?.LogTrace("Recovering in-memory checkpoint registry");
+                // If recover option is enabled and replication history information is available
+                // recover replication history and initialize in-memory checkpoint registry.
+                RecoverReplicationHistory();
             }
             else
             {
-                RecoverReplicationHistory();
+                logger?.LogTrace("Initializing new in-memory checkpoint registry");
+                // If recover option is not enabled or replication history is not available
+                // initialize new empty replication history.
+                InitializeReplicationHistory();
             }
 
             // After initializing replication history propagate replicationId to ReplicationLogCheckpointManager
             SetPrimaryReplicationId();
+            replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token);
         }
 
         /// <summary>
@@ -153,10 +163,14 @@ namespace Garnet.cluster
         public bool StartRecovery()
         {
             if (!clusterProvider.storeWrapper.TryPauseCheckpoints())
+            {
+                logger?.LogError("Error could not acquire checkpoint lock");
                 return false;
+            }
 
             if (!recoverLock.TryWriteLock())
             {
+                logger?.LogError("Error could not acquire recover lock");
                 // If failed to acquire recoverLock re-enable checkpoint taking
                 clusterProvider.storeWrapper.ResumeCheckpoints();
                 return false;
@@ -178,11 +192,14 @@ namespace Garnet.cluster
         {
             _disposed = true;
 
-            replicationConfigDevice.Dispose();
-            pool.Free();
+            replicationConfigDevice?.Dispose();
+            replicationConfigDevicePool?.Free();
 
             checkpointStore.WaitForReplicas();
             replicaSyncSessionTaskStore.Dispose();
+            replicaReplayTaskCts.Cancel();
+            activeReplay.WriteLock();
+            replicaReplayTaskCts.Dispose();
             ctsRepManager.Cancel();
             ctsRepManager.Dispose();
             aofTaskStore.Dispose();
@@ -260,7 +277,7 @@ namespace Garnet.cluster
 
             var localNodeRole = current.LocalNodeRole;
             var replicaOfNodeId = current.LocalNodePrimaryId;
-            if (localNodeRole == NodeRole.REPLICA && replicaOfNodeId != null)
+            if (localNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && replicaOfNodeId != null)
             {
                 // At initialization of ReplicationManager, this node has been put into recovery mode
                 if (!TryReplicateFromPrimary(out var errorMessage))

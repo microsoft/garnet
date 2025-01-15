@@ -98,6 +98,8 @@ namespace Garnet.server
         private bool NetworkSKIP(RespCommand cmd)
         {
             // Retrieve the meta-data for the command to do basic sanity checking for command arguments
+            // Normalize will turn internal "not-real commands" such as SETEXNX, and SETEXXX to the command info parent
+            cmd = cmd.NormalizeForACLs();
             if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var commandInfo, txnOnly: true, logger))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
@@ -266,7 +268,7 @@ namespace Garnet.server
 
             try
             {
-                (proc, arity) = customCommandManagerSession.GetCustomTransactionProcedure(txId, txnManager, scratchBufferManager);
+                proc = customCommandManagerSession.GetCustomTransactionProcedure(txId, this, txnManager, scratchBufferManager, out arity);
             }
             catch (Exception e)
             {

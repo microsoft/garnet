@@ -17,14 +17,29 @@ namespace Garnet.server
         private bool NetworkRENAME<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.Count != 2)
+            // one optional command for with etag
+            if (parseState.Count < 2 || parseState.Count > 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME));
             }
 
             var oldKeySlice = parseState.GetArgSliceByRef(0);
             var newKeySlice = parseState.GetArgSliceByRef(1);
-            var status = storageApi.RENAME(oldKeySlice, newKeySlice);
+
+            var withEtag = false;
+            if (parseState.Count == 3)
+            {
+                if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
+                {
+                    while (!RespWriteUtils.WriteError($"ERR Unsupported option {parseState.GetString(2)}", ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                withEtag = true;
+            }
+
+            var status = storageApi.RENAME(oldKeySlice, newKeySlice, withEtag);
 
             switch (status)
             {
@@ -46,14 +61,29 @@ namespace Garnet.server
         private bool NetworkRENAMENX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.Count != 2)
+            // one optional command for with etag
+            if (parseState.Count < 2 || parseState.Count > 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAMENX));
             }
 
             var oldKeySlice = parseState.GetArgSliceByRef(0);
             var newKeySlice = parseState.GetArgSliceByRef(1);
-            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice, out var result);
+
+            var withEtag = false;
+            if (parseState.Count == 3)
+            {
+                if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
+                {
+                    while (!RespWriteUtils.WriteError($"ERR Unsupported option {parseState.GetString(2)}", ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                withEtag = true;
+            }
+
+            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice, out var result, withEtag);
 
             if (status == GarnetStatus.OK)
             {
@@ -137,32 +167,6 @@ namespace Garnet.server
             return true;
         }
 
-        bool TryGetExpireOption(ReadOnlySpan<byte> item, out ExpireOption option)
-        {
-            if (item.EqualsUpperCaseSpanIgnoringCase("NX"u8))
-            {
-                option = ExpireOption.NX;
-                return true;
-            }
-            if (item.EqualsUpperCaseSpanIgnoringCase("XX"u8))
-            {
-                option = ExpireOption.XX;
-                return true;
-            }
-            if (item.EqualsUpperCaseSpanIgnoringCase("GT"u8))
-            {
-                option = ExpireOption.GT;
-                return true;
-            }
-            if (item.EqualsUpperCaseSpanIgnoringCase("LT"u8))
-            {
-                option = ExpireOption.LT;
-                return true;
-            }
-            option = ExpireOption.None;
-            return false;
-        }
-
         /// <summary>
         /// Set a timeout on a key.
         /// </summary>
@@ -190,7 +194,7 @@ namespace Garnet.server
             var expireOption = ExpireOption.None;
             if (parseState.Count > 2)
             {
-                if (!TryGetExpireOption(parseState.GetArgSliceByRef(2).ReadOnlySpan, out expireOption))
+                if (!parseState.TryGetExpireOption(2, out expireOption))
                 {
                     var optionStr = parseState.GetString(2);
 
@@ -201,7 +205,7 @@ namespace Garnet.server
 
                 if (parseState.Count > 3)
                 {
-                    if (!TryGetExpireOption(parseState.GetArgSliceByRef(3).ReadOnlySpan, out var additionExpireOption))
+                    if (!parseState.TryGetExpireOption(3, out var additionExpireOption))
                     {
                         var optionStr = parseState.GetString(3);
 
@@ -278,7 +282,7 @@ namespace Garnet.server
 
             if (parseState.Count > 2)
             {
-                if (!TryGetExpireOption(parseState.GetArgSliceByRef(2).ReadOnlySpan, out expireOption))
+                if (!parseState.TryGetExpireOption(2, out expireOption))
                 {
                     var optionStr = parseState.GetString(2);
 
@@ -290,7 +294,7 @@ namespace Garnet.server
 
             if (parseState.Count > 3)
             {
-                if (!TryGetExpireOption(parseState.GetArgSliceByRef(3).ReadOnlySpan, out var additionExpireOption))
+                if (!parseState.TryGetExpireOption(3, out var additionExpireOption))
                 {
                     var optionStr = parseState.GetString(3);
 

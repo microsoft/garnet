@@ -80,12 +80,18 @@ namespace Garnet.server
                         ServerConfigType.SAVE => "$4\r\nsave\r\n$0\r\n\r\n"u8,
                         ServerConfigType.APPENDONLY => storeWrapper.serverOptions.EnableAOF ? "$10\r\nappendonly\r\n$3\r\nyes\r\n"u8 : "$10\r\nappendonly\r\n$2\r\nno\r\n"u8,
                         ServerConfigType.SLAVE_READ_ONLY => clusterSession == null || clusterSession.ReadWriteSession ? "$15\r\nslave-read-only\r\n$2\r\nno\r\n"u8 : "$15\r\nslave-read-only\r\n$3\r\nyes\r\n"u8,
-                        ServerConfigType.DATABASES => storeWrapper.serverOptions.EnableCluster ? "$9\r\ndatabases\r\n$1\r\n1\r\n"u8 : "$9\r\ndatabases\r\n$2\r\n16\r\n"u8,
+                        ServerConfigType.DATABASES => GetDatabases(),
                         ServerConfigType.CLUSTER_NODE_TIMEOUT => Encoding.ASCII.GetBytes($"$20\r\ncluster-node-timeout\r\n${storeWrapper.serverOptions.ClusterTimeout.ToString().Length}\r\n{storeWrapper.serverOptions.ClusterTimeout}\r\n"),
                         ServerConfigType.NONE => throw new NotImplementedException(),
                         ServerConfigType.ALL => throw new NotImplementedException(),
                         _ => throw new NotImplementedException()
                     };
+
+                    ReadOnlySpan<byte> GetDatabases()
+                    {
+                        var databases = storeWrapper.databaseNum.ToString();
+                        return Encoding.ASCII.GetBytes($"$9\r\ndatabases\r\n${databases.Length}\r\n{databases}\r\n");
+                    }
 
                     while (!RespWriteUtils.WriteDirect(parameterValue, ref dcurr, dend))
                         SendAndReset();

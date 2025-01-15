@@ -378,7 +378,7 @@ namespace Garnet.common
             }
 
             // Validate length
-            if (value > int.MaxValue)
+            if (value > int.MaxValue && (!negative || value > int.MaxValue + (ulong)1)) // int.MinValue = -(int.MaxValue + 1)
             {
                 RespParsingException.ThrowIntegerOverflow(readHead - digitsRead, (int)digitsRead);
             }
@@ -730,6 +730,22 @@ namespace Garnet.common
         /// <returns>True if a RESP string was successfully read.</returns>
         public static bool ReadStringWithLengthHeader(out string result, ref byte* ptr, byte* end)
         {
+            ReadSpanWithLengthHeader(out var resultSpan, ref ptr, end);
+            result = Encoding.UTF8.GetString(resultSpan);
+            return true;
+        }
+
+        /// <summary>
+        /// Tries to read a RESP-formatted string as span including its length header from the given ASCII-encoded
+        /// RESP message and, if successful, moves the given ptr to the end of the string value.
+        /// NOTE: We use ReadUnsignedLengthHeader because server does not accept $-1\r\n headers
+        /// </summary>
+        /// <param name="result">If parsing was successful, contains the extracted string value.</param>
+        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP message.</param>
+        /// <returns>True if a RESP string was successfully read.</returns>
+        public static bool ReadSpanWithLengthHeader(out ReadOnlySpan<byte> result, ref byte* ptr, byte* end)
+        {
             result = null;
 
             if (ptr + 3 > end)
@@ -753,7 +769,7 @@ namespace Garnet.common
                 RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
             }
 
-            result = Encoding.UTF8.GetString(new ReadOnlySpan<byte>(keyPtr, length));
+            result = new ReadOnlySpan<byte>(keyPtr, length);
 
             return true;
         }
@@ -859,9 +875,39 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Read error as span
+        /// </summary>
+        public static bool TryReadErrorAsSpan(out ReadOnlySpan<byte> result, ref byte* ptr, byte* end)
+        {
+            result = null;
+            if (ptr + 2 >= end)
+                return false;
+
+            // Error strings need to start with a '-'
+            if (*ptr != '-')
+            {
+                return false;
+            }
+
+            ptr++;
+
+            return ReadAsSpan(out result, ref ptr, end);
+        }
+
+        /// <summary>
         /// Read integer as string
         /// </summary>
         public static bool ReadIntegerAsString(out string result, ref byte* ptr, byte* end)
+        {
+            var success = ReadIntegerAsSpan(out var resultSpan, ref ptr, end);
+            result = Encoding.UTF8.GetString(resultSpan);
+            return success;
+        }
+
+        /// <summary>
+        /// Read integer as string
+        /// </summary>
+        public static bool ReadIntegerAsSpan(out ReadOnlySpan<byte> result, ref byte* ptr, byte* end)
         {
             result = null;
             if (ptr + 2 >= end)
@@ -875,7 +921,7 @@ namespace Garnet.common
 
             ptr++;
 
-            return ReadString(out result, ref ptr, end);
+            return ReadAsSpan(out result, ref ptr, end);
         }
 
         /// <summary>
@@ -899,50 +945,6 @@ namespace Garnet.common
                 if (*ptr == '$')
                 {
                     if (!ReadStringWithLengthHeader(out result[i], ref ptr, end))
-                        return false;
-                }
-                else
-                {
-                    if (!ReadIntegerAsString(out result[i], ref ptr, end))
-                        return false;
-                }
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// Read string array with length header
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadStringArrayResponseWithLengthHeader(out string[] result, ref byte* ptr, byte* end)
-        {
-            result = null;
-
-            // Parse RESP array header
-            if (!ReadSignedArrayLength(out var length, ref ptr, end))
-            {
-                return false;
-            }
-
-            if (length < 0)
-            {
-                // NULL value ('*-1\r\n')
-                return true;
-            }
-
-            // Parse individual strings in the array
-            result = new string[length];
-            for (var i = 0; i < length; i++)
-            {
-                if (*ptr == '$')
-                {
-                    if (!ReadStringResponseWithLengthHeader(out result[i], ref ptr, end))
-                        return false;
-                }
-                else if (*ptr == '+')
-                {
-                    if (!ReadSimpleString(out result[i], ref ptr, end))
                         return false;
                 }
                 else
@@ -1024,6 +1026,32 @@ namespace Garnet.common
                 if (*(ushort*)ptr == MemoryMarshal.Read<ushort>("\r\n"u8))
                 {
                     result = Encoding.UTF8.GetString(new ReadOnlySpan<byte>(start, (int)(ptr - start)));
+                    ptr += 2;
+                    return true;
+                }
+                ptr++;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Read ASCII string as span without header until string terminator ('\r\n').
+        /// </summary>
+        public static bool ReadAsSpan(out ReadOnlySpan<byte> result, ref byte* ptr, byte* end)
+        {
+            result = null;
+
+            if (ptr + 1 >= end)
+                return false;
+
+            var start = ptr;
+
+            while (ptr < end - 1)
+            {
+                if (*(ushort*)ptr == MemoryMarshal.Read<ushort>("\r\n"u8))
+                {
+                    result = new ReadOnlySpan<byte>(start, (int)(ptr - start));
                     ptr += 2;
                     return true;
                 }

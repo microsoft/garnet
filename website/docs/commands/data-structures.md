@@ -232,6 +232,34 @@ BLMOVE is the blocking variant of [LMOVE](#lmove-lmove). When source contains el
 
 ---
 
+### BRPOPLPUSH
+
+#### Syntax
+
+```bash
+BRPOPLPUSH source destination timeout
+```
+
+The BRPOPLPUSH command removes the last element from the list stored at source, and pushes the element to the list stored at destination. It then returns the element to the caller.
+
+#### Resp Reply
+
+Bulk string reply: the element being popped and pushed.
+
+---
+
+### BLMPOP
+
+#### Syntax
+
+```bash
+    BLMPOP timeout numkeys key [key ...] <LEFT | RIGHT> [COUNT count]
+```
+
+BLMPOP is the blocking variant of [LMPOP](#lmpop). When any of the lists contains elements, this command behaves exactly like LMPOP. When used inside a MULTI/EXEC block, this command behaves exactly like LMPOP. When all lists are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+
+---
+
 ### BLPOP
 
 #### Syntax
@@ -674,6 +702,21 @@ If **destination** already exists, it is overwritten.
 
 ---
 
+### SINTERCARD
+
+#### Syntax
+
+```bash
+    SINTERCARD numkeys [key ...] [LIMIT limit]
+```
+
+Returns the number of members in the resulting set from the intersection of all the given sets.
+Keys that do not exist are considered to be empty sets.
+
+The optional `LIMIT` argument specifies an upper bound on the number of intersecting members to count.
+
+---
+
 ### SDIFF
 
 #### Syntax
@@ -792,6 +835,43 @@ An error is returned when **key** exists but does not hold a sorted set.
 
 The score value should be the string representation of a numeric value, and accepts double precision floating point numbers. It is possible to provide a negative value to decrement the score.
 
+---
+
+### ZINTER
+
+#### Syntax
+
+```bash
+    ZINTER numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM|MIN|MAX>] [WITHSCORES]
+```
+
+Computes the intersection of the sorted sets given by the specified keys and returns the result. It is possible to specify multiple keys.
+
+The result is a new sorted set with the same elements as the input sets, but with scores equal to the sum of the scores of the elements in the input sets.
+
+---
+
+### ZINTERCARD
+
+#### Syntax
+
+```bash
+    ZINTERCARD numkeys key [key ...] [LIMIT limit]
+```
+
+Returns the number of elements in the intersection of the sorted sets given by the specified keys.
+
+---
+
+### ZINTERSTORE
+
+#### Syntax
+
+```bash
+    ZINTERSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM|MIN|MAX>]
+```
+
+Computes the intersection of the sorted sets given by the specified keys and stores the result in the destination key.
 
 ---
 
@@ -825,6 +905,22 @@ Returns one of the following:
 
 _Nil reply:_ if the member does not exist in the sorted set.\
 _Array reply:_ a list of string **member** scores as double-precision floating point numbers.
+
+---
+
+### ZMPOP
+
+#### Syntax
+
+```bash
+    ZMPOP numkeys key [key ...] <MIN | MAX> [COUNT count]
+```
+
+Removes and returns one or more members with the lowest scores (default) or highest scores from the sorted set or sorted sets.
+
+- MIN: Remove elements starting with the lowest scores
+- MAX: Remove elements starting with the highest scores
+- COUNT: Specifies how many elements to pop (default is 1)
 
 ---
 
@@ -962,6 +1058,22 @@ The meaning of min and max are the same of the [ZRANGEBYLEX](#zrangebylex) comma
 
 ---
 
+### ZREVRANGEBYLEX
+
+#### Syntax
+
+```bash
+ZREVRANGEBYLEX key max min [LIMIT offset count]
+```
+
+The ZREVRANGEBYLEX command returns a range of members in a sorted set, by lexicographical order, ordered from higher to lower strings.
+
+#### Resp Reply
+
+Array reply: list of elements in the specified range.
+
+---
+
 ### ZREMRANGEBYSCORE
 
 #### Syntax
@@ -1065,6 +1177,54 @@ The **match** parameter allows to apply a filter to elements after they have bee
 Returns the score of member in the sorted set at **key**.
 
 If member does not exist in the sorted set, or **key** does not exist, nil is returned.
+
+---
+
+### ZRANGESTORE
+
+#### Syntax
+
+```bash
+    ZRANGESTORE dst src min max [BYSCORE|BYLEX] [REV] [LIMIT offset count]
+```
+
+Stores the specified range of elements in the sorted set stored at **src** into the sorted set stored at **dst**.
+
+---
+
+### ZUNION
+
+#### Syntax
+
+```bash
+    ZUNION numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM | MIN | MAX>] [WITHSCORES]
+```
+
+Returns the union of the input sorted sets specified by the keys. The total number of input keys is specified by numkeys.
+
+Keys that do not exist are considered to be empty sets.
+
+#### Resp Reply
+
+Array reply: the result of the union with, optionally, their scores when WITHSCORES is used.
+
+---
+
+### ZUNIONSTORE
+
+#### Syntax
+
+```bash
+    ZUNIONSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM | MIN | MAX>] 
+```
+
+Computes the union of the input sorted sets specified by the keys and stores the result in destination. The total number of input keys is specified by numkeys.
+
+Keys that do not exist are considered to be empty sets.
+
+#### Resp Reply
+
+Integer reply: the number of members in the resulting sorted set at destination.
 
 ---
 
@@ -1192,3 +1352,21 @@ An Array reply of matched members, where each sub-array represents a single item
 
 ---
 
+### GEOSEARCHSTORE
+
+#### Syntax
+
+```bash
+GEOSEARCHSTORE destination source <FROMMEMBER member |
+  FROMLONLAT longitude latitude> <BYRADIUS radius <m | km | ft | mi>
+  | BYBOX width height <m | km | ft | mi>> [ASC | DESC] [COUNT count
+  [ANY]] [STOREDIST]
+```
+
+This command is like [GEOSEARCH](#geosearch), but stores the result in destination key.
+
+**Reply**
+
+Integer reply: the number of elements in the resulting set
+
+---

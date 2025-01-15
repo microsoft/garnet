@@ -324,7 +324,7 @@ namespace Tsavorite.core
             GetClosestHybridLogCheckpointInfo(requestedVersion, out var closestToken, out recoveredHlcInfo, out recoveredCommitCookie);
 
             if (recoveredHlcInfo.IsDefault())
-                throw new TsavoriteException("Unable to find valid HybridLog token");
+                throw new TsavoriteNoHybridLogException("Unable to find valid HybridLog token");
 
             if (recoveredHlcInfo.deltaLog != null)
             {
@@ -414,6 +414,10 @@ namespace Tsavorite.core
 
             // Reset the hybrid log
             hlogBase.Reset();
+
+            // Reset system state
+            systemState = SystemState.Make(Phase.REST, 1);
+            lastVersion = 0;
         }
 
 
@@ -532,6 +536,16 @@ namespace Tsavorite.core
             hlogBase.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
             checkpointManager.OnRecovery(recoveredICInfo.info.token, recoveredHLCInfo.info.guid);
             recoveredHLCInfo.Dispose();
+        }
+
+        /// <summary>
+        /// Set store version directly. Useful if manually recovering by re-inserting data.
+        /// Warning: use only when the system is not taking a checkpoint.
+        /// </summary>
+        /// <param name="version">Version to set the store to</param>
+        public void SetVersion(long version)
+        {
+            systemState = SystemState.Make(Phase.REST, version);
         }
 
         /// <summary>

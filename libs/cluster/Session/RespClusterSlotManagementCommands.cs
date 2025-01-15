@@ -439,7 +439,8 @@ namespace Garnet.cluster
                 return true;
             }
 
-            if (!parseState.TryGetEnum<SlotState>(1, ignoreCase: true, out var slotState) || !slotState.IsValid(parseState.GetArgSliceByRef(1).ReadOnlySpan))
+            if (!parseState.TryGetSlotState(1, out var slotState) || slotState == SlotState.INVALID ||
+                slotState == SlotState.OFFLINE)
             {
                 var slotStateStr = parseState.GetString(1);
                 while (!RespWriteUtils.WriteError($"ERR Slot state {slotStateStr} not supported.", ref dcurr, dend))
@@ -531,13 +532,11 @@ namespace Garnet.cluster
             // CLUSTER SETSLOTRANGE STABLE <slot-start> <slot-end> [slot-start slot-end]
             string nodeId = default;
 
-            // Extract subcommand
-            var subcommand = parseState.GetString(0);
-
             // Try parse slot state
-            if (!Enum.TryParse(subcommand, ignoreCase: true, out SlotState slotState))
+            if (!parseState.TryGetSlotState(0, out var slotState))
             {
                 // Log error for invalid slot state option
+                var subcommand = parseState.GetString(0);
                 logger?.LogError("The given input '{input}' is not a valid slot state option.", subcommand);
                 slotState = SlotState.INVALID;
             }
@@ -583,6 +582,7 @@ namespace Garnet.cluster
                     break;
                 default:
                     setSlotsSucceeded = false;
+                    var subcommand = parseState.GetString(0);
                     errorMessage = Encoding.ASCII.GetBytes($"ERR Slot state {subcommand} not supported.");
                     break;
             }

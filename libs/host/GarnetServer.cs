@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using Garnet.cluster;
@@ -28,8 +29,12 @@ namespace Garnet
     /// </summary>
     public class GarnetServer : IDisposable
     {
-        // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
-        readonly string version = "1.0.36";
+        static readonly string version = GetVersion();
+        static string GetVersion()
+        {
+            var Version = Assembly.GetExecutingAssembly().GetName().Version;
+            return $"{Version.Major}.{Version.Minor}.{Version.Build}";
+        }
 
         internal GarnetProvider Provider;
 
@@ -91,10 +96,14 @@ namespace Garnet
                 this.initLogger = (MemoryLogger)memLogProvider.CreateLogger("ArgParser");
             }
 
-            if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, this.initLogger))
+            if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, out var exitGracefully, this.initLogger))
             {
+                if (exitGracefully)
+                    Environment.Exit(0);
+
                 // Flush logs from memory logger
                 FlushMemoryLogger(this.initLogger, "ArgParser", loggerFactory);
+
                 throw new GarnetException("Encountered an error when initializing Garnet server. Please see log messages above for more details.");
             }
 
@@ -179,14 +188,41 @@ namespace Garnet
 
             var customCommandManager = new CustomCommandManager();
 
-            var setMax = opts.ThreadPoolMaxThreads <= 0 || ThreadPool.SetMaxThreads(opts.ThreadPoolMaxThreads, opts.ThreadPoolMaxThreads);
+            ThreadPool.GetMinThreads(out var minThreads, out var minCPThreads);
+            ThreadPool.GetMaxThreads(out var maxThreads, out var maxCPThreads);
 
-            if (opts.ThreadPoolMinThreads > 0 && !ThreadPool.SetMinThreads(opts.ThreadPoolMinThreads, opts.ThreadPoolMinThreads))
-                throw new Exception($"Unable to call ThreadPool.SetMinThreads with {opts.ThreadPoolMinThreads}");
+            bool minChanged = false, maxChanged = false;
+            if (opts.ThreadPoolMinThreads > 0)
+            {
+                minThreads = opts.ThreadPoolMinThreads;
+                minChanged = true;
+            }
+            if (opts.ThreadPoolMinIOCompletionThreads > 0)
+            {
+                minCPThreads = opts.ThreadPoolMinIOCompletionThreads;
+                minChanged = true;
+            }
+            if (opts.ThreadPoolMaxThreads > 0)
+            {
+                maxThreads = opts.ThreadPoolMaxThreads;
+                maxChanged = true;
+            }
+            if (opts.ThreadPoolMaxIOCompletionThreads > 0)
+            {
+                maxCPThreads = opts.ThreadPoolMaxIOCompletionThreads;
+                maxChanged = true;
+            }
 
-            // Retry to set max threads if it wasn't set in the previous step
-            if (!setMax && !ThreadPool.SetMaxThreads(opts.ThreadPoolMaxThreads, opts.ThreadPoolMaxThreads))
-                throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {opts.ThreadPoolMaxThreads}");
+            // First try to set the max threads
+            var setMax = !maxChanged || ThreadPool.SetMaxThreads(maxThreads, maxCPThreads);
+
+            // Set the min threads
+            if (minChanged && !ThreadPool.SetMinThreads(minThreads, minCPThreads))
+                throw new Exception($"Unable to call ThreadPool.SetMinThreads with {minThreads}, {minCPThreads}");
+
+            // Retry to set max threads if it wasn't set in the earlier step
+            if (!setMax && !ThreadPool.SetMaxThreads(maxThreads, maxCPThreads))
+                throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {maxThreads}, {maxCPThreads}");
 
             CreateMainStore(clusterFactory, out var checkpointDir);
             CreateObjectStore(clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker);
@@ -202,12 +238,12 @@ namespace Garnet
             {
                 var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes + (store.ReadCache?.MaxMemorySizeBytes ?? 0) + (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
                 if (objectStore != null)
-                    configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes + (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) + (objectStoreSizeTracker?.TargetSize ?? 0);
+                    configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes + (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) + (objectStoreSizeTracker?.TargetSize ?? 0) + (objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
                 logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
             }
 
             // Create Garnet TCP server if none was provided.
-            this.server ??= new GarnetServerTcp(opts.Address, opts.Port, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, logger);
+            this.server ??= new GarnetServerTcp(opts.Address, opts.Port, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, logger);
 
             storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore, objectStoreSizeTracker,
                     customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
@@ -282,7 +318,7 @@ namespace Garnet
             if (!opts.DisableObjects)
             {
                 objKvSettings = opts.GetObjectStoreSettings(this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"),
-                    out var objHeapMemorySize);
+                    out var objHeapMemorySize, out var objReadCacheHeapMemorySize);
 
                 // Run checkpoint on its own thread to control p99
                 objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
@@ -304,8 +340,8 @@ namespace Garnet
                         () => new GarnetObjectSerializer(customCommandManager))
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
-                if (objHeapMemorySize > 0)
-                    objectStoreSizeTracker = new CacheSizeTracker(objectStore, objKvSettings, objHeapMemorySize,
+                if (objHeapMemorySize > 0 || objReadCacheHeapMemorySize > 0)
+                    objectStoreSizeTracker = new CacheSizeTracker(objectStore, objKvSettings, objHeapMemorySize, objReadCacheHeapMemorySize,
                         this.loggerFactory);
             }
         }

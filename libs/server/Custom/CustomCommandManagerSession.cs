@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using Garnet.common;
 
 namespace Garnet.server
@@ -11,37 +12,89 @@ namespace Garnet.server
     internal sealed class CustomCommandManagerSession
     {
         readonly CustomCommandManager customCommandManager;
-        public readonly (CustomTransactionProcedure, int)[] sessionTransactionProcMap;
+
+        // These session specific arrays are indexed by the same ID as the arrays in CustomCommandManager
+        ExpandableMap<CustomTransactionProcedureWithArity> sessionTransactionProcMap;
+        ExpandableMap<CustomProcedure> sessionCustomProcMap;
 
         public CustomCommandManagerSession(CustomCommandManager customCommandManager)
         {
             this.customCommandManager = customCommandManager;
-            sessionTransactionProcMap = new (CustomTransactionProcedure, int)[CustomCommandManager.MaxRegistrations];
+            sessionTransactionProcMap = new ExpandableMap<CustomTransactionProcedureWithArity>(CustomCommandManager.MinMapSize, 0, byte.MaxValue);
+            sessionCustomProcMap = new ExpandableMap<CustomProcedure>(CustomCommandManager.MinMapSize, 0, byte.MaxValue);
         }
 
-        public (CustomTransactionProcedure, int) GetCustomTransactionProcedure(int id, TransactionManager txnManager, ScratchBufferManager scratchBufferManager)
+        public CustomProcedure GetCustomProcedure(int id, RespServerSession respServerSession)
         {
-            if (sessionTransactionProcMap[id].Item1 == null)
+            if (!sessionCustomProcMap.TryGetValue(id, out var customProc))
             {
-                var entry = customCommandManager.transactionProcMap[id] ?? throw new GarnetException($"Transaction procedure {id} not found");
-                _ = customCommandManager.CustomCommandsInfo.TryGetValue(entry.NameStr, out var cmdInfo);
-                return GetCustomTransactionProcedure(entry, txnManager, scratchBufferManager, cmdInfo?.Arity ?? 0);
+                if (!customCommandManager.TryGetCustomProcedure(id, out var entry))
+                    throw new GarnetException($"Custom procedure {id} not found");
+
+                customProc = entry.CustomProcedureFactory();
+                customProc.respServerSession = respServerSession;
+                var setSuccessful = sessionCustomProcMap.TrySetValue(id, ref customProc);
+                Debug.Assert(setSuccessful);
             }
-            return sessionTransactionProcMap[id];
+
+            return customProc;
         }
 
-        public (CustomTransactionProcedure, int) GetCustomTransactionProcedure(CustomTransaction entry, TransactionManager txnManager, ScratchBufferManager scratchBufferManager, int arity)
+        public CustomTransactionProcedure GetCustomTransactionProcedure(int id, RespServerSession respServerSession, TransactionManager txnManager, ScratchBufferManager scratchBufferManager, out int arity)
+        {
+            if (sessionTransactionProcMap.Exists(id))
+            {
+                ref var customTranProc = ref sessionTransactionProcMap.GetValueByRef(id);
+                if (customTranProc.Procedure != null)
+                {
+                    arity = customTranProc.Arity;
+                    return customTranProc.Procedure;
+                }
+            }
+
+            if (!customCommandManager.TryGetCustomTransactionProcedure(id, out var entry))
+                throw new GarnetException($"Transaction procedure {id} not found");
+            _ = customCommandManager.customCommandsInfo.TryGetValue(entry.NameStr, out var cmdInfo);
+            arity = cmdInfo?.Arity ?? 0;
+            return GetCustomTransactionProcedureAndSetArity(entry, respServerSession, txnManager, scratchBufferManager, cmdInfo?.Arity ?? 0);
+        }
+
+        public RespCommand GetCustomRespCommand(int id)
+            => customCommandManager.GetCustomRespCommand(id);
+
+        public GarnetObjectType GetCustomGarnetObjectType(int id)
+            => customCommandManager.GetCustomGarnetObjectType(id);
+
+        private CustomTransactionProcedure GetCustomTransactionProcedureAndSetArity(CustomTransaction entry, RespServerSession respServerSession, TransactionManager txnManager, ScratchBufferManager scratchBufferManager, int arity)
         {
             int id = entry.id;
-            if (sessionTransactionProcMap[id].Item1 == null)
-            {
-                sessionTransactionProcMap[id].Item1 = entry.proc();
-                sessionTransactionProcMap[id].Item2 = arity;
 
-                sessionTransactionProcMap[id].Item1.txnManager = txnManager;
-                sessionTransactionProcMap[id].Item1.scratchBufferManager = scratchBufferManager;
+            var customTranProc = new CustomTransactionProcedureWithArity(entry.proc(), arity)
+            {
+                Procedure =
+                {
+                    txnManager = txnManager,
+                    scratchBufferManager = scratchBufferManager,
+                    respServerSession = respServerSession
+                }
+            };
+            var setSuccessful = sessionTransactionProcMap.TrySetValue(id, ref customTranProc);
+            Debug.Assert(setSuccessful);
+
+            return customTranProc.Procedure;
+        }
+
+        private struct CustomTransactionProcedureWithArity
+        {
+            public CustomTransactionProcedure Procedure { get; }
+
+            public int Arity { get; }
+
+            public CustomTransactionProcedureWithArity(CustomTransactionProcedure procedure, int arity)
+            {
+                this.Procedure = procedure;
+                this.Arity = arity;
             }
-            return sessionTransactionProcMap[id];
         }
     }
 }

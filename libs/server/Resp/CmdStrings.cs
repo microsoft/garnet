@@ -98,6 +98,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> KEEPTTL => "KEEPTTL"u8;
         public static ReadOnlySpan<byte> NX => "NX"u8;
         public static ReadOnlySpan<byte> XX => "XX"u8;
+        public static ReadOnlySpan<byte> WITHETAG => "WITHETAG"u8;
         public static ReadOnlySpan<byte> UNSAFETRUNCATELOG => "UNSAFETRUNCATELOG"u8;
         public static ReadOnlySpan<byte> SAMPLES => "SAMPLES"u8;
         public static ReadOnlySpan<byte> RANK => "RANK"u8;
@@ -108,6 +109,30 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> CHANNELS => "CHANNELS"u8;
         public static ReadOnlySpan<byte> NUMPAT => "NUMPAT"u8;
         public static ReadOnlySpan<byte> NUMSUB => "NUMSUB"u8;
+        public static ReadOnlySpan<byte> STOREDIST => "STOREDIST"u8;
+        public static ReadOnlySpan<byte> WITHDIST => "WITHDIST"u8;
+        public static ReadOnlySpan<byte> WITHHASH => "WITHHASH"u8;
+        public static ReadOnlySpan<byte> LIB_NAME => "LIB-NAME"u8;
+        public static ReadOnlySpan<byte> lib_name => "lib-name"u8;
+        public static ReadOnlySpan<byte> LIB_VER => "LIB-VER"u8;
+        public static ReadOnlySpan<byte> lib_ver => "lib-ver"u8;
+        public static ReadOnlySpan<byte> RIGHT => "RIGHT"u8;
+        public static ReadOnlySpan<byte> LEFT => "LEFT"u8;
+        public static ReadOnlySpan<byte> BYLEX => "BYLEX"u8;
+        public static ReadOnlySpan<byte> REV => "REV"u8;
+        public static ReadOnlySpan<byte> LIMIT => "LIMIT"u8;
+        public static ReadOnlySpan<byte> MIN => "MIN"u8;
+        public static ReadOnlySpan<byte> MAX => "MAX"u8;
+        public static ReadOnlySpan<byte> WEIGHTS => "WEIGHTS"u8;
+        public static ReadOnlySpan<byte> AGGREGATE => "AGGREGATE"u8;
+        public static ReadOnlySpan<byte> SUM => "SUM"u8;
+        public static ReadOnlySpan<byte> LEN => "LEN"u8;
+        public static ReadOnlySpan<byte> IDX => "IDX"u8;
+        public static ReadOnlySpan<byte> MINMATCHLEN => "MINMATCHLEN"u8;
+        public static ReadOnlySpan<byte> WITHMATCHLEN => "WITHMATCHLEN"u8;
+        public static ReadOnlySpan<byte> GETWITHETAG => "GETWITHETAG"u8;
+        public static ReadOnlySpan<byte> GETIFNOTMATCH => "GETIFNOTMATCH"u8;
+        public static ReadOnlySpan<byte> SETIFMATCH => "SETIFMATCH"u8;
 
         /// <summary>
         /// Response strings
@@ -123,6 +148,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_PONG => "+PONG\r\n"u8;
         public static ReadOnlySpan<byte> RESP_EMPTY => "$0\r\n\r\n"u8;
         public static ReadOnlySpan<byte> RESP_QUEUED => "+QUEUED\r\n"u8;
+        public static ReadOnlySpan<byte> matches => "matches"u8;
+        public static ReadOnlySpan<byte> len => "len"u8;
 
         /// <summary>
         /// Simple error response strings, i.e. these are of the form "-errorString\r\n"
@@ -131,6 +158,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_WRONG_TYPE => "WRONGTYPE Operation against a key holding the wrong kind of value."u8;
         public static ReadOnlySpan<byte> RESP_ERR_WRONG_TYPE_HLL => "WRONGTYPE Key is not a valid HyperLogLog string value."u8;
         public static ReadOnlySpan<byte> RESP_ERR_EXEC_ABORT => "EXECABORT Transaction discarded because of previous errors."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ETAG_ON_CUSTOM_PROC => "WRONGTYPE Key with etag cannot be used for custom procedure."u8;
 
         /// <summary>
         /// Generic error response strings, i.e. these are of the form "-ERR error message\r\n"
@@ -147,6 +175,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WATCH_IN_MULTI => "ERR WATCH inside MULTI is not allowed"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INVALIDEXP_IN_SET => "ERR invalid expire time in 'set' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SYNTAX_ERROR => "ERR syntax error"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_WITHETAG_AND_GETVALUE => "ERR WITHETAG option not allowed with GET inside of SET"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_OFFSETOUTOFRANGE => "ERR offset is out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BIT_IS_NOT_INTEGER => "ERR bit is not an integer or out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER => "ERR bit offset is not an integer or out of range"u8;
@@ -197,6 +226,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GT_LT_NX_NOT_COMPATIBLE => "ERR GT, LT, and/or NX options at the same time are not compatible"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR => "ERR INCR option supports a single increment-element pair"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_BITFIELD_TYPE => "ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_SCRIPT_FLUSH_OPTIONS => "ERR SCRIPT FLUSH only support SYNC|ASYNC option"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_LENGTH_AND_INDEXES => "If you want both the length and indexes, please just use IDX."u8;
 
         /// <summary>
         /// Response string templates
@@ -209,6 +240,10 @@ namespace Garnet.server
             "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
         public const string GenericSyntaxErrorOption = "ERR Syntax error in {0} option '{1}'";
         public const string GenericParamShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
+        public const string GenericErrNotAFloat = "ERR {0} value is not a valid float";
+        public const string GenericErrCantBeNegative = "ERR {0} can't be negative";
+        public const string GenericErrAtLeastOneKey = "ERR at least 1 input key is needed for '{0}' command";
+        public const string GenericErrShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
         public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
         public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
         public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";
@@ -285,6 +320,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> REPLICATE => "REPLICATE"u8;
         public static ReadOnlySpan<byte> ID => "ID"u8;
         public static ReadOnlySpan<byte> KILL => "KILL"u8;
+        public static ReadOnlySpan<byte> GETNAME => "GETNAME"u8;
+        public static ReadOnlySpan<byte> SETINFO => "SETINFO"u8;
         public static ReadOnlySpan<byte> USER => "USER"u8;
         public static ReadOnlySpan<byte> ADDR => "ADDR"u8;
         public static ReadOnlySpan<byte> LADDR => "LADDR"u8;
@@ -313,5 +350,13 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
         public static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
         public static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
+
+        // Lua scripting strings
+        public static ReadOnlySpan<byte> LUA_OK => "OK"u8;
+        public static ReadOnlySpan<byte> LUA_err => "err"u8;
+        public static ReadOnlySpan<byte> LUA_No_session_available => "No session available"u8;
+        public static ReadOnlySpan<byte> LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call => "ERR Please specify at least one argument for this redis lib call"u8;
+        public static ReadOnlySpan<byte> LUA_ERR_Unknown_Redis_command_called_from_script => "ERR Unknown Redis command called from script"u8;
+        public static ReadOnlySpan<byte> LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers => "ERR Lua redis lib command arguments must be strings or integers"u8;
     }
 }

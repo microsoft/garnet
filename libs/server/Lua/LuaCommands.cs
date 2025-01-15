@@ -2,11 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
+using System.Collections.Generic;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using NLua;
-using NLua.Exceptions;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -18,10 +17,8 @@ namespace Garnet.server
         /// <returns></returns>
         private unsafe bool TryEVALSHA()
         {
-            if (!storeWrapper.serverOptions.EnableLua)
+            if (!CheckLuaEnabled())
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_LUA_DISABLED, ref dcurr, dend))
-                    SendAndReset();
                 return true;
             }
 
@@ -30,23 +27,33 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments("EVALSHA");
             }
-            var digest = parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
-            var result = false;
-            if (!sessionScriptCache.TryGetFromDigest(digest, out var runner))
+            ref var digest = ref parseState.GetArgSliceByRef(0);
+
+            LuaRunner runner = null;
+
+            // Length check is mandatory, as ScriptHashKey assumes correct length
+            if (digest.length == SessionScriptCache.SHA1Len)
             {
-                var d = digest.ToArray();
-                if (storeWrapper.storeScriptCache.TryGetValue(d, out var source))
+                AsciiUtils.ToLowerInPlace(digest.Span);
+
+                var scriptKey = new ScriptHashKey(digest.Span);
+
+                if (!sessionScriptCache.TryGetFromDigest(scriptKey, out runner))
                 {
-                    if (!sessionScriptCache.TryLoad(source, d, out runner, out var error))
+                    if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var source))
                     {
-                        while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
-                            SendAndReset();
-                        _ = storeWrapper.storeScriptCache.TryRemove(d, out _);
-                        return result;
+                        if (!sessionScriptCache.TryLoad(this, source, scriptKey, out runner, out _, out var error))
+                        {
+                            // TryLoad will have written an error out, it any
+
+                            _ = storeWrapper.storeScriptCache.TryRemove(scriptKey, out _);
+                            return true;
+                        }
                     }
                 }
             }
+
             if (runner == null)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NO_SCRIPT, ref dcurr, dend))
@@ -54,9 +61,10 @@ namespace Garnet.server
             }
             else
             {
-                result = ExecuteScript(count - 1, runner);
+                ExecuteScript(count - 1, runner);
             }
-            return result;
+
+            return true;
         }
 
 
@@ -66,10 +74,8 @@ namespace Garnet.server
         /// <returns></returns>
         private unsafe bool TryEVAL()
         {
-            if (!storeWrapper.serverOptions.EnableLua)
+            if (!CheckLuaEnabled())
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_LUA_DISABLED, ref dcurr, dend))
-                    SendAndReset();
                 return true;
             }
 
@@ -78,16 +84,19 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments("EVAL");
             }
-            var script = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            var digest = sessionScriptCache.GetScriptDigest(script);
 
-            var result = false;
-            if (!sessionScriptCache.TryLoad(script, digest, out var runner, out var error))
+            ref var script = ref parseState.GetArgSliceByRef(0);
+
+            // that this is stack allocated is load bearing - if it moves, things will break
+            Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
+            sessionScriptCache.GetScriptDigest(script.ReadOnlySpan, digest);
+
+            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, new ScriptHashKey(digest), out var runner, out _, out var error))
             {
-                while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
-                    SendAndReset();
-                return result;
+                // TryLoad will have written any errors out
+                return true;
             }
+
             if (runner == null)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NO_SCRIPT, ref dcurr, dend))
@@ -95,211 +104,169 @@ namespace Garnet.server
             }
             else
             {
-                result = ExecuteScript(count - 1, runner);
+                ExecuteScript(count - 1, runner);
             }
-            return result;
+
+            return true;
         }
 
         /// <summary>
-        /// SCRIPT Commands (load, exists, flush)
+        /// SCRIPT|EXISTS
         /// </summary>
-        /// <returns></returns>
-        private unsafe bool TrySCRIPT()
+        private bool NetworkScriptExists()
+        {
+            if (!CheckLuaEnabled())
+            {
+                return true;
+            }
+
+            if (parseState.Count == 0)
+            {
+                return AbortWithWrongNumberOfArguments("script|exists");
+            }
+
+            // Returns an array where each element is a 0 if the script does not exist, and a 1 if it does
+
+            while (!RespWriteUtils.WriteArrayLength(parseState.Count, ref dcurr, dend))
+                SendAndReset();
+
+            for (var shaIx = 0; shaIx < parseState.Count; shaIx++)
+            {
+                ref var sha1 = ref parseState.GetArgSliceByRef(shaIx);
+                var exists = 0;
+
+                // Length check is required, as ScriptHashKey makes a hard assumption
+                if (sha1.length == SessionScriptCache.SHA1Len)
+                {
+                    AsciiUtils.ToLowerInPlace(sha1.Span);
+
+                    var sha1Arg = new ScriptHashKey(sha1.Span);
+
+                    exists = storeWrapper.storeScriptCache.ContainsKey(sha1Arg) ? 1 : 0;
+                }
+
+                while (!RespWriteUtils.WriteArrayItem(exists, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// SCRIPT|FLUSH
+        /// </summary>
+        private bool NetworkScriptFlush()
+        {
+            if (!CheckLuaEnabled())
+            {
+                return true;
+            }
+
+            if (parseState.Count > 1)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_SCRIPT_FLUSH_OPTIONS);
+            }
+            else if (parseState.Count == 1)
+            {
+                // we ignore this, but should validate it
+                ref var arg = ref parseState.GetArgSliceByRef(0);
+
+                AsciiUtils.ToUpperInPlace(arg.Span);
+
+                var valid = arg.Span.SequenceEqual(CmdStrings.ASYNC) || arg.Span.SequenceEqual(CmdStrings.SYNC);
+
+                if (!valid)
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_SCRIPT_FLUSH_OPTIONS);
+                }
+            }
+
+            // Flush store script cache
+            storeWrapper.storeScriptCache.Clear();
+
+            // Flush session script cache
+            sessionScriptCache.Clear();
+
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// SCRIPT|LOAD
+        /// </summary>
+        private bool NetworkScriptLoad()
+        {
+            if (!CheckLuaEnabled())
+            {
+                return true;
+            }
+
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments("script|load");
+            }
+
+            ref var source = ref parseState.GetArgSliceByRef(0);
+
+            Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
+            sessionScriptCache.GetScriptDigest(source.Span, digest);
+
+            if (sessionScriptCache.TryLoad(this, source.ReadOnlySpan, new(digest), out _, out var digestOnHeap, out var error))
+            {
+                // TryLoad will write any errors out
+
+                // Add script to the store dictionary
+                if (digestOnHeap == null)
+                {
+                    var newAlloc = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
+                    digest.CopyTo(newAlloc);
+                    _ = storeWrapper.storeScriptCache.TryAdd(new(newAlloc), source.ToArray());
+                }
+                else
+                {
+                    _ = storeWrapper.storeScriptCache.TryAdd(digestOnHeap.Value, source.ToArray());
+                }
+
+                while (!RespWriteUtils.WriteBulkString(digest, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Returns true if Lua is enabled.
+        /// 
+        /// Otherwise writes out an error and returns false.
+        /// </summary>
+        private bool CheckLuaEnabled()
         {
             if (!storeWrapper.serverOptions.EnableLua)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_LUA_DISABLED, ref dcurr, dend))
                     SendAndReset();
-                return true;
+
+                return false;
             }
 
-            var count = parseState.Count;
-            if (count < 1)
-            {
-                return AbortWithWrongNumberOfArguments("SCRIPT");
-            }
-            var option = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            if (option.EqualsUpperCaseSpanIgnoringCase("LOAD"u8))
-            {
-                if (count != 2)
-                {
-                    return AbortWithWrongNumberOfArguments("SCRIPT");
-                }
-                var source = parseState.GetArgSliceByRef(1).ReadOnlySpan;
-                if (!sessionScriptCache.TryLoad(source, out var digest, out _, out var error))
-                {
-                    while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
-                }
-
-                // Add script to the store dictionary
-                storeWrapper.storeScriptCache.TryAdd(digest, source.ToArray());
-
-                while (!RespWriteUtils.WriteBulkString(digest, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else if (option.EqualsUpperCaseSpanIgnoringCase("EXISTS"u8))
-            {
-                if (count != 2)
-                {
-                    return AbortWithWrongNumberOfArguments("SCRIPT");
-                }
-                var sha1Exists = parseState.GetArgSliceByRef(1).ToArray();
-
-                // Check whether script exists at the store level
-                if (storeWrapper.storeScriptCache.ContainsKey(sha1Exists))
-                {
-                    while (!RespWriteUtils.WriteBulkString(CmdStrings.RESP_OK.ToArray(), ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteBulkString(CmdStrings.RESP_RETURN_VAL_N1.ToArray(), ref dcurr, dend))
-                        SendAndReset();
-                }
-            }
-            else if (option.EqualsUpperCaseSpanIgnoringCase("FLUSH"u8))
-            {
-                if (count != 1)
-                {
-                    return AbortWithWrongNumberOfArguments("SCRIPT");
-                }
-                // Flush store script cache
-                storeWrapper.storeScriptCache.Clear();
-
-                // Flush session script cache
-                sessionScriptCache.Clear();
-
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK.ToArray(), ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                // Unknown subcommand
-                var errorMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, Encoding.ASCII.GetString(option), nameof(RespCommand.SCRIPT));
-                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
-                    SendAndReset();
-            }
             return true;
         }
 
         /// <summary>
         /// Invoke the execution of a server-side Lua script.
         /// </summary>
-        /// <param name="count"></param>
-        /// <param name="scriptRunner"></param>
-        /// <returns></returns>
-        private unsafe bool ExecuteScript(int count, LuaRunner scriptRunner)
+        private void ExecuteScript(int count, LuaRunner scriptRunner)
         {
             try
             {
-                var scriptResult = scriptRunner.Run(count, parseState);
-                WriteObject(scriptResult);
-            }
-            catch (LuaScriptException ex)
-            {
-                logger?.LogError(ex.InnerException ?? ex, "Error executing Lua script callback");
-                while (!RespWriteUtils.WriteError("ERR " + (ex.InnerException ?? ex).Message, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                scriptRunner.RunForSession(count, this);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Error executing Lua script");
                 while (!RespWriteUtils.WriteError("ERR " + ex.Message, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-            return true;
-        }
-
-        void WriteObject(object scriptResult)
-        {
-            if (scriptResult != null)
-            {
-                if (scriptResult is string s)
-                {
-                    while (!RespWriteUtils.WriteAsciiBulkString(s, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else if ((scriptResult as byte?) != null && (byte)scriptResult == 36) //equals to $
-                {
-                    while (!RespWriteUtils.WriteDirect((byte[])scriptResult, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else if (scriptResult is bool b)
-                {
-                    if (b)
-                    {
-                        while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else
-                    {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                }
-                else if (scriptResult is long l)
-                {
-                    while (!RespWriteUtils.WriteInteger(l, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else if (scriptResult is ArgSlice a)
-                {
-                    while (!RespWriteUtils.WriteBulkString(a.ReadOnlySpan, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else if (scriptResult is object[] o)
-                {
-                    // Two objects one boolean value and the result from the Lua Call
-                    while (!RespWriteUtils.WriteAsciiBulkString(o[1].ToString().AsSpan(), ref dcurr, dend))
-                        SendAndReset();
-                }
-                else if (scriptResult is LuaTable luaTable)
-                {
-                    try
-                    {
-                        var retVal = luaTable["err"];
-                        if (retVal != null)
-                        {
-                            while (!RespWriteUtils.WriteError((string)retVal, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            retVal = luaTable["ok"];
-                            if (retVal != null)
-                            {
-                                while (!RespWriteUtils.WriteAsciiBulkString((string)retVal, ref dcurr, dend))
-                                    SendAndReset();
-                            }
-                            else
-                            {
-                                int count = luaTable.Values.Count;
-                                while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
-                                    SendAndReset();
-                                foreach (var value in luaTable.Values)
-                                {
-                                    WriteObject(value);
-                                }
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        luaTable.Dispose();
-                    }
-                }
-                else
-                {
-                    throw new LuaScriptException("Unknown return type", "");
-                }
-            }
-            else
-            {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                     SendAndReset();
             }
         }

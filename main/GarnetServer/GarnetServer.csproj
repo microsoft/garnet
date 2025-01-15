@@ -3,6 +3,10 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <ServerGarbageCollection>true</ServerGarbageCollection>
+    <PackageId>garnet-server</PackageId>
+    <ToolCommandName>garnet-server</ToolCommandName>
+    <PackAsTool>true</PackAsTool>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +25,8 @@
     <None Update="garnet.conf">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-  </ItemGroup>
 
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+ 
 </Project>

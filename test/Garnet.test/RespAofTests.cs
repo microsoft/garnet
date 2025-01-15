@@ -229,6 +229,10 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 db.StringSet("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1", expiry: TimeSpan.FromDays(1), when: When.NotExists);
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2", expiry: TimeSpan.FromDays(1), when: When.NotExists);
+                db.Execute("SET", "SeAofUpsertRecoverTestKey3", "SeAofUpsertRecoverTestValue3", "WITHETAG");
+                db.Execute("SETIFMATCH", "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3", "1");
+                db.Execute("SET", "SeAofUpsertRecoverTestKey4", "2");
+                var res = db.Execute("INCR", "SeAofUpsertRecoverTestKey4");
             }
 
             server.Store.CommitAOF(true);
@@ -243,6 +247,9 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
                 recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
                 ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
+                ExpectedEtagTest(db, "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3", 2);
+                recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey4");
+                ClassicAssert.AreEqual("3", recoveredValue.ToString());
             }
         }
 
@@ -539,7 +546,7 @@ namespace Garnet.test
 
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
-            server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
+            server.Register.NewProcedure("SETMAINANDOBJECT", () => new SetStringAndList());
             server.Start();
 
             var strKey = "StrKey";
@@ -557,7 +564,7 @@ namespace Garnet.test
             server.Store.CommitAOF(true);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
-            server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
+            server.Register.NewProcedure("SETMAINANDOBJECT", () => new SetStringAndList());
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
@@ -688,6 +695,27 @@ namespace Garnet.test
                 string writeKeysVal2 = db.StringGet(writeKey2);
                 ClassicAssert.AreEqual(readVal, writeKeysVal2);
             }
+        }
+
+        private static void ExpectedEtagTest(IDatabase db, string key, string expectedValue, long expected)
+        {
+            RedisResult res = db.Execute("GETWITHETAG", key);
+            if (expectedValue == null)
+            {
+                ClassicAssert.IsTrue(res.IsNull);
+                return;
+            }
+
+            RedisResult[] etagAndVal = (RedisResult[])res;
+            RedisResult etag = etagAndVal[0];
+            RedisResult val = etagAndVal[1];
+
+            if (expected == -1)
+            {
+                ClassicAssert.IsTrue(etag.IsNull);
+            }
+
+            ClassicAssert.AreEqual(expectedValue, val.ToString());
         }
     }
 }

@@ -20,31 +20,25 @@ namespace Garnet.server
             if (count > 0)
             {
                 sections = new HashSet<InfoMetricsType>();
-                for (int i = 0; i < count; i++)
+                for (var i = 0; i < count; i++)
                 {
-                    var section = parseState.GetString(i).ToUpper();
+                    var sbSection = parseState.GetArgSliceByRef(i).ReadOnlySpan;
 
-                    switch (section)
+                    if (sbSection.EqualsUpperCaseSpanIgnoringCase("RESET"u8))
+                        reset = true;
+                    else if (sbSection.EqualsUpperCaseSpanIgnoringCase("HELP"u8))
+                        help = true;
+                    else if (!sbSection.EqualsUpperCaseSpanIgnoringCase("ALL"u8))
                     {
-                        case InfoHelp.RESET:
-                            reset = true;
-                            break;
-                        case InfoHelp.HELP:
-                            help = true;
-                            break;
-                        case InfoHelp.ALL:
-                            break;
-                        default:
-                            if (Enum.TryParse(section, out InfoMetricsType sectionType))
-                            {
-                                sections.Add(sectionType);
-                            }
-                            else
-                            {
-                                invalid = true;
-                                invalidSection = section;
-                            }
-                            break;
+                        if (parseState.TryGetInfoMetricsType(i, out var sectionType))
+                        {
+                            sections.Add(sectionType);
+                        }
+                        else
+                        {
+                            invalid = true;
+                            invalidSection = parseState.GetString(i);
+                        }
                     }
                 }
             }

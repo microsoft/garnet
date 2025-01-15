@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Garnet.common;
+using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -48,12 +49,8 @@ namespace Garnet.server
                                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                             }
 
-                            var invalidType =
-                                !parseState.TryGetEnum<ClientType>(1, true, out var clientType) ||
-                                (clientType == ClientType.SLAVE) || // SLAVE is not legal as CLIENT|LIST was introduced after the SLAVE -> REPLICA rename
-                                !clientType.IsValid(ref parseState.GetArgSliceByRef(1));
-
-                            if (invalidType)
+                            if (!parseState.TryGetClientType(1, out var clientType) ||
+                                clientType == ClientType.SLAVE) // SLAVE is not legal as CLIENT|LIST was introduced after the SLAVE -> REPLICA rename
                             {
                                 var type = parseState.GetString(1);
                                 return AbortWithErrorMessage(Encoding.UTF8.GetBytes(string.Format(CmdStrings.GenericUnknownClientType, type)));
@@ -267,7 +264,8 @@ namespace Garnet.server
                         ref var filter = ref parseState.GetArgSliceByRef(argIx);
                         var filterSpan = filter.Span;
 
-                        ref var value = ref parseState.GetArgSliceByRef(argIx + 1);
+                        var valueIx = argIx + 1;
+                        ref var value = ref parseState.GetArgSliceByRef(valueIx);
 
                         AsciiUtils.ToUpperInPlace(filterSpan);
 
@@ -292,11 +290,7 @@ namespace Garnet.server
                                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrDuplicateFilter, "TYPE")));
                             }
 
-                            var unknownType =
-                                !Enum.TryParse<ClientType>(ParseUtils.ReadString(ref value), true, out var typeParsed) ||
-                                !typeParsed.IsValid(ref value);
-
-                            if (unknownType)
+                            if (!parseState.TryGetClientType(valueIx, out var typeParsed))
                             {
                                 var typeStr = ParseUtils.ReadString(ref value);
                                 return AbortWithErrorMessage(Encoding.UTF8.GetBytes(string.Format(CmdStrings.GenericUnknownClientType, typeStr)));
@@ -494,6 +488,85 @@ namespace Garnet.server
 
                 return matches;
             }
+        }
+
+        /// <summary>
+        /// CLIENT GETNAME
+        /// </summary>
+        private bool NetworkCLIENTGETNAME()
+        {
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments("CLIENT|GETNAME");
+            }
+
+            if (string.IsNullOrEmpty(this.clientName))
+            {
+                while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteUtf8BulkString(this.clientName, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// CLIENT SETNAME
+        /// </summary>
+        private bool NetworkCLIENTSETNAME()
+        {
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments("CLIENT|SETNAME");
+            }
+
+            var name = parseState.GetString(0);
+            if (string.IsNullOrEmpty(name) || name.Contains(' '))   // it is not possible to use spaces in the connection name as this would violate the format of the CLIENT LIST reply
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
+            this.clientName = name;
+
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// CLIENT SETINFO
+        /// </summary>
+        private bool NetworkCLIENTSETINFO()
+        {
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments("CLIENT|SETINFO");
+            }
+
+            var option = parseState.GetArgSliceByRef(0);
+            var value = parseState.GetString(1);
+            if (option.Span.SequenceEqual(CmdStrings.LIB_NAME) || option.Span.SequenceEqual(CmdStrings.lib_name)) // Can't use EqualsUpperCaseSpanIgnoringCase as `-` is not upper case
+            {
+                this.clientLibName = value;
+            }
+            else if (option.Span.SequenceEqual(CmdStrings.LIB_VER) || option.Span.SequenceEqual(CmdStrings.lib_ver))
+            {
+                this.clientLibVersion = value;
+            }
+            else
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
         }
     }
 }

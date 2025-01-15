@@ -35,6 +35,10 @@ namespace Garnet.server
             => storageSession.SortedSetAdd(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
+        public GarnetStatus SortedSetRangeStore(ArgSlice dstKey, ArgSlice srcKey, ref ObjectInput input, out int result)
+            => storageSession.SortedSetRangeStore(dstKey, srcKey, ref input, out result, ref objectContext);
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetRemove(ArgSlice key, ArgSlice member, out int zremCount)
             => storageSession.SortedSetRemove(key.ToArray(), member, out zremCount, ref objectContext);
 
@@ -69,6 +73,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SortedSetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.SortedSetPop(key, ref input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetMPop(ReadOnlySpan<ArgSlice> keys, int count, bool lowScoresFirst, out ArgSlice poppedKey, out (ArgSlice member, ArgSlice score)[] pairs)
+            => storageSession.SortedSetMPop(keys, count, lowScoresFirst, out poppedKey, out pairs);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetPop(ArgSlice key, out (ArgSlice member, ArgSlice score)[] pairs, int count = 1, bool lowScoresFirst = true)
@@ -131,12 +139,31 @@ namespace Garnet.server
             => storageSession.SortedSetDifference(keys, out pairs);
 
         /// <inheritdoc />
+        public GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+            => storageSession.SortedSetUnion(keys, weights, aggregateType, out pairs);
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetDifferenceStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, out int count)
             => storageSession.SortedSetDifferenceStore(destinationKey, keys, out count);
+
+        public GarnetStatus SortedSetUnionStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)
+            => storageSession.SortedSetUnionStore(destinationKey, keys, weights, aggregateType, out count);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
             => storageSession.ObjectScan(GarnetObjectType.SortedSet, key, cursor, match, count, out items, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetIntersect(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+            => storageSession.SortedSetIntersect(keys, weights, aggregateType, out pairs);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+            => storageSession.SortedSetIntersectLength(keys, limit, out count);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetIntersectStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)
+            => storageSession.SortedSetIntersectStore(destinationKey, keys, weights, aggregateType, out count);
 
         #endregion
 
@@ -149,6 +176,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.GeoCommands(key, ref input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref ObjectInput input, ref SpanByteAndMemory output)
+            => storageSession.GeoSearchStore(key, destinationKey, ref input, ref output, ref objectContext);
 
         #endregion
 
@@ -352,6 +383,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SetIntersect(ArgSlice[] keys, out HashSet<byte[]> output)
             => storageSession.SetIntersect(keys, out output);
+
+        /// <inheritdoc />
+        public GarnetStatus SetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+            => storageSession.SetIntersectLength(keys, limit, out count);
 
         /// <inheritdoc />
         public GarnetStatus SetIntersectStore(byte[] key, ArgSlice[] keys, out int count)

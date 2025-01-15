@@ -279,7 +279,7 @@ namespace Garnet.test
             var listValue = "ListValue";
 
             // Register sample custom script that updates both main store and object store keys
-            server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
+            server.Register.NewProcedure("SETMAINANDOBJECT", () => new SetStringAndList());
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -295,7 +295,7 @@ namespace Garnet.test
 
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
-            server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
+            server.Register.NewProcedure("SETMAINANDOBJECT", () => new SetStringAndList());
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -598,7 +598,7 @@ namespace Garnet.test
         [TestCase("save", "")]
         [TestCase("appendonly", "no")]
         [TestCase("slave-read-only", "no")]
-        [TestCase("databases", "16")]
+        [TestCase("databases", "1")]
         [TestCase("cluster-node-timeout", "60")]
         public void SimpleConfigGet(string parameter, string parameterValue)
         {

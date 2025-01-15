@@ -131,7 +131,7 @@ namespace Garnet.server
         /// <param name="newKey"></param>
         /// <param name="storeType"></param>
         /// <returns></returns>
-        GarnetStatus RENAME(ArgSlice oldKey, ArgSlice newKey, StoreType storeType = StoreType.All);
+        GarnetStatus RENAME(ArgSlice oldKey, ArgSlice newKey, bool withEtag = false, StoreType storeType = StoreType.All);
 
         /// <summary>
         /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
@@ -141,7 +141,7 @@ namespace Garnet.server
         /// <param name="result">The result of the operation.</param>
         /// <param name="storeType">The type of store to perform the operation on.</param>
         /// <returns></returns>
-        GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, out int result, StoreType storeType = StoreType.All);
+        GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, out int result, bool withEtag = false, StoreType storeType = StoreType.All);
         #endregion
 
         #region EXISTS
@@ -356,6 +356,16 @@ namespace Garnet.server
         GarnetStatus SortedSetAdd(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
+        /// Stores a range of sorted set elements in the specified key space.
+        /// </summary>
+        /// <param name="dstKey">The distribution key for the sorted set.</param>
+        /// <param name="srcKey">The sub-key for the sorted set.</param>
+        /// <param name="input">The input object containing the elements to store.</param>
+        /// <param name="result">The result of the store operation.</param>
+        /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
+        GarnetStatus SortedSetRangeStore(ArgSlice dstKey, ArgSlice srcKey, ref ObjectInput input, out int result);
+
+        /// <summary>
         /// Removes the specified member from the sorted set stored at key.
         /// </summary>
         GarnetStatus SortedSetRemove(ArgSlice key, ArgSlice member, out int zremCount);
@@ -399,6 +409,17 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <returns></returns>
         GarnetStatus SortedSetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Removes and returns multiple elements from a sorted set.
+        /// </summary>
+        /// <param name="keys">The keys of the sorted set.</param>
+        /// <param name="count">The number of elements to pop.</param>
+        /// <param name="lowScoresFirst">If true, elements with the lowest scores are popped first; otherwise, elements with the highest scores are popped first.</param>
+        /// <param name="poppedKey">The key of the popped element.</param>
+        /// <param name="pairs">An array of tuples containing the member and score of each popped element.</param>
+        /// <returns>A <see cref="GarnetStatus"/> indicating the result of the operation.</returns>
+        GarnetStatus SortedSetMPop(ReadOnlySpan<ArgSlice> keys, int count, bool lowScoresFirst, out ArgSlice poppedKey, out (ArgSlice member, ArgSlice score)[] pairs);
 
         /// <summary>
         /// Removes and returns up to count members with the highest or lowest scores in the sorted set stored at key.
@@ -490,6 +511,37 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <returns></returns>
         GarnetStatus GeoAdd(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Geospatial search and store in destination key.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref ObjectInput input, ref SpanByteAndMemory output);
+
+        /// <summary>
+        /// Intersects multiple sorted sets and stores the result in the destination key.
+        /// </summary>
+        /// <param name="destinationKey">The key where the result will be stored.</param>
+        /// <param name="keys">The keys of the sorted sets to intersect.</param>
+        /// <param name="weights">The weights to apply to each sorted set during the intersection.</param>
+        /// <param name="aggregateType">The type of aggregation to use for the intersection.</param>
+        /// <param name="count">The number of elements in the resulting sorted set.</param>
+        /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
+        GarnetStatus SortedSetIntersectStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count);
+
+        /// <summary>
+        /// Performs a union of multiple sorted sets and stores the result in the destination key.
+        /// </summary>
+        /// <param name="destinationKey">The key where the result will be stored.</param>
+        /// <param name="keys">The keys of the sorted sets to union.</param>
+        /// <param name="count">The number of elements in the resulting sorted set.</param>
+        /// <param name="weights">Optional weights to apply to each sorted set.</param>
+        /// <param name="aggregateType">The type of aggregation to perform (e.g., Sum, Min, Max).</param>
+        /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
+        GarnetStatus SortedSetUnionStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count);
 
         #endregion
 
@@ -1070,6 +1122,19 @@ namespace Garnet.server
         /// <param name="value"></param>
         /// <returns></returns>
         GarnetStatus GET(byte[] key, out GarnetObjectStoreOutput value);
+
+        /// <summary>
+        /// Finds the longest common subsequence (LCS) between two keys.
+        /// </summary>
+        /// <param name="key1">The first key to compare.</param>
+        /// <param name="key2">The second key to compare.</param>
+        /// <param name="output">The output containing the LCS result.</param>
+        /// <param name="lenOnly">If true, only the length of the LCS is returned.</param>
+        /// <param name="withIndices">If true, the indices of the LCS in both keys are returned.</param>
+        /// <param name="withMatchLen">If true, the length of each match is returned.</param>
+        /// <param name="minMatchLen">The minimum length of a match to be considered.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus LCS(ArgSlice key1, ArgSlice key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0);
         #endregion
 
         #region GETRANGE
@@ -1254,6 +1319,16 @@ namespace Garnet.server
         GarnetStatus SortedSetDifference(ArgSlice[] keys, out Dictionary<byte[], double> pairs);
 
         /// <summary>
+        /// Performs a union of multiple sorted sets and stores the result in a dictionary.
+        /// </summary>
+        /// <param name="keys">A read-only span of ArgSlice representing the keys of the sorted sets to union.</param>
+        /// <param name="pairs">An output dictionary where the result of the union will be stored, with byte arrays as keys and doubles as values.</param>
+        /// <param name="weights">An optional array of doubles representing the weights to apply to each sorted set during the union.</param>
+        /// <param name="aggregateType">The type of aggregation to use when combining scores from the sorted sets. Defaults to <see cref="SortedSetAggregateType.Sum"/>.</param>
+        /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
+        GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs);
+
+        /// <summary>
         /// Iterates members of SortedSet key and their associated scores using a cursor,
         /// a match pattern and count parameters
         /// </summary>
@@ -1264,6 +1339,25 @@ namespace Garnet.server
         /// <param name="items">The list of items for the response</param>
         /// <returns></returns>
         GarnetStatus SortedSetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items);
+
+        /// <summary>
+        /// Intersects multiple sorted sets and returns the result.
+        /// </summary>
+        /// <param name="keys">The keys of the sorted sets to intersect.</param>
+        /// <param name="weights">The weights to apply to each sorted set.</param>
+        /// <param name="aggregateType">The type of aggregation to perform.</param>
+        /// <param name="pairs">The resulting dictionary of intersected elements and their scores.</param>
+        /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
+        GarnetStatus SortedSetIntersect(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs);
+
+        /// <summary>
+        /// Computes the intersection of multiple sorted sets and counts the elements.
+        /// </summary>
+        /// <param name="keys">Input sorted set keys</param>
+        /// <param name="limit">Optional max count limit</param> 
+        /// <param name="count">The count of elements in the intersection</param>
+        /// <returns>Operation status</returns>
+        GarnetStatus SortedSetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count);
 
         #endregion
 
@@ -1412,6 +1506,16 @@ namespace Garnet.server
         /// <param name="members"></param>
         /// <returns></returns>
         GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members);
+
+        /// <summary>
+        /// Returns the cardinality of the intersection between multiple sets.
+        /// When limit is greater than 0, stops counting when reaching limit.
+        /// </summary>
+        /// <param name="keys">Keys of the sets to intersect</param>
+        /// <param name="limit">Optional limit to stop counting at</param>
+        /// <param name="count">The cardinality of the intersection</param>
+        /// <returns>Operation status</returns>
+        GarnetStatus SetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count);
         #endregion
 
         #region Hash Methods

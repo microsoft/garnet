@@ -44,7 +44,7 @@ namespace Garnet.server.Auth
         /// <summary>
         /// Check if the user is authorized to execute commands.
         /// </summary>
-        public bool IsAuthenticated => _user != null;
+        public virtual bool IsAuthenticated => _user != null;
 
         /// <summary>
         /// ACL authenticator is can use ACL.

@@ -49,7 +49,7 @@ namespace Garnet.cluster
         {
             try
             {
-                PauseConfigMerge();
+                SuspendConfigMerge();
                 errorMessage = default;
                 while (true)
                 {
@@ -84,7 +84,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                UnpauseConfigMerge();
+                ResumeConfigMerge();
             }
         }
 
@@ -98,7 +98,7 @@ namespace Garnet.cluster
         {
             try
             {
-                PauseConfigMerge();
+                SuspendConfigMerge();
                 var resp = CmdStrings.RESP_OK;
                 while (true)
                 {
@@ -133,7 +133,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                UnpauseConfigMerge();
+                ResumeConfigMerge();
             }
         }
 
@@ -198,6 +198,9 @@ namespace Garnet.cluster
                 var newConfig = currentConfig.MakeReplicaOf(nodeid).BumpLocalNodeConfigEpoch();
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
+
+                // If we reach here then we failed to update config so we need to suspend recovery and retry to update the config
+                clusterProvider.replicationManager.SuspendRecovery();
             }
             FlushConfig();
             return true;

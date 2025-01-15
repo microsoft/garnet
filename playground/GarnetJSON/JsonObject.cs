@@ -2,10 +2,12 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Garnet.server;
+using Json.Path;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace GarnetJSON
 {
@@ -37,7 +39,10 @@ namespace GarnetJSON
     /// </summary>
     public class JsonObject : CustomObjectBase
     {
-        private JObject jObject;
+        private const string JsonPathPattern = @"(\.[^.\[]+)|(\['[^']+'\])|(\[\d+\])";
+
+        // Root node
+        private JsonNode? jNode;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="JsonObject"/> class with the specified type.
@@ -46,8 +51,6 @@ namespace GarnetJSON
         public JsonObject(byte type)
             : base(type, 0, MemoryUtils.DictionaryOverhead)
         {
-            jObject = new();
-            // TODO: update size
         }
 
         /// <summary>
@@ -61,8 +64,7 @@ namespace GarnetJSON
             Debug.Assert(reader != null);
 
             var jsonString = reader.ReadString();
-            jObject = jsonString != null ? JsonConvert.DeserializeObject<JObject>(jsonString) ?? new() : new();
-            // TODO: update size
+            jNode = JsonNode.Parse(jsonString);
         }
 
         /// <summary>
@@ -72,7 +74,7 @@ namespace GarnetJSON
         public JsonObject(JsonObject obj)
             : base(obj)
         {
-            jObject = obj.jObject;
+            jNode = obj.jNode;
         }
 
         /// <summary>
@@ -87,13 +89,58 @@ namespace GarnetJSON
         /// <param name="writer">The binary writer to serialize to.</param>
         public override void SerializeObject(BinaryWriter writer)
         {
-            writer.Write(JsonConvert.SerializeObject(jObject, Formatting.None));
+            if (jNode == null) return;
+
+            writer.Write(jNode.ToJsonString());
         }
 
         /// <summary>
         /// Disposes the <see cref="JsonObject"/> instance.
         /// </summary>
         public override void Dispose() { }
+
+        /// <inheritdoc/>
+        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10,
+            byte* pattern = default, int patternLength = 0, bool isNoValue = false) =>
+            throw new NotImplementedException();
+
+        /// <summary>
+        /// Tries to get the value at the specified JSON path.
+        /// </summary>
+        /// <param name="path">The JSON path.</param>
+        /// <param name="jsonString">The JSON string value at the specified path, or <c>null</c> if the value is not found.</param>
+        /// <param name="logger">The logger to log any errors.</param>
+        /// <returns><c>true</c> if the value was successfully retrieved; otherwise, <c>false</c>.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> is <c>null</c>.</exception>
+        public bool TryGet(string path, out string jsonString, ILogger? logger = null)
+        {
+            if (path == null)
+                throw new ArgumentNullException(nameof(path));
+
+            jsonString = string.Empty;
+
+            try
+            {
+                // Find all items matching JSON path
+                var jPath = JsonPath.Parse(path);
+                var result = jPath.Evaluate(jNode);
+
+                // Return matches in JSON array format
+                jsonString = $"[{string.Join(",", result.Matches.Select(m => m.Value!.ToJsonString()))}]";
+
+                return true;
+            }
+            catch (PathParseException ex)
+            {
+                logger?.LogError(ex, "Failed to parse JSON path");
+                return false;
+            }
+            catch (JsonException ex)
+            {
+                logger?.LogError(ex, "Failed to get JSON value");
+                return false;
+            }
+        }
 
         /// <summary>
         /// Tries to set the value at the specified JSON path.
@@ -116,6 +163,11 @@ namespace GarnetJSON
                 Set(path, value);
                 return true;
             }
+            catch (PathParseException ex)
+            {
+                logger?.LogError(ex, "Failed to parse JSON path");
+                return false;
+            }
             catch (JsonException ex)
             {
                 logger?.LogError(ex, "Failed to set JSON value");
@@ -125,54 +177,83 @@ namespace GarnetJSON
 
         private void Set(string path, string value)
         {
-            var tokens = jObject.SelectTokens(path);
-            if (!tokens.Any())
+            // Find all items matching JSON path
+            var jPath = JsonPath.Parse(path);
+            var result = jPath.Evaluate(jNode);
+
+            // No matched items
+            if (result.Matches.Count == 0)
             {
-                // Create the element if it doesn't exist
-                JToken? parentToken;
-                parentToken = jObject.SelectToken(GetParentPath(path), true);
-                var propertyName = GetPropertyName(path);
-                if (parentToken is JObject parentObject)
+                // Find parent node path
+                var parentPath = JsonPath.Parse(GetParentPathExt(path));
+                result = parentPath.Evaluate(jNode);
+                if (result.Matches.Count == 0)
+                    throw new JsonException("Unable to find parent node(s) for JSON path.");
+
+                // Get parent node from path & parse child node from input value
+                var parentNode = result.Matches[0].Value;
+                var childNode = JsonNode.Parse(value);
+
+                // Check if parent node is a JsonObject
+                if (parentNode is System.Text.Json.Nodes.JsonObject matchObject)
                 {
-                    parentObject.Add(propertyName, JToken.Parse(value));
+                    // Get key name from JSON path
+                    var propName = GetPropertyName(path);
+
+                    // Add key & child node to the parent node
+                    matchObject.Add(propName, childNode);
                 }
-                else if (parentToken is JArray parentArray)
+                // Check if parent node is a JsonArray
+                else if (parentNode is JsonArray matchArray)
                 {
+                    // Get child index in parent array
                     var index = GetArrayIndex(path);
-                    parentArray.Insert(index, JToken.Parse(value));
+
+                    // Add child node to parent array
+                    matchArray.Insert(index, childNode);
                 }
             }
+            // Matches found
             else
             {
-                foreach (var token in tokens)
+                foreach (var match in result.Matches)
                 {
-                    if (token == jObject)
+                    // Parse node from input value
+                    var valNode = JsonNode.Parse(value);
+
+                    // If matched node is root
+                    if (match.Value == null && match.Location?.ToString() == "$")
                     {
-                        jObject = JObject.Parse(value);
+                        // Set root node to parsed value node
+                        jNode = valNode;
+                        continue;
                     }
-                    else
+
+                    // Replace matched value with input value
+                    if (match.Value is JsonValue matchValue)
                     {
-                        var newToken = JToken.Parse(value);
-                        token.Replace(newToken);
+                        matchValue.ReplaceWith(valNode);
                     }
                 }
             }
         }
 
-        private string GetParentPath(string path)
+        private static string GetParentPathExt(string jsonPath)
         {
-            // TODO: Support other notations as well
-            var lastDotIndex = path.LastIndexOf('.');
-            return lastDotIndex >= 0 ? path.Substring(0, lastDotIndex) : "";
+            var matches = Regex.Matches(jsonPath, JsonPathPattern);
+
+            if (matches.Count == 0) return "$";
+
+            return jsonPath.Substring(0, matches[^1].Index);
         }
 
-        private string GetPropertyName(string path)
+        private static string GetPropertyName(string path)
         {
             var lastDotIndex = path.LastIndexOf('.');
             return lastDotIndex >= 0 ? path.Substring(lastDotIndex + 1) : path;
         }
 
-        private int GetArrayIndex(string path)
+        private static int GetArrayIndex(string path)
         {
             var startIndex = path.LastIndexOf('[');
             var endIndex = path.LastIndexOf(']');
@@ -187,35 +268,5 @@ namespace GarnetJSON
 
             throw new ArgumentException("Invalid array index in path");
         }
-
-
-        /// <summary>
-        /// Tries to get the value at the specified JSON path.
-        /// </summary>
-        /// <param name="path">The JSON path.</param>
-        /// <param name="jsonString">The JSON string value at the specified path, or <c>null</c> if the value is not found.</param>
-        /// <param name="logger">The logger to log any errors.</param>
-        /// <returns><c>true</c> if the value was successfully retrieved; otherwise, <c>false</c>.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> is <c>null</c>.</exception>
-        public bool TryGet(string path, out string jsonString, ILogger? logger = null)
-        {
-            if (path == null)
-                throw new ArgumentNullException(nameof(path));
-
-            try
-            {
-                jsonString = new JArray(jObject.SelectTokens(path))?.ToString(Formatting.None) ?? "[]";
-                return true;
-            }
-            catch (JsonException ex)
-            {
-                logger?.LogError(ex, "Failed to get JSON value");
-                jsonString = string.Empty;
-                return false;
-            }
-        }
-
-        /// <inheritdoc/>
-        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = null, int patternLength = 0, bool isNoValue = false) => throw new NotImplementedException();
     }
 }

@@ -49,4 +49,18 @@ namespace Tsavorite.core
         {
         }
     }
+
+    /// <summary>
+    /// TsavoriteNoHybridLog exception type with message and inner exception.
+    /// </summary>
+    public class TsavoriteNoHybridLogException : TsavoriteException
+    {
+        /// <summary>
+        /// Throw Tsavorite exception
+        /// </summary>
+        /// <param name="message"></param>
+        public TsavoriteNoHybridLogException(string message) : base(message)
+        {
+        }
+    }
 }

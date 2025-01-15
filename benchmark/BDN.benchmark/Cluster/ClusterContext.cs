@@ -4,7 +4,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 using BDN.benchmark.CustomProcs;
-using Embedded.perftest;
+using Embedded.server;
 using Garnet.common;
 using Garnet.server;
 

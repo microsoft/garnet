@@ -94,6 +94,11 @@ namespace Garnet.server
         public string PubSubPageSize = "4k";
 
         /// <summary>
+        /// Server bootup should fail if errors happen during bootup of AOF and checkpointing.
+        /// </summary>
+        public bool FailOnRecoveryError = false;
+
+        /// <summary>
         /// Logger
         /// </summary>
         public ILogger logger;

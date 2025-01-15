@@ -105,6 +105,7 @@ namespace Garnet.server
                 RespCommand.GEOPOS => SortedSetObjectKeys(SortedSetOperation.GEOPOS, inputCount),
                 RespCommand.GEOSEARCH => SortedSetObjectKeys(SortedSetOperation.GEOSEARCH, inputCount),
                 RespCommand.ZREVRANGE => SortedSetObjectKeys(SortedSetOperation.ZREVRANGE, inputCount),
+                RespCommand.ZREVRANGEBYLEX => SortedSetObjectKeys(SortedSetOperation.ZREVRANGEBYLEX, inputCount),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetObjectKeys(SortedSetOperation.ZREVRANGEBYSCORE, inputCount),
                 RespCommand.LINDEX => ListObjectKeys((byte)ListOperation.LINDEX),
                 RespCommand.LINSERT => ListObjectKeys((byte)ListOperation.LINSERT),
@@ -139,7 +140,10 @@ namespace Garnet.server
                 RespCommand.HSTRLEN => HashObjectKeys((byte)HashOperation.HSTRLEN),
                 RespCommand.HVALS => HashObjectKeys((byte)HashOperation.HVALS),
                 RespCommand.GET => SingleKey(1, false, LockType.Shared),
+                RespCommand.GETIFNOTMATCH => SingleKey(1, false, LockType.Shared),
+                RespCommand.GETWITHETAG => SingleKey(1, false, LockType.Shared),
                 RespCommand.SET => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.SETIFMATCH => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.GETRANGE => SingleKey(1, false, LockType.Shared),
                 RespCommand.SETRANGE => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.PFADD => SingleKey(1, false, LockType.Exclusive),
@@ -219,6 +223,7 @@ namespace Garnet.server
                 SortedSetOperation.GEOPOS => SingleKey(1, true, LockType.Shared),
                 SortedSetOperation.GEOSEARCH => SingleKey(1, true, LockType.Shared),
                 SortedSetOperation.ZREVRANGE => SingleKey(1, true, LockType.Shared),
+                SortedSetOperation.ZREVRANGEBYLEX => SingleKey(1, true, LockType.Shared),
                 SortedSetOperation.ZREVRANGEBYSCORE => SingleKey(1, true, LockType.Shared),
                 _ => -1
             };

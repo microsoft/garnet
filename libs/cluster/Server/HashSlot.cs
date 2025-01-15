@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Runtime.InteropServices;
 
 namespace Garnet.cluster
@@ -11,6 +10,8 @@ namespace Garnet.cluster
     /// </summary>
     public enum SlotState : byte
     {
+        // IMPORTANT: Any changes to the values of this enum should be reflected in its parser (SessionParseStateExtensions.TryGetSlotState)
+
         /// <summary>
         /// Slot not assigned
         /// </summary>
@@ -39,23 +40,6 @@ namespace Garnet.cluster
         /// Invalid slot state
         /// </summary>
         INVALID,
-    }
-
-    /// <summary>
-    /// Extension methods for <see cref="SlotState"/>.
-    /// </summary>
-    public static class SlotStateExtensions
-    {
-        /// <summary>
-        /// Validate that the given <see cref="SlotState"/> is legal, and _could_ have come from the given <see cref="ReadOnlySpan{T}"/>.
-        /// 
-        /// TODO: Long term we can kill this and use <see cref="IUtf8SpanParsable{ClientType}"/> instead of <see cref="Enum.TryParse{TEnum}(string?, bool, out TEnum)"/>
-        /// and avoid extra validation.  See: https://github.com/dotnet/runtime/issues/81500 .
-        /// </summary>
-        public static bool IsValid(this SlotState type, ReadOnlySpan<byte> fromSpan)
-        {
-            return type != SlotState.INVALID && type != SlotState.OFFLINE && Enum.IsDefined(type) && !fromSpan.ContainsAnyInRange((byte)'0', (byte)'9');
-        }
     }
 
     /// <summary>

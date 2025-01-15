@@ -63,6 +63,18 @@ namespace Garnet
         [Option("mutable-percent", Required = false, HelpText = "Percentage of log memory that is kept mutable")]
         public int MutablePercent { get; set; }
 
+        [OptionValidation]
+        [Option("readcache", Required = false, HelpText = "Enables read cache for faster access to on-disk records.")]
+        public bool? EnableReadCache { get; set; }
+
+        [MemorySizeValidation]
+        [Option("readcache-memory", Required = false, HelpText = "Total read cache log memory used in bytes (rounds down to power of 2)")]
+        public string ReadCacheMemorySize { get; set; }
+
+        [MemorySizeValidation]
+        [Option("readcache-page", Required = false, HelpText = "Size of each read cache page in bytes (rounds down to power of 2)")]
+        public string ReadCachePageSize { get; set; }
+
         [MemorySizeValidation(false)]
         [Option("obj-heap-memory", Required = false, HelpText = "Object store heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
         public string ObjectStoreHeapMemorySize { get; set; }
@@ -90,6 +102,22 @@ namespace Garnet
         [PercentageValidation]
         [Option("obj-mutable-percent", Required = false, HelpText = "Percentage of object store log memory that is kept mutable")]
         public int ObjectStoreMutablePercent { get; set; }
+
+        [OptionValidation]
+        [Option("obj-readcache", Required = false, HelpText = "Enables object store read cache for faster access to on-disk records.")]
+        public bool? EnableObjectStoreReadCache { get; set; }
+
+        [MemorySizeValidation]
+        [Option("obj-readcache-log-memory", Required = false, HelpText = "Total object store read cache log memory used in bytes (rounds down to power of 2)")]
+        public string ObjectStoreReadCacheLogMemorySize { get; set; }
+
+        [MemorySizeValidation]
+        [Option("obj-readcache-page", Required = false, HelpText = "Size of each object store read cache page in bytes (rounds down to power of 2)")]
+        public string ObjectStoreReadCachePageSize { get; set; }
+
+        [MemorySizeValidation(false)]
+        [Option("obj-readcache-heap-memory", Required = false, HelpText = "Object store read cache heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
+        public string ObjectStoreReadCacheHeapMemorySize { get; set; }
 
         [OptionValidation]
         [Option("storage-tier", Required = false, HelpText = "Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use --logdir to specify storage directory.")]
@@ -164,10 +192,10 @@ namespace Garnet
         [Option("aad-issuers", Required = false, HelpText = "The issuers of AAD token for AAD authentication. Should be a comma separated string.")]
         public string AadIssuers { get; set; }
 
-        [Option("aad-authorized-app-ids", Required = false, Separator = ',', HelpText = "The authorized client app Ids for AAD authentication. Should be a comma separated string.")]
+        [Option("aad-authorized-app-ids", Required = false, HelpText = "The authorized client app Ids for AAD authentication. Should be a comma separated string.")]
         public string AuthorizedAadApplicationIds { get; set; }
 
-        [Option("aad-validate-acl-username", Required = false, Separator = ',', HelpText = "Only valid for AclWithAAD mode. Validates username -  expected to be OID of client app or a valid group's object id of which the client is part of.")]
+        [Option("aad-validate-acl-username", Required = false, HelpText = "Only valid for AclWithAAD mode. Validates username -  expected to be OID of client app or a valid group's object id of which the client is part of.")]
         public bool? AadValidateUsername { get; set; }
 
         [OptionValidation]
@@ -304,12 +332,24 @@ namespace Garnet
         public string FileLogger { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("minthreads", Required = false, HelpText = "Minimum worker and completion threads in thread pool, 0 uses the system default.")]
+        [Option("minthreads", Required = false, HelpText = "Minimum worker threads in thread pool, 0 uses the system default.")]
         public int ThreadPoolMinThreads { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("maxthreads", Required = false, HelpText = "Maximum worker and completion threads in thread pool, 0 uses the system default.")]
+        [Option("maxthreads", Required = false, HelpText = "Maximum worker threads in thread pool, 0 uses the system default.")]
         public int ThreadPoolMaxThreads { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("miniothreads", Required = false, HelpText = "Minimum IO completion threads in thread pool, 0 uses the system default.")]
+        public int ThreadPoolMinIOCompletionThreads { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("maxiothreads", Required = false, HelpText = "Maximum IO completion threads in thread pool, 0 uses the system default.")]
+        public int ThreadPoolMaxIOCompletionThreads { get; set; }
+
+        [IntRangeValidation(-1, int.MaxValue)]
+        [Option("network-connection-limit", Required = false, Default = -1, HelpText = "Maximum number of simultaneously active network connections.")]
+        public int NetworkConnectionLimit { get; set; }
 
         [OptionValidation]
         [Option("use-azure-storage", Required = false, HelpText = "Use Azure Page Blobs for storage instead of local storage.")]
@@ -347,6 +387,10 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("replica-sync-delay", Required = false, HelpText = "Whether and by how much (milliseconds) should we throttle the replica sync: 0 - disable throttling")]
         public int ReplicaSyncDelayMs { get; set; }
+
+        [IntRangeValidation(-1, int.MaxValue)]
+        [Option("replica-offset-max-lag", Required = false, HelpText = "Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > ReplicationOffsetMaxLag. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag")]
+        public int ReplicationOffsetMaxLag { get; set; }
 
         [OptionValidation]
         [Option("main-memory-replication", Required = false, HelpText = "Use main-memory replication model.")]
@@ -465,6 +509,10 @@ namespace Garnet
         [IntRangeValidation(1, 100, isRequired: false)]
         [Option("index-resize-threshold", Required = false, HelpText = "Overflow bucket count over total index size in percentage to trigger index resize")]
         public int IndexResizeThreshold { get; set; }
+
+        [OptionValidation]
+        [Option("fail-on-recovery-error", Default = false, Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
+        public bool? FailOnRecoveryError { get; set; }
 
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
@@ -593,6 +641,9 @@ namespace Garnet
                 IndexSize = IndexSize,
                 IndexMaxSize = IndexMaxSize,
                 MutablePercent = MutablePercent,
+                EnableReadCache = EnableReadCache.GetValueOrDefault(),
+                ReadCacheMemorySize = ReadCacheMemorySize,
+                ReadCachePageSize = ReadCachePageSize,
                 ObjectStoreHeapMemorySize = ObjectStoreHeapMemorySize,
                 ObjectStoreLogMemorySize = ObjectStoreLogMemorySize,
                 ObjectStorePageSize = ObjectStorePageSize,
@@ -600,6 +651,10 @@ namespace Garnet
                 ObjectStoreIndexSize = ObjectStoreIndexSize,
                 ObjectStoreIndexMaxSize = ObjectStoreIndexMaxSize,
                 ObjectStoreMutablePercent = ObjectStoreMutablePercent,
+                EnableObjectStoreReadCache = EnableObjectStoreReadCache.GetValueOrDefault(),
+                ObjectStoreReadCachePageSize = ObjectStoreReadCachePageSize,
+                ObjectStoreReadCacheLogMemorySize = ObjectStoreReadCacheLogMemorySize,
+                ObjectStoreReadCacheHeapMemorySize = ObjectStoreReadCacheHeapMemorySize,
                 EnableStorageTier = enableStorageTier,
                 CopyReadsToTail = CopyReadsToTail.GetValueOrDefault(),
                 ObjectStoreCopyReadsToTail = ObjectStoreCopyReadsToTail.GetValueOrDefault(),
@@ -651,11 +706,15 @@ namespace Garnet
                 QuietMode = QuietMode.GetValueOrDefault(),
                 ThreadPoolMinThreads = ThreadPoolMinThreads,
                 ThreadPoolMaxThreads = ThreadPoolMaxThreads,
+                ThreadPoolMinIOCompletionThreads = ThreadPoolMinIOCompletionThreads,
+                ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
+                NetworkConnectionLimit = NetworkConnectionLimit,
                 DeviceFactoryCreator = useAzureStorage ? azureFactoryCreator
                     : () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
+                ReplicationOffsetMaxLag = ReplicationOffsetMaxLag,
                 MainMemoryReplication = MainMemoryReplication.GetValueOrDefault(),
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),
@@ -675,7 +734,8 @@ namespace Garnet
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
-                LoadModuleCS = LoadModuleCS
+                LoadModuleCS = LoadModuleCS,
+                FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault()
             };
         }
 
