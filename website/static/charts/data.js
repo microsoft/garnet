@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1736975310665,
+  "lastUpdate": 1736975334693,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -20489,6 +20489,84 @@ window.BENCHMARK_DATA = {
             "value": 95716.78044245794,
             "unit": "ns",
             "range": "± 290.0104967962741"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "badrishc@microsoft.com",
+            "name": "Badrish Chandramouli",
+            "username": "badrishc"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "373c4c3178ccc758e3d46a2162f5402aff45ea7d",
+          "message": "Speed up scan (#916)\n\n* Speed up scan\r\n\r\nAvoid buffer pool allocation per GetNext and reuse memory to speed up scan\r\n\r\n* nit\r\n\r\n* avoid two counters for DBScan.\r\n\r\n* update version\r\n\r\n* Revert \"update version\"\r\n\r\nThis reverts commit 718059a8c39a2ced726594a129c65da661b6bc92.\r\n\r\n* update version",
+          "timestamp": "2025-01-15T13:00:26-08:00",
+          "tree_id": "6e4a879c235f41537438ebee885cc820f5659148",
+          "url": "https://github.com/microsoft/garnet/commit/373c4c3178ccc758e3d46a2162f5402aff45ea7d"
+        },
+        "date": 1736975324159,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: ACL)",
+            "value": 118138.90816824777,
+            "unit": "ns",
+            "range": "± 184.0562623522019"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: ACL)",
+            "value": 102919.60205078125,
+            "unit": "ns",
+            "range": "± 373.8817588539854"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: ACL)",
+            "value": 97483.30165318081,
+            "unit": "ns",
+            "range": "± 207.93455833458444"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: AOF)",
+            "value": 139306.103515625,
+            "unit": "ns",
+            "range": "± 446.279848264005"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: AOF)",
+            "value": 117425.27901785714,
+            "unit": "ns",
+            "range": "± 823.1657434131679"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: AOF)",
+            "value": 109004.93286132812,
+            "unit": "ns",
+            "range": "± 286.0643810648645"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: None)",
+            "value": 119736.58796037946,
+            "unit": "ns",
+            "range": "± 195.25017524068676"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: None)",
+            "value": 112789.27775065105,
+            "unit": "ns",
+            "range": "± 377.39598387052405"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: None)",
+            "value": 96485.4265485491,
+            "unit": "ns",
+            "range": "± 157.7365726625781"
           }
         ]
       }
