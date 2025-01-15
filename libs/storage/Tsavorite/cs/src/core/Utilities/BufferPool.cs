@@ -137,6 +137,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Get the total aligned memory capacity of the buffer
+        /// </summary>
+        public int AlignedTotalCapacity => buffer.Length - offset;
+
+        /// <summary>
         /// Get valid pointer
         /// </summary>
         /// <returns></returns>
