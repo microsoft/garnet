@@ -17,14 +17,29 @@ namespace Garnet.server
         private bool NetworkRENAME<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.Count != 2)
+            // one optional command for with etag
+            if (parseState.Count < 2 || parseState.Count > 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME));
             }
 
             var oldKeySlice = parseState.GetArgSliceByRef(0);
             var newKeySlice = parseState.GetArgSliceByRef(1);
-            var status = storageApi.RENAME(oldKeySlice, newKeySlice);
+
+            var withEtag = false;
+            if (parseState.Count == 3)
+            {
+                if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
+                {
+                    while (!RespWriteUtils.WriteError($"ERR Unsupported option {parseState.GetString(2)}", ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                withEtag = true;
+            }
+
+            var status = storageApi.RENAME(oldKeySlice, newKeySlice, withEtag);
 
             switch (status)
             {
@@ -46,14 +61,29 @@ namespace Garnet.server
         private bool NetworkRENAMENX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.Count != 2)
+            // one optional command for with etag
+            if (parseState.Count < 2 || parseState.Count > 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAMENX));
             }
 
             var oldKeySlice = parseState.GetArgSliceByRef(0);
             var newKeySlice = parseState.GetArgSliceByRef(1);
-            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice, out var result);
+
+            var withEtag = false;
+            if (parseState.Count == 3)
+            {
+                if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
+                {
+                    while (!RespWriteUtils.WriteError($"ERR Unsupported option {parseState.GetString(2)}", ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                withEtag = true;
+            }
+
+            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice, out var result, withEtag);
 
             if (status == GarnetStatus.OK)
             {
