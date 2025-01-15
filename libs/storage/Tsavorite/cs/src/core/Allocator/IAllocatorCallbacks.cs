@@ -25,10 +25,10 @@ namespace Tsavorite.core
         ref RecordInfo GetInfoRef(long physicalAddress);
 
         /// <summary>Get <see cref="RecordInfo"/> from pinned memory</summary>
-        unsafe ref RecordInfo GetInfoRefFromBytePointer(byte* ptr);
+        unsafe ref RecordInfo GetInfoRefFromBytePointer(byte* ptr); // TODO still needed?
 
         /// <summary>Get <see cref="SpanByte"/> Key from <paramref name="physicalAddress"/></summary>
-        SpanByte GetKey(long physicalAddress);
+        SpanByte GetKey(long physicalAddress);  // TODO still needed?
 
         /// <summary>Get the actual (used) and allocated record sizes at <paramref name="physicalAddress"/></summary>
         (int actualSize, int allocatedSize) GetFullRecordSizes(long physicalAddress);

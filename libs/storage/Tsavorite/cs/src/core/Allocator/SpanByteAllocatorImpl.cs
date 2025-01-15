@@ -192,6 +192,53 @@ namespace Tsavorite.core
             return (actualSize, RoundUp(actualSize, Constants.kRecordAlignment), keySize);
         }
 
+        /// <inheritdoc/>
+        internal override void SerializeRecordToIteratorBuffer(long logicalAddress, ref SectorAlignedMemory recordBuffer, out IHeapObject valueObject)
+        {
+            var logRecord = new LogRecord(GetPhysicalAddress(logicalAddress));
+            long recordSize = RecordInfo.GetLength() + logRecord.Key.TotalSize + logRecord.ValueSpan.TotalSize
+                + (logRecord.Info.HasETag ? LogRecord.ETagSize : 0)
+                + (logRecord.Info.HasExpiration ? LogRecord.ExpirationSize : 0);
+            if (recordSize > int.MaxValue)
+                throw new TsavoriteException("Total size out of range");
+
+            bufferPool.EnsureSize(ref recordBuffer, (int)recordSize);
+            var ptr = recordBuffer.aligned_pointer;
+
+            *(RecordInfo*)ptr = logRecord.Info;
+            ptr += RecordInfo.GetLength();
+
+            var key = logRecord.Key;
+            (*(SpanByte*)ptr).Length = key.Length;
+            key.CopyTo(ref *(SpanByte*)ptr);
+            ptr += key.Length;
+
+            var value = logRecord.ValueSpan;
+            (*(SpanByte*)ptr).Length = value.Length;
+            value.CopyTo(ref *(SpanByte*)ptr);
+            ptr += value.Length;
+
+            if (logRecord.Info.HasETag)
+            {
+                *(long*)ptr = logRecord.ETag;
+                ptr += sizeof(long);
+            }
+
+            if (logRecord.Info.HasExpiration)
+            {
+                *(long*)ptr = logRecord.Expiration;
+                ptr += sizeof(long);
+            }
+
+            valueObject = null;
+        }
+
+        /// <inheritdoc/>
+        internal override void DeserializeFromIteratorDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) byteStream)
+        {
+            // Do nothing; we don't create a HeapObject for SpanByteAllocator
+        }
+
         /// <summary>
         /// Dispose memory allocator
         /// </summary>
@@ -284,16 +331,16 @@ namespace Tsavorite.core
         /// Iterator interface for pull-scanning Tsavorite log
         /// </summary>
         public override ITsavoriteScanIterator<SpanByte> Scan(TsavoriteKV<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
-                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
-            => new SpanByteScanIterator<TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, logger: logger);
+                long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, bool includeSealedRecords)
+            => new RecordScanIterator<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>>(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, includeSealedRecords: includeSealedRecords, logger: logger);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
         /// </summary>
         internal override bool Scan<TScanFunctions>(TsavoriteKV<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
-                long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
+                long beginAddress, long endAddress, ref TScanFunctions scanFunctions, DiskScanBufferingMode diskScanBufferingMode)
         {
-            using SpanByteScanIterator<TStoreFunctions> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
+            using RecordScanIterator<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, logger: logger);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
@@ -303,94 +350,26 @@ namespace Tsavorite.core
         internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
                 ScanCursorState<SpanByte> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
         {
-            using SpanByteScanIterator<TStoreFunctions> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
-            return ScanLookup<SpanByte, SpanByteAndMemory, TScanFunctions, SpanByteScanIterator<TStoreFunctions>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
+            using RecordScanIterator<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering, logger: logger);
+            return ScanLookup<SpanByte, SpanByteAndMemory, TScanFunctions, RecordScanIterator<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
         }
 
         /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
         internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
-                ref SpanByte key, long beginAddress, ref TScanFunctions scanFunctions)
+                SpanByte key, long beginAddress, ref TScanFunctions scanFunctions)
         {
-            using SpanByteScanIterator<TStoreFunctions> iter = new(store, this, beginAddress, epoch, logger: logger);
-            return IterateKeyVersionsImpl(store, key, beginAddress, ref scanFunctions, iter);
+            using RecordScanIterator<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, epoch, logger: logger);
+            return IterateHashChain(store, key, beginAddress, ref scanFunctions, iter);
         }
 
         /// <inheritdoc />
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<SpanByte>> observer)
         {
-            using var iter = new SpanByteScanIterator<TStoreFunctions>(store: null, this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, false, epoch, true, logger: logger);
+            using var iter = new RecordScanIterator<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>>(store: null, this, beginAddress, endAddress, epoch, DiskScanBufferingMode.NoBuffering, InMemoryScanBufferingMode.NoBuffering, 
+                    includeSealedRecords: false, assumeInMemory: true, logger: logger);
             observer?.OnNext(iter);
-        }
-
-        /// <summary>
-        /// Read pages from specified device
-        /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <param name="readPageStart"></param>
-        /// <param name="numPages"></param>
-        /// <param name="untilAddress"></param>
-        /// <param name="callback"></param>
-        /// <param name="context"></param>
-        /// <param name="frame"></param>
-        /// <param name="completed"></param>
-        /// <param name="devicePageOffset"></param>
-        /// <param name="device"></param>
-        /// <param name="objectLogDevice"></param>
-        internal void AsyncReadPagesFromDeviceToFrame<TContext>(
-                                        long readPageStart,
-                                        int numPages,
-                                        long untilAddress,
-                                        DeviceIOCompletionCallback callback,
-                                        TContext context,
-                                        BlittableFrame frame,
-                                        out CountdownEvent completed,
-                                        long devicePageOffset = 0,
-                                        IDevice device = null, IDevice objectLogDevice = null)
-        {
-            var usedDevice = device;
-            if (device == null)
-            {
-                usedDevice = this.device;
-            }
-
-            completed = new CountdownEvent(numPages);
-            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
-            {
-                int pageIndex = (int)(readPage % frame.frameSize);
-                if (frame.frame[pageIndex] == null)
-                {
-                    frame.Allocate(pageIndex);
-                }
-                else
-                {
-                    frame.Clear(pageIndex);
-                }
-                var asyncResult = new PageAsyncReadResult<TContext>()
-                {
-                    page = readPage,
-                    context = context,
-                    handle = completed,
-                    frame = frame
-                };
-
-                ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
-
-                uint readLength = (uint)AlignedPageSizeBytes;
-                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
-
-                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
-                {
-                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
-                    readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
-                }
-
-                if (device != null)
-                    offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
-
-                usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
-            }
         }
     }
 }

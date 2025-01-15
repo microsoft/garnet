@@ -75,7 +75,7 @@ namespace Tsavorite.core
         /// Constructor
         /// </summary>
         public DeltaLog(IDevice deltaLogDevice, int logPageSizeBits, long tailAddress, ILogger logger = null)
-            : base(0, tailAddress >= 0 ? tailAddress : deltaLogDevice.GetFileSize(0), ScanBufferingMode.SinglePageBuffering, false, default, logPageSizeBits, false, logger: logger)
+            : base(0, tailAddress >= 0 ? tailAddress : deltaLogDevice.GetFileSize(0), DiskScanBufferingMode.SinglePageBuffering, false, default, logPageSizeBits, false, logger: logger)
         {
             LogPageSizeBits = logPageSizeBits;
             PageSize = 1 << LogPageSizeBits;
@@ -125,13 +125,10 @@ namespace Tsavorite.core
             {
                 int pageIndex = (int)(readPage % frame.frameSize);
                 if (frame.frame[pageIndex] == null)
-                {
                     frame.Allocate(pageIndex);
-                }
                 else
-                {
                     frame.Clear(pageIndex);
-                }
+
                 var asyncResult = new PageAsyncReadResult<TContext>()
                 {
                     page = readPage,
@@ -141,7 +138,6 @@ namespace Tsavorite.core
                 };
 
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
-
                 uint readLength = (uint)AlignedPageSizeBytes;
                 long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
 

@@ -71,8 +71,8 @@ namespace Tsavorite.core
 
     internal interface IPushScanIterator
     {
-        bool BeginGetPrevInMemory(SpanByte key, out RecordInfo recordInfo, out bool continueOnDisk);
-        bool EndGetPrevInMemory();
+        bool BeginGetPrevInMemory(SpanByte key, out LogRecord logRecord, out bool continueOnDisk);
+        void EndGetPrevInMemory();
 
         /// <summary>
         /// When beginning a cursor scan, if it is not the last cursor returned, snap it to the preceding logical address boundary.

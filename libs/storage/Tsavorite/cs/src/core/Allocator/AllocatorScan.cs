@@ -16,14 +16,14 @@ namespace Tsavorite.core
         /// Pull-based scan interface for HLOG; user calls GetNext() which advances through the address range.
         /// </summary>
         /// <returns>Pull Scan iterator instance</returns>
-        public abstract ITsavoriteScanIterator<TValue> Scan(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false);
+        public abstract ITsavoriteScanIterator<TValue> Scan(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false);
 
         /// <summary>
         /// Push-based scan interface for HLOG, called from LogAccessor; scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
         internal abstract bool Scan<TScanFunctions>(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions,
-                ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+                DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering)
             where TScanFunctions : IScanIteratorFunctions<TValue>;
 
         /// <summary>
@@ -64,18 +64,18 @@ namespace Tsavorite.core
 
             long numRecords = 1;
             var stop = false;
-            for (; !stop && iter.GetNext(out var recordInfo); ++numRecords)
+            for (; !stop && iter.GetNext(); ++numRecords)
             {
                 try
                 {
+                    if (iter.Info.IsClosed)    // Iterator checks this but it may have changed since
+                        continue;
+
                     // Pull Iter records are in temp storage so do not need locks, but we'll call ConcurrentReader because, for example, GenericAllocator
                     // may need to know the object is in that region.
-                    if (recordInfo.IsClosed)    // Iterator checks this but it may have changed since
-                        continue;
-                    if (iter.CurrentAddress >= headAddress)
-                        stop = !scanFunctions.ConcurrentReader(iter.GetKey(), ref iter.GetValue(), new RecordMetadata(iter.CurrentAddress), numRecords, out _);
-                    else
-                        stop = !scanFunctions.SingleReader(iter.GetKey(), ref iter.GetValue(), new RecordMetadata(iter.CurrentAddress), numRecords, out _);
+                    stop = iter.CurrentAddress >= headAddress
+                        ? !scanFunctions.ConcurrentReader(ref iter, new RecordMetadata(iter.CurrentAddress), numRecords, out _)
+                        : !scanFunctions.SingleReader(ref iter, new RecordMetadata(iter.CurrentAddress), numRecords, out _);
                 }
                 catch (Exception ex)
                 {
@@ -91,24 +91,24 @@ namespace Tsavorite.core
         /// <summary>
         /// Implementation for push-iterating key versions
         /// </summary>
-        internal bool IterateKeyVersionsImpl<TScanFunctions, TScanIterator>(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, SpanByte key, long beginAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
+        internal bool IterateHashChain<TScanFunctions, TScanIterator>(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, SpanByte key, long beginAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
             where TScanFunctions : IScanIteratorFunctions<TValue>
             where TScanIterator : ITsavoriteScanIterator<TValue>, IPushScanIterator
         {
             if (!scanFunctions.OnStart(beginAddress, Constants.kInvalidAddress))
                 return false;
-            var headAddress = HeadAddress;
+            var readOnlyAddress = ReadOnlyAddress;
 
             long numRecords = 1;
             bool stop = false, continueOnDisk = false;
-            for (; !stop && iter.BeginGetPrevInMemory(key, out var recordInfo, out continueOnDisk); ++numRecords)
+            for (; !stop && iter.BeginGetPrevInMemory(key, out var logRecord, out continueOnDisk); ++numRecords)
             {
                 OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = default;
                 try
                 {
-                    // Iter records above headAddress will be in log memory and must be locked.
-                    var xxxlogRecord = store.hlog.CreateLogRecord(iter.CurrentAddress);
-                    if (iter.CurrentAddress >= headAddress && !logRecord.Info.IsClosed)
+                    // Iter records above readOnlyAddress will be in mutable log memory so the chain must be locked.
+                    // We hold the epoch so iter does not need to copy, so do not use iter's ISourceLogRecord implementation; create a local LogRecord around the address.
+                    if (iter.CurrentAddress >= readOnlyAddress && !logRecord.Info.IsClosed)
                     {
                         store.LockForScan(ref stackCtx, key);
                         stop = !scanFunctions.ConcurrentReader(ref logRecord, new RecordMetadata(iter.CurrentAddress), numRecords, out _);
@@ -203,19 +203,17 @@ namespace Tsavorite.core
 
             if (cursor < BeginAddress) // This includes 0, which means to start the Scan
                 cursor = BeginAddress;
-            else if (validateCursor)
-                iter.SnapCursorToLogicalAddress(ref cursor);
+            else if (validateCursor && !iter.SnapCursorToLogicalAddress(ref cursor))
+                goto IterationComplete;
 
             scanCursorState.Initialize(scanFunctions);
 
             long numPending = 0;
-            while (iter.GetNext(out var recordInfo))
+            while (iter.GetNext())
             {
-                if (!recordInfo.Tombstone)
+                if (!iter.Info.Tombstone)
                 {
-                    ref var key = ref iter.GetKey();
-                    ref var value = ref iter.GetValue();
-                    var status = bContext.ConditionalScanPush(scanCursorState, recordInfo, ref key, ref value, iter.CurrentAddress, iter.NextAddress);
+                    var status = bContext.ConditionalScanPush(scanCursorState, ref iter, iter.CurrentAddress, iter.NextAddress);
                     if (status.IsPending)
                     {
                         ++numPending;
@@ -356,35 +354,6 @@ namespace Tsavorite.core
             public readonly RecordFieldInfo GetUpsertFieldInfo(TValue value, ref TInput input) => default;
 
             public readonly void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long SnapToFixedLengthLogicalAddressBoundary(ref long logicalAddress, int recordSize)
-        {
-            // Get the initial offset on the page
-            var offset = (int)(logicalAddress & PageSizeMask);
-            var pageStart = logicalAddress - offset;
-
-            int recordStartOffset;
-            if (logicalAddress < PageSize)
-            {
-                // We are on the first page so must account for BeginAddress.
-                if (offset < BeginAddress)
-                    return logicalAddress = BeginAddress;
-                recordStartOffset = (int)(((offset - BeginAddress) / recordSize) * recordSize + BeginAddress);
-            }
-            else
-            {
-                // Not the first page, so just find the highest recordStartOffset <= offset.
-                recordStartOffset = (offset / recordSize) * recordSize;
-            }
-
-            // If there is not enough room for a full record, advance logicalAddress to the next page start.
-            if (PageSize - recordStartOffset >= recordSize)
-                logicalAddress = pageStart + recordStartOffset;
-            else
-                logicalAddress = pageStart + PageSize;
-            return logicalAddress;
         }
 
         /// <summary>

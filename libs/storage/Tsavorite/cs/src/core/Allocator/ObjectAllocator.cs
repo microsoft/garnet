@@ -92,7 +92,7 @@ namespace Tsavorite.core
         public readonly RecordSizeInfo GetDeleteRecordSize(SpanByte key) => _this.GetDeleteRecordSize(key);
 
         /// <inheritdoc/>
-        public readonly void PopulateRecordSizeInfo(SpanByte key, ref RecordSizeInfo sizeInfo) => _this.PopulateRecordSizeInfo(key, ref sizeInfo);
+        public readonly void PopulateRecordSizeInfo(SpanByte key, ref RecordSizeInfo sizeInfo) => _this.PopulateRecordSizeInfo(ref sizeInfo);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

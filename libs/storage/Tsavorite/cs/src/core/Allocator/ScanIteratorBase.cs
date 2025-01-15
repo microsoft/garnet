@@ -69,6 +69,8 @@ namespace Tsavorite.core
         /// </summary>
         protected ILogger logger;
 
+        protected InMemoryScanBufferingMode memScanBufferingMode;
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -79,9 +81,12 @@ namespace Tsavorite.core
         /// <param name="logPageSizeBits"></param>
         /// <param name="initForReads"></param>
         /// <param name="logger"></param>
-        public unsafe ScanIteratorBase(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, int logPageSizeBits, bool initForReads = true, ILogger logger = null)
+        public unsafe ScanIteratorBase(long beginAddress, long endAddress, DiskScanBufferingMode scanBufferingMode, InMemoryScanBufferingMode memScanBufferingMode,
+                bool includeSealedRecords, LightEpoch epoch, int logPageSizeBits, bool initForReads = true, ILogger logger = null)
         {
             this.logger = logger;
+            this.memScanBufferingMode = memScanBufferingMode;
+
             // If we are protected when creating the iterator, we do not need per-GetNext protection
             if (epoch != null && !epoch.ThisInstanceProtected())
                 this.epoch = epoch;
@@ -94,11 +99,11 @@ namespace Tsavorite.core
             currentAddress = -1;
             nextAddress = beginAddress;
 
-            if (scanBufferingMode == ScanBufferingMode.SinglePageBuffering)
+            if (scanBufferingMode == DiskScanBufferingMode.SinglePageBuffering)
                 frameSize = 1;
-            else if (scanBufferingMode == ScanBufferingMode.DoublePageBuffering)
+            else if (scanBufferingMode == DiskScanBufferingMode.DoublePageBuffering)
                 frameSize = 2;
-            else if (scanBufferingMode == ScanBufferingMode.NoBuffering)
+            else if (scanBufferingMode == DiskScanBufferingMode.NoBuffering)
             {
                 frameSize = 0;
                 return;

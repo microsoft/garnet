@@ -2055,11 +2055,11 @@ namespace Tsavorite.core
         /// <param name="scanUncommitted">Whether we scan uncommitted data</param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public TsavoriteLogScanIterator Scan(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        public TsavoriteLogScanIterator Scan(long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
         {
             if (readOnlyMode)
             {
-                scanBufferingMode = ScanBufferingMode.SinglePageBuffering;
+                scanBufferingMode = DiskScanBufferingMode.SinglePageBuffering;
 
                 if (scanUncommitted)
                     throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
@@ -2097,11 +2097,11 @@ namespace Tsavorite.core
             }
         }
 
-        public TsavoriteLogScanSingleIterator ScanSingle(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        public TsavoriteLogScanSingleIterator ScanSingle(long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
         {
             if (readOnlyMode)
             {
-                scanBufferingMode = ScanBufferingMode.SinglePageBuffering;
+                scanBufferingMode = DiskScanBufferingMode.SinglePageBuffering;
 
                 if (scanUncommitted)
                     throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");

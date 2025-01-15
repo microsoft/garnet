@@ -43,7 +43,7 @@ namespace Tsavorite.core
         /// <summary>The Expiration of the record, if any (see <see cref="RecordInfo.HasExpiration"/>; 0 by default.</summary>
         long Expiration { get; }
 
-        /// <summary>A shim to "convert" a TSourceLogRecord generic that is a <see cref="LogRecord"/> to a <see cref="LogRecord"/> type.
+        /// <summary>A shim to "convert" a TSourceLogRecord generic type that is a <see cref="LogRecord"/> to a <see cref="LogRecord"/> type.
         /// Should throw if the TSourceLogRecord is not a <see cref="LogRecord"/>.</summary>
         LogRecord AsLogRecord();
 

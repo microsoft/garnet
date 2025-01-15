@@ -24,11 +24,6 @@ namespace Garnet.server
         long Expiration { get; set; }
 
         /// <summary>
-        /// Total memory size of the object
-        /// </summary>
-        long Size { get; set; }
-
-        /// <summary>
         /// Operator on object
         /// </summary>
         /// <param name="input"></param>

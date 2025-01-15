@@ -199,6 +199,57 @@ namespace Tsavorite.core
             sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
         }
 
+        /// <inheritdoc/>
+        internal override void SerializeRecordToIteratorBuffer(long logicalAddress, ref SectorAlignedMemory recordBuffer, out IHeapObject valueObject)
+        {
+            var logRecord = CreateLogRecord(GetPhysicalAddress(logicalAddress));
+            long recordSize = RecordInfo.GetLength() + logRecord.Key.TotalSize + new SpanByte().TotalSize
+                + (logRecord.Info.HasETag ? LogRecord.ETagSize : 0)
+                + (logRecord.Info.HasExpiration ? LogRecord.ExpirationSize : 0);
+            if (recordSize > int.MaxValue)
+                throw new TsavoriteException("Total size out of range");
+
+            bufferPool.EnsureSize(ref recordBuffer, (int)recordSize);
+            var ptr = recordBuffer.aligned_pointer;
+
+            *(RecordInfo*)ptr = logRecord.Info;
+            ptr += RecordInfo.GetLength();
+
+            var key = logRecord.Key;
+            (*(SpanByte*)ptr).Length = key.Length;
+            key.CopyTo(ref *(SpanByte*)ptr);
+            ptr += key.Length;
+
+            // Empty value; we'll return the value object
+            (*(SpanByte*)ptr).Length = 0;
+            ptr += (*(SpanByte*)ptr).TotalSize;
+
+            if (logRecord.Info.HasETag)
+            {
+                *(long*)ptr = logRecord.ETag;
+                ptr += sizeof(long);
+            }
+
+            if (logRecord.Info.HasExpiration)
+            {
+                *(long*)ptr = logRecord.Expiration;
+                ptr += sizeof(long);
+            }
+
+            valueObject = logRecord.ValueObject;
+        }
+
+        /// <inheritdoc/>
+        internal override void DeserializeFromIteratorDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) serializedBytes)
+        {
+            // Do nothing; we don't create a HeapObject for SpanByteAllocator
+            var stream = new MemoryStream(serializedBytes.array);
+            _ = stream.Seek(serializedBytes.offset, SeekOrigin.Begin);
+            var valueSerializer = _storeFunctions.BeginDeserializeValue(stream);
+            valueSerializer.Deserialize(out diskLogRecord.valueObject);
+            valueSerializer.EndDeserialize();
+        }
+
         /// <summary>
         /// Dispose memory allocator
         /// </summary>
@@ -726,71 +777,6 @@ namespace Tsavorite.core
 #endif // READ_WRITE
         }
 
-        /// <summary>
-        /// Read pages from specified device
-        /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <param name="readPageStart"></param>
-        /// <param name="numPages"></param>
-        /// <param name="untilAddress"></param>
-        /// <param name="callback"></param>
-        /// <param name="context"></param>
-        /// <param name="frame"></param>
-        /// <param name="completed"></param>
-        /// <param name="devicePageOffset"></param>
-        /// <param name="device"></param>
-        /// <param name="objectLogDevice"></param>
-        internal void AsyncReadPagesFromDeviceToFrame<TContext>(
-                                        long readPageStart,
-                                        int numPages,
-                                        long untilAddress,
-                                        DeviceIOCompletionCallback callback,
-                                        TContext context,
-                                        GenericFrame<IHeapObject> frame,
-                                        out CountdownEvent completed,
-                                        long devicePageOffset = 0,
-                                        IDevice device = null, IDevice objectLogDevice = null)
-        {
-            var usedDevice = device ?? this.device;
-            IDevice usedObjlogDevice = objectLogDevice;
-
-            completed = new CountdownEvent(numPages);
-            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
-            {
-                int pageIndex = (int)(readPage % frame.frameSize);
-                if (frame.GetPage(pageIndex) == null)
-                    frame.Allocate(pageIndex);
-                else
-                    frame.Clear(pageIndex);
-
-                var asyncResult = new PageAsyncReadResult<TContext>()
-                {
-                    page = readPage,
-                    context = context,
-                    handle = completed,
-                    maxPtr = PageSize,
-                    frame = frame,
-                };
-
-                var offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
-                var readLength = (uint)AlignedPageSizeBytes;
-                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
-
-                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
-                {
-                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
-                    asyncResult.maxPtr = readLength;
-                    readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
-                }
-
-                if (device != null)
-                    offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
-
-                ReadAsync(offsetInFile, pageIndex, readLength, callback, asyncResult, usedDevice, usedObjlogDevice);
-            }
-        }
-
-
         #region Page handlers for objects
         /// <summary>
         /// Deseialize part of page from stream
@@ -1035,16 +1021,16 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns></returns>
         public override ITsavoriteScanIterator<IHeapObject> Scan(TsavoriteKV<IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
-                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
-            => new ObjectScanIterator<TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch);
+                long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, bool includeSealedRecords)
+            => new RecordScanIterator<IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>>(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, includeSealedRecords: includeSealedRecords);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
         /// </summary>
         internal override bool Scan<TScanFunctions>(TsavoriteKV<IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
-                long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
+                long beginAddress, long endAddress, ref TScanFunctions scanFunctions, DiskScanBufferingMode scanBufferingMode)
         {
-            using ObjectScanIterator<TStoreFunctions> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
+            using RecordScanIterator<IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, endAddress, epoch, scanBufferingMode, includeSealedRecords: false, logger: logger);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
@@ -1054,18 +1040,18 @@ namespace Tsavorite.core
         internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
                 ScanCursorState<IHeapObject> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
         {
-            using ObjectScanIterator<TStoreFunctions> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
-            return ScanLookup<long, long, TScanFunctions, ObjectScanIterator<TStoreFunctions>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
+            using RecordScanIterator<IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering, includeSealedRecords: false, logger: logger);
+            return ScanLookup<long, long, TScanFunctions, RecordScanIterator<IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
         }
 
         /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
         internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
-                ref SpanByte key, long beginAddress, ref TScanFunctions scanFunctions)
+                SpanByte key, long beginAddress, ref TScanFunctions scanFunctions)
         {
-            using ObjectScanIterator<TStoreFunctions> iter = new(store, this, beginAddress, epoch, logger: logger);
-            return IterateKeyVersionsImpl(store, key, beginAddress, ref scanFunctions, iter);
+            using RecordScanIterator<IHeapObject, TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, epoch, logger: logger);
+            return IterateHashChain(store, key, beginAddress, ref scanFunctions, iter);
         }
 
         private void ComputeScanBoundaries(long beginAddress, long endAddress, out long pageStartAddress, out int start, out int end)

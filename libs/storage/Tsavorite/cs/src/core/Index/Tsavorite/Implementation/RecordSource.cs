@@ -80,7 +80,7 @@ namespace Tsavorite.core
                     if ((state & value) != 0)
                     {
                         if (sb.Length > 0)
-                            sb.Append(", ");
+                            _ = sb.Append(", ");
                         _ = sb.Append(name);
                     }
                 }

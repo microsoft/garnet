@@ -795,7 +795,7 @@ namespace Garnet.server
             {
                 // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
                 // We can now safely remove these serialized versions as they are no longer needed.
-                using (var iter1 = objectStore.Log.Scan(objectStore.Log.ReadOnlyAddress, objectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering, includeSealedRecords: true))
+                using (var iter1 = objectStore.Log.Scan(objectStore.Log.ReadOnlyAddress, objectStore.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering, includeSealedRecords: true))
                 {
                     while (iter1.GetNext(out _, out _, out var value))
                     {

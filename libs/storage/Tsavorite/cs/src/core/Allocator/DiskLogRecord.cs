@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.Utility;
 
@@ -12,7 +11,7 @@ namespace Tsavorite.core
     /// <summary>The record on the disk: header, optional fields, key, value</summary>
     /// <remarks>The space is laid out as:
     ///     <list>
-    ///     <item>[RecordInfo][FullRecordLength][ETag?][Expiration?][key SpanByte][value SpanByte]</item>
+    ///     <item>[RecordInfo][SerializedRecordLength][ETag?][Expiration?][key SpanByte][value SpanByte]</item>
     ///     </list>
     /// This lets us get to the optional fields for comparisons without loading the full record (GetIOSize should cover the space for optionals).
     /// </remarks>
@@ -43,9 +42,9 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly SpanByte Key => *(SpanByte*)KeyAddress;
         /// <inheritdoc/>
-        public readonly SpanByte ValueSpan => valueObject is not null ? throw new TsavoriteException("Object LogRecord does not have SpanByte values") : *(SpanByte*)ValueAddress;
+        public readonly SpanByte ValueSpan => IsObjectRecord ? throw new TsavoriteException("Object LogRecord does not have SpanByte values") : *(SpanByte*)ValueAddress;
         /// <inheritdoc/>
-        public readonly IHeapObject ValueObject => valueObject;
+        public readonly IHeapObject ValueObject => IsObjectRecord ? valueObject : throw new TsavoriteException("SpanByte LogRecord does not have Object values");
         /// <inheritdoc/>
         public readonly ref TValue GetValueRef<TValue>() => ref Unsafe.AsRef<TValue>((void*)ValueAddress);
         /// <inheritdoc/>
@@ -65,29 +64,26 @@ namespace Tsavorite.core
             };
         #endregion //IReadOnlyRecord
 
-        const int FullRecordLenSize = sizeof(int);
+        const int SerializedRecordLengthSize = sizeof(long);
 
+        public readonly long SerializedRecordLength => *(long*)(physicalAddress + RecordInfo.GetLength());
 
-        // TODO: LOgRec ActualRecordSize ignores params bc it is already encoded into the key/value
-        //      Disk/PendingCOntext need to calc on the fly tho
-        // Add KeySize to GetRecordFieldInfo bc it is needed for PendingContext to avoid special-case handling 
-
-        readonly long KeyAddress => physicalAddress + RecordInfo.GetLength() + FullRecordLenSize + ETagLen + ExpirationLen;
+        readonly long KeyAddress => physicalAddress + RecordInfo.GetLength() + SerializedRecordLengthSize + ETagLen + ExpirationLen;
 
         internal readonly long ValueAddress => KeyAddress + Key.TotalInlineSize;
 
-        private readonly int ValueLength => IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalInlineSize;
+        private readonly int InlineValueLength => IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalInlineSize;
         public readonly int OptionalLength => (Info.HasETag ? LogRecord.ETagSize : 0) + (Info.HasExpiration ? LogRecord.ExpirationSize : 0);
 
         private readonly int ETagLen => Info.HasETag ? LogRecord.ETagSize : 0;
         private readonly int ExpirationLen => Info.HasExpiration ? LogRecord.ExpirationSize : 0;
 
-        private readonly long GetETagAddress() => physicalAddress + RecordInfo.GetLength() + FullRecordLenSize;
+        private readonly long GetETagAddress() => physicalAddress + RecordInfo.GetLength() + SerializedRecordLengthSize;
         private readonly long GetExpirationAddress() => GetETagAddress() + ETagLen;
 
         /// <summary>The size to IO from disk when reading a record. Keys and Values are SpanByte on disk and we reuse the max inline key size
-        /// for both key and value for this estimate. They prefaced by the full record length and optionals (ETag, Expiration) which we include in the estimate.</summary>
-        public static int GetIOSize(int sectorSize) => RoundUp(RecordInfo.GetLength() + FullRecordLenSize + sizeof(long) * 2 + sizeof(int) * 2 + (1 << LogSettings.kMaxInlineKeySizeBits) * 2, sectorSize);
+        /// for both key and value for this estimate. They are prefaced by the full record length and optionals (ETag, Expiration) which we include in the estimate.</summary>
+        public static int GetIOSize(int sectorSize) => RoundUp(RecordInfo.GetLength() + SerializedRecordLengthSize + sizeof(long) * 2 + sizeof(int) * 2 + (1 << LogSettings.kMaxInlineKeySizeBits) * 2, sectorSize);
 
         internal static SpanByte GetContextRecordKey<TValue>(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).Key;
 

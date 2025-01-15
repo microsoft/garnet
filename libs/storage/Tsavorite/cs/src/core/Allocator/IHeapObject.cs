@@ -10,5 +10,9 @@ namespace Tsavorite.core
     /// </summary>
     public interface IHeapObject : IDisposable
     {
+        /// <summary>
+        /// Total memory size of the object
+        /// </summary>
+        long Size { get; set; }
     }
 }

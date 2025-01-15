@@ -44,7 +44,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason)
+        internal void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason)
         {
             // Clear the IHeapObject if we deserialized it
             if (logRecord.ValueObject is not null)

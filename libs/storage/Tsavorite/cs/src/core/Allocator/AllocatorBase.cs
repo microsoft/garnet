@@ -189,6 +189,12 @@ namespace Tsavorite.core
         #endregion
 
         #region Abstract and virtual methods
+        /// <summary>Serialize an in-memory log record to the <see cref="RecordScanIterator"/>'s record buffer.</summary>
+        internal abstract void SerializeRecordToIteratorBuffer(long logicalAddress, ref SectorAlignedMemory recordBuffer, out IHeapObject valueObject);
+
+        /// <summary>Deserialize the <see cref="IHeapObject"/> value from a disk log record read by the <see cref="RecordScanIterator"/>, if this is the <see cref="ObjectAllocator{TStoreFunctions}"/>.</summary>
+        internal abstract void DeserializeFromIteratorDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) byteStream);
+
         /// <summary>Initialize fully derived allocator</summary>
         public abstract void Initialize();
 
@@ -519,7 +525,7 @@ namespace Tsavorite.core
             if (asyncResult.partial)
             {
                 // Write only required bytes within the page
-                int aligned_start = (int)((asyncResult.fromAddress - (asyncResult.page << LogPageSizeBits)));
+                int aligned_start = (int)(asyncResult.fromAddress - (asyncResult.page << LogPageSizeBits));
                 aligned_start = (aligned_start / sectorSize) * sectorSize;
 
                 int aligned_end = (int)(asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits));
@@ -1180,7 +1186,7 @@ namespace Tsavorite.core
                 {
                     // This scan does not need a store because it does not lock; it is epoch-protected so by the time it runs no current thread
                     // will have seen a record below the new ReadOnlyAddress as "in mutable region".
-                    using var iter = Scan(store: null, oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering);
+                    using var iter = Scan(store: null, oldSafeReadOnlyAddress, newSafeReadOnlyAddress, DiskScanBufferingMode.NoBuffering);
                     OnReadOnlyObserver?.OnNext(iter);
                 }
                 AsyncFlushPages(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, noFlush);
@@ -1747,6 +1753,56 @@ namespace Tsavorite.core
                 AsyncReadRecordObjectsToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context, result);
         }
 
+        /// <summary>
+        /// Read pages from specified device
+        /// </summary>
+        internal void AsyncReadPagesFromDeviceToFrame<TContext>(
+                                        long readPageStart,
+                                        int numPages,
+                                        long untilAddress,
+                                        DeviceIOCompletionCallback callback,
+                                        TContext context,
+                                        BlittableFrame frame,
+                                        out CountdownEvent completed,
+                                        long devicePageOffset = 0,
+                                        IDevice device = null, IDevice objectLogDevice = null)
+        {
+            var usedDevice = device ?? this.device;
+
+            completed = new CountdownEvent(numPages);
+            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
+            {
+                int pageIndex = (int)(readPage % frame.frameSize);
+                if (frame.frame[pageIndex] == null)
+                    frame.Allocate(pageIndex);
+                else
+                    frame.Clear(pageIndex);
+
+                var asyncResult = new PageAsyncReadResult<TContext>()
+                {
+                    page = readPage,
+                    context = context,
+                    handle = completed,
+                    frame = frame
+                };
+
+                ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+                uint readLength = (uint)AlignedPageSizeBytes;
+                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
+
+                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
+                {
+                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
+                    readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
+                }
+
+                if (device != null)
+                    offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
+
+                usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
+            }
+        }
+
         private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
@@ -1758,13 +1814,13 @@ namespace Tsavorite.core
             {
                 var record = ctx.record.GetValidPointer();
                 var diskLogRecord = new DiskLogRecord((long)record);
-                int requiredBytes = diskLogRecord.ActualRecordSize;
+                int requiredBytes = diskLogRecord.SerializedRecordLength;
                 if (ctx.record.available_bytes >= requiredBytes)
                 {
-                    Debug.Assert(!_wrapper.GetInfoRefFromBytePointer(record).Invalid, "Invalid records should not be in the hash chain for pending IO");
+                    Debug.Assert(!diskLogRecord.Info.Invalid, "Invalid records should not be in the hash chain for pending IO");
 
                     // We have all the required bytes. If we don't have the complete record, RetrievedFullRecord calls AsyncGetFromDisk.
-                    if (!_wrapper.RetrievedFullRecord(record, ref ctx))
+                    if (!_wrapper.RetrievedFullRecord(ref diskLogRecord, ref ctx))  // TODO this must set the valueObject
                         return;
 
                     // If request_key is null we're called from ReadAtAddress, so it is an implicit match.

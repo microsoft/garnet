@@ -277,14 +277,14 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>Scan iterator instance</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ITsavoriteScanIterator<TValue> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false)
+        public ITsavoriteScanIterator<TValue> Scan(long beginAddress, long endAddress, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false)
             => allocatorBase.Scan(store: null, beginAddress, endAddress, scanBufferingMode, includeSealedRecords);
 
         /// <summary>
         /// Push-scan the log given address range; returns all records with address less than endAddress
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        public bool Scan<TScanFunctions>(ref TScanFunctions scanFunctions, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+        public bool Scan<TScanFunctions>(ref TScanFunctions scanFunctions, long beginAddress, long endAddress, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering)
             where TScanFunctions : IScanIteratorFunctions<TValue>
             => allocatorBase.Scan(store, beginAddress, endAddress, ref scanFunctions, scanBufferingMode);
 
@@ -339,7 +339,7 @@ namespace Tsavorite.core
         /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
         /// <param name="functions">Functions used to manage key-values during compaction</param>
-        /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>)</param>
+        /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{TValue}"/>)</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
@@ -357,7 +357,7 @@ namespace Tsavorite.core
         /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
         /// <param name="functions">Functions used to manage key-values during compaction</param>
-        /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>)</param>
+        /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{TValue}"/>)</param>
         /// <param name="input">Input for SingleWriter</param>
         /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
         /// <param name="untilAddress">Compact log until this address</param>

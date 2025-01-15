@@ -137,6 +137,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Get the total aligned memory capacity of the buffer
+        /// </summary>
+        public int AlignedTotalCapacity => buffer.Length - offset;
+
+        /// <summary>
         /// Get valid pointer
         /// </summary>
         /// <returns></returns>
@@ -199,6 +204,20 @@ namespace Tsavorite.core
             queue = new ConcurrentQueue<SectorAlignedMemory>[levels];
             this.recordSize = recordSize;
             this.sectorSize = sectorSize;
+        }
+
+        public void EnsureSize(ref SectorAlignedMemory page, int size)
+        {
+            if (page is null)
+            {
+                page = Get(size);
+                return;
+            }
+            if (page.AlignedTotalCapacity < size)
+            {
+                page.Return();
+                page = Get(size);
+            }
         }
 
         /// <summary>

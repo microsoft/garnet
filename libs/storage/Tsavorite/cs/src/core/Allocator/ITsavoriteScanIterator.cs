@@ -6,9 +6,9 @@ using System;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Scan buffering mode
+    /// Scan buffering mode when reading from disk
     /// </summary>
-    public enum ScanBufferingMode
+    public enum DiskScanBufferingMode
     {
         /// <summary>
         /// Buffer only current page being scanned
@@ -27,38 +27,32 @@ namespace Tsavorite.core
     }
 
     /// <summary>
+    /// Scan buffering mode for in-memory records
+    /// </summary>
+    public enum InMemoryScanBufferingMode
+    {
+        /// <summary>
+        /// Buffer the current record being scanned. Automatic for Pull iteration.
+        /// </summary>
+        CurrentRecordBuffering,
+
+        /// <summary>
+        /// Do not buffer - with this mode, Push iteration will hold the epoch during each record's push to the client
+        /// </summary>
+        NoBuffering
+    }
+
+    /// <summary>
     /// Scan iterator interface for Tsavorite log
     /// </summary>
     /// <typeparam name="TValue"></typeparam>
-    public interface ITsavoriteScanIterator<TValue> : IDisposable
+    public interface ITsavoriteScanIterator<TValue> : ISourceLogRecord, IDisposable
     {
         /// <summary>
-        /// Gets reference to current key
-        /// </summary>
-        /// <returns></returns>
-        ref SpanByte GetKey();
-
-        /// <summary>
-        /// Gets reference to current value
-        /// </summary>
-        /// <returns></returns>
-        ref TValue GetValue();
-
-        /// <summary>
         /// Get next record
         /// </summary>
-        /// <param name="recordInfo"></param>
         /// <returns>True if record found, false if end of scan</returns>
-        bool GetNext(out RecordInfo recordInfo);
-
-        /// <summary>
-        /// Get next record
-        /// </summary>
-        /// <param name="recordInfo"></param>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <returns>True if record found, false if end of scan</returns>
-        bool GetNext(out RecordInfo recordInfo, out SpanByte key, out TValue value);
+        bool GetNext();
 
         /// <summary>
         /// Current address

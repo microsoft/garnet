@@ -33,21 +33,9 @@ namespace Tsavorite.core
         /// </summary>
         public bool Ended => (nextAddress >= endAddress) || (tsavoriteLog.LogCompleted && nextAddress == tsavoriteLog.TailAddress);
 
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        /// <param name="tsavoriteLog"></param>
-        /// <param name="hlog"></param>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
-        /// <param name="epoch"></param>
-        /// <param name="headerSize"></param>
-        /// <param name="getMemory"></param>
-        /// <param name="scanUncommitted"></param>
-        /// <param name="logger"></param>
+        /// <summary>Constructor</summary>
         internal unsafe TsavoriteLogScanIterator(TsavoriteLog tsavoriteLog, BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> hlog, long beginAddress, long endAddress,
-                GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
+                GetMemory getMemory, DiskScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.tsavoriteLog = tsavoriteLog;
@@ -76,7 +64,6 @@ namespace Tsavorite.core
                     if (!await WaitAsync(token).ConfigureAwait(false))
                         yield break;
                 }
-
                 yield return (result, length, currentAddress, nextAddress);
             }
         }
