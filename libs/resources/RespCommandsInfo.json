@@ -1407,7 +1407,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "KeySpace, Dangerous",
+    "AclCategories": "KeySpace, Dangerous, Write",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -1432,7 +1432,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "KeySpace",
+    "AclCategories": "KeySpace, Read",
     "KeySpecifications": [
       {
         "BeginSearch": {
