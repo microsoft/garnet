@@ -142,6 +142,14 @@ namespace Garnet.server
             return cmdId;
         }
 
+        /// <summary>
+        /// Register module
+        /// </summary>
+        /// <param name="module">Module to register</param>
+        /// <param name="moduleArgs">Module arguments</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="errorMessage">Error message</param>
+        /// <returns>True if module registered successfully</returns>
         public bool RegisterModule(ModuleBase module, string[] moduleArgs, ILogger logger,
             out ReadOnlySpan<byte> errorMessage)
         {
@@ -171,9 +179,7 @@ namespace Garnet.server
         }
 
         internal bool TryAddModule(ModuleLoadContext moduleLoadContext)
-        {
-            return modules.TryAdd(moduleLoadContext.Name, moduleLoadContext);
-        }
+            => modules.TryAdd(moduleLoadContext.Name, moduleLoadContext);
 
         internal bool TryGetCustomProcedure(int id, out CustomProcedureWrapper value)
             => customProcedureMap.TryGetValue(id, out value);

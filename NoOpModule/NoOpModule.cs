@@ -6,8 +6,12 @@ using Microsoft.Extensions.Logging;
 
 namespace NoOpModule
 {
+    /// <summary>
+    /// A module containing all no-op operations
+    /// </summary>
     public class NoOpModule : ModuleBase
     {
+        /// <inheritdoc />
         public override void OnLoad(ModuleLoadContext context, string[] args)
         {
             var status = context.Initialize("NoOpModule", 1);

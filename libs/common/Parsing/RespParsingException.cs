@@ -83,7 +83,6 @@ namespace Garnet.common.Parsing
         /// <param name="logLevel">LogLevel for exception.</param>
         [DoesNotReturn]
         public static new void Throw(string message, LogLevel logLevel = LogLevel.Critical) =>
-            
             throw new RespParsingException(message, logLevel);
     }
 }

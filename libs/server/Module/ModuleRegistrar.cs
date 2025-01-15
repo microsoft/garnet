@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
@@ -186,6 +185,15 @@ namespace Garnet.server
 
         private readonly ConcurrentDictionary<string, ConstructorInfo> moduleConstructors;
 
+        /// <summary>
+        /// Load module from a specified assembly and register it with the custom command managers
+        /// </summary>
+        /// <param name="customCommandManager">Custom command manager instance</param>
+        /// <param name="loadedAssembly">Loaded assembly containing module</param>
+        /// <param name="moduleArgs">Module arguments</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="errorMessage">Error message</param>
+        /// <returns>True if module loaded successfully</returns>
         public bool LoadModule(CustomCommandManager customCommandManager, Assembly loadedAssembly, string[] moduleArgs, ILogger logger, out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
@@ -240,6 +248,7 @@ namespace Garnet.server
                 return false;
             }
 
+            // Register module with custom command manager
             return customCommandManager.RegisterModule(module, moduleArgs, logger, out errorMessage);
         }
     }

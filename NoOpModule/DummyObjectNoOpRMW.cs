@@ -7,11 +7,18 @@ using Tsavorite.core;
 
 namespace NoOpModule
 {
+    /// <summary>
+    /// Represents a no-op RMW operation on a dummy object
+    /// </summary>
     public class DummyObjectNoOpRMW : CustomObjectFunctions
     {
-        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input, ref (IMemoryOwner<byte>, int) output) => true;
+        /// <inheritdoc />
+        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input,
+            ref (IMemoryOwner<byte>, int) output) => true;
 
-        public override bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        /// <inheritdoc />
+        public override bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value,
+            ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
         {
             WriteSimpleString(ref output, "OK");
             return true;
