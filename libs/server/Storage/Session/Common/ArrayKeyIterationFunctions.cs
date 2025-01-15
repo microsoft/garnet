@@ -312,11 +312,9 @@ namespace Garnet.server
 
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
-                    if (value.MetadataSize != 0 && MainSessionFunctions.CheckExpiry(ref value))
-                        cursorRecordResult = CursorRecordResult.Skip;
-                    else
+                    cursorRecordResult = CursorRecordResult.Skip;
+                    if (value.MetadataSize == 0 || !MainSessionFunctions.CheckExpiry(ref value))
                     {
-                        cursorRecordResult = CursorRecordResult.Accept;
                         ++info.count;
                     }
                     return true;
@@ -340,11 +338,9 @@ namespace Garnet.server
 
                 public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
-                    if (value.Expiration > 0 && ObjectSessionFunctions.CheckExpiry(value))
-                        cursorRecordResult = CursorRecordResult.Skip;
-                    else
+                    cursorRecordResult = CursorRecordResult.Skip;
+                    if (value.Expiration == 0 || !ObjectSessionFunctions.CheckExpiry(value))
                     {
-                        cursorRecordResult = CursorRecordResult.Accept;
                         ++info.count;
                     }
                     return true;
