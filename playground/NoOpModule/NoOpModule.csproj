@@ -12,8 +12,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\libs\server\Garnet.server.csproj" />
-  </ItemGroup>
+	<ItemGroup>
+	  <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
+	</ItemGroup>
 
 </Project>

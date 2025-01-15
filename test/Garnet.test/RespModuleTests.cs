@@ -308,14 +308,23 @@ namespace Garnet.test
         }
 
         [Test]
-        public void TestNoOpModule()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void TestNoOpModule(bool loadFromDll)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             // Test loading no-op module
-            var noOpModulePath = Path.Join(binPath, "NoOpModule.dll");
-            db.Execute($"MODULE", "LOADCS", noOpModulePath);
+            if (loadFromDll)
+            {
+                var noOpModulePath = Path.Join(binPath, "NoOpModule.dll");
+                db.Execute($"MODULE", "LOADCS", noOpModulePath);
+            }
+            else
+            {
+                server.Register.NewModule(new NoOpModule.NoOpModule(), [], out _);
+            }
 
             // Test raw string command in no-op module
             var key = $"mykey";
