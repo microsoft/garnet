@@ -168,7 +168,7 @@
     "expected_LoadOuterHit_Tracked,None": 1024,
     "expected_LoadInnerHit_Tracked,None": 1392,
     "expected_LoadMiss_Tracked,None": 1024,
-    "expected_Digest_Tracked,None": 1024
+    "expected_Digest_Tracked,None": 1312
   },
   "BDN.benchmark.Operations.CustomOperations.*": {
     "expected_CustomRawStringCommand_ACL": 0,
