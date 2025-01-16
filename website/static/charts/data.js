@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737057114031,
+  "lastUpdate": 1737057183609,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -5015,6 +5015,150 @@ window.BENCHMARK_DATA = {
             "value": 602.8119003589337,
             "unit": "ns",
             "range": "± 1.4060317363323303"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "97080072+msft-paddy14@users.noreply.github.com",
+            "name": "msft-paddy14",
+            "username": "msft-paddy14"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "18fce91fe6a4b22b98d986ef929f6f990edd4136",
+          "message": "Convert background cluster networking calls to async - Gossip, Replication (#914)\n\n* Remove meet lock\r\n\r\n* Fix newline at end of GarnetServerNode.cs file\r\n\r\n* fix formatting\r\n\r\n* Make all background connection handling async\r\n\r\n* formatting fix\r\n\r\n* address comments for async/await syntax\r\n\r\n---------\r\n\r\nCo-authored-by: Vasileios Zois <96085550+vazois@users.noreply.github.com>\r\nCo-authored-by: Tal Zaccai <talzacc@microsoft.com>",
+          "timestamp": "2025-01-16T12:45:31-07:00",
+          "tree_id": "7d6377c42a542a6782b298a4f643a1ab95c23571",
+          "url": "https://github.com/microsoft/garnet/commit/18fce91fe6a4b22b98d986ef929f6f990edd4136"
+        },
+        "date": 1737057179906,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Managed,Limit)",
+            "value": 254.4861623843511,
+            "unit": "ns",
+            "range": "± 0.2608874722609397"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Managed,Limit)",
+            "value": 302.9109144944411,
+            "unit": "ns",
+            "range": "± 0.9220067016906595"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Managed,Limit)",
+            "value": 508.1292928968157,
+            "unit": "ns",
+            "range": "± 2.317506797644362"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Managed,Limit)",
+            "value": 610.9950940792377,
+            "unit": "ns",
+            "range": "± 0.7280970009069405"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Managed,None)",
+            "value": 264.95769496758777,
+            "unit": "ns",
+            "range": "± 0.5399474452034214"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Managed,None)",
+            "value": 304.3228420870645,
+            "unit": "ns",
+            "range": "± 1.0384252847201967"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Managed,None)",
+            "value": 502.6332867940267,
+            "unit": "ns",
+            "range": "± 2.2753097269919187"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Managed,None)",
+            "value": 728.6313747406006,
+            "unit": "ns",
+            "range": "± 4.757827781093527"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
+            "value": 233.90351104736328,
+            "unit": "ns",
+            "range": "± 2.2406203865535224"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
+            "value": 296.74673741204396,
+            "unit": "ns",
+            "range": "± 1.1310646009932586"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
+            "value": 494.9072958139273,
+            "unit": "ns",
+            "range": "± 1.7738052815635863"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
+            "value": 611.3711045338557,
+            "unit": "ns",
+            "range": "± 1.4716393594859674"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Tracked,Limit)",
+            "value": 237.56498193740845,
+            "unit": "ns",
+            "range": "± 1.1761649731005974"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Tracked,Limit)",
+            "value": 302.3690791130066,
+            "unit": "ns",
+            "range": "± 1.9154359943433736"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Tracked,Limit)",
+            "value": 499.9897475242615,
+            "unit": "ns",
+            "range": "± 1.6727691985852315"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Tracked,Limit)",
+            "value": 600.6574131892278,
+            "unit": "ns",
+            "range": "± 1.6489217972042893"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Tracked,None)",
+            "value": 235.61563110351562,
+            "unit": "ns",
+            "range": "± 0.5155471553261843"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Tracked,None)",
+            "value": 292.2367891164926,
+            "unit": "ns",
+            "range": "± 0.7010007843455717"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Tracked,None)",
+            "value": 509.78366485008826,
+            "unit": "ns",
+            "range": "± 1.1774272648144124"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Tracked,None)",
+            "value": 598.9724237442017,
+            "unit": "ns",
+            "range": "± 2.820367210911171"
           }
         ]
       }
