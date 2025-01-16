@@ -748,7 +748,6 @@
     "Summary": "Pops an element from a list, pushes it to another list and returns it. Block until an element is available otherwise. Deletes the list if the last element was popped.",
     "Group": "List",
     "Complexity": "O(1)",
-    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060BLMOVE\u0060 with the \u0060RIGHT\u0060 and \u0060LEFT\u0060 arguments",
     "Arguments": [
       {
@@ -1427,7 +1426,6 @@
         "Summary": "Returns the mapping of cluster slots to nodes.",
         "Group": "Cluster",
         "Complexity": "O(N) where N is the total number of Cluster nodes",
-        "DocFlags": "Deprecated",
         "ReplacedBy": "\u0060CLUSTER SHARDS\u0060"
       }
     ]
@@ -1653,6 +1651,22 @@
     "Summary": "Discards a transaction.",
     "Group": "Transactions",
     "Complexity": "O(N), when N is the number of queued commands"
+  },
+  {
+    "Command": "DUMP",
+    "Name": "DUMP",
+    "Summary": "Returns a serialized representation of the value stored at a key.",
+    "Group": "Generic",
+    "Complexity": "O(1) to access the key and additional O(N*M) to serialize it, where N is the number of Redis objects composing the value and M their average size. For small string values the time complexity is thus O(1)\u002BO(1*M) where M is small, so simply O(1).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
   },
   {
     "Command": "ECHO",
@@ -2653,50 +2667,6 @@
     ]
   },
   {
-    "Command": "DUMP",
-    "Name": "DUMP",
-    "Summary": "Returns a serialized representation of the value stored at a key.",
-    "Group": "Generic",
-    "Complexity": "O(1) to access the key and additional O(N*M) to serialize it, where N is the number of Redis objects composing the value and M their average size. For small string values the time complexity is thus O(1)+O(1*M) where M is small, so simply O(1).",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
-      }
-    ]
-  },
-  {
-    "Command": "RESTORE",
-    "Name": "RESTORE",
-    "Summary": "Creates a key from the serialized representation of a value.",
-    "Group": "Generic",
-    "Complexity": "O(1) to create the new key and additional O(N*M) to reconstruct the serialized value, where N is the number of Redis objects composing the value and M their average size. For small string values the time complexity is thus O(1)+O(1*M) where M is small, so simply O(1). However for sorted set values the complexity is O(N*M*log(N)) because inserting values into sorted sets is O(log(N)).",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "TTL",
-        "DisplayText": "ttl",
-        "Type": "Integer"
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "SERIALIZEDVALUE",
-        "DisplayText": "serialized-value",
-        "Type": "String"
-      }
-    ]
-  },
-  {
     "Command": "GET",
     "Name": "GET",
     "Summary": "Returns the string value of a key.",
@@ -2865,7 +2835,6 @@
     "Summary": "Returns the previous string value of a key after setting it to a new value.",
     "Group": "String",
     "Complexity": "O(1)",
-    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060SET\u0060 with the \u0060!GET\u0060 argument",
     "Arguments": [
       {
@@ -3151,7 +3120,6 @@
     "Summary": "Sets the values of multiple fields.",
     "Group": "Hash",
     "Complexity": "O(N) where N is the number of fields being set.",
-    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060HSET\u0060 with multiple field-value pairs",
     "Arguments": [
       {
@@ -4496,7 +4464,6 @@
     "Summary": "Sets both string value and expiration time in milliseconds of a key. The key is created if it doesn\u0027t exist.",
     "Group": "String",
     "Complexity": "O(1)",
-    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060SET\u0060 with the \u0060PX\u0060 argument",
     "Arguments": [
       {
@@ -4679,7 +4646,6 @@
     "Summary": "Closes the connection.",
     "Group": "Connection",
     "Complexity": "O(1)",
-    "DocFlags": "Deprecated",
     "ReplacedBy": "just closing the connection"
   },
   {
@@ -4923,6 +4889,34 @@
     ]
   },
   {
+    "Command": "RESTORE",
+    "Name": "RESTORE",
+    "Summary": "Creates a key from the serialized representation of a value.",
+    "Group": "Generic",
+    "Complexity": "O(1) to create the new key and additional O(N*M) to reconstruct the serialized value, where N is the number of Redis objects composing the value and M their average size. For small string values the time complexity is thus O(1)\u002BO(1*M) where M is small, so simply O(1). However for sorted set values the complexity is O(N*M*log(N)) because inserting values into sorted sets is O(log(N)).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TTL",
+        "DisplayText": "ttl",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SERIALIZEDVALUE",
+        "DisplayText": "serialized-value",
+        "Type": "String"
+      }
+    ]
+  },
+  {
     "Command": "RPOP",
     "Name": "RPOP",
     "Summary": "Returns and removes the last elements of a list. Deletes the list if the last element was popped.",
@@ -4951,7 +4945,6 @@
     "Summary": "Returns the last element of a list after removing and pushing it to another list. Deletes the list if the last element was popped.",
     "Group": "List",
     "Complexity": "O(1)",
-    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060LMOVE\u0060 with the \u0060RIGHT\u0060 and \u0060LEFT\u0060 arguments",
     "Arguments": [
       {
@@ -5444,7 +5437,6 @@
     "Summary": "Sets the string value and expiration time of a key. Creates the key if it doesn\u0027t exist.",
     "Group": "String",
     "Complexity": "O(1)",
-    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060SET\u0060 with the \u0060EX\u0060 argument",
     "Arguments": [
       {
@@ -5524,7 +5516,6 @@
     "Summary": "Set the string value of a key only when the key doesn\u0027t exist.",
     "Group": "String",
     "Complexity": "O(1)",
-    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060SET\u0060 with the \u0060NX\u0060 argument",
     "Arguments": [
       {
@@ -5670,7 +5661,6 @@
     "Summary": "Sets a Redis server as a replica of another, or promotes it to being a master.",
     "Group": "Server",
     "Complexity": "O(1)",
-    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060REPLICAOF\u0060",
     "Arguments": [
       {
@@ -5935,7 +5925,6 @@
     "Summary": "Returns a substring from a string value.",
     "Group": "String",
     "Complexity": "O(N) where N is the length of the returned string. The complexity is ultimately determined by the returned length, but because creating a substring from an existing string is very cheap, it can be considered O(1) for small strings.",
-    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060GETRANGE\u0060",
     "Arguments": [
       {
@@ -6807,7 +6796,6 @@
     "Summary": "Returns members in a sorted set within a range of scores.",
     "Group": "SortedSet",
     "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
-    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060BYSCORE\u0060 argument",
     "Arguments": [
       {
@@ -7089,7 +7077,6 @@
     "Summary": "Returns members in a sorted set within a range of indexes in reverse order.",
     "Group": "SortedSet",
     "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements returned.",
-    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060REV\u0060 argument",
     "Arguments": [
       {
@@ -7127,7 +7114,6 @@
     "Summary": "Returns members in a sorted set within a lexicographical range in reverse order.",
     "Group": "SortedSet",
     "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
-    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060REV\u0060 and \u0060BYLEX\u0060 arguments",
     "Arguments": [
       {
@@ -7178,7 +7164,6 @@
     "Summary": "Returns members in a sorted set within a range of scores in reverse order.",
     "Group": "SortedSet",
     "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
-    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060REV\u0060 and \u0060BYSCORE\u0060 arguments",
     "Arguments": [
       {
