@@ -3,11 +3,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using CommandLine;
 using Garnet.common;
 using Garnet.server;
@@ -419,6 +421,60 @@ namespace Garnet.test
                     {
                         // Best effort
                     }
+                }
+            }
+        }
+
+        [Test]
+        public void LuaTimeoutOptions()
+        {
+            // No value is accepted
+            {
+                var args = new[] { "--lua" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.IsTrue(options.EnableLua);
+                ClassicAssert.IsNull(options.LuaScriptTimeout);
+            }
+
+            // Positive accepted
+            {
+                var args = new[] { "--lua", "--lua-script-timeout", "00:00:00.1" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.IsTrue(options.EnableLua);
+                ClassicAssert.AreEqual("00:00:00.1", options.LuaScriptTimeout);
+            }
+
+            // Zero rejected
+            {
+                var args = new[] { "--lua", "--lua-script-timeout", "00:00:00" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                ClassicAssert.IsFalse(parseSuccessful);
+            }
+
+            // Negative rejected
+            {
+                var args = new[] { "--lua", "--lua-script-timeout", "-00:00:00.1" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                ClassicAssert.IsFalse(parseSuccessful);
+            }
+
+            // Non-"c" rejected
+            {
+                var currentThread = Thread.CurrentThread;
+                var oldCulture = currentThread.CurrentCulture;
+                try
+                {
+                    currentThread.CurrentCulture = new CultureInfo("fr-FR");
+
+                    var args = new[] { "--lua", "--lua-script-timeout", new TimeSpan(0, 0, 0, 0, 1).ToString("G") };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+                finally
+                {
+                    currentThread.CurrentCulture = oldCulture;
                 }
             }
         }

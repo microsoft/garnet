@@ -27,7 +27,7 @@ namespace BDN.benchmark.Lua
         /// Get the equivalent <see cref="LuaOptions"/>.
         /// </summary>
         public LuaOptions CreateOptions()
-        => new(Mode, MemoryLimit ? "2m" : "");
+        => new(Mode, MemoryLimit ? "2m" : "", Timeout.InfiniteTimeSpan);
 
         /// <summary>
         /// String representation
