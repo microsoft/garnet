@@ -58,6 +58,7 @@ namespace BDN.benchmark.Operations
                 DisablePubSub = true,
                 LuaOptions = new(LuaMemoryManagementMode.Native, ""),
             };
+
             if (Params.useAof)
             {
                 opts.EnableAOF = true;
@@ -86,9 +87,6 @@ namespace BDN.benchmark.Operations
                 if (aclFile != null)
                     File.Delete(aclFile);
             }
-
-            session = server.GetRespSession();
-            subscribeSession = server.GetRespSession();
         }
 
         /// <summary>
