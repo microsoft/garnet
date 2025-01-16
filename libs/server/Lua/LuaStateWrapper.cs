@@ -501,6 +501,14 @@ namespace Garnet.server
         // Rarely used
 
         /// <summary>
+        /// This should be used to set all debug hooks for Lua.
+        /// </summary>
+        internal unsafe void SetHook(delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
+        {
+            NativeMethods.SetHook(state, hook, mask, count);
+        }
+
+        /// <summary>
         /// Remove everything from the Lua stack.
         /// </summary>
         internal void ClearStack()

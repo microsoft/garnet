@@ -9,6 +9,7 @@ using KeraLua;
 using charptr_t = nint;
 using intptr_t = nint;
 using lua_CFunction = nint;
+using lua_Hook = nint;
 using lua_State = nint;
 using size_t = nuint;
 
@@ -282,6 +283,16 @@ namespace Garnet.server
         [LibraryImport(LuaLibraryName)]
         [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial void lua_pushcclosure(lua_State luaState, lua_CFunction fn, int n);
+
+        /// <summary>
+        /// see: https://www.lua.org/manual/5.4/manual.html#lua_hook
+        /// 
+        /// This just updates some pointers, so does very little.
+        /// see: https://www.lua.org/source/5.4/ldebug.c.html#lua_sethook
+        /// </summary>
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
+        private static partial void lua_sethook(lua_State luaState, lua_Hook func, int mask, int count);
 
         // Helper methods for using the pinvokes defined above
 
@@ -589,5 +600,11 @@ namespace Garnet.server
         /// </summary>
         internal static int Error(lua_State luaState)
         => lua_error(luaState);
+
+        /// <summary>
+        /// Set a debugging hook.
+        /// </summary>        
+        internal static unsafe void SetHook(lua_State luaState, delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
+        => lua_sethook(luaState, (nint)hook, (int)mask, (int)count);
     }
 }

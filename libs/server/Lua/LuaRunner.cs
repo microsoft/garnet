@@ -7,9 +7,11 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Garnet.server
 {
@@ -244,6 +246,11 @@ end
         // This cannot be readonly, as it is a mutable struct
         LuaStateWrapper state;
 
+        // Timeout details, if any
+        readonly TimeSpan timeoutPerInvocation;
+        readonly long timeoutPerInvocationTicks;
+        long nextTimeout;
+
         // We need to temporarily store these for P/Invoke reasons
         // You shouldn't be touching them outside of the Compile and Run methods
 
@@ -260,8 +267,18 @@ end
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public unsafe LuaRunner(LuaMemoryManagementMode memMode, int? memLimitBytes, ReadOnlyMemory<byte> source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
+        public unsafe LuaRunner(LuaMemoryManagementMode memMode, int? memLimitBytes, TimeSpan timeout, ReadOnlyMemory<byte> source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
         {
+            // We implement timeouts with Lua Debug hooks
+            // Specifically, the counter one which is invoked
+            // every N opcodes.
+            //
+            // We arbitrarily pick TimeoutCheckFrequency so we
+            // aren't reverse p-invoking _every_ instruction
+            // but are doing so often enough that we won't
+            // exceed reasonable timeouts by too much.
+            const int TimeoutCheckFrequency = 20;
+
             this.source = source;
             this.txnMode = txnMode;
             this.respServerSession = respServerSession;
@@ -360,6 +377,14 @@ end
             errUnknownConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ERR_Unknown_Redis_command_called_from_script);
             errBadArgConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers);
 
+            // Register a periodic callback if hte 
+            if (timeout != Timeout.InfiniteTimeSpan)
+            {
+                timeoutPerInvocation = timeout;
+                timeoutPerInvocationTicks = (long)(Stopwatch.Frequency * timeout.TotalSeconds);
+                state.SetHook(&LuaRunnerTrampolines.CheckTimeout, LuaHookMask.Count, TimeoutCheckFrequency);
+            }
+
             state.ExpectLuaStackEmpty();
         }
 
@@ -367,7 +392,7 @@ end
         /// Creates a new runner with the source of the script
         /// </summary>
         public LuaRunner(LuaOptions options, string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
-            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, logger)
+            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), options.Timeout, Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, logger)
         {
         }
 
@@ -577,117 +602,127 @@ end
 
             try
             {
-                var argCount = state.StackTop;
-
-                if (argCount <= 0)
+                try
                 {
-                    return LuaStaticError(pleaseSpecifyRedisCallConstStringRegistryIndex);
-                }
+                    var argCount = state.StackTop;
 
-                state.ForceMinimumStackCapacity(AdditionalStackSpace);
-
-                if (!state.CheckBuffer(1, out var cmdSpan))
-                {
-                    return LuaStaticError(errBadArgConstStringRegistryIndex);
-                }
-
-                // We special-case a few performance-sensitive operations to directly invoke via the storage API
-                if (AsciiUtils.EqualsUpperCaseSpanIgnoringCase(cmdSpan, "SET"u8) && argCount == 3)
-                {
-                    if (!respServerSession.CheckACLPermissions(RespCommand.SET))
+                    if (argCount <= 0)
                     {
-                        return LuaStaticError(errNoAuthConstStringRegistryIndex);
+                        return LuaStaticError(pleaseSpecifyRedisCallConstStringRegistryIndex);
                     }
 
-                    if (!state.CheckBuffer(2, out var keySpan) || !state.CheckBuffer(3, out var valSpan))
+                    state.ForceMinimumStackCapacity(AdditionalStackSpace);
+
+                    if (!state.CheckBuffer(1, out var cmdSpan))
                     {
                         return LuaStaticError(errBadArgConstStringRegistryIndex);
                     }
 
-                    // Note these spans are implicitly pinned, as they're actually on the Lua stack
-                    var key = ArgSlice.FromPinnedSpan(keySpan);
-                    var value = ArgSlice.FromPinnedSpan(valSpan);
+                    // We special-case a few performance-sensitive operations to directly invoke via the storage API
+                    if (AsciiUtils.EqualsUpperCaseSpanIgnoringCase(cmdSpan, "SET"u8) && argCount == 3)
+                    {
+                        if (!respServerSession.CheckACLPermissions(RespCommand.SET))
+                        {
+                            return LuaStaticError(errNoAuthConstStringRegistryIndex);
+                        }
 
-                    _ = api.SET(key, value);
+                        if (!state.CheckBuffer(2, out var keySpan) || !state.CheckBuffer(3, out var valSpan))
+                        {
+                            return LuaStaticError(errBadArgConstStringRegistryIndex);
+                        }
 
-                    state.PushConstantString(okConstStringRegistryIndex);
-                    return 1;
+                        // Note these spans are implicitly pinned, as they're actually on the Lua stack
+                        var key = ArgSlice.FromPinnedSpan(keySpan);
+                        var value = ArgSlice.FromPinnedSpan(valSpan);
+
+                        _ = api.SET(key, value);
+
+                        state.PushConstantString(okConstStringRegistryIndex);
+                        return 1;
+                    }
+                    else if (AsciiUtils.EqualsUpperCaseSpanIgnoringCase(cmdSpan, "GET"u8) && argCount == 2)
+                    {
+                        if (!respServerSession.CheckACLPermissions(RespCommand.GET))
+                        {
+                            return LuaStaticError(errNoAuthConstStringRegistryIndex);
+                        }
+
+                        if (!state.CheckBuffer(2, out var keySpan))
+                        {
+                            return LuaStaticError(errBadArgConstStringRegistryIndex);
+                        }
+
+                        // Span is (implicitly) pinned since it's actually on the Lua stack
+                        var key = ArgSlice.FromPinnedSpan(keySpan);
+                        var status = api.GET(key, out var value);
+                        if (status == GarnetStatus.OK)
+                        {
+                            state.PushBuffer(value.ReadOnlySpan);
+                        }
+                        else
+                        {
+                            state.PushNil();
+                        }
+
+                        return 1;
+                    }
+
+                    // As fallback, we use RespServerSession with a RESP-formatted input. This could be optimized
+                    // in future to provide parse state directly.
+
+                    scratchBufferManager.Reset();
+                    scratchBufferManager.StartCommand(cmdSpan, argCount - 1);
+
+                    for (var i = 0; i < argCount - 1; i++)
+                    {
+                        var argIx = 2 + i;
+
+                        var argType = state.Type(argIx);
+                        if (argType == LuaType.Nil)
+                        {
+                            scratchBufferManager.WriteNullArgument();
+                        }
+                        else if (argType is LuaType.String or LuaType.Number)
+                        {
+                            // KnownStringToBuffer will coerce a number into a string
+                            //
+                            // Redis nominally converts numbers to integers, but in this case just ToStrings things
+                            state.KnownStringToBuffer(argIx, out var span);
+
+                            // Span remains pinned so long as we don't pop the stack
+                            scratchBufferManager.WriteArgument(span);
+                        }
+                        else
+                        {
+                            return LuaStaticError(errBadArgConstStringRegistryIndex);
+                        }
+                    }
+
+                    var request = scratchBufferManager.ViewFullArgSlice();
+
+                    // Once the request is formatted, we can release all the args on the Lua stack
+                    //
+                    // This keeps the stack size down for processing the response
+                    state.Pop(argCount);
+
+                    _ = respServerSession.TryConsumeMessages(request.ptr, request.length);
+
+                    var response = scratchBufferNetworkSender.GetResponse();
+                    var result = ProcessResponse(response.ptr, response.length);
+                    scratchBufferNetworkSender.Reset();
+                    return result;
                 }
-                else if (AsciiUtils.EqualsUpperCaseSpanIgnoringCase(cmdSpan, "GET"u8) && argCount == 2)
+                finally
                 {
-                    if (!respServerSession.CheckACLPermissions(RespCommand.GET))
-                    {
-                        return LuaStaticError(errNoAuthConstStringRegistryIndex);
-                    }
-
-                    if (!state.CheckBuffer(2, out var keySpan))
-                    {
-                        return LuaStaticError(errBadArgConstStringRegistryIndex);
-                    }
-
-                    // Span is (implicitly) pinned since it's actually on the Lua stack
-                    var key = ArgSlice.FromPinnedSpan(keySpan);
-                    var status = api.GET(key, out var value);
-                    if (status == GarnetStatus.OK)
-                    {
-                        state.PushBuffer(value.ReadOnlySpan);
-                    }
-                    else
-                    {
-                        // Redis is weird, but false instead of Nil is correct here
-                        state.PushBoolean(false);
-                    }
-
-                    return 1;
+                    // Repeated calls to Garnet could avoid the timeout for a while
+                    // So do a check before we return
+                    UnsafeCheckTimeout();
                 }
-
-                // As fallback, we use RespServerSession with a RESP-formatted input. This could be optimized
-                // in future to provide parse state directly.
-
-                scratchBufferManager.Reset();
-                scratchBufferManager.StartCommand(cmdSpan, argCount - 1);
-
-                for (var i = 0; i < argCount - 1; i++)
-                {
-                    var argIx = 2 + i;
-
-                    var argType = state.Type(argIx);
-                    if (argType == LuaType.Nil)
-                    {
-                        scratchBufferManager.WriteNullArgument();
-                    }
-                    else if (argType is LuaType.String or LuaType.Number)
-                    {
-                        // KnownStringToBuffer will coerce a number into a string
-                        //
-                        // Redis nominally converts numbers to integers, but in this case just ToStrings things
-                        state.KnownStringToBuffer(argIx, out var span);
-
-                        // Span remains pinned so long as we don't pop the stack
-                        scratchBufferManager.WriteArgument(span);
-                    }
-                    else
-                    {
-                        return LuaStaticError(errBadArgConstStringRegistryIndex);
-                    }
-                }
-
-                var request = scratchBufferManager.ViewFullArgSlice();
-
-                // Once the request is formatted, we can release all the args on the Lua stack
-                //
-                // This keeps the stack size down for processing the response
-                state.Pop(argCount);
-
-                _ = respServerSession.TryConsumeMessages(request.ptr, request.length);
-
-                var response = scratchBufferNetworkSender.GetResponse();
-                var result = ProcessResponse(response.ptr, response.length);
-                scratchBufferNetworkSender.Reset();
-                return result;
             }
             catch (Exception e)
             {
+                // We cannot let exceptions propogate back to Lua, that is not something .NET promises will work
+
                 logger?.LogError(e, "During Lua script execution");
 
                 return state.RaiseError(e.Message);
@@ -849,6 +884,7 @@ end
             try
             {
                 LuaRunnerTrampolines.SetCallbackContext(this);
+                SetTimeout();
 
                 try
                 {
@@ -970,6 +1006,7 @@ end
             try
             {
                 LuaRunnerTrampolines.SetCallbackContext(this);
+                SetTimeout();
 
                 try
                 {
@@ -1119,6 +1156,40 @@ end
                 respServerSession.storageSession.lockableContext.EndLockable();
                 if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
                     respServerSession.storageSession.objectStoreLockableContext.EndLockable();
+            }
+        }
+
+        /// <summary>
+        /// Setup Lua so any code will raise an error after the configured timeout, if any.
+        /// </summary>
+        private void SetTimeout()
+        {
+            // No timeout
+            if (timeoutPerInvocationTicks == 0)
+            {
+                return;
+            }
+
+            nextTimeout = Stopwatch.GetTimestamp() + timeoutPerInvocationTicks;
+        }
+
+        /// <summary>
+        /// Raises a Lua error if timeout for a script has elapsed.
+        /// 
+        /// Accordingly, DO NOT CALL THIS if you are not in a PCall context.
+        /// Doing so might panic Lua and crash the process.
+        /// </summary>
+        internal void UnsafeCheckTimeout()
+        {
+            // No timeout
+            if (nextTimeout == 0)
+            {
+                return;
+            }
+
+            if (Stopwatch.GetTimestamp() >= nextTimeout)
+            {
+                _ = state.RaiseError("Timeout");
             }
         }
 
@@ -1635,5 +1706,12 @@ end
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int GarnetCallNoTransaction(nint luaState)
         => callbackContext.GarnetCall(luaState);
+
+        /// <summary>
+        /// Entry point for checking timeouts, called periodically from Lua.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static void CheckTimeout(nint luaState, nint debugState)
+        => callbackContext?.UnsafeCheckTimeout();
     }
 }
