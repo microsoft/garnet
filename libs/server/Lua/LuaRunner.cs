@@ -1187,9 +1187,10 @@ end
                 return;
             }
 
-            if (Stopwatch.GetTimestamp() >= nextTimeout)
+            var now = Stopwatch.GetTimestamp();
+            if (now >= nextTimeout)
             {
-                _ = state.RaiseError("Timeout");
+                _ = state.RaiseError("ERR Lua script exceeded configured timeout");
             }
         }
 

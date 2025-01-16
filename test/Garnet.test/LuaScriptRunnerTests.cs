@@ -7,6 +7,8 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -134,6 +136,36 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("012", (string)obj3[0]);
                 ClassicAssert.AreEqual("678", (string)obj3[1]);
                 ClassicAssert.AreEqual("345", (string)obj3[2]);
+            }
+        }
+
+        [Test]
+        public void Timeouts()
+        {
+            const string FastScript = "return 'hello'";
+            const string DoesNotReturnScript = @"
+local count = 0
+while true do
+    count = count + 1
+end
+
+return count
+";
+
+            // Should never timeout, but has limit
+            using (var runner = new LuaRunner(LuaMemoryManagementMode.Native, null, TimeSpan.FromMilliseconds(10), Encoding.UTF8.GetBytes(FastScript)))
+            {
+                runner.CompileForRunner();
+                var res = (string)runner.RunForRunner();
+                ClassicAssert.AreEqual("hello", res);
+            }
+
+            // Should always timeout
+            using (var runner = new LuaRunner(LuaMemoryManagementMode.Native, null, TimeSpan.FromMilliseconds(10), Encoding.UTF8.GetBytes(DoesNotReturnScript)))
+            {
+                runner.CompileForRunner();
+                var exc = ClassicAssert.Throws<GarnetException>(() => runner.RunForRunner());
+                ClassicAssert.AreEqual("ERR Lua script exceeded configured timeout", exc.Message);
             }
         }
 
