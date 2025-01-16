@@ -25,6 +25,7 @@ namespace Garnet.server
         BITPOS,
         COSCAN,
         DBSIZE,
+        DUMP,
         EXISTS,
         EXPIRETIME,
         GEODIST,
@@ -93,7 +94,6 @@ namespace Garnet.server
         ZSCAN,
         ZSCORE, // Note: Last read command should immediately precede FirstWriteCommand
         ZUNION,
-        DUMP,
 
         // Write commands
         APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
@@ -143,6 +143,7 @@ namespace Garnet.server
         PFMERGE,
         PSETEX,
         RENAME,
+        RESTORE,
         RENAMENX,
         RPOP,
         RPOPLPUSH,
@@ -179,7 +180,6 @@ namespace Garnet.server
         ZREMRANGEBYRANK,
         ZREMRANGEBYSCORE,
         ZUNIONSTORE,
-        RESTORE,
 
         // BITOP is the true command, AND|OR|XOR|NOT are pseudo-subcommands
         BITOP,
