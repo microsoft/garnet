@@ -42,6 +42,12 @@ namespace BDN.benchmark.Operations
         static ReadOnlySpan<byte> DECRBY => "*3\r\n$6\r\nDECRBY\r\n$1\r\nl\r\n$10\r\n1234567890\r\n"u8;
         Request decrby;
 
+        static ReadOnlySpan<byte> PUBLISH => "*3\r\n$7\r\nPUBLISH\r\n$7\r\nchannel\r\n$7\r\nmessage\r\n"u8;
+        Request publish;
+
+        static ReadOnlySpan<byte> SUBSCRIBE => "*2\r\n$9\r\nSUBSCRIBE\r\n$7\r\nchannel\r\n"u8;
+        Request subscribe;
+
         public override void GlobalSetup()
         {
             base.GlobalSetup();
@@ -55,6 +61,8 @@ namespace BDN.benchmark.Operations
             SetupOperation(ref decr, DECR);
             SetupOperation(ref incrby, INCRBY);
             SetupOperation(ref decrby, DECRBY);
+            SetupOperation(ref publish, PUBLISH);
+            SetupOperation(ref subscribe, SUBSCRIBE);
 
             // Pre-populate data
             SlowConsumeMessage("*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\na\r\n"u8);
@@ -62,6 +70,9 @@ namespace BDN.benchmark.Operations
             SlowConsumeMessage("*3\r\n$3\r\nSET\r\n$1\r\nj\r\n$1\r\n0\r\n"u8);
             SlowConsumeMessage("*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\n0\r\n"u8);
             SlowConsumeMessage("*3\r\n$3\r\nSET\r\n$1\r\nl\r\n$1\r\n0\r\n"u8);
+
+            // Subscribe to secondary session
+            _ = subscribeSession.TryConsumeMessages(subscribe.bufferPtr, subscribe.buffer.Length);
         }
 
         [Benchmark]
@@ -122,6 +133,12 @@ namespace BDN.benchmark.Operations
         public void DecrementBy()
         {
             Send(decrby);
+        }
+
+        [Benchmark]
+        public void Publish()
+        {
+            Send(publish);
         }
     }
 }
