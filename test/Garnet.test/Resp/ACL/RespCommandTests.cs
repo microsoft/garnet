@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -6396,7 +6396,7 @@ namespace Garnet.test.Resp.ACL
                 ClassicAssert.AreEqual(-2, val);
             }
         }
-        
+
         [Test]
         public async Task DumpACLsAsync()
         {
@@ -6411,7 +6411,7 @@ namespace Garnet.test.Resp.ACL
                 ClassicAssert.IsNull(val);
             }
         }
-        
+
         [Test]
         public async Task RestoreACLsAsync()
         {
