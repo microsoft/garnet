@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -512,7 +512,7 @@ namespace Garnet
         [OptionValidation]
         [Option("skip-checksum-validation", Default = false, Required = false, HelpText = "Skip checksum validation")]
         public bool? SkipChecksumValidation { get; set; }
-      
+
         [Option("lua-memory-management-mode", Default = LuaMemoryManagementMode.Native, Required = false, HelpText = "Memory management mode for Lua scripts, must be set to LimittedNative or Managed to impose script limits")]
         public LuaMemoryManagementMode LuaMemoryManagementMode { get; set; }
 
