@@ -17,7 +17,7 @@ public static class RespLengthEncodingUtils
     /// <param name="buff"></param>
     /// <returns></returns>
     /// <exception cref="ArgumentException"></exception>
-    public static (long length, byte payloadStart) DecodeLength(ref ReadOnlySpan<byte> buff)
+    public static (long Length, byte PayloadStart) DecodeLength(ref ReadOnlySpan<byte> buff)
     {
         // remove the value type byte
         var encoded = buff.Slice(1);

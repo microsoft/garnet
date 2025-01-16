@@ -6439,8 +6439,8 @@ namespace Garnet.test.Resp.ACL
                 var val = await client.ExecuteForStringResultAsync(
                     "$7\r\nRESTORE\r\n"u8.ToArray(),
                     [
-                        Encoding.UTF8.GetBytes($"foo-{count}"), 
-                        "0"u8.ToArray(), 
+                        Encoding.UTF8.GetBytes($"foo-{count}"),
+                        "0"u8.ToArray(),
                         payload
                     ]);
 

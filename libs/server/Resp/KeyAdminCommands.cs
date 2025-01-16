@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using Garnet.common;
 using Garnet.server.Auth;
@@ -43,12 +44,11 @@ namespace Garnet.server
 
             // return error if key already exists 
             var keyExists = storageApi.EXISTS(key);
-            switch (keyExists)
+            if (keyExists is GarnetStatus.OK)
             {
-                case GarnetStatus.OK:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_KEY_ALREADY_EXISTS, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_KEY_ALREADY_EXISTS, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
             var valueSpan = value.ReadOnlySpan;
@@ -128,24 +128,27 @@ namespace Garnet.server
 
             var status = storageApi.GET(key, out var value);
 
-            switch (status)
+            if (status is GarnetStatus.NOTFOUND)
             {
-                case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
             var encodedLength = RespLengthEncodingUtils.EncodeLength(value.ReadOnlySpan.Length);
 
             // Len of the dump (payload type + redis encoded payload len + payload len + rdb version + crc64)
             var len = 1 + encodedLength.Length + value.ReadOnlySpan.Length + 2 + 8;
-            var lengthInASCIIBytes = new Span<byte>(new byte[NumUtils.NumDigitsInLong(len)]);
+            Span<byte> lengthInASCIIBytes = stackalloc byte[NumUtils.NumDigitsInLong(len)];
             var lengthInASCIIBytesLen = NumUtils.LongToSpanByte(len, lengthInASCIIBytes);
 
             // Total len (% + length of ascii bytes + CR LF + payload type + redis encoded payload len + payload len + rdb version + crc64 + CR LF)
             var totalLength = 1 + lengthInASCIIBytesLen + 2 + 1 + encodedLength.Length + value.ReadOnlySpan.Length + 2 + 8 + 2;
-            Span<byte> buffer = stackalloc byte[totalLength];
+
+            var buffer = totalLength <= 128
+                ? stackalloc byte[totalLength]
+                : new byte[totalLength];
+
             var offset = 0;
 
             // Write RESP bulk string prefix and length
@@ -159,8 +162,8 @@ namespace Garnet.server
             buffer[offset++] = 0x00;
 
             // length of the span
-            foreach (var b in encodedLength)
-                buffer[offset++] = b;
+            encodedLength.CopyTo(buffer[offset..]);
+            offset += encodedLength.Length;
 
             // copy value to buffer
             value.ReadOnlySpan.CopyTo(buffer[offset..]);
@@ -182,7 +185,7 @@ namespace Garnet.server
             buffer[offset++] = 0x0D; // CR
             buffer[offset++] = 0x0A; // LF
 
-            while (!RespWriteUtils.WriteDirect(buffer, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(buffer.Slice(0, totalLength), ref dcurr, dend))
                 SendAndReset();
 
             return true;
