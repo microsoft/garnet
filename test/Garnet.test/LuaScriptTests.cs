@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
 using Microsoft.Extensions.Azure;
@@ -36,7 +37,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true, luaMemoryMode: allocMode, luaMemoryLimit: limitBytes);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true, luaMemoryMode: allocMode, luaMemoryLimit: limitBytes, luaTimeout: TimeSpan.FromMilliseconds(500));
             server.Start();
         }
 
@@ -1044,6 +1045,35 @@ return retArray";
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}')"));
                 ClassicAssert.True(exc.Message.StartsWith("ERR This Redis command is not allowed from script"), $"Allowed NoScript command: {cmd}");
             }
+        }
+
+        [Test]
+        public void IntentialTimeout()
+        {
+            const string TimeoutScript = @"
+local count = 0
+
+if @Ctrl == 'Timeout' then
+    while true do
+        count = count + 1
+    end
+end
+
+return count";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db = redis.GetDatabase();
+
+            var scriptTimeout = LuaScript.Prepare(TimeoutScript);
+            var loadedScriptTimeout = scriptTimeout.Load(redis.GetServers()[0]);
+
+            // Timeout actually happens and is reported
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(loadedScriptTimeout, new { Ctrl = "Timeout" }));
+            ClassicAssert.AreEqual("ERR Lua script exceeded configured timeout", exc.Message);
+
+            // We can still run the script without issue (with non-crashing args) afterwards
+            var res = db.ScriptEvaluate(loadedScriptTimeout, new { Ctrl = "Safe" });
+            ClassicAssert.AreEqual(0, (int)res);
         }
     }
 }

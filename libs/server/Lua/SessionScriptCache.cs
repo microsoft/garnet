@@ -29,6 +29,7 @@ namespace Garnet.server
 
         readonly LuaMemoryManagementMode memoryManagementMode;
         readonly int? memoryLimitBytes;
+        readonly TimeSpan timeout;
 
         public SessionScriptCache(StoreWrapper storeWrapper, IGarnetAuthenticator authenticator, ILogger logger = null)
         {
@@ -41,6 +42,7 @@ namespace Garnet.server
             // There's some parsing involved in these, so save them off per-session
             memoryManagementMode = storeWrapper.serverOptions.LuaOptions.MemoryManagementMode;
             memoryLimitBytes = storeWrapper.serverOptions.LuaOptions.GetMemoryLimitBytes();
+            timeout = storeWrapper.serverOptions.LuaOptions.Timeout;
         }
 
         public void Dispose()
@@ -80,7 +82,7 @@ namespace Garnet.server
             {
                 var sourceOnHeap = source.ToArray();
 
-                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, Timeout.InfiniteTimeSpan, sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
+                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, timeout, sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
 
                 // If compilation fails, an error is written out
                 if (runner.CompileForSession(session))
