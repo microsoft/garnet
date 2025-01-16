@@ -15,6 +15,7 @@ namespace CommandInfoUpdater
     /// </summary>
     public class CommandInfoUpdater
     {
+        const int QUERY_CMD_BATCH_SIZE = 25;
         private static readonly string CommandInfoFileName = "RespCommandsInfo.json";
         private static readonly string GarnetCommandInfoJsonPath = "GarnetCommandsInfo.json";
 
@@ -63,11 +64,18 @@ namespace CommandInfoUpdater
             var commandsToQuery = commandsToAdd.Keys.Select(k => k.Command)
                 .Where(c => !garnetCommandsInfo.ContainsKey(c) || !garnetCommandsInfo[c].IsInternal).ToArray();
 
-            if (commandsToQuery.Length > 0 && !TryGetCommandsInfo(commandsToQuery, respServerPort, respServerHost,
-                    logger, out queriedCommandsInfo))
+            if (commandsToQuery.Length > 0)
             {
-                logger.LogError("Unable to get RESP command info from local RESP server.");
-                return false;
+                for (var i = 0; i < commandsToQuery.Length; i += QUERY_CMD_BATCH_SIZE)
+                {
+                    var batchToQuery = commandsToQuery.Skip(i).Take(QUERY_CMD_BATCH_SIZE).ToArray();
+                    if (!TryGetCommandsInfo(batchToQuery, respServerPort, respServerHost,
+                            logger, ref queriedCommandsInfo))
+                    {
+                        logger.LogError("Unable to get RESP command info from local RESP server.");
+                        return false;
+                    }
+                }
             }
 
             var additionalCommandsInfo = new Dictionary<string, RespCommandsInfo>();
@@ -75,23 +83,24 @@ namespace CommandInfoUpdater
             {
                 if (!additionalCommandsInfo.ContainsKey(cmd))
                 {
-                    var baseCommandInfo = queriedCommandsInfo.TryGetValue(cmd, out var cmdInfo)
-                        ? cmdInfo : garnetCommandsInfo[cmd];
+                    var inQueried = queriedCommandsInfo.TryGetValue(cmd, out var queriedCommandInfo);
+                    var inGarnet = garnetCommandsInfo.TryGetValue(cmd, out var garnetCommandInfo);
+                    var baseCommandInfo = inGarnet ? garnetCommandInfo : queriedCommandInfo;
 
                     RespCommandsInfo[] subCommandsInfo;
-                    if (garnetCommandsInfo.ContainsKey(cmd) && queriedCommandsInfo.ContainsKey(cmd))
+                    if (inQueried && inGarnet)
                     {
                         var subCommandsInfoMap = new Dictionary<string, RespCommandsInfo>();
 
-                        if (garnetCommandsInfo.TryGetValue(cmd, out var garnetCmdInfo) && garnetCmdInfo.SubCommands != null)
+                        if (garnetCommandInfo.SubCommands != null)
                         {
-                            foreach (var sc in garnetCmdInfo.SubCommands)
+                            foreach (var sc in garnetCommandInfo.SubCommands)
                                 subCommandsInfoMap.Add(sc.Name, sc);
                         }
 
-                        if (queriedCommandsInfo.TryGetValue(cmd, out var queriedCmdInfo) && queriedCmdInfo.SubCommands != null)
+                        if (queriedCommandInfo.SubCommands != null)
                         {
-                            foreach (var sc in queriedCmdInfo.SubCommands)
+                            foreach (var sc in queriedCommandInfo.SubCommands)
                             {
                                 subCommandsInfoMap.TryAdd(sc.Name, sc);
                             }
@@ -104,7 +113,7 @@ namespace CommandInfoUpdater
                         subCommandsInfo = baseCommandInfo.SubCommands;
                     }
 
-                    additionalCommandsInfo.Add(cmd, new RespCommandsInfo()
+                    additionalCommandsInfo.Add(cmd, new RespCommandsInfo
                     {
                         Command = baseCommandInfo.Command,
                         Name = baseCommandInfo.Name,
@@ -117,7 +126,7 @@ namespace CommandInfoUpdater
                         AclCategories = baseCommandInfo.AclCategories,
                         Tips = baseCommandInfo.Tips,
                         KeySpecifications = baseCommandInfo.KeySpecifications,
-                        SubCommands = subCommandsInfo
+                        SubCommands = subCommandsInfo?.OrderBy(sc => sc.Name).ToArray()
                     });
                 }
             }
@@ -147,10 +156,8 @@ namespace CommandInfoUpdater
         /// <param name="commandsInfo">Queried commands info</param>
         /// <returns>True if succeeded</returns>
         private static unsafe bool TryGetCommandsInfo(string[] commandsToQuery, int respServerPort,
-            IPAddress respServerHost, ILogger logger, out IDictionary<string, RespCommandsInfo> commandsInfo)
+            IPAddress respServerHost, ILogger logger, ref IDictionary<string, RespCommandsInfo> commandsInfo)
         {
-            commandsInfo = default;
-
             // If there are no commands to query, return
             if (commandsToQuery.Length == 0) return true;
 
@@ -166,8 +173,6 @@ namespace CommandInfoUpdater
                 logger.LogError(e, "Encountered an error while querying local RESP server");
                 return false;
             }
-
-            var tmpCommandsInfo = new Dictionary<string, RespCommandsInfo>();
 
             // Get a map of supported commands to Garnet's RespCommand & ArrayCommand for the parser
             var supportedCommands = new ReadOnlyDictionary<string, RespCommand>(
@@ -197,11 +202,10 @@ namespace CommandInfoUpdater
                     }
 
                     if (command != null)
-                        tmpCommandsInfo.Add(command.Name, command);
+                        commandsInfo.Add(command.Name, command);
                 }
             }
 
-            commandsInfo = tmpCommandsInfo;
             return true;
         }
 
@@ -238,7 +242,7 @@ namespace CommandInfoUpdater
                     : existingCommandsInfo[command.Command].SubCommands.Select(sc => sc.Name).ToArray();
                 var remainingSubCommands = existingSubCommands == null ? null :
                     command.SubCommands == null ? existingSubCommands :
-                    existingSubCommands.Except(command.SubCommands.Keys).ToArray();
+                    [.. existingSubCommands.Except(command.SubCommands.Keys)];
 
                 // Create updated command info based on existing command
                 var existingCommand = existingCommandsInfo[command.Command];
@@ -257,7 +261,7 @@ namespace CommandInfoUpdater
                     KeySpecifications = existingCommand.KeySpecifications,
                     SubCommands = remainingSubCommands == null || remainingSubCommands.Length == 0
                         ? null
-                        : existingCommand.SubCommands.Where(sc => remainingSubCommands.Contains(sc.Name)).ToArray()
+                        : [.. existingCommand.SubCommands.Where(sc => remainingSubCommands.Contains(sc.Name))]
                 };
 
                 updatedCommandsInfo.Add(updatedCommand.Name, updatedCommand);
@@ -294,7 +298,7 @@ namespace CommandInfoUpdater
                     // Update sub-commands to contain supported sub-commands only
                     updatedSubCommands = command.SubCommands == null
                         ? null
-                        : baseCommand.SubCommands.Where(sc => command.SubCommands.ContainsKey(sc.Name)).ToList();
+                        : [.. baseCommand.SubCommands.Where(sc => command.SubCommands.ContainsKey(sc.Name))];
                 }
 
                 // Create updated command info based on base command & updated sub-commands

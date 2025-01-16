@@ -105,8 +105,8 @@ namespace CommandInfoUpdater
                     var existingSubCommands = new HashSet<string>(existingCommandsInfo[supportedCommand.Command]
                         .SubCommands
                         .Select(sc => sc.Name));
-                    subCommandsToAdd = supportedCommand.SubCommands
-                        .Where(subCommand => !existingSubCommands.Contains(subCommand.Key)).Select(sc => sc.Value).ToArray();
+                    subCommandsToAdd = [.. supportedCommand.SubCommands
+                        .Where(subCommand => !existingSubCommands.Contains(subCommand.Key)).Select(sc => sc.Value)];
                 }
 
                 // If there are sub-commands to add, add a new supported command with the sub-commands to add

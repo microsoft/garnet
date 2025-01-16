@@ -702,11 +702,11 @@ namespace Garnet.common
         /// Writes an array consisting of an ETag followed by a Bulk string value into the buffer.
         /// NOTE: Caller should make sure there is enough space in the buffer for sending the etag, and value array.
         /// </summary>
-        /// <param name="etag"></param>
-        /// <param name="value"></param>
-        /// <param name="curr"></param>
-        /// <param name="end"></param>
-        /// <param name="writeDirect"></param>
+        /// <param name="etag">etag value to write in the array</param>
+        /// <param name="value">value to write in the array</param>
+        /// <param name="curr">start of destination buffer</param>
+        /// <param name="end">end of destincation buffer</param>
+        /// <param name="writeDirect">Whether to write the value directly to buffer or transform it to a resp bulk string</param>
         public static void WriteEtagValArray(long etag, ref ReadOnlySpan<byte> value, ref byte* curr, byte* end, bool writeDirect)
         {
             // Writes a Resp encoded Array of Integer for ETAG as first element, and bulk string for value as second element
