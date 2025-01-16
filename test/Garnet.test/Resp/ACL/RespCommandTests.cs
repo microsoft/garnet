@@ -6396,6 +6396,56 @@ namespace Garnet.test.Resp.ACL
                 ClassicAssert.AreEqual(-2, val);
             }
         }
+        
+        [Test]
+        public async Task DumpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "DUMP",
+                [DoDUMPAsync]
+            );
+
+            static async Task DoDUMPAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("DUMP", ["foo"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+        
+        [Test]
+        public async Task RestoreACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "RESTORE",
+                [DoRestoreAsync]
+            );
+
+            static async Task DoRestoreAsync(GarnetClient client)
+            {
+                var payload = new byte[]
+                {
+                    0x00, // value type 
+                    0x03, // length of payload
+                    0x76, 0x61, 0x6C,       // 'v', 'a', 'l'
+                    0x0B, 0x00, // RDB version
+                    0xDB, 0x82, 0x3C, 0x30, 0x38, 0x78, 0x5A, 0x99 // Crc64
+                };
+
+                try
+                {
+                    string val = await client.ExecuteForStringResultAsync("$7\r\nRESTORE\r\n"u8.ToArray(),
+                        ["foo"u8.ToArray(), "0"u8.ToArray(), payload]);
+                    ClassicAssert.AreEqual("OK", val);
+                }
+                catch (Exception e)
+                {
+                    if (e.Message != "ERR Key already exists")
+                    {
+                        throw;
+                    }
+                }
+            }
+        }
 
         [Test]
         public async Task TypeACLsAsync()
@@ -6845,6 +6895,5 @@ namespace Garnet.test.Resp.ACL
                 return false;
             }
         }
-
     }
 }

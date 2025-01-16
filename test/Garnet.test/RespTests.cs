@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO.Hashing;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -15,7 +14,6 @@ using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
-using Crc64 = Garnet.common.Crc64;
 
 namespace Garnet.test
 {

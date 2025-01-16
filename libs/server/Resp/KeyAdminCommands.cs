@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using Garnet.common;
+using Garnet.server.Auth;
 using Tsavorite.core;
 
 namespace Garnet.server
