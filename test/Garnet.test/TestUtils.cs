@@ -217,7 +217,9 @@ namespace Garnet.test
             ILogger logger = null,
             IEnumerable<string> loadModulePaths = null,
             string pubSubPageSize = null,
-            bool asyncReplay = false)
+            bool asyncReplay = false,
+            LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
+            string luaMemoryLimit = "")
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -296,7 +298,8 @@ namespace Garnet.test
                 LoadModuleCS = loadModulePaths,
                 EnableReadCache = enableReadCache,
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
-                ReplicationOffsetMaxLag = asyncReplay ? -1 : 0
+                ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, logger) : null,
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
@@ -396,7 +399,9 @@ namespace Garnet.test
             AadAuthenticationSettings authenticationSettings = null,
             int metricsSamplingFrequency = 0,
             bool enableLua = false,
-            bool asyncReplay = false)
+            bool asyncReplay = false,
+            LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
+            string luaMemoryLimit = "")
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -438,7 +443,9 @@ namespace Garnet.test
                     aadAuthenticationSettings: authenticationSettings,
                     metricsSamplingFrequency: metricsSamplingFrequency,
                     enableLua: enableLua,
-                    asyncReplay: asyncReplay);
+                    asyncReplay: asyncReplay,
+                    luaMemoryMode: luaMemoryMode,
+                    luaMemoryLimit: luaMemoryLimit);
 
                 ClassicAssert.IsNotNull(opts);
                 int iter = 0;
@@ -486,7 +493,9 @@ namespace Garnet.test
             int metricsSamplingFrequency = 0,
             bool enableLua = false,
             bool asyncReplay = false,
-            ILogger logger = null)
+            ILogger logger = null,
+            LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
+            string luaMemoryLimit = "")
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -571,7 +580,8 @@ namespace Garnet.test
                 ClusterUsername = authUsername,
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
-                ReplicationOffsetMaxLag = asyncReplay ? -1 : 0
+                ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit) : null,
             };
 
             if (lowMemory)
