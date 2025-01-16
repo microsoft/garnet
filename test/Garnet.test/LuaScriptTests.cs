@@ -5,6 +5,7 @@ using System;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -534,6 +535,19 @@ return redis.status_reply("OK")
             }
         }
 
+        private void DoErroneousRedisCall(IDatabase db, string[] args, string expectedError)
+        {
+            // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
+            // Once the issue is resolved this test will fail and the #if can be removed permanently.
+#if NET9_0_OR_GREATER
+            expectedError = "ERR Method Debug.Fail failed with 'Expected error message on the stack";
+#endif
+
+            var exc = Assert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return redis.call({string.Join(',', args)})"));
+            ClassicAssert.IsNotNull(exc);
+            StringAssert.StartsWith(expectedError, exc!.Message);
+        }
+
         [Test]
         public void RedisCallErrors()
         {
@@ -544,43 +558,30 @@ return redis.status_reply("OK")
             var db = redis.GetDatabase();
 
             // No args
-            {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call()"));
-                ClassicAssert.IsTrue(exc.Message.StartsWith("ERR Please specify at least one argument for this redis lib call"));
-            }
+            DoErroneousRedisCall(db, [],
+                Encoding.ASCII.GetString(
+                    CmdStrings.LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call));
 
             // Unknown command
-            {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('123')"));
-                ClassicAssert.IsTrue(exc.Message.StartsWith("ERR Unknown Redis command called from script"));
-            }
+            DoErroneousRedisCall(db, ["'123'"],
+                Encoding.ASCII.GetString(CmdStrings.LUA_ERR_Unknown_Redis_command_called_from_script));
+
+            var badArgumentsMessage =
+                Encoding.ASCII.GetString(CmdStrings
+                    .LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers);
 
             // Bad command type
-            {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call({ foo = 'bar'})"));
-                ClassicAssert.IsTrue(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
-            }
+            DoErroneousRedisCall(db, ["{ foo = 'bar'}"], badArgumentsMessage);
 
             // GET bad arg type
-            {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('GET', { foo = 'bar' })"));
-                ClassicAssert.IsTrue(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
-            }
+            DoErroneousRedisCall(db, ["'GET'", "{ foo = 'bar'}"], badArgumentsMessage);
 
             // SET bad arg types
-            {
-                var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('SET', 'hello', { foo = 'bar' })"));
-                ClassicAssert.IsTrue(exc1.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
-
-                var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('SET', { foo = 'bar' }, 'world')"));
-                ClassicAssert.IsTrue(exc2.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
-            }
+            DoErroneousRedisCall(db, ["'SET'", "'hello'", "{ foo = 'bar'}"], badArgumentsMessage);
+            DoErroneousRedisCall(db, ["'SET'", "{ foo = 'bar'}", "'world'"], badArgumentsMessage);
 
             // Other bad arg types
-            {
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('DEL', { foo = 'bar' })"));
-                ClassicAssert.IsTrue(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
-            }
+            DoErroneousRedisCall(db, ["'DEL'", "{ foo = 'bar'}", "'world'"], badArgumentsMessage);
         }
 
         [Test]
