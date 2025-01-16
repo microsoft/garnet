@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737057008630,
+  "lastUpdate": 1737057022307,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -15821,6 +15821,84 @@ window.BENCHMARK_DATA = {
             "value": 128873.31268780048,
             "unit": "ns",
             "range": "± 601.2548721406467"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "97080072+msft-paddy14@users.noreply.github.com",
+            "name": "msft-paddy14",
+            "username": "msft-paddy14"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "18fce91fe6a4b22b98d986ef929f6f990edd4136",
+          "message": "Convert background cluster networking calls to async - Gossip, Replication (#914)\n\n* Remove meet lock\r\n\r\n* Fix newline at end of GarnetServerNode.cs file\r\n\r\n* fix formatting\r\n\r\n* Make all background connection handling async\r\n\r\n* formatting fix\r\n\r\n* address comments for async/await syntax\r\n\r\n---------\r\n\r\nCo-authored-by: Vasileios Zois <96085550+vazois@users.noreply.github.com>\r\nCo-authored-by: Tal Zaccai <talzacc@microsoft.com>",
+          "timestamp": "2025-01-16T12:45:31-07:00",
+          "tree_id": "7d6377c42a542a6782b298a4f643a1ab95c23571",
+          "url": "https://github.com/microsoft/garnet/commit/18fce91fe6a4b22b98d986ef929f6f990edd4136"
+        },
+        "date": 1737057019193,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: ACL)",
+            "value": 151934.24252929687,
+            "unit": "ns",
+            "range": "± 959.8560109666604"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: ACL)",
+            "value": 138750.2018171038,
+            "unit": "ns",
+            "range": "± 326.75696346946125"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: ACL)",
+            "value": 126467.12557547433,
+            "unit": "ns",
+            "range": "± 377.2112676769624"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: AOF)",
+            "value": 176290.3737467448,
+            "unit": "ns",
+            "range": "± 1019.2562326825378"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: AOF)",
+            "value": 154063.73756510418,
+            "unit": "ns",
+            "range": "± 1005.664805981771"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: AOF)",
+            "value": 149742.76363932292,
+            "unit": "ns",
+            "range": "± 706.6560600025299"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: None)",
+            "value": 146566.5238560268,
+            "unit": "ns",
+            "range": "± 798.8946342917537"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: None)",
+            "value": 133783.70025165266,
+            "unit": "ns",
+            "range": "± 450.61905915373825"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: None)",
+            "value": 136557.78326822916,
+            "unit": "ns",
+            "range": "± 579.7760610969226"
           }
         ]
       }
