@@ -96,7 +96,7 @@ namespace BDN.benchmark.Operations
         public virtual void GlobalCleanup()
         {
             session.Dispose();
-            subscribeSession.Dispose();
+            subscribeSession?.Dispose();
             server.Dispose();
         }
 
