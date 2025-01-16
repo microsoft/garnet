@@ -35,7 +35,7 @@ namespace Tsavorite.core
 
         /// <summary>Get record size required to allocate a new record. Includes allocator-specific information such as key and value overflow.</summary>
         /// <remarks>Requires <see cref="RecordSizeInfo.FieldInfo"/> to be populated already.</remarks>
-        void PopulateRecordSizeInfo(SpanByte key, ref RecordSizeInfo sizeInfo);
+        void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo);
 
         /// <summary>Mark the page that contains <paramref name="logicalAddress"/> as dirty</summary>
         void MarkPage(long logicalAddress, long version);

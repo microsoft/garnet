@@ -32,7 +32,7 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             var sizeInfo = new RecordSizeInfo() { FieldInfo = srcLogRecord.GetRecordFieldInfo() };
-            hlog.PopulateRecordSizeInfo(srcLogRecord.Key, ref sizeInfo);
+            hlog.PopulateRecordSizeInfo(ref sizeInfo);
 
             var allocOptions = new AllocateOptions() { recycle = true };
             if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
@@ -68,7 +68,7 @@ namespace Tsavorite.core
                 PostCopyToTail(ref srcLogRecord, ref stackCtx, pendingContext.InitialEntryAddress);
 
                 pendingContext.logicalAddress = upsertInfo.Address;
-                sessionFunctions.PostSingleWriter(ref newLogRecord, ref input, srcLogRecord.GetValueRef<TValue>(), ref output, ref upsertInfo, reason);
+                sessionFunctions.PostSingleWriter(ref newLogRecord, ref input, srcLogRecord.GetReadOnlyValueRef<TValue>(), ref output, ref upsertInfo, reason);
                 stackCtx.ClearNewRecord();
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.CopiedRecord);
             }

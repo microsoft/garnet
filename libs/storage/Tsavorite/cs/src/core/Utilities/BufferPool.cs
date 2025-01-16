@@ -116,6 +116,12 @@ namespace Tsavorite.core
             // Assume ctor is called for allocation and leave Free unset
         }
 
+        public unsafe (byte[] array, long offset) GetArrayAndUnalignedOffset(long alignedOffset)
+        {
+            long ptr = (long)Unsafe.AsPointer(ref buffer[0]);
+            return (buffer, alignedOffset + ptr - (long)aligned_pointer);
+        }
+
         /// <summary>
         /// Dispose
         /// </summary>

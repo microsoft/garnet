@@ -53,8 +53,8 @@ namespace Tsavorite.core
         /// <summary>Number of extra overflow pages allocated</summary>
         int OverflowPageCount { get; }
 
-        /// <summary>Determine whether IO has returned the full record</summary>
-        unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<TValue> ctx);
+        /// <summary>Deserialize the value, if this is <see cref="ObjectAllocator{TStoreFunctions}"/></summary>
+        unsafe bool DeserializeValue(ref DiskLogRecord diskLogRecord, ref AsyncIOContext<TValue> ctx);
 
         /// <summary>Get heap container for pending key</summary>
         IHeapContainer<SpanByte> GetKeyContainer(SpanByte key);

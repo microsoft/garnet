@@ -153,7 +153,7 @@ namespace Tsavorite.core
             where TVariableLengthInput : IVariableLengthInput<IHeapObject, TInput>
         {
             // Used by RMW to determine the length of initial destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
-            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetRMWInitialFieldInfo(ref input) };
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetRMWInitialFieldInfo(key, ref input) };
             PopulateRecordSizeInfo(ref sizeInfo);
             return sizeInfo;
         }
@@ -163,7 +163,7 @@ namespace Tsavorite.core
             where TVariableLengthInput : IVariableLengthInput<IHeapObject, TInput>
         {
             // Used by Upsert to determine the length of insert destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
-            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(value, ref input) };
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(key, value, ref input) };
             PopulateRecordSizeInfo(ref sizeInfo);
             return sizeInfo;
         }
@@ -240,7 +240,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override void DeserializeFromIteratorDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) serializedBytes)
+        internal override void DeserializeFromDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) serializedBytes)
         {
             // Do nothing; we don't create a HeapObject for SpanByteAllocator
             var stream = new MemoryStream(serializedBytes.array);
@@ -925,72 +925,10 @@ namespace Tsavorite.core
         }
 
         /// <summary>Retrieve objects from object log</summary>
-        internal bool RetrievedFullRecord(byte* record, ref AsyncIOContext<IHeapObject> ctx)
+        internal void DeserializeValue(ref DiskLogRecord diskLogRecord, ref AsyncIOContext<IHeapObject> ctx)
         {
-            // TODO: take also a ref DiskLogRecord, populating it from ctx.record and deserializing its valueObject
-#if READ_WRITE
-            if (!KeyHasObjects())
-                ctx.key = Unsafe.AsRef<AllocatorRecord<TValue>>(record).key;
-            if (!ValueHasObjects())
-                ctx.value = Unsafe.AsRef<AllocatorRecord<TValue>>(record).value;
-
-            if (!(KeyHasObjects() || ValueHasObjects()))
-                return true;
-
-            if (ctx.objBuffer == null)
-            {
-                // Issue IO for objects
-                long startAddress = -1;
-                long endAddress = -1;
-                if (KeyHasObjects())
-                {
-                    var x = GetKeyAddressInfo((long)record);
-                    startAddress = x->Address;
-                    endAddress = x->Address + x->Size;
-                }
-
-                if (ValueHasObjects() && !GetInfoFromBytePointer(record).Tombstone)
-                {
-                    var x = GetValueAddressInfo((long)record);
-                    if (startAddress == -1)
-                        startAddress = x->Address;
-                    endAddress = x->Address + x->Size;
-                }
-
-                // We are limited to a 2GB size per key-value
-                if (endAddress - startAddress > int.MaxValue)
-                    throw new TsavoriteException("Size of key-value exceeds max of 2GB: " + (endAddress - startAddress));
-
-                if (startAddress < 0)
-                    startAddress = 0;
-
-                AsyncGetFromDisk(startAddress, (int)(endAddress - startAddress), ctx, ctx.record);
-                return false;
-            }
-
-            // Parse the key and value objects
-            var ms = new MemoryStream(ctx.objBuffer.buffer);
-            _ = ms.Seek(ctx.objBuffer.offset + ctx.objBuffer.valid_offset, SeekOrigin.Begin);
-
-            if (KeyHasObjects())
-            {
-                var keySerializer = _storeFunctions.BeginDeserializeKey(ms);
-                keySerializer.Deserialize(out ctx.key);
-                keySerializer.EndDeserialize();
-            }
-
-            if (ValueHasObjects() && !GetInfoFromBytePointer(record).Tombstone)
-            {
-                var valueSerializer = _storeFunctions.BeginDeserializeValue(ms);
-                valueSerializer.Deserialize(out ctx.value);
-                valueSerializer.EndDeserialize();
-            }
-
-            ctx.objBuffer.Return();
-            return true;
-#else
-            return false;
-#endif // READ_WRITE
+            var serializedBytes = ctx.record.GetArrayAndUnalignedOffset(diskLogRecord.physicalAddress);
+            DeserializeFromDiskBuffer(ref diskLogRecord, serializedBytes);
         }
 
         internal IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => new SpanByteHeapContainer(ref key, bufferPool);

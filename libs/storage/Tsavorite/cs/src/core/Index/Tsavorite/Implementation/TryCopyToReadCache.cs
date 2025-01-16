@@ -24,7 +24,7 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             var sizeInfo = new RecordSizeInfo() { FieldInfo = srcLogRecord.GetRecordFieldInfo() };
-            hlog.PopulateRecordSizeInfo(srcLogRecord.Key, ref sizeInfo);
+            hlog.PopulateRecordSizeInfo(ref sizeInfo);
 
             if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, ref sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out _))
                 return false;
@@ -74,7 +74,7 @@ namespace Tsavorite.core
                 if (success)
                     newLogRecord.InfoRef.UnsealAndValidate();
                 pendingContext.logicalAddress = upsertInfo.Address;
-                sessionFunctions.PostSingleWriter(ref newLogRecord, ref input, srcLogRecord.GetValueRef<TValue>(), ref output, ref upsertInfo, WriteReason.CopyToReadCache);
+                sessionFunctions.PostSingleWriter(ref newLogRecord, ref input, srcLogRecord.GetReadOnlyValueRef<TValue>(), ref output, ref upsertInfo, WriteReason.CopyToReadCache);
                 stackCtx.ClearNewRecord();
                 return true;
             }

@@ -30,7 +30,7 @@ namespace Tsavorite.core
     public interface ITransactionalKey
     {
         /// <summary>
-        /// The hash code for a specific key, obtained from <see cref="ITsavoriteContext{TKey}.GetKeyHash(ref TKey)"/>
+        /// The hash code for a specific key, obtained from <see cref="ITsavoriteContext.GetKeyHash(SpanByte)"/>
         /// </summary>
         public long KeyHash { get; }
 
@@ -43,13 +43,12 @@ namespace Tsavorite.core
     /// <summary>
     /// A utility class to carry a fixed-length key (blittable or object type) and its assciated info for Locking
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
-    public struct FixedLengthTransactionalKeyStruct<TKey> : ITransactionalKey
+    public struct FixedLengthTransactionalKeyStruct : ITransactionalKey
     {
         /// <summary>
         /// The key that is acquiring or releasing a lock
         /// </summary>
-        public TKey Key;
+        public SpanByte Key;
 
         #region ITransactionalKey
         /// <inheritdoc/>
@@ -62,26 +61,17 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthTransactionalKeyStruct(TKey key, LockType lockType, ITsavoriteContext<TKey> context) : this(ref key, lockType, context) { }
-
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        public FixedLengthTransactionalKeyStruct(ref TKey key, LockType lockType, ITsavoriteContext<TKey> context)
+        public FixedLengthTransactionalKeyStruct(SpanByte key, LockType lockType, ITsavoriteContext context)
         {
             Key = key;
             LockType = lockType;
-            KeyHash = context.GetKeyHash(ref key);
+            KeyHash = context.GetKeyHash(key);
         }
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        public FixedLengthTransactionalKeyStruct(TKey key, long keyHash, LockType lockType, ITransactionalContext<TKey> context) : this(ref key, keyHash, lockType, context) { }
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthTransactionalKeyStruct(ref TKey key, long keyHash, LockType lockType, ITransactionalContext<TKey> context)
+        public FixedLengthTransactionalKeyStruct(SpanByte key, long keyHash, LockType lockType, ITransactionalContext context)
         {
             Key = key;
             KeyHash = keyHash;
@@ -89,12 +79,12 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Sort the passed key array for use in <see cref="ITransactionalContext{TKey}.Lock{TTransactionalKey}(TTransactionalKey[])"/>
-        /// and <see cref="ITransactionalContext{TKey}.Unlock{TTransactionalKey}(TTransactionalKey[])"/>
+        /// Sort the passed key array for use in <see cref="ITransactionalContext.Lock{TTransactionalKey}(TTransactionalKey[])"/>
+        /// and <see cref="ITransactionalContext.Unlock{TTransactionalKey}(TTransactionalKey[])"/>
         /// </summary>
         /// <param name="keys"></param>
         /// <param name="context"></param>
-        public static void Sort(FixedLengthTransactionalKeyStruct<TKey>[] keys, ITransactionalContext<TKey> context) => context.SortKeyHashes(keys);
+        public static void Sort(FixedLengthTransactionalKeyStruct[] keys, ITransactionalContext context) => context.SortKeyHashes(keys);
 
         /// <inheritdoc/>
         public override string ToString()

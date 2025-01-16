@@ -90,12 +90,11 @@ namespace Tsavorite.core
         public readonly RecordSizeInfo GetDeleteRecordSize(SpanByte key) => _this.GetDeleteRecordSize(key);
 
         /// <inheritdoc/>
-        public readonly void PopulateRecordSizeInfo(SpanByte key, ref RecordSizeInfo sizeInfo) => _this.PopulateRecordSizeInfo(key, ref sizeInfo);
+        public readonly void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo) => _this.PopulateRecordSizeInfo(ref sizeInfo);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte> ctx)
-            => SpanByteAllocatorImpl<TStoreFunctions>.RetrievedFullRecord(record, ref ctx);
+        public readonly unsafe void DeserializeValue(ref DiskLogRecord diskLogRecord, ref AsyncIOContext<SpanByte> ctx) { }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -46,7 +46,15 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly IHeapObject ValueObject => IsObjectRecord ? valueObject : throw new TsavoriteException("SpanByte LogRecord does not have Object values");
         /// <inheritdoc/>
-        public readonly ref TValue GetValueRef<TValue>() => ref Unsafe.AsRef<TValue>((void*)ValueAddress);
+        public ref TValue GetReadOnlyValueRef<TValue>()
+        {
+            if (IsObjectRecord)
+#pragma warning disable CS9084 // Struct member returns 'this' or other instance members by reference; OK here because we only use it on direct calls where the stack remains intact
+                return ref Unsafe.As<IHeapObject, TValue>(ref valueObject);
+#pragma warning restore CS9084
+            return ref Unsafe.AsRef<TValue>((void*)ValueAddress);
+        }
+
         /// <inheritdoc/>
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : 0;
         /// <inheritdoc/>

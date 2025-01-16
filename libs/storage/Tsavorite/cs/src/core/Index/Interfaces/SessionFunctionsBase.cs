@@ -15,29 +15,20 @@ namespace Tsavorite.core
     public abstract class SessionFunctionsBase<TValue, TInput, TOutput, TContext> : ISessionFunctions<TValue, TInput, TOutput, TContext>
     {
         /// <inheritdoc/>
-        public virtual bool ConcurrentReader(ref LogRecord logRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo) => true;
+        public virtual bool ConcurrentReader(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo) => true;
         /// <inheritdoc/>
-        public virtual bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo)
+        public virtual bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
             => true;
 
         /// <inheritdoc/>
-        public virtual bool ConcurrentWriter(ref LogRecord logRecord, ref TInput input, SpanByte srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
-        {
-            Debug.Assert(!logRecord.IsObjectRecord, "SpanByte form of ConcurrentWriter should not be called for Object LogRecord");
-            return logRecord.TrySetValueSpan(srcValue);
-        }
-        /// <inheritdoc/>
-        public virtual bool ConcurrentWriter(ref LogRecord logRecord, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
-        {
-            Debug.Assert(logRecord.IsObjectRecord, "IHeapObject form of ConcurrentWriter should not be called for String LogRecord");
-            return logRecord.TrySetValueObject(srcValue);
-        }
-        /// <inheritdoc/>
         public virtual bool ConcurrentWriter(ref LogRecord logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
-            Debug.Fail("Generic form of ConcurrentWriter should not be called");
-            return false;
+            var ok = srcValue is IHeapObject heapObj
+                ? logRecord.TrySetValueObject(heapObj)
+                : logRecord.TrySetValueSpan(Unsafe.As<TValue, SpanByte>(ref srcValue));
+            // This does not try to set ETag or Expiration, which will come from TInput in fuller implementations.
+            return ok;
         }
 
         /// <inheritdoc/>
@@ -49,6 +40,7 @@ namespace Tsavorite.core
             // This does not try to set ETag or Expiration, which will come from TInput in fuller implementations.
             return ok;
         }
+
         /// <inheritdoc/>
         public virtual bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord
@@ -109,10 +101,10 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
             => throw new NotImplementedException("GetRMWModifiedFieldInfo");
         /// <inheritdoc/>
-        public virtual RecordFieldInfo GetRMWInitialFieldInfo(ref TInput input)
+        public virtual RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TInput input)
             => throw new NotImplementedException("GetRMWInitialFieldInfo");
         /// <inheritdoc/>
-        public virtual RecordFieldInfo GetUpsertFieldInfo(TValue value, ref TInput input)
+        public virtual RecordFieldInfo GetUpsertFieldInfo(SpanByte key, TValue value, ref TInput input)
             => throw new NotImplementedException("GetUpsertFieldInfo");
 
         /// <inheritdoc/>

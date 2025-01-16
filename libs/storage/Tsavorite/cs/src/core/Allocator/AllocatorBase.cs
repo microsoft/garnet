@@ -189,11 +189,12 @@ namespace Tsavorite.core
         #endregion
 
         #region Abstract and virtual methods
-        /// <summary>Serialize an in-memory log record to the <see cref="RecordScanIterator"/>'s record buffer.</summary>
+        /// <summary>Serialize an in-memory log record to the <see cref="RecordScanIterator{TValue, TStoreFunctions, TAllocator}"/>'s record buffer.</summary>
         internal abstract void SerializeRecordToIteratorBuffer(long logicalAddress, ref SectorAlignedMemory recordBuffer, out IHeapObject valueObject);
 
-        /// <summary>Deserialize the <see cref="IHeapObject"/> value from a disk log record read by the <see cref="RecordScanIterator"/>, if this is the <see cref="ObjectAllocator{TStoreFunctions}"/>.</summary>
-        internal abstract void DeserializeFromIteratorDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) byteStream);
+        /// <summary>Deserialize the <see cref="IHeapObject"/> value from a disk log record read by the <see cref="RecordScanIterator{TValue, TStoreFunctions, TAllocator}"/>,
+        /// if this is the <see cref="ObjectAllocator{TStoreFunctions}"/>.</summary>
+        internal abstract void DeserializeFromDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) byteStream);
 
         /// <summary>Initialize fully derived allocator</summary>
         public abstract void Initialize();
@@ -1814,14 +1815,13 @@ namespace Tsavorite.core
             {
                 var record = ctx.record.GetValidPointer();
                 var diskLogRecord = new DiskLogRecord((long)record);
-                int requiredBytes = diskLogRecord.SerializedRecordLength;
+                if ((int)diskLogRecord.SerializedRecordLength > int.MaxValue)
+                    throw new TsavoriteException("Records exceeding 2GB are not yet supported");      // TODO: Convert to support 'long' lengths
+                int requiredBytes = (int)diskLogRecord.SerializedRecordLength;
                 if (ctx.record.available_bytes >= requiredBytes)
                 {
                     Debug.Assert(!diskLogRecord.Info.Invalid, "Invalid records should not be in the hash chain for pending IO");
-
-                    // We have all the required bytes. If we don't have the complete record, RetrievedFullRecord calls AsyncGetFromDisk.
-                    if (!_wrapper.RetrievedFullRecord(ref diskLogRecord, ref ctx))  // TODO this must set the valueObject
-                        return;
+                    _wrapper.DeserializeValue(ref diskLogRecord, ref ctx);
 
                     // If request_key is null we're called from ReadAtAddress, so it is an implicit match.
                     if (ctx.request_key is not null && !_storeFunctions.KeysEqual(ctx.request_key.Get(), diskLogRecord.Key))

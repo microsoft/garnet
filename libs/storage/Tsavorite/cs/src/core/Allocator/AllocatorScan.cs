@@ -350,8 +350,8 @@ namespace Tsavorite.core
             public readonly RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input)
                 where TSourceLogRecord : ISourceLogRecord 
                 => default;
-            public readonly RecordFieldInfo GetRMWInitialFieldInfo(ref TInput input) => default;
-            public readonly RecordFieldInfo GetUpsertFieldInfo(TValue value, ref TInput input) => default;
+            public readonly RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TInput input) => default;
+            public readonly RecordFieldInfo GetUpsertFieldInfo(SpanByte key, TValue value, ref TInput input) => default;
 
             public readonly void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
         }

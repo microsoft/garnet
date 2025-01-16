@@ -96,7 +96,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<IHeapObject> ctx) => _this.RetrievedFullRecord(record, ref ctx);
+        public readonly unsafe void DeserializeValue(ref DiskLogRecord diskLogRecord, ref AsyncIOContext<IHeapObject> ctx) => _this.DeserializeValue(ref diskLogRecord, ref ctx);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -138,8 +138,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long[] GetSegmentOffsets() => _this.GetSegmentOffsets();
 
-        /// <inheritdoc/>
-        public readonly int OverflowPageCount => _this.OverflowPageCount;
+        /// <inheritdoc/>        public readonly int OverflowPageCount => _this.OverflowPageCount;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -35,7 +35,7 @@ namespace Tsavorite.core
         IHeapObject ValueObject { get; }
 
         /// <summary>Get a reference to the value; useful when the generic type is needed.</summary>
-        ref TValue GetValueRef<TValue>();
+        ref TValue GetReadOnlyValueRef<TValue>();
 
         /// <summary>The ETag of the record, if any (see <see cref="RecordInfo.HasETag"/>; 0 by default.</summary>
         long ETag { get; }

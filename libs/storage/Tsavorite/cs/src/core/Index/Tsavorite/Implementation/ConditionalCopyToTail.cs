@@ -139,7 +139,7 @@ namespace Tsavorite.core
                 Debug.Assert(pendingContext.input == default, "Input unexpectedly set");
                 pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
                 Debug.Assert(pendingContext.value == default, "Value unexpectedly set");
-                pendingContext.value = hlog.GetValueContainer(srcLogRecord.GetValueRef<TValue>());
+                pendingContext.value = hlog.GetValueContainer(srcLogRecord.GetReadOnlyValueRef<TValue>());
 
                 pendingContext.output = output;
                 sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);

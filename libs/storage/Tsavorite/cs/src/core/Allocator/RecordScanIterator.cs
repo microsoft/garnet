@@ -220,7 +220,7 @@ namespace Tsavorite.core
                 if (valueObject is not null)
                     diskLogRecord.valueObject = valueObject;
                 else 
-                    hlogBase.DeserializeFromIteratorDiskBuffer(ref diskLogRecord, frame.GetArrayAndUnalignedOffset(currentPage, offset));
+                    hlogBase.DeserializeFromDiskBuffer(ref diskLogRecord, frame.GetArrayAndUnalignedOffset(currentPage, offset));
 
                 // Success
                 epoch?.Suspend();
@@ -305,7 +305,7 @@ namespace Tsavorite.core
 
         // TV will be TValue, but we don't want LogRecord to require a TValue type parameter just for this one method
         /// <inheritdoc/>
-        public unsafe ref TV GetValueRef<TV>() => throw new TsavoriteException("Iterators must use ValueSpan or ValueObject");
+        public unsafe ref TV GetReadOnlyValueRef<TV>() => ref diskLogRecord.GetReadOnlyValueRef<TV>();
 
         /// <inheritdoc/>
         public long ETag => diskLogRecord.ETag;

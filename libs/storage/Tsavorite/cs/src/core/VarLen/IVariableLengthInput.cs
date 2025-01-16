@@ -13,9 +13,9 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>Initial expected length of value object when populated by RMW using given input</summary>
-        RecordFieldInfo GetRMWInitialFieldInfo(ref TInput input);
+        RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TInput input);
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
-        RecordFieldInfo GetUpsertFieldInfo(TValue value, ref TInput input);
+        RecordFieldInfo GetUpsertFieldInfo(SpanByte key, TValue value, ref TInput input);
     }
 }

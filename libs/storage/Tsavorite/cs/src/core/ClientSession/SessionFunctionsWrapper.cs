@@ -196,7 +196,7 @@ namespace Tsavorite.core
 
         #region Internal utilities
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public RecordFieldInfo GetRMWInitialFieldInfo(ref TInput input) => _clientSession.functions.GetRMWInitialFieldInfo(ref input);
+        public RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TInput input) => _clientSession.functions.GetRMWInitialFieldInfo(key, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input)
@@ -204,7 +204,7 @@ namespace Tsavorite.core
             => _clientSession.functions.GetRMWModifiedFieldInfo(ref srcLogRecord, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public RecordFieldInfo GetUpsertFieldInfo(TValue value, ref TInput input) => _clientSession.functions.GetUpsertFieldInfo(value, ref input);
+        public RecordFieldInfo GetUpsertFieldInfo(SpanByte key, TValue value, ref TInput input) => _clientSession.functions.GetUpsertFieldInfo(key, value, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public IHeapContainer<TInput> GetHeapContainer(ref TInput input)

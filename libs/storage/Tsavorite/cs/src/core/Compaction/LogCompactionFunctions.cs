@@ -58,8 +58,8 @@ namespace Tsavorite.core
         public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input)
             where TSourceLogRecord : ISourceLogRecord
             => default;
-        public RecordFieldInfo GetRMWInitialFieldInfo(ref TInput input) => default;
-        public RecordFieldInfo GetUpsertFieldInfo(TValue value, ref TInput input) => _functions.GetUpsertFieldInfo(value, ref input);
+        public RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TInput input) => default;
+        public RecordFieldInfo GetUpsertFieldInfo(SpanByte key, TValue value, ref TInput input) => _functions.GetUpsertFieldInfo(key, value, ref input);
 
         /// <summary>
         /// No reads during compaction

@@ -133,7 +133,7 @@ namespace Tsavorite.core
             where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
         {
             // Used by RMW to determine the length of initial destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
-            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetRMWInitialFieldInfo(ref input) };
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetRMWInitialFieldInfo(key, ref input) };
             PopulateRecordSizeInfo(ref sizeInfo);
             return sizeInfo;
         }
@@ -143,7 +143,7 @@ namespace Tsavorite.core
             where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
         {
             // Used by Upsert to determine the length of insert destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
-            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(value, ref input) };
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(key, value, ref input) };
             PopulateRecordSizeInfo(ref sizeInfo);
             return sizeInfo;
         }
@@ -234,7 +234,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override void DeserializeFromIteratorDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) byteStream)
+        internal override void DeserializeFromDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) byteStream)
         {
             // Do nothing; we don't create a HeapObject for SpanByteAllocator
         }
@@ -312,8 +312,6 @@ namespace Tsavorite.core
         {
             throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for SpanByteAllocator");
         }
-
-        internal static bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte> ctx) => true;
 
         internal IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => new SpanByteHeapContainer(ref key, bufferPool);
 

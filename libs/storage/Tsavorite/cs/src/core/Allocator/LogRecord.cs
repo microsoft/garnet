@@ -10,8 +10,9 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
-    /// <summary>The in-memory record on the log: header, key, value, and optional fields</summary>
-    ///     until some other things have been done that will allow clean separation.</summary>
+    /// <summary>The in-memory record on the log: header, key, value, and optional fields
+    ///     until some other things have been done that will allow clean separation.
+    /// </summary>
     /// <remarks>The space is laid out as:
     ///     <list>
     ///     <item>[RecordInfo][SpanByte key][Value Id or SpanByte][ETag?][Expiration?][FillerLen?]</item>
@@ -46,7 +47,7 @@ namespace Tsavorite.core
             this.objectIdMap = objectIdMap;
         }
 
-        #region IReadOnlyLogRecord
+        #region ISourceLogRecord
         /// <inheritdoc/>
         public readonly bool IsObjectRecord => objectIdMap is not null;
         /// <inheritdoc/>
@@ -78,7 +79,12 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly ref TValue GetValueRef<TValue>() => ref Unsafe.AsRef<TValue>((void*)ValueAddress);
+        public readonly ref TValue GetReadOnlyValueRef<TValue>()
+        {
+            if (IsObjectRecord)
+                return ref Unsafe.As<IHeapObject, TValue>(ref objectIdMap.GetRef(ValueObjectId));
+            return ref Unsafe.AsRef<TValue>((void*)ValueAddress);
+        }
 
         /// <inheritdoc/>
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : 0;
@@ -96,7 +102,7 @@ namespace Tsavorite.core
                 HasETag = Info.HasETag,
                 HasExpiration = Info.HasExpiration
             };
-        #endregion //IReadOnlyLogRecord
+        #endregion // ISourceLogRecord
 
         /// <summary>A ref to the record header</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -440,6 +446,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool HasEnoughSpace(int newValueLen, bool withETag, bool withExpiration)
         {
+            // TODO: Consider overflow in this
             var growth = newValueLen - InlineValueLength;
             if (Info.HasETag != withETag)
                 growth += withETag ? ETagSize : -ETagSize;
@@ -451,6 +458,39 @@ namespace Tsavorite.core
             var maxLen = recordLen + GetFillerLen(fillerLenAddress);
             var availableSpace = maxLen - recordLen;
             return availableSpace >= growth;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool TrySetValueSpan(SpanByte valueSpan, long? eTag, long? expiration)
+        {
+            if (!HasEnoughSpace(valueSpan.TotalSize, eTag.HasValue, expiration.HasValue))
+                return false;
+            _ = TrySetValueSpan(valueSpan);
+            return SetOptionals(eTag, expiration);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool TrySetValueObject(IHeapObject valueObject, long? eTag, long? expiration)
+        {
+            if (!HasEnoughSpace(ObjectIdMap.ObjectIdSize, eTag.HasValue, expiration.HasValue))
+                return false;
+            _ = TrySetValueObject(valueObject);
+            return SetOptionals(eTag, expiration);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private readonly bool SetOptionals(long? eTag, long? expiration)
+        {
+            if (eTag.HasValue)
+                _ = TrySetETag(eTag.Value);
+            else
+                RemoveETag();
+
+            if (expiration.HasValue)
+                _ = TrySetExpiration(expiration.Value);
+            else
+                RemoveExpiration();
+            return true;
         }
 
         public override readonly string ToString()

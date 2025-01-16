@@ -116,7 +116,7 @@ namespace Tsavorite.core
 
             // TV will be TValue, but we don't want LogRecord to require a TValue type parameter just for this one method
             /// <inheritdoc/>
-            public readonly unsafe ref TV GetValueRef<TV>() => ref Unsafe.As<TValue, TV>(ref value.Get());
+            public readonly unsafe ref TV GetReadOnlyValueRef<TV>() => ref Unsafe.As<TValue, TV>(ref value.Get());
 
             /// <inheritdoc/>
             public readonly long ETag => eTag;
