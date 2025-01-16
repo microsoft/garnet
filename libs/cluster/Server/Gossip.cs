@@ -134,7 +134,7 @@ namespace Garnet.cluster
         /// <param name="address"></param>
         /// <param name="port"></param>
         public void RunMeetTask(string address, int port)
-            => Task.Run(() => TryMeetAsync(address, port));
+            => Task.Run(async () => await TryMeetAsync(address, port));
 
         /// <summary>
         /// This task will immediately communicate with the new node and try to merge the retrieve configuration to its own.
@@ -168,7 +168,7 @@ namespace Garnet.cluster
                 await gsn.InitializeAsync();
 
                 // Send full config in Gossip
-                resp = await gsn.TryMeet(conf.ToByteArray());
+                resp = await gsn.TryMeetAsync(conf.ToByteArray());
                 if (resp.Length > 0)
                 {
                     var other = ClusterConfig.FromByteArray(resp.Span.ToArray());
