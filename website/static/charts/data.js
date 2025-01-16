@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737056017835,
+  "lastUpdate": 1737056043169,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -31439,6 +31439,210 @@ window.BENCHMARK_DATA = {
             "value": 26406.786891392298,
             "unit": "ns",
             "range": "± 37.236914704911676"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kmontrose@microsoft.com",
+            "name": "kevin-montrose",
+            "username": "kevin-montrose"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3f43df360de25a49d1ab3f229fd34101f015df9c",
+          "message": "Per Script Invocation Lua Memory Limits (#903)\n\n* Lua allocations go through .NET; really crummy allocator on the POH just to prove it's possible; squashing to clean up _a lot_ of experimentation commits\r\n\r\n* punch a LuaOptions into settings\r\n\r\n* wire up the Lua options\r\n\r\n* prep for other allocators\r\n\r\n* Implement more allocators and expand testing\r\n\r\n* Knock out a number of todos, consider allocator in benchmarks, additional validation\r\n\r\n* add a test for OOMs\r\n\r\n* formatting\r\n\r\n* convert ScriptOperations to explore different allocators\r\n\r\n* cleanup Lua error messgages; this revealed a bug in buffer management for LuaScripts, fixes that\r\n\r\n* Make managed allocator less naive, and benchmark on par.\r\nIt will probably be unusual to use this allocator, but it shouldn't be _bad_ either.\r\n\r\n* formatting\r\n\r\n* address nit\r\n\r\n* address feedback; only copy relevant bits, not whole buffer\r\n\r\n* set lua options in OperationsBase, fixing benchmarks\r\n\r\n* BDN Updates:\r\n1) Added a check for NA in results which is an indication that the BDN test failed at run time\r\n2) Added 'Lua.LuaScriptCacheOperations','Lua.LuaRunnerOperations' to BDN Github Action\r\n3) Updated Expected values for the new Lua BDN tests\r\n\r\n* Updated some of the LuaScriptCacheOperations expected values\r\n\r\n* [Compatibility] Added LCS command (#843)\r\n\r\n* Added LCS command\r\n\r\n* Format fix\r\n\r\n* Reverted CommandDocsUpdater.cs\r\n\r\n* Fix cluster test\r\n\r\n* Fixed wrong change\r\n\r\n* Moved to constant\r\n\r\n* Review command fixes\r\n\r\n* Fixed review comment\r\n\r\n* Fixed test issue\r\n\r\n---------\r\n\r\nCo-authored-by: Vasileios Zois <96085550+vazois@users.noreply.github.com>\r\nCo-authored-by: Tal Zaccai <talzacc@microsoft.com>\r\n\r\n* Configure min and max IO completion threads (#904)\r\n\r\n* Configure min and max IO completion threads separately from min and max threads (in the ThreadPool). This is needed as some scenarios may limit number of thread pool threads but require a larger number of IO completion threads.\r\n\r\n* nit\r\n\r\n* address nit\r\n\r\n* address feedback; only copy relevant bits, not whole buffer\r\n\r\n* set lua options in OperationsBase, fixing benchmarks\r\n\r\n* Yak shave a bunch of cleanup, looking to reduce amount of work done generally in Lua to get some perf back.\r\n\r\n* formatting\r\n\r\n* fix LuaRunnerOperations ; session wouldn't always be initialized before, which would cause SendAndReset() to fail thinking the message was too large\r\n\r\n* Updated Expected values for Allocated in the BDN perf tests to match current Lua changes.\r\n\r\n* Missed one expected value. Fixed that so should be ok.\r\n\r\n* Seen some instances where allocated bytes are 1024 on one run and then run it a second time and see 1312 without any code changes. Just a small variance between runs so decided to just make sure doesn't go above 1312 for any that were set to 1024.  The charts and other things will show the small nuances if needed.\r\n\r\n* Bumped expected values up a bit to handle variance\r\n\r\n---------\r\n\r\nCo-authored-by: darrenge <darrenge@microsoft.com>\r\nCo-authored-by: Vijay Nirmal <pon.vijaynirmal@outlook.com>\r\nCo-authored-by: Vasileios Zois <96085550+vazois@users.noreply.github.com>\r\nCo-authored-by: Tal Zaccai <talzacc@microsoft.com>\r\nCo-authored-by: Badrish Chandramouli <badrishc@microsoft.com>",
+          "timestamp": "2025-01-16T11:17:25-08:00",
+          "tree_id": "e2641fa2ba82521e5516bdf73a8682fd1a41a468",
+          "url": "https://github.com/microsoft/garnet/commit/3f43df360de25a49d1ab3f229fd34101f015df9c"
+        },
+        "date": 1737056028460,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Set(Params: ACL)",
+            "value": 14547.870401235727,
+            "unit": "ns",
+            "range": "± 12.88473999856953"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetEx(Params: ACL)",
+            "value": 19653.912760416668,
+            "unit": "ns",
+            "range": "± 32.59999245503536"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetNx(Params: ACL)",
+            "value": 21691.116986955916,
+            "unit": "ns",
+            "range": "± 52.55103280925468"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetXx(Params: ACL)",
+            "value": 21618.587669959434,
+            "unit": "ns",
+            "range": "± 33.07063330093574"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.GetFound(Params: ACL)",
+            "value": 15592.911353478064,
+            "unit": "ns",
+            "range": "± 29.92368645805505"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.GetNotFound(Params: ACL)",
+            "value": 10956.971028645834,
+            "unit": "ns",
+            "range": "± 15.672144938098434"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Increment(Params: ACL)",
+            "value": 21945.604378836495,
+            "unit": "ns",
+            "range": "± 25.931150877955055"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Decrement(Params: ACL)",
+            "value": 22687.0947265625,
+            "unit": "ns",
+            "range": "± 43.59481047855663"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.IncrementBy(Params: ACL)",
+            "value": 26502.90243966239,
+            "unit": "ns",
+            "range": "± 45.0762450481704"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.DecrementBy(Params: ACL)",
+            "value": 26617.858232770646,
+            "unit": "ns",
+            "range": "± 23.06705597266297"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Set(Params: AOF)",
+            "value": 21868.463033040363,
+            "unit": "ns",
+            "range": "± 316.30236692029376"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetEx(Params: AOF)",
+            "value": 25541.56056722005,
+            "unit": "ns",
+            "range": "± 43.87859360680609"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetNx(Params: AOF)",
+            "value": 26283.885599772137,
+            "unit": "ns",
+            "range": "± 43.59291518495762"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetXx(Params: AOF)",
+            "value": 28348.78169468471,
+            "unit": "ns",
+            "range": "± 53.23020677477906"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.GetFound(Params: AOF)",
+            "value": 15546.45254952567,
+            "unit": "ns",
+            "range": "± 21.61082278422252"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.GetNotFound(Params: AOF)",
+            "value": 10799.903869628906,
+            "unit": "ns",
+            "range": "± 12.458260792347545"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Increment(Params: AOF)",
+            "value": 26001.685878208704,
+            "unit": "ns",
+            "range": "± 21.270950310203055"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Decrement(Params: AOF)",
+            "value": 28708.873494466145,
+            "unit": "ns",
+            "range": "± 87.83349365195141"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.IncrementBy(Params: AOF)",
+            "value": 31847.944742838543,
+            "unit": "ns",
+            "range": "± 92.71119232282624"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.DecrementBy(Params: AOF)",
+            "value": 32995.533970424105,
+            "unit": "ns",
+            "range": "± 76.09460301549157"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Set(Params: None)",
+            "value": 13884.290255033053,
+            "unit": "ns",
+            "range": "± 12.417833687743261"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetEx(Params: None)",
+            "value": 21065.817260742188,
+            "unit": "ns",
+            "range": "± 46.94033713781336"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetNx(Params: None)",
+            "value": 20619.462367466516,
+            "unit": "ns",
+            "range": "± 58.51496506474728"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetXx(Params: None)",
+            "value": 22315.932523287258,
+            "unit": "ns",
+            "range": "± 36.38619429602833"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.GetFound(Params: None)",
+            "value": 15431.676940917969,
+            "unit": "ns",
+            "range": "± 31.344258761355267"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.GetNotFound(Params: None)",
+            "value": 11021.512058803013,
+            "unit": "ns",
+            "range": "± 25.04521571119741"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Increment(Params: None)",
+            "value": 22076.34989420573,
+            "unit": "ns",
+            "range": "± 24.111099380764514"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Decrement(Params: None)",
+            "value": 22322.865498860676,
+            "unit": "ns",
+            "range": "± 20.532610570903092"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.IncrementBy(Params: None)",
+            "value": 26811.665998186385,
+            "unit": "ns",
+            "range": "± 31.36070999002987"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.DecrementBy(Params: None)",
+            "value": 27392.171369280135,
+            "unit": "ns",
+            "range": "± 31.80053186347611"
           }
         ]
       }
