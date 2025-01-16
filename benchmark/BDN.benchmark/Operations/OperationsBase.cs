@@ -55,6 +55,7 @@ namespace BDN.benchmark.Operations
                 QuietMode = true,
                 EnableLua = true,
                 DisablePubSub = true,
+                LuaOptions = new(LuaMemoryManagementMode.Native, ""),
             };
             if (Params.useAof)
             {
