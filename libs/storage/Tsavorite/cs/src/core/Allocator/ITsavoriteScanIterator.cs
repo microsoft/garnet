@@ -46,7 +46,7 @@ namespace Tsavorite.core
     /// Scan iterator interface for Tsavorite log
     /// </summary>
     /// <typeparam name="TValue"></typeparam>
-    public interface ITsavoriteScanIterator<TValue> : ISourceLogRecord, IDisposable
+    public interface ITsavoriteScanIterator<TValue> : ISourceLogRecord<TValue>, IDisposable
     {
         /// <summary>
         /// Get next record

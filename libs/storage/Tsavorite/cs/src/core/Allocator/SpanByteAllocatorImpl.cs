@@ -96,16 +96,16 @@ namespace Tsavorite.core
         int GetPageIndex(long logicalAddress) => (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord CreateLogRecord(long logicalAddress) => new LogRecord(GetPhysicalAddress(logicalAddress));
+        internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress) => new LogRecord<SpanByte>(GetPhysicalAddress(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord(physicalAddress);
+        internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord<SpanByte>(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal override OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)];
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize);
+        internal void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<SpanByte> logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize);
 
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
@@ -113,13 +113,13 @@ namespace Tsavorite.core
         public void InitializeValue(long physicalAddress, long endAddress)
         {
             // Initialize the SpanByte to the length of the entire value space, less the length of the int size prefix.
-            var src = (byte*)LogRecord.GetValueAddress(physicalAddress);
+            var src = (byte*)LogRecord<SpanByte>.GetValueAddress(physicalAddress);
             *(int*)src = (int)((byte*)endAddress - src) - sizeof(int);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-            where TSourceLogRecord : ISourceLogRecord
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
             where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
         {
             // Used by RMW to determine the length of copy destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
@@ -193,9 +193,9 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override void SerializeRecordToIteratorBuffer(long logicalAddress, ref SectorAlignedMemory recordBuffer, out IHeapObject valueObject)
+        internal override void SerializeRecordToIteratorBuffer(long logicalAddress, ref SectorAlignedMemory recordBuffer, out SpanByte valueObject)
         {
-            var logRecord = new LogRecord(GetPhysicalAddress(logicalAddress));
+            var logRecord = new LogRecord<SpanByte>(GetPhysicalAddress(logicalAddress));
             long recordSize = RecordInfo.GetLength() + logRecord.Key.TotalSize + logRecord.ValueSpan.TotalSize
                 + (logRecord.Info.HasETag ? LogRecord.ETagSize : 0)
                 + (logRecord.Info.HasExpiration ? LogRecord.ExpirationSize : 0);
@@ -230,11 +230,11 @@ namespace Tsavorite.core
                 ptr += sizeof(long);
             }
 
-            valueObject = null;
+            valueObject = default;
         }
 
         /// <inheritdoc/>
-        internal override void DeserializeFromDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) byteStream)
+        internal override void DeserializeFromDiskBuffer(ref DiskLogRecord<SpanByte> diskLogRecord, (byte[] array, long offset) byteStream)
         {
             // Do nothing; we don't create a HeapObject for SpanByteAllocator
         }

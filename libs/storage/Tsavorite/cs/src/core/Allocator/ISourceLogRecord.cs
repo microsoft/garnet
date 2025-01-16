@@ -4,7 +4,7 @@
 namespace Tsavorite.core
 {
     /// <summary>An interface to cover either an in-memory or on-disk log record for RCU</summary>
-    public interface ISourceLogRecord
+    public interface ISourceLogRecord<TValue>
     {
         /// <summary>Whether this is a record for an object or a SpanByte value</summary>
         bool IsObjectRecord { get; }
@@ -32,10 +32,10 @@ namespace Tsavorite.core
         SpanByte ValueSpan { get; }
 
         /// <summary>The value object, if this is an Object LogRecord; an exception is thrown if it is a String LogRecord.</summary>
-        IHeapObject ValueObject { get; }
+        TValue ValueObject { get; }
 
         /// <summary>Get a reference to the value; useful when the generic type is needed.</summary>
-        ref TValue GetReadOnlyValueRef<TValue>();
+        ref TValue GetReadOnlyValueRef();
 
         /// <summary>The ETag of the record, if any (see <see cref="RecordInfo.HasETag"/>; 0 by default.</summary>
         long ETag { get; }
@@ -43,9 +43,9 @@ namespace Tsavorite.core
         /// <summary>The Expiration of the record, if any (see <see cref="RecordInfo.HasExpiration"/>; 0 by default.</summary>
         long Expiration { get; }
 
-        /// <summary>A shim to "convert" a TSourceLogRecord generic type that is a <see cref="LogRecord"/> to a <see cref="LogRecord"/> type.
-        /// Should throw if the TSourceLogRecord is not a <see cref="LogRecord"/>.</summary>
-        LogRecord AsLogRecord();
+        /// <summary>A shim to "convert" a TSourceLogRecord generic type that is a <see cref="LogRecord{TValue}"/> to a <see cref="LogRecord{TValue}"/> type.
+        /// Should throw if the TSourceLogRecord is not a <see cref="LogRecord{TValue}"/>.</summary>
+        LogRecord<TValue> AsLogRecord();
 
         /// <summary>Get the record's field info, for use in calculating required record size</summary>
         RecordFieldInfo GetRecordFieldInfo();

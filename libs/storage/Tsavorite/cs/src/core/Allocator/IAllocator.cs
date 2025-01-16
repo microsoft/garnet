@@ -19,7 +19,7 @@ namespace Tsavorite.core
 
         /// <summary>Get copy destination size for RMW, taking Input into account</summary>
         RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-            where TSourceLogRecord : ISourceLogRecord
+            where TSourceLogRecord : ISourceLogRecord<TValue>
             where TVariableLengthInput : IVariableLengthInput<TValue, TInput>;
 
         /// <summary>Get initial record size for RMW, given the <paramref name="key"/> and <paramref name="input"/></summary>
@@ -47,13 +47,13 @@ namespace Tsavorite.core
         long[] GetSegmentOffsets(); // TODO remove
 
         /// <summary>Serialize key to log</summary>
-        void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord logRecord);
+        void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<TValue> logRecord);
 
         /// <summary>Return the <see cref="LogRecord"/> for the allocator page at <paramref name="logicalAddress"/></summary>
-        LogRecord CreateLogRecord(long logicalAddress);
+        LogRecord<TValue> CreateLogRecord(long logicalAddress);
 
         /// <summary>Return the <see cref="LogRecord"/> for the allocator page at <paramref name="physicalAddress"/></summary>
-        LogRecord CreateLogRecord(long logicalAddress, long physicalAddress);
+        LogRecord<TValue> CreateLogRecord(long logicalAddress, long physicalAddress);
 
         /// <summary>Return the <see cref="OverflowAllocator"/> for the in-memory page containing <paramref name="logicalAddress"/></summary>
         OverflowAllocator GetOverflowAllocator(long logicalAddress);

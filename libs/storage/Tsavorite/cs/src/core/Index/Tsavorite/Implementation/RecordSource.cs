@@ -142,7 +142,7 @@ namespace Tsavorite.core
         internal readonly ref RecordInfo GetInfoRef() => ref Allocator.GetInfoRef(PhysicalAddress);
         internal readonly RecordInfo GetInfo() => Allocator.GetInfoRef(PhysicalAddress);
 
-        internal readonly LogRecord CreateLogRecord()
+        internal readonly LogRecord<TValue> CreateLogRecord()
         {
             Debug.Assert(PhysicalAddress != 0, "Cannot CreateLogRecord until PhysicalAddress is set");
             Debug.Assert(HasInMemorySrc, "Can only create a LogRecord for a record in main log memory");

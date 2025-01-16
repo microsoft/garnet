@@ -29,7 +29,7 @@ namespace Tsavorite.core
                                     ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx,
                                     ref RecordInfo srcRecordInfo, TSessionFunctionsWrapper sessionFunctions, WriteReason reason)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TSourceLogRecord : ISourceLogRecord
+            where TSourceLogRecord : ISourceLogRecord<TValue>
         {
             var sizeInfo = new RecordSizeInfo() { FieldInfo = srcLogRecord.GetRecordFieldInfo() };
             hlog.PopulateRecordSizeInfo(ref sizeInfo);
@@ -68,7 +68,7 @@ namespace Tsavorite.core
                 PostCopyToTail(ref srcLogRecord, ref stackCtx, pendingContext.InitialEntryAddress);
 
                 pendingContext.logicalAddress = upsertInfo.Address;
-                sessionFunctions.PostSingleWriter(ref newLogRecord, ref input, srcLogRecord.GetReadOnlyValueRef<TValue>(), ref output, ref upsertInfo, reason);
+                sessionFunctions.PostSingleWriter(ref newLogRecord, ref input, srcLogRecord.GetReadOnlyValueRef(), ref output, ref upsertInfo, reason);
                 stackCtx.ClearNewRecord();
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.CopiedRecord);
             }

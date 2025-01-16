@@ -19,9 +19,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static LogRecord WriteNewRecordInfo(SpanByte key, AllocatorBase<TValue, TStoreFunctions, TAllocator> log, long logicalAddress, long physicalAddress, bool inNewVersion, long previousAddress)
+        static LogRecord<TValue> WriteNewRecordInfo(SpanByte key, AllocatorBase<TValue, TStoreFunctions, TAllocator> log, long logicalAddress, long physicalAddress, bool inNewVersion, long previousAddress)
         {
-            ref RecordInfo recordInfo = ref LogRecord.GetInfoRef(physicalAddress);
+            ref var recordInfo = ref LogRecord<TValue>.GetInfoRef(physicalAddress);
             recordInfo.WriteInfo(inNewVersion, previousAddress);
             var logRecord = log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
             log._wrapper.SerializeKey(key, logicalAddress, ref logRecord);
@@ -29,7 +29,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason)
+        void DisposeRecord(ref LogRecord<TValue> logRecord, DisposeReason disposeReason)
         {
             if (logRecord.ValueObjectId != ObjectIdMap.InvalidObjectId)
             {
@@ -44,7 +44,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason)
+        internal void DisposeRecord(ref DiskLogRecord<TValue> logRecord, DisposeReason disposeReason)
         {
             // Clear the IHeapObject if we deserialized it
             if (logRecord.ValueObject is not null)
@@ -94,7 +94,7 @@ namespace Tsavorite.core
             // If the record is in memory, check if it has the new version bit set
             if (entry.Address < hlogBase.HeadAddress)
                 return false;
-            return LogRecord.GetInfo(hlog.GetPhysicalAddress(entry.Address)).IsInNewVersion;
+            return LogRecord<TValue>.GetInfo(hlog.GetPhysicalAddress(entry.Address)).IsInNewVersion;
         }
 
         // Can only elide the record if it is the tail of the tag chain (i.e. is the record in the hash bucket entry) and its
@@ -125,7 +125,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private (bool elided, bool added) TryElideAndTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)
+                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref LogRecord<TValue> logRecord)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Try to CAS out of the hashtable and if successful, add it to the free list.
@@ -139,7 +139,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)
+                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref LogRecord<TValue> logRecord)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // The record has been CAS'd out of the hashtable or elided from the chain, so add it to the free list.
@@ -166,11 +166,11 @@ namespace Tsavorite.core
         {
             // This is called on exception recovery for a newly-inserted record.
             var localLog = IsReadCache(logicalAddress) ? readcache : hlog;
-            LogRecord.GetInfoRef(localLog.GetPhysicalAddress(AbsoluteAddress(logicalAddress))).SetInvalid();
+            LogRecord<TValue>.GetInfoRef(localLog.GetPhysicalAddress(AbsoluteAddress(logicalAddress))).SetInvalid();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CASRecordIntoChain(long newLogicalAddress, ref LogRecord newLogRecord, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
+        private bool CASRecordIntoChain(long newLogicalAddress, ref LogRecord<TValue> newLogRecord, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             var result = stackCtx.recSrc.LowestReadCachePhysicalAddress == Constants.kInvalidAddress
                 ? stackCtx.hei.TryCAS(newLogicalAddress)
@@ -182,12 +182,12 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PostCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
-            where TSourceLogRecord : ISourceLogRecord
+            where TSourceLogRecord : ISourceLogRecord<TValue>
             => PostCopyToTail(ref srcLogRecord, ref stackCtx, stackCtx.hei.Address);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PostCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long highestReadCacheAddressChecked)
-            where TSourceLogRecord : ISourceLogRecord
+            where TSourceLogRecord : ISourceLogRecord<TValue>
         {
             // Nothing required here if not using ReadCache
             if (!UseReadCache)

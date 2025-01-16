@@ -62,7 +62,7 @@ namespace Tsavorite.core
             if (!FindOrCreateTagAndTryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out var status))
                 return status;
 
-            LogRecord srcLogRecord = default;
+            LogRecord<TValue> srcLogRecord = default;
 
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
@@ -230,7 +230,7 @@ namespace Tsavorite.core
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 
-        private bool TryRevivifyInChain<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord srcLogRecord, ref TInput input, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+        private bool TryRevivifyInChain<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord<TValue> srcLogRecord, ref TInput input, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
                         TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref RMWInfo rmwInfo, out OperationStatus status)
                     where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -338,7 +338,7 @@ namespace Tsavorite.core
                                                                                           ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
                                                                                           ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, bool doingCU)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TSourceLogRecord : ISourceLogRecord
+            where TSourceLogRecord : ISourceLogRecord<TValue>
         {
             var forExpiration = false;
 
@@ -525,7 +525,7 @@ namespace Tsavorite.core
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
         }
 
-        internal bool ReinitializeExpiredRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo,
+        internal bool ReinitializeExpiredRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo,
                                                                                        long logicalAddress, TSessionFunctionsWrapper sessionFunctions, bool isIpu, out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {

@@ -7,24 +7,28 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe class ObjectIdMap
+    internal struct ObjectIdMap
     {
-        internal IHeapObject[] objectVector;
+        /// <summary>We will never return a negative index from Allocate</summary>
+        internal const int InvalidObjectId = -1;
+
+        /// <summary>Size of the object Id</summary>
+        internal const int ObjectIdSize = sizeof(int);
+    }
+
+    public unsafe class ObjectIdMap<TValue>
+    {
+        internal TValue[] objectVector;
         int tail = 0;
 
         internal ObjectIdMap(int recordsPerPage)
         {
             // entriesPerPage comes from ObjectAllocator's minimum pagesize / expected record size so is the maximum possible number of records.
             // Records may be larger due to key size but we have limits on that so it is unlikely we will waste very much of this allocation.
-            objectVector = new IHeapObject[recordsPerPage];
+            objectVector = new TValue[recordsPerPage];
         }
 
-        // We will never return a negative index from Allocate
-        public const int InvalidObjectId = -1;
-
-        public const int ObjectIdSize = sizeof(int);
-
-        // Reserve a slot and return its ID.
+        /// <summary>Reserve a slot and return its ID.</summary>
         public bool Allocate(out int objectId)
         {
             if (tail >= objectVector.Length)
@@ -38,7 +42,7 @@ namespace Tsavorite.core
         }
 
         // Returns a reference to the slot's object.
-        internal ref IHeapObject GetRef(int objectId)
+        internal ref TValue GetRef(int objectId)
         {
             Debug.Assert(objectId > 0 && objectId < tail, "Invalid objectId");
             return ref objectVector[objectId];

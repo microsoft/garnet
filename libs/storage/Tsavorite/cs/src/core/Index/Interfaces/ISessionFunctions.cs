@@ -18,7 +18,7 @@ namespace Tsavorite.core
         /// <param name="readInfo">Information about this read operation and its context</param>
         /// <returns>True if the value was available, else false (e.g. the value was expired)</returns>
         bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo)
-            where TSourceLogRecord : ISourceLogRecord;
+            where TSourceLogRecord : ISourceLogRecord<TValue>;
 
         /// <summary>
         /// Concurrent reader
@@ -28,7 +28,7 @@ namespace Tsavorite.core
         /// <param name="output">Receives the output of the operation, if any</param>
         /// <param name="readInfo">Information about this read operation and its context</param>
         /// <returns>True if the value was available, else false (e.g. the value was expired)</returns>
-        bool ConcurrentReader(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo);
+        bool ConcurrentReader(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo);
 
         /// <summary>
         /// Read completion
@@ -39,7 +39,7 @@ namespace Tsavorite.core
         /// <param name="ctx">The application context passed through the pending operation</param>
         /// <param name="status">The result of the pending operation</param>
         /// <param name="recordMetadata">Metadata for the record</param>
-        void ReadCompletionCallback(ref LogRecord logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
+        void ReadCompletionCallback(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
         #endregion reads
 
         #region Upserts
@@ -53,7 +53,7 @@ namespace Tsavorite.core
         /// <param name="upsertInfo">Information about this update operation and its context</param>
         /// <param name="reason">The operation for which this write is being done</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool SingleWriter(ref LogRecord dstLogRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
+        bool SingleWriter(ref LogRecord<TValue> dstLogRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
 
         /// <summary>Non-concurrent writer; called when copying a record to tail or readcache. The caller should be aware of ETag and Expiration in the source record</summary>
         /// <param name="srcLogRecord">The log record being copied from</param>
@@ -61,8 +61,8 @@ namespace Tsavorite.core
         /// <param name="upsertInfo">Information about this update operation and its context</param>
         /// <param name="reason">The operation for which this write is being done</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref UpsertInfo upsertInfo, WriteReason reason)
-            where TSourceLogRecord : ISourceLogRecord;
+        bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref UpsertInfo upsertInfo, WriteReason reason)
+            where TSourceLogRecord : ISourceLogRecord<TValue>;
 
         /// <summary>
         /// Called after SingleWriter when a record containing an upsert of a new key has been successfully inserted at the tail of the log.
@@ -73,7 +73,7 @@ namespace Tsavorite.core
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
         /// <param name="reason">The operation for which this write is being done</param>
-        void PostSingleWriter(ref LogRecord dstLogRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
+        void PostSingleWriter(ref LogRecord<TValue> dstLogRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
 
         /// <summary>
         /// Concurrent writer; called on an Upsert that is in-place updating a record in the mutable range.
@@ -85,7 +85,7 @@ namespace Tsavorite.core
         /// <param name="upsertInfo">Information about this update operation and its context</param>
         /// <returns>True if the value was written, else false</returns>
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
-        bool ConcurrentWriter(ref LogRecord dstLogRecord, ref TInput input, TValue newValue, ref TOutput output, ref UpsertInfo upsertInfo);
+        bool ConcurrentWriter(ref LogRecord<TValue> dstLogRecord, ref TInput input, TValue newValue, ref TOutput output, ref UpsertInfo upsertInfo);
         #endregion Upserts
 
         #region RMWs
@@ -107,7 +107,7 @@ namespace Tsavorite.core
         /// <param name="output">The location where the output of the operation, if any, is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool InitialUpdater(ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
+        bool InitialUpdater(ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
 
         /// <summary>
         /// Called after a record containing an initial update for RMW has been successfully inserted at the tail of the log.
@@ -116,7 +116,7 @@ namespace Tsavorite.core
         /// <param name="input">The user input to be used to create the destination record's value</param>
         /// <param name="output">The location where the output of the operation, if any, is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        void PostInitialUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
+        void PostInitialUpdater(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
         #endregion InitialUpdater
 
         #region CopyUpdater
@@ -128,7 +128,7 @@ namespace Tsavorite.core
         /// <param name="output">The location where the output of the operation, if any, is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
         bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : ISourceLogRecord;
+            where TSourceLogRecord : ISourceLogRecord<TValue>;
 
         /// <summary>
         /// Copy-update for RMW (RCU (Read-Copy-Update) to the tail of the log)
@@ -139,8 +139,8 @@ namespace Tsavorite.core
         /// <param name="output">The location where the output of the operation, if any, is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : ISourceLogRecord;
+        bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord<TValue>;
 
         /// <summary>
         /// Called after a record containing an RCU (Read-Copy-Update) for RMW has been successfully inserted at the tail of the log.
@@ -153,8 +153,8 @@ namespace Tsavorite.core
         /// <returns>This is the only Post* method that returns non-void. The bool functions the same as CopyUpdater; this is because we do not want to modify
         /// objects in-memory until we know the "insert at tail" is successful. Therefore, we allow a false return as a signal to inspect <paramref name="rmwInfo.Action"/>
         /// and handle <see cref="RMWAction.ExpireAndStop"/>.</returns>
-        bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : ISourceLogRecord;
+        bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord<TValue>;
         #endregion CopyUpdater
 
         #region InPlaceUpdater
@@ -167,7 +167,7 @@ namespace Tsavorite.core
         /// <param name="rmwInfo">Information about this update operation and its context</param>
         /// <returns>True if the value was successfully updated, else false (e.g. the value was expired)</returns>
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
-        bool InPlaceUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
+        bool InPlaceUpdater(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
         #endregion InPlaceUpdater
 
         /// <summary>
@@ -179,7 +179,7 @@ namespace Tsavorite.core
         /// <param name="ctx">The application context passed through the pending operation</param>
         /// <param name="status">The result of the pending operation</param>
         /// <param name="recordMetadata">The metadata of the modified or inserted record</param>
-        void RMWCompletionCallback(ref LogRecord logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
+        void RMWCompletionCallback(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
         #endregion RMWs
 
         #region Deletes
@@ -190,7 +190,7 @@ namespace Tsavorite.core
         /// <param name="deleteInfo">Information about this update operation and its context</param>
         /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
         /// <returns>True if the deleted record should be added, else false (e.g. cancellation)</returns>
-        bool SingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo);
+        bool SingleDeleter(ref LogRecord<TValue> logRecord, ref DeleteInfo deleteInfo);
 
         /// <summary>
         /// Called after a record marking a Delete (with Tombstone set) has been successfully inserted at the tail of the log.
@@ -199,7 +199,7 @@ namespace Tsavorite.core
         /// <param name="deleteInfo">Information about this update operation and its context</param>
         /// <remarks>This does not have the address of the record that contains the value at 'key'; Delete does not retrieve records below HeadAddress, so
         ///     the last record we have in the 'key' chain may belong to 'key' or may be a collision.</remarks>
-        void PostSingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo);
+        void PostSingleDeleter(ref LogRecord<TValue> logRecord, ref DeleteInfo deleteInfo);
 
         /// <summary>
         /// Concurrent deleter; called on a Delete that finds the record in the mutable range.
@@ -208,7 +208,7 @@ namespace Tsavorite.core
         /// <param name="deleteInfo">Information about this update operation and its context</param>
         /// <remarks>For Object Value types, Dispose() can be called here. If logRecord.Info.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
         /// <returns>True if the value was successfully deleted, else false (e.g. the record was sealed)</returns>
-        bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo);
+        bool ConcurrentDeleter(ref LogRecord<TValue> logRecord, ref DeleteInfo deleteInfo);
         #endregion Deletes
 
         #region Utilities

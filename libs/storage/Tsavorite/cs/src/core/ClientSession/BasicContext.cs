@@ -383,7 +383,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status CompactionCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, long currentAddress, long untilAddress)
-            where TSourceLogRecord : ISourceLogRecord
+            where TSourceLogRecord : ISourceLogRecord<TValue>
         {
             UnsafeResumeThread();
             try
@@ -407,7 +407,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ConditionalScanPush<TSourceLogRecord>(ScanCursorState<TValue> scanCursorState, ref TSourceLogRecord srcLogRecord, long currentAddress, long untilAddress)
-            where TSourceLogRecord : ISourceLogRecord
+            where TSourceLogRecord : ISourceLogRecord<TValue>
         {
             UnsafeResumeThread();
             try

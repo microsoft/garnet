@@ -308,8 +308,7 @@ namespace Garnet
                         removeOutdated: true);
 
                 objectStore = new(objKvSettings
-                    , StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(),
-                        () => new ByteArrayBinaryObjectSerializer(),
+                    , StoreFunctions<byte[], IGarnetObject>.Create(new SpanByteComparer(),
                         () => new GarnetObjectSerializer(customCommandManager))
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 

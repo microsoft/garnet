@@ -46,7 +46,7 @@ namespace Tsavorite.core
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>
         bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-            where TSourceLogRecord : ISourceLogRecord;
+            where TSourceLogRecord : ISourceLogRecord<TValue>;
 
         /// <summary>Next record in iteration for a record in mutable log memory.</summary>
         /// <param name="logRecord">Reference to the current log record's info</param>
@@ -56,7 +56,7 @@ namespace Tsavorite.core
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>
         bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-            where TSourceLogRecord : ISourceLogRecord;
+            where TSourceLogRecord : ISourceLogRecord<TValue>;
 
         /// <summary>Iteration is complete.</summary>
         /// <param name="completed">If true, the iteration completed; else scanFunctions.*Reader() returned false to stop the iteration.</param>
@@ -69,9 +69,9 @@ namespace Tsavorite.core
         void OnException(Exception exception, long numberOfRecords);
     }
 
-    internal interface IPushScanIterator
+    internal interface IPushScanIterator<TValue>
     {
-        bool BeginGetPrevInMemory(SpanByte key, out LogRecord logRecord, out bool continueOnDisk);
+        bool BeginGetPrevInMemory(SpanByte key, out LogRecord<TValue> logRecord, out bool continueOnDisk);
         void EndGetPrevInMemory();
 
         /// <summary>

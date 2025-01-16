@@ -49,7 +49,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref RecordInfo GetInfoRef(long physicalAddress) => ref LogRecord.GetInfoRef(physicalAddress);
+        public readonly ref RecordInfo GetInfoRef(long physicalAddress) => ref LogRecord<SpanByte>.GetInfoRef(physicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -65,12 +65,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize) GetFullRecordSizes(long physicalAddress) => new LogRecord(physicalAddress).GetFullRecordSizes();
+        public readonly (int actualSize, int allocatedSize) GetFullRecordSizes(long physicalAddress) => new LogRecord<SpanByte>(physicalAddress).GetFullRecordSizes();
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-            where TSourceLogRecord : ISourceLogRecord
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
             where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
              => _this.GetRMWCopyRecordSize(ref srcLogRecord, ref input, varlenInput);
 
@@ -94,7 +94,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe void DeserializeValue(ref DiskLogRecord diskLogRecord, ref AsyncIOContext<SpanByte> ctx) { }
+        public readonly unsafe void DeserializeValue(ref DiskLogRecord<SpanByte> diskLogRecord, ref AsyncIOContext<SpanByte> ctx) { }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -142,15 +142,15 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord logRecord) => _this.SerializeKey(key, logicalAddress, ref logRecord);
+        public readonly void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<SpanByte> logRecord) => _this.SerializeKey(key, logicalAddress, ref logRecord);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly LogRecord CreateLogRecord(long logicalAddress) => _this.CreateLogRecord(logicalAddress);
+        public readonly LogRecord<SpanByte> CreateLogRecord(long logicalAddress) => _this.CreateLogRecord(logicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => _this.CreateLogRecord(logicalAddress, physicalAddress);
+        public readonly LogRecord<SpanByte> CreateLogRecord(long logicalAddress, long physicalAddress) => _this.CreateLogRecord(logicalAddress, physicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

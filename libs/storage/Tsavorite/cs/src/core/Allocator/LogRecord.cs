@@ -10,6 +10,16 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    internal struct LogRecord
+    {
+        /// <summary>Number of bytes required to store an ETag</summary>
+        public const int ETagSize = sizeof(long);
+        /// <summary>Number of bytes required to store an Expiration</summary>
+        public const int ExpirationSize = sizeof(long);
+        /// <summary>Number of bytes required to store the FillerLen</summary>
+        internal const int FillerLenSize = sizeof(int);
+    }
+
     /// <summary>The in-memory record on the log: header, key, value, and optional fields
     ///     until some other things have been done that will allow clean separation.
     /// </summary>
@@ -20,20 +30,13 @@ namespace Tsavorite.core
     /// This lets us get to the key without intermediate computations to account for the optional fields.
     /// Some methods have both member and static versions for ease of access and possibly performance gains.
     /// </remarks>
-    public unsafe struct LogRecord : ISourceLogRecord
+    public unsafe struct LogRecord<TValue> : ISourceLogRecord<TValue>
     {
-        /// <summary>Number of bytes required to store an ETag</summary>
-        public const int ETagSize = sizeof(long);
-        /// <summary>Number of bytes required to store an Expiration</summary>
-        public const int ExpirationSize = sizeof(long);
-        /// <summary>Number of bytes required to store the FillerLen</summary>
-        internal const int FillerLenSize = sizeof(int);
-
         /// <summary>The physicalAddress in the log.</summary>
         internal readonly long physicalAddress;
 
         /// <summary>The ObjectIdMap if this is a record in the object log.</summary>
-        readonly ObjectIdMap objectIdMap;
+        readonly ObjectIdMap<TValue> objectIdMap;
 
         /// <summary>Address-only ctor, usually used for simple record parsing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -41,7 +44,7 @@ namespace Tsavorite.core
 
         /// <summary>This ctor is primarily used for internal record-creation operations and is passed to IObjectSessionFunctions callbacks.</summary> 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord(long physicalAddress, ObjectIdMap objectIdMap)
+        internal LogRecord(long physicalAddress, ObjectIdMap<TValue> objectIdMap)
             : this(physicalAddress)
         {
             this.objectIdMap = objectIdMap;
@@ -69,20 +72,20 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly IHeapObject ValueObject
+        public readonly TValue ValueObject
         {
             get
             {
                 Debug.Assert(IsObjectRecord, "ValueObject is not valid for String log records");
-                return (*ValueObjectIdAddress == ObjectIdMap.InvalidObjectId) ? null : objectIdMap.GetRef(ValueObjectId);
+                return (*ValueObjectIdAddress == ObjectIdMap.InvalidObjectId) ? default : objectIdMap.GetRef(ValueObjectId);
             }
         }
 
         /// <inheritdoc/>
-        public readonly ref TValue GetReadOnlyValueRef<TValue>()
+        public readonly ref TValue GetReadOnlyValueRef()
         {
             if (IsObjectRecord)
-                return ref Unsafe.As<IHeapObject, TValue>(ref objectIdMap.GetRef(ValueObjectId));
+                return ref objectIdMap.GetRef(ValueObjectId);
             return ref Unsafe.AsRef<TValue>((void*)ValueAddress);
         }
 
@@ -90,9 +93,11 @@ namespace Tsavorite.core
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : 0;
         /// <inheritdoc/>
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
+
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly LogRecord AsLogRecord() => this;
+        public readonly LogRecord<TValue> AsLogRecord() => this;
+
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordFieldInfo GetRecordFieldInfo() => new()
@@ -152,7 +157,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal readonly ref IHeapObject ObjectRef => ref objectIdMap.GetRef(ValueObjectId);
+        internal readonly ref TValue ObjectRef => ref objectIdMap.GetRef(ValueObjectId);
 
         /// <summary>The actual size of the main-log (inline) portion of the record; for in-memory records it does not include filler length.</summary>
         public readonly int ActualRecordSize => RecordInfo.GetLength() + Key.TotalInlineSize + InlineValueLength + OptionalLength;
@@ -192,7 +197,7 @@ namespace Tsavorite.core
                 //  - Update the value length
                 ValueSpanRef.Length += growth;
                 //  - Set the new (reduced) FillerLength if there is still space for it.
-                if (fillerLen >= FillerLenSize)
+                if (fillerLen >= LogRecord.FillerLenSize)
                 {
                     fillerLenAddress += growth;
                     *(int*)fillerLenAddress = fillerLen;
@@ -217,7 +222,7 @@ namespace Tsavorite.core
             //  - Shrinking the value and zeroing unused space
             ValueSpanRef.ShrinkSerializedLength(newValueLen);
             //  - Set the new (increased) FillerLength first, then the optionals
-            if (fillerLen >= FillerLenSize)
+            if (fillerLen >= LogRecord.FillerLenSize)
                 *(int*)fillerLenAddress = fillerLen;
             Buffer.MemoryCopy((byte*)(optStartAddress + growth), saveBuf, optLen, optLen);
 
@@ -236,7 +241,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetValueObject(IHeapObject value)
+        public readonly bool TrySetValueObject(TValue value)
         {
             if (*ValueObjectIdAddress == ObjectIdMap.InvalidObjectId)
             {
@@ -248,8 +253,8 @@ namespace Tsavorite.core
             return true;
         }
 
-        private readonly int ETagLen => Info.HasETag ? ETagSize : 0;
-        private readonly int ExpirationLen => Info.HasExpiration ? ExpirationSize : 0;
+        private readonly int ETagLen => Info.HasETag ? LogRecord.ETagSize : 0;
+        private readonly int ExpirationLen => Info.HasExpiration ? LogRecord.ExpirationSize : 0;
 
         /// <summary>A tuple of the total size of the main-log (inline) portion of the record, with and without filler length.</summary>
         public readonly (int actualSize, int allocatedSize) GetFullRecordSizes()
@@ -295,7 +300,7 @@ namespace Tsavorite.core
             }
 
             // We're adding an ETag where there wasn't one before.
-            const int growth = ETagSize;
+            const int growth = LogRecord.ETagSize;
             var recordLen = ActualRecordSize;
             var fillerLenAddress = physicalAddress + recordLen;
             var maxLen = recordLen + GetFillerLen(fillerLenAddress);
@@ -316,19 +321,19 @@ namespace Tsavorite.core
             var expiration = 0L;
             if (Info.HasExpiration)
             {
-                address -= ExpirationSize;
+                address -= LogRecord.ExpirationSize;
                 expiration = *(long*)address;
             }
             *(long*)address = eTag;
             InfoRef.SetHasETag();
             if (Info.HasExpiration)
             {
-                address += ETagSize;
+                address += LogRecord.ETagSize;
                 *(long*)address = expiration;
                 address += ExpirationLen;
             }
             //  - Set the new (reduced) FillerLength if there is still space for it.
-            if (fillerLen >= FillerLenSize)
+            if (fillerLen >= LogRecord.FillerLenSize)
                 *(int*)address = fillerLen;
             else
                 InfoRef.ClearHasFiller();
@@ -341,7 +346,7 @@ namespace Tsavorite.core
             if (!Info.HasETag)
                 return;
 
-            const int growth = -ETagSize;
+            const int growth = -LogRecord.ETagSize;
             var recordLen = ActualRecordSize;
             var fillerLenAddress = physicalAddress + recordLen;
             var maxLen = recordLen + GetFillerLen(fillerLenAddress);
@@ -359,19 +364,19 @@ namespace Tsavorite.core
             var expiration = 0L;
             if (Info.HasExpiration)
             {
-                address -= ExpirationSize;
+                address -= LogRecord.ExpirationSize;
                 expiration = *(long*)address;
                 *(long*)address = 0L;  // To ensure zero-init
             }
-            address -= ETagSize;
+            address -= LogRecord.ETagSize;
             if (Info.HasExpiration)
             {
                 *(long*)address = expiration;
-                address += ExpirationSize;
+                address += LogRecord.ExpirationSize;
             }
             InfoRef.ClearHasETag();
             //  - Set the new (increased) FillerLength if there is space for it.
-            if (fillerLen >= FillerLenSize)
+            if (fillerLen >= LogRecord.FillerLenSize)
                 *(int*)address = fillerLen;
         }
 
@@ -385,7 +390,7 @@ namespace Tsavorite.core
             }
 
             // We're adding an Expiration where there wasn't one before.
-            const int growth = ExpirationSize;
+            const int growth = LogRecord.ExpirationSize;
             var recordLen = ActualRecordSize;
             var fillerLenAddress = physicalAddress + recordLen;
             var maxLen = recordLen + GetFillerLen(fillerLenAddress);
@@ -407,7 +412,7 @@ namespace Tsavorite.core
             *(long*)address = expiration;
             address += ExpirationLen;
             //  - Set the new (reduced) FillerLength if there is still space for it.
-            if (fillerLen >= FillerLenSize)
+            if (fillerLen >= LogRecord.FillerLenSize)
                 *(int*)address = fillerLen;
             else
                 InfoRef.ClearHasFiller();
@@ -420,7 +425,7 @@ namespace Tsavorite.core
             if (!Info.HasExpiration)
                 return;
 
-            const int growth = -ETagSize;
+            const int growth = -LogRecord.ETagSize;
             var recordLen = ActualRecordSize;
             var fillerLenAddress = physicalAddress + recordLen;
             var maxLen = recordLen + GetFillerLen(fillerLenAddress);
@@ -435,11 +440,11 @@ namespace Tsavorite.core
             if (Info.HasFiller)
                 *(int*)address = 0;
             //  - Remove Expiration and clear the Expiration bit
-            address -= ExpirationSize;
+            address -= LogRecord.ExpirationSize;
             *(long*)address = 0;
             InfoRef.ClearHasExpiration();
             //  - Set the new (increased) FillerLength if there is space for it.
-            if (fillerLen >= FillerLenSize)
+            if (fillerLen >= LogRecord.FillerLenSize)
                 *(int*)address = fillerLen;
         }
 
@@ -449,9 +454,9 @@ namespace Tsavorite.core
             // TODO: Consider overflow in this
             var growth = newValueLen - InlineValueLength;
             if (Info.HasETag != withETag)
-                growth += withETag ? ETagSize : -ETagSize;
+                growth += withETag ? LogRecord.ETagSize : -LogRecord.ETagSize;
             if (Info.HasExpiration != withExpiration)
-                growth += withExpiration ? ExpirationSize : -ExpirationSize;
+                growth += withExpiration ? LogRecord.ExpirationSize : -LogRecord.ExpirationSize;
 
             var recordLen = ActualRecordSize;
             var fillerLenAddress = physicalAddress + recordLen;
@@ -470,7 +475,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetValueObject(IHeapObject valueObject, long? eTag, long? expiration)
+        public readonly bool TrySetValueObject(TValue valueObject, long? eTag, long? expiration)
         {
             if (!HasEnoughSpace(ObjectIdMap.ObjectIdSize, eTag.HasValue, expiration.HasValue))
                 return false;

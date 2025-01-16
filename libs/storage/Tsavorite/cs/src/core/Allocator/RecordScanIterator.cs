@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class RecordScanIterator<TValue, TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator<TValue>, IPushScanIterator
+    public sealed class RecordScanIterator<TValue, TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator<TValue>, IPushScanIterator<TValue>
         where TStoreFunctions : IStoreFunctions<TValue>
         where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
@@ -23,7 +23,7 @@ namespace Tsavorite.core
         private SectorAlignedMemory recordBuffer;
         private readonly bool assumeInMemory;
 
-        private DiskLogRecord diskLogRecord;
+        private DiskLogRecord<TValue> diskLogRecord;
 
         /// <summary>
         /// Constructor
@@ -130,7 +130,7 @@ namespace Tsavorite.core
             {
                 while (totalSizes <= offset)
                 {
-                    var (_, allocatedSize) = new LogRecord(physicalAddress).GetFullRecordSizes();
+                    var (_, allocatedSize) = new LogRecord<TValue>(physicalAddress).GetFullRecordSizes();
                     if (totalSizes + allocatedSize > offset)
                         break;
                     totalSizes += allocatedSize;
@@ -141,7 +141,7 @@ namespace Tsavorite.core
             {
                 while (totalSizes <= offset)
                 {
-                    var allocatedSize = new DiskLogRecord(physicalAddress).SerializedRecordLength;
+                    var allocatedSize = new DiskLogRecord<TValue>(physicalAddress).SerializedRecordLength;
                     if (totalSizes + allocatedSize > offset)
                         break;
                     totalSizes += allocatedSize;
@@ -174,7 +174,7 @@ namespace Tsavorite.core
                     continue;
                 }
 
-                var recordInfo = LogRecord.GetInfo(physicalAddress);
+                var recordInfo = LogRecord<TValue>.GetInfo(physicalAddress);
                 var skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
                 if (skipOnScan || recordInfo.IsNull)
                 {
@@ -184,7 +184,7 @@ namespace Tsavorite.core
 
                 recordBuffer?.Return();
                 recordBuffer = null;
-                IHeapObject valueObject = default;
+                TValue valueObject = default;
                 if (currentAddress >= headAddress || assumeInMemory)
                 {
                     // TODO: for this PR we always buffer the in-memory records; pull iterators require it, and currently push iterators are implemented on top of pull.
@@ -199,7 +199,7 @@ namespace Tsavorite.core
                     try
                     {
                         if (currentAddress >= headAddress && store is not null)
-                            store.LockForScan(ref stackCtx, LogRecord.GetKey(physicalAddress));
+                            store.LockForScan(ref stackCtx, LogRecord<TValue>.GetKey(physicalAddress));
 
                         hlogBase.SerializeRecordToIteratorBuffer(currentAddress, ref recordBuffer, out valueObject);
                     }
@@ -232,7 +232,7 @@ namespace Tsavorite.core
         /// Get previous record and keep the epoch held while we call the user's scan functions
         /// </summary>
         /// <returns>True if record found, false if end of scan</returns>
-        bool IPushScanIterator.BeginGetPrevInMemory(SpanByte key, out LogRecord logRecord, out bool continueOnDisk)
+        bool IPushScanIterator<TValue>.BeginGetPrevInMemory(SpanByte key, out LogRecord<TValue> logRecord, out bool continueOnDisk)
         {
             while (true)
             {
@@ -263,7 +263,7 @@ namespace Tsavorite.core
             }
         }
 
-        void IPushScanIterator.EndGetPrevInMemory() => epoch?.Suspend();
+        void IPushScanIterator<TValue>.EndGetPrevInMemory() => epoch?.Suspend();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         long GetPhysicalAddress(long currentAddress, long headAddress, long currentPage, long offset)
@@ -301,11 +301,10 @@ namespace Tsavorite.core
         public SpanByte ValueSpan => diskLogRecord.ValueSpan;
 
         /// <inheritdoc/>
-        public IHeapObject ValueObject => diskLogRecord.ValueObject;
+        public TValue ValueObject => diskLogRecord.ValueObject;
 
-        // TV will be TValue, but we don't want LogRecord to require a TValue type parameter just for this one method
         /// <inheritdoc/>
-        public unsafe ref TV GetReadOnlyValueRef<TV>() => ref diskLogRecord.GetReadOnlyValueRef<TV>();
+        public ref TValue GetReadOnlyValueRef() => ref diskLogRecord.GetReadOnlyValueRef();
 
         /// <inheritdoc/>
         public long ETag => diskLogRecord.ETag;
@@ -314,7 +313,7 @@ namespace Tsavorite.core
         public long Expiration => diskLogRecord.Expiration;
 
         /// <inheritdoc/>
-        public LogRecord AsLogRecord() => throw new TsavoriteException("Iterators cannot be converted to AsLogRecord");
+        public LogRecord<TValue> AsLogRecord() => throw new TsavoriteException("Iterators cannot be converted to AsLogRecord");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

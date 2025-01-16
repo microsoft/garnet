@@ -15,13 +15,13 @@ namespace Tsavorite.core
     ///     </list>
     /// This lets us get to the optional fields for comparisons without loading the full record (GetIOSize should cover the space for optionals).
     /// </remarks>
-    public unsafe struct DiskLogRecord : ISourceLogRecord
+    public unsafe struct DiskLogRecord<TValue> : ISourceLogRecord<TValue>
     {
         /// <summary>The physicalAddress in the log.</summary>
         internal readonly long physicalAddress;
 
         /// <summary>The deserialized ValueObject if this is a disk record for the Object Store.</summary>
-        internal IHeapObject valueObject;
+        internal TValue valueObject;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal DiskLogRecord(long physicalAddress)
@@ -44,13 +44,13 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly SpanByte ValueSpan => IsObjectRecord ? throw new TsavoriteException("Object LogRecord does not have SpanByte values") : *(SpanByte*)ValueAddress;
         /// <inheritdoc/>
-        public readonly IHeapObject ValueObject => IsObjectRecord ? valueObject : throw new TsavoriteException("SpanByte LogRecord does not have Object values");
+        public readonly TValue ValueObject => IsObjectRecord ? valueObject : throw new TsavoriteException("SpanByte LogRecord does not have Object values");
         /// <inheritdoc/>
-        public ref TValue GetReadOnlyValueRef<TValue>()
+        public ref TValue GetReadOnlyValueRef()
         {
             if (IsObjectRecord)
 #pragma warning disable CS9084 // Struct member returns 'this' or other instance members by reference; OK here because we only use it on direct calls where the stack remains intact
-                return ref Unsafe.As<IHeapObject, TValue>(ref valueObject);
+                return ref valueObject;
 #pragma warning restore CS9084
             return ref Unsafe.AsRef<TValue>((void*)ValueAddress);
         }
@@ -60,7 +60,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
         /// <inheritdoc/>
-        public readonly LogRecord AsLogRecord() => throw new TsavoriteException("DiskLogRecord cannot be converted to AsLogRecord");
+        public readonly LogRecord<TValue> AsLogRecord() => throw new TsavoriteException("DiskLogRecord cannot be converted to AsLogRecord");
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordFieldInfo GetRecordFieldInfo() => new()
@@ -93,9 +93,9 @@ namespace Tsavorite.core
         /// for both key and value for this estimate. They are prefaced by the full record length and optionals (ETag, Expiration) which we include in the estimate.</summary>
         public static int GetIOSize(int sectorSize) => RoundUp(RecordInfo.GetLength() + SerializedRecordLengthSize + sizeof(long) * 2 + sizeof(int) * 2 + (1 << LogSettings.kMaxInlineKeySizeBits) * 2, sectorSize);
 
-        internal static SpanByte GetContextRecordKey<TValue>(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).Key;
+        internal static SpanByte GetContextRecordKey(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord<TValue>((long)ctx.record.GetValidPointer()).Key;
 
-        internal static SpanByte GetContextRecordValue<TValue>(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).ValueSpan;
+        internal static SpanByte GetContextRecordValue(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord<TValue>((long)ctx.record.GetValidPointer()).ValueSpan;
 
         /// <inheritdoc/>
         public override readonly string ToString()

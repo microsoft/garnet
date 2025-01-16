@@ -34,14 +34,14 @@ namespace Tsavorite.core
 
         #region Record Disposer
         /// <summary>
-        /// If true, <see cref="DisposeValueObject(IHeapObject, DisposeReason)"/> with <see cref="DisposeReason.PageEviction"/> 
+        /// If true, <see cref="DisposeValueObject(TValue, DisposeReason)"/> with <see cref="DisposeReason.PageEviction"/> 
         /// is called on page evictions from both readcache and main log. Otherwise, the user can register an Observer and
         /// do any needed disposal there.
         /// </summary>
         bool DisposeOnPageEviction { get; }
 
         /// <summary>Dispose the Value of a record, if necessary.</summary>
-        void DisposeValueObject(IHeapObject valueObject, DisposeReason reason);
+        void DisposeValueObject(TValue valueObject, DisposeReason reason);
         #endregion Record Disposer
 
         #region Checkpoint Completion

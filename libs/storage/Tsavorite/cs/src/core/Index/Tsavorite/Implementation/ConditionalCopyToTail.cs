@@ -29,7 +29,7 @@ namespace Tsavorite.core
                 ref PendingContext<TInput, TOutput, TContext> pendingContext, ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext,
                 ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, WriteReason writeReason, bool wantIO = true)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TSourceLogRecord : ISourceLogRecord
+            where TSourceLogRecord : ISourceLogRecord<TValue>
         {
             var callerHasEphemeralLock = stackCtx.recSrc.HasEphemeralSLock;
 
@@ -93,7 +93,7 @@ namespace Tsavorite.core
                 TSessionFunctionsWrapper sessionFunctions, ref TSourceLogRecord srcLogRecord, ref TInput input,
                 ref TOutput output, long currentAddress, long minAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TSourceLogRecord : ISourceLogRecord
+            where TSourceLogRecord : ISourceLogRecord<TValue>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
             PendingContext<TInput, TOutput, TContext> pendingContext = new();
@@ -122,7 +122,7 @@ namespace Tsavorite.core
                                         ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, WriteReason writeReason,
                                         OperationType opType = OperationType.CONDITIONAL_INSERT)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TSourceLogRecord : ISourceLogRecord
+            where TSourceLogRecord : ISourceLogRecord<TValue>
         {
             pendingContext.type = opType;
             pendingContext.minAddress = minAddress;
@@ -139,7 +139,7 @@ namespace Tsavorite.core
                 Debug.Assert(pendingContext.input == default, "Input unexpectedly set");
                 pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
                 Debug.Assert(pendingContext.value == default, "Value unexpectedly set");
-                pendingContext.value = hlog.GetValueContainer(srcLogRecord.GetReadOnlyValueRef<TValue>());
+                pendingContext.value = hlog.GetValueContainer(srcLogRecord.GetReadOnlyValueRef());
 
                 pendingContext.output = output;
                 sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);

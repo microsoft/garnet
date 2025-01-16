@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.IO;
 using Tsavorite.core;
@@ -17,11 +16,6 @@ namespace Garnet.server
         /// Type of object
         /// </summary>
         byte Type { get; }
-
-        /// <summary>
-        /// Expiration time of object
-        /// </summary>
-        long Expiration { get; set; }
 
         /// <summary>
         /// Operator on object

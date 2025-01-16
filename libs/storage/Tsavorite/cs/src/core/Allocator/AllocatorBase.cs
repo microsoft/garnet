@@ -190,11 +190,11 @@ namespace Tsavorite.core
 
         #region Abstract and virtual methods
         /// <summary>Serialize an in-memory log record to the <see cref="RecordScanIterator{TValue, TStoreFunctions, TAllocator}"/>'s record buffer.</summary>
-        internal abstract void SerializeRecordToIteratorBuffer(long logicalAddress, ref SectorAlignedMemory recordBuffer, out IHeapObject valueObject);
+        internal abstract void SerializeRecordToIteratorBuffer(long logicalAddress, ref SectorAlignedMemory recordBuffer, out TValue valueObject);
 
         /// <summary>Deserialize the <see cref="IHeapObject"/> value from a disk log record read by the <see cref="RecordScanIterator{TValue, TStoreFunctions, TAllocator}"/>,
-        /// if this is the <see cref="ObjectAllocator{TStoreFunctions}"/>.</summary>
-        internal abstract void DeserializeFromDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) byteStream);
+        /// if this is the <see cref="ObjectAllocator{TValue, TStoreFunctions}"/>.</summary>
+        internal abstract void DeserializeFromDiskBuffer(ref DiskLogRecord<TValue> diskLogRecord, (byte[] array, long offset) byteStream);
 
         /// <summary>Initialize fully derived allocator</summary>
         public abstract void Initialize();
@@ -282,7 +282,7 @@ namespace Tsavorite.core
 
                         while (physicalAddress < endPhysicalAddress)
                         {
-                            ref var info = ref LogRecord.GetInfoRef(physicalAddress);
+                            ref var info = ref LogRecord<TValue>.GetInfoRef(physicalAddress);
                             var (_, alignedRecordSize) = _wrapper.GetFullRecordSizes(physicalAddress);
                             if (info.Dirty)
                             {
@@ -406,15 +406,15 @@ namespace Tsavorite.core
         /// <summary>Get first valid address</summary>
         public long GetFirstValidLogicalAddress(long page) => page == 0 ? Constants.kFirstValidAddress : page << LogPageSizeBits;
 
-        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref LogRecord.GetInfoRef(physicalAddress);
+        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref LogRecord<TValue>.GetInfoRef(physicalAddress);
 
         public static unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
 
         // GetKey is used in TracebackForKeyMatch. TODO remove in favor of the direct LogRecord call
-        public static SpanByte GetKey(long physicalAddress) => LogRecord.GetKey(physicalAddress);
+        public static SpanByte GetKey(long physicalAddress) => LogRecord<TValue>.GetKey(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord logRecord, int maxInlineKeySize)
+        public unsafe void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<TValue> logRecord, int maxInlineKeySize)
         {
             if (key.Length <= maxInlineKeySize)
             {
@@ -472,7 +472,7 @@ namespace Tsavorite.core
                                 Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
 
                                 // Clean up temporary bits when applying the delta log
-                                ref var destInfo = ref LogRecord.GetInfoRef(destination);
+                                ref var destInfo = ref LogRecord<TValue>.GetInfoRef(destination);
                                 destInfo.ClearBitsForDiskImages();
                             }
                             physicalAddress += size;
@@ -1814,7 +1814,7 @@ namespace Tsavorite.core
             try
             {
                 var record = ctx.record.GetValidPointer();
-                var diskLogRecord = new DiskLogRecord((long)record);
+                var diskLogRecord = new DiskLogRecord<TValue>((long)record);
                 if ((int)diskLogRecord.SerializedRecordLength > int.MaxValue)
                     throw new TsavoriteException("Records exceeding 2GB are not yet supported");      // TODO: Convert to support 'long' lengths
                 int requiredBytes = (int)diskLogRecord.SerializedRecordLength;
@@ -1969,7 +1969,7 @@ namespace Tsavorite.core
 
                         while (physicalAddress < endPhysicalAddress)
                         {
-                            ref var info = ref LogRecord.GetInfoRef(physicalAddress);
+                            ref var info = ref LogRecord<TValue>.GetInfoRef(physicalAddress);
                             var (_, alignedRecordSize) = _wrapper.GetFullRecordSizes(physicalAddress);
                             if (info.Dirty)
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
