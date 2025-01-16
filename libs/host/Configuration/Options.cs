@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using CommandLine;
 using Garnet.server;
@@ -511,6 +512,14 @@ namespace Garnet
         [OptionValidation]
         [Option("skip-checksum-validation", Default = false, Required = false, HelpText = "Skip checksum validation")]
         public bool? SkipChecksumValidation { get; set; }
+      
+        [Option("lua-memory-management-mode", Default = LuaMemoryManagementMode.Native, Required = false, HelpText = "Memory management mode for Lua scripts, must be set to LimittedNative or Managed to impose script limits")]
+        public LuaMemoryManagementMode LuaMemoryManagementMode { get; set; }
+
+        [MemorySizeValidation(false)]
+        [ForbiddenWithOption(nameof(LuaMemoryManagementMode), nameof(LuaMemoryManagementMode.Native))]
+        [Option("lua-script-memory-limit", Default = null, HelpText = "Memory limit for a Lua instances while running a script, lua-memory-management-mode must be set to something other than Native to use this flag")]
+        public string LuaScriptMemoryLimit { get; set; }
 
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
@@ -724,6 +733,7 @@ namespace Garnet
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
                 SkipChecksumValidation = SkipChecksumValidation.GetValueOrDefault(),
+                LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, logger) : null,
             };
         }
 

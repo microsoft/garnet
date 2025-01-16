@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -28,11 +28,6 @@ namespace Garnet.cluster
         /// Last transmitted configuration
         /// </summary>
         ClusterConfig lastConfig = null;
-
-        /// <summary>
-        /// Gossip with meet command lock
-        /// </summary>
-        SingleWriterMultiReaderLock meetLock;
 
         /// <summary>
         /// Outstanding gossip task if any
@@ -95,13 +90,13 @@ namespace Garnet.cluster
         /// Initialize connection and cancellation tokens.
         /// Initialization is performed only once
         /// </summary>
-        public void Initialize()
+        public Task InitializeAsync()
         {
             // Ensure initialize executes only once
-            if (Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return;
+            if (Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return Task.CompletedTask;
 
             cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
-            gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).GetAwaiter().GetResult();
+            return gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);
         }
 
         public void Dispose()
@@ -200,19 +195,11 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="configByteArray"></param>
         /// <returns></returns>
-        public MemoryResult<byte> TryMeet(byte[] configByteArray)
+        public async Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
         {
-            try
-            {
-                _ = meetLock.TryWriteLock();
-                UpdateGossipSend();
-                var resp = gc.GossipWithMeet(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token).GetAwaiter().GetResult();
-                return resp;
-            }
-            finally
-            {
-                meetLock.WriteUnlock();
-            }
+            UpdateGossipSend();
+            var resp = await gc.GossipWithMeet(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            return resp;
         }
 
         /// <summary>

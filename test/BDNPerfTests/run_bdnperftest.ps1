@@ -73,6 +73,11 @@ param ($ResultsLine, $columnNum)
     $columns = $ResultsLine.Trim('|').Split('|')
     $column = $columns | ForEach-Object { $_.Trim() }
     $foundValue = $column[$columnNum]
+    if ($foundValue -eq "NA") {
+        Write-Error -Message "The value for the column was NA which means that the BDN test failed and didn't generate performance metrics. Verify the BDN test ran successfully."
+        exit
+    }
+
     if ($foundValue -eq "-") {
         $foundValue = "0"
     }
