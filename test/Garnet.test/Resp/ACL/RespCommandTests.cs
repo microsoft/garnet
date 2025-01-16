@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.server;
@@ -6415,12 +6416,14 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public async Task RestoreACLsAsync()
         {
+            var count = 0;
+
             await CheckCommandsAsync(
                 "RESTORE",
                 [DoRestoreAsync]
             );
 
-            static async Task DoRestoreAsync(GarnetClient client)
+            async Task DoRestoreAsync(GarnetClient client)
             {
                 var payload = new byte[]
                 {
@@ -6431,19 +6434,17 @@ namespace Garnet.test.Resp.ACL
                     0xDB, 0x82, 0x3C, 0x30, 0x38, 0x78, 0x5A, 0x99 // Crc64
                 };
 
-                try
-                {
-                    string val = await client.ExecuteForStringResultAsync("$7\r\nRESTORE\r\n"u8.ToArray(),
-                        ["foo"u8.ToArray(), "0"u8.ToArray(), payload]);
-                    ClassicAssert.AreEqual("OK", val);
-                }
-                catch (Exception e)
-                {
-                    if (e.Message != "ERR Key already exists")
-                    {
-                        throw;
-                    }
-                }
+                count++;
+
+                var val = await client.ExecuteForStringResultAsync(
+                    "$7\r\nRESTORE\r\n"u8.ToArray(),
+                    [
+                        Encoding.UTF8.GetBytes($"foo-{count}"), 
+                        "0"u8.ToArray(), 
+                        payload
+                    ]);
+
+                ClassicAssert.AreEqual("OK", val);
             }
         }
 
