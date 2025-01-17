@@ -3447,25 +3447,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 193.66585097312927,
             "unit": "ns",
             "range": "± 1.4032993671386589"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 345.468617609569,
             "unit": "ns",
             "range": "± 2.473850250302473"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 618.5519981384277,
             "unit": "ns",
             "range": "± 6.06621820410833"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2968.6666544596355,
             "unit": "ns",
             "range": "± 18.671120424173253"
@@ -3495,25 +3495,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 179.76951920986176,
             "unit": "ns",
             "range": "± 0.967493867942754"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 319.9189979871114,
             "unit": "ns",
             "range": "± 2.220174485778534"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 602.2868664423625,
             "unit": "ns",
             "range": "± 5.135448030929655"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2876.2234130859374,
             "unit": "ns",
             "range": "± 16.80723300533179"
@@ -3543,25 +3543,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 178.07218401772636,
             "unit": "ns",
             "range": "± 0.9577073336526256"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 317.6942486445109,
             "unit": "ns",
             "range": "± 1.6751916805786122"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 611.2062438329061,
             "unit": "ns",
             "range": "± 8.263349683666844"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2909.5501708984375,
             "unit": "ns",
             "range": "± 20.280497203024307"
@@ -3591,25 +3591,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 177.32841302798346,
             "unit": "ns",
             "range": "± 0.5042680816365771"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 318.2381695429484,
             "unit": "ns",
             "range": "± 2.099652228890676"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 603.4227486337934,
             "unit": "ns",
             "range": "± 3.1150963010893777"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2927.5593322753907,
             "unit": "ns",
             "range": "± 28.48369284422944"
@@ -3639,25 +3639,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 199.53142457008363,
             "unit": "ns",
             "range": "± 2.0793628221115243"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 340.764165242513,
             "unit": "ns",
             "range": "± 3.1249152810191547"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 616.6441509383066,
             "unit": "ns",
             "range": "± 6.282155084628434"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 3154.165906016032,
             "unit": "ns",
             "range": "± 20.640771690524762"
@@ -3687,25 +3687,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 188.16842782497406,
             "unit": "ns",
             "range": "± 1.1627745289180045"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 326.4345873514811,
             "unit": "ns",
             "range": "± 2.1844479535344075"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 608.1461450713022,
             "unit": "ns",
             "range": "± 4.987420347546367"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2928.858034133911,
             "unit": "ns",
             "range": "± 20.787703311031482"
@@ -3735,25 +3735,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 188.91168311926035,
             "unit": "ns",
             "range": "± 1.1533494805322169"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 323.5754240036011,
             "unit": "ns",
             "range": "± 2.6684226704152962"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 596.7557873408,
             "unit": "ns",
             "range": "± 5.067161219452393"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2887.178291593279,
             "unit": "ns",
             "range": "± 28.770134276187093"
@@ -3783,25 +3783,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 181.3941502911704,
             "unit": "ns",
             "range": "± 0.9746916379346954"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 322.4740557988485,
             "unit": "ns",
             "range": "± 3.210029259270018"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 609.621857716487,
             "unit": "ns",
             "range": "± 5.098964659596539"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2909.445321146647,
             "unit": "ns",
             "range": "± 14.825702930725434"
@@ -3831,25 +3831,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 183.85704694475447,
             "unit": "ns",
             "range": "± 1.2783397039498137"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 349.8680354631864,
             "unit": "ns",
             "range": "± 1.2490840737699522"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 632.9414082254682,
             "unit": "ns",
             "range": "± 4.159123554974964"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2927.6136395772296,
             "unit": "ns",
             "range": "± 20.33788624526231"
@@ -3879,25 +3879,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 195.45456528663635,
             "unit": "ns",
             "range": "± 1.1883694792398487"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 325.1344343821208,
             "unit": "ns",
             "range": "± 2.9626050617084667"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 613.0254242079599,
             "unit": "ns",
             "range": "± 2.960579003038886"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2975.173557281494,
             "unit": "ns",
             "range": "± 29.028883568676413"
@@ -3927,25 +3927,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 192.86800336837769,
             "unit": "ns",
             "range": "± 3.002063806150634"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 319.0803663889567,
             "unit": "ns",
             "range": "± 2.342252063255537"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 586.3028335571289,
             "unit": "ns",
             "range": "± 3.0614311566474357"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2935.7509251912434,
             "unit": "ns",
             "range": "± 20.065735061964357"
@@ -3975,25 +3975,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 186.86895966529846,
             "unit": "ns",
             "range": "± 1.2007424210328141"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 319.99647317613875,
             "unit": "ns",
             "range": "± 2.651121056139691"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 601.7862464269002,
             "unit": "ns",
             "range": "± 4.868715443178402"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2988.8161781311037,
             "unit": "ns",
             "range": "± 31.704949972279085"
@@ -4023,25 +4023,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 196.87415656021662,
             "unit": "ns",
             "range": "± 1.3350588475393401"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 318.8814069112142,
             "unit": "ns",
             "range": "± 2.504869034382355"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 593.6006362097604,
             "unit": "ns",
             "range": "± 6.812451863152205"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2885.6963623591832,
             "unit": "ns",
             "range": "± 18.300529722173614"
@@ -4071,25 +4071,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 178.26185645375932,
             "unit": "ns",
             "range": "± 0.8007835887121604"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 324.393086942037,
             "unit": "ns",
             "range": "± 2.7905417736601152"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 626.1162096432278,
             "unit": "ns",
             "range": "± 3.6545645165181324"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 3003.538348061698,
             "unit": "ns",
             "range": "± 25.069325310616264"
@@ -4119,25 +4119,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 187.36731851100922,
             "unit": "ns",
             "range": "± 1.4726390175678732"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 296.1976917266846,
             "unit": "ns",
             "range": "± 2.4992526178854035"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 597.3464776357015,
             "unit": "ns",
             "range": "± 5.38884835573616"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2951.162675221761,
             "unit": "ns",
             "range": "± 19.3486378388116"
@@ -4165,25 +4165,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 253.6641488869985,
             "unit": "ns",
             "range": "± 0.2274689421232005"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 469.5754606882731,
             "unit": "ns",
             "range": "± 1.2308798428646333"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 682.9428581091074,
             "unit": "ns",
             "range": "± 2.7884476464776875"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 648.9806544621786,
             "unit": "ns",
             "range": "± 3.135704460686868"
@@ -4213,25 +4213,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 269.9233253002167,
             "unit": "ns",
             "range": "± 0.6827061904669384"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 475.2320156733195,
             "unit": "ns",
             "range": "± 2.684835184150708"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 714.6956875483195,
             "unit": "ns",
             "range": "± 2.404220189815872"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 637.0834420277522,
             "unit": "ns",
             "range": "± 0.6108542034337306"
@@ -4261,25 +4261,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 270.5529970486959,
             "unit": "ns",
             "range": "± 1.129702547097591"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 486.18578111208404,
             "unit": "ns",
             "range": "± 1.5722628828011782"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 645.3851815632412,
             "unit": "ns",
             "range": "± 3.2098321512948407"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 647.7655875523885,
             "unit": "ns",
             "range": "± 1.5788204947589475"
@@ -4309,25 +4309,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 252.092142868042,
             "unit": "ns",
             "range": "± 1.1826197667434049"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 455.34251874287924,
             "unit": "ns",
             "range": "± 1.7765523331229764"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 669.7056493123372,
             "unit": "ns",
             "range": "± 2.59020836197951"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 648.7935075078692,
             "unit": "ns",
             "range": "± 2.461914126153053"
@@ -4357,25 +4357,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 257.9211661974589,
             "unit": "ns",
             "range": "± 1.4001706785593602"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 466.9783775125231,
             "unit": "ns",
             "range": "± 1.0434946307424315"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 682.1537414959499,
             "unit": "ns",
             "range": "± 2.700116296955449"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 649.1694487889607,
             "unit": "ns",
             "range": "± 2.345033248587433"
@@ -4405,25 +4405,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 243.29741797080408,
             "unit": "ns",
             "range": "± 0.9400159859821414"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 464.2924782117208,
             "unit": "ns",
             "range": "± 2.816029727610623"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 662.473366517287,
             "unit": "ns",
             "range": "± 1.0760939151536784"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 646.7009962626865,
             "unit": "ns",
             "range": "± 2.138560913940816"
@@ -4453,25 +4453,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 260.8691301981608,
             "unit": "ns",
             "range": "± 0.8875477499223504"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 458.4206044333322,
             "unit": "ns",
             "range": "± 1.025169582541741"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 682.949131266276,
             "unit": "ns",
             "range": "± 4.1593698653526205"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 643.6655611310687,
             "unit": "ns",
             "range": "± 2.098928053729155"
@@ -4501,25 +4501,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 260.2515328847445,
             "unit": "ns",
             "range": "± 0.36157883023270954"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 489.317353112357,
             "unit": "ns",
             "range": "± 0.9334724807962262"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 672.9916081110637,
             "unit": "ns",
             "range": "± 2.317009208498218"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 642.3749979654948,
             "unit": "ns",
             "range": "± 1.7747241653529557"
@@ -4549,25 +4549,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 250.03658917744954,
             "unit": "ns",
             "range": "± 0.39449264917385957"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 453.65227811677113,
             "unit": "ns",
             "range": "± 1.1431569776213366"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 680.1841990152994,
             "unit": "ns",
             "range": "± 3.3640356494619144"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 649.0389623641968,
             "unit": "ns",
             "range": "± 1.0632816659033044"
@@ -4597,25 +4597,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 242.50346579918494,
             "unit": "ns",
             "range": "± 0.5314174129350906"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 476.6697588648115,
             "unit": "ns",
             "range": "± 1.7160410319844857"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 674.9103003819783,
             "unit": "ns",
             "range": "± 4.18232074882764"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 637.9875745773315,
             "unit": "ns",
             "range": "± 1.1173811186540308"
@@ -4645,25 +4645,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 297.119498761495,
             "unit": "ns",
             "range": "± 0.9728974983078414"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 463.64566833632335,
             "unit": "ns",
             "range": "± 0.917788532162794"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 678.2454524040222,
             "unit": "ns",
             "range": "± 2.6657801008358075"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 643.0602378845215,
             "unit": "ns",
             "range": "± 0.40711250326031717"
@@ -4693,25 +4693,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 243.9193514585495,
             "unit": "ns",
             "range": "± 0.36093986824035884"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 478.70255054746355,
             "unit": "ns",
             "range": "± 2.038219658082378"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 671.8407953898112,
             "unit": "ns",
             "range": "± 2.8218088907327625"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 627.9462024982159,
             "unit": "ns",
             "range": "± 1.1106313631403868"
@@ -4741,25 +4741,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 240.3982948621114,
             "unit": "ns",
             "range": "± 1.6722117784907826"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 450.1433172861735,
             "unit": "ns",
             "range": "± 1.1169803761050963"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 676.3416561126709,
             "unit": "ns",
             "range": "± 2.555634814507321"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 616.3289897782462,
             "unit": "ns",
             "range": "± 1.9914049594124459"
@@ -4789,25 +4789,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 259.90496609761163,
             "unit": "ns",
             "range": "± 0.2289817733415366"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 480.2864158630371,
             "unit": "ns",
             "range": "± 0.8219089717949029"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 686.0713738713946,
             "unit": "ns",
             "range": "± 1.7256983423793497"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 641.8802328109741,
             "unit": "ns",
             "range": "± 1.6067011717509427"
@@ -4837,25 +4837,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 263.02086712519326,
             "unit": "ns",
             "range": "± 0.7278682310406543"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 473.39859083720614,
             "unit": "ns",
             "range": "± 1.6798244578853754"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 682.189766629537,
             "unit": "ns",
             "range": "± 3.0048682326797804"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 654.3584873835246,
             "unit": "ns",
             "range": "± 1.3997133768907783"
@@ -4885,25 +4885,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 252.41057014465332,
             "unit": "ns",
             "range": "± 0.31390522415168226"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 467.9451675415039,
             "unit": "ns",
             "range": "± 2.8311006046578835"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 695.8306814829508,
             "unit": "ns",
             "range": "± 3.470095688431269"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 641.566628592355,
             "unit": "ns",
             "range": "± 1.928749595348827"
@@ -4933,25 +4933,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 248.2327128137861,
             "unit": "ns",
             "range": "± 0.3192064997541971"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 465.1015550931295,
             "unit": "ns",
             "range": "± 1.1715727667256812"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 680.2008134978158,
             "unit": "ns",
             "range": "± 2.6510600561459596"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 645.4912451964158,
             "unit": "ns",
             "range": "± 1.9570424346899635"
@@ -4981,25 +4981,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 255.72713664372762,
             "unit": "ns",
             "range": "± 1.1604781394633392"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 466.385356766837,
             "unit": "ns",
             "range": "± 1.0392902491890184"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 667.3908180236816,
             "unit": "ns",
             "range": "± 1.69284429485497"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 660.9032004038493,
             "unit": "ns",
             "range": "± 1.305256053190686"
@@ -5029,25 +5029,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 247.1577562014262,
             "unit": "ns",
             "range": "± 0.6908758196373553"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 475.21475090299333,
             "unit": "ns",
             "range": "± 1.554651736556522"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 675.5586220196316,
             "unit": "ns",
             "range": "± 1.7206843038197133"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 641.2558189119611,
             "unit": "ns",
             "range": "± 0.41927269967155667"
@@ -5125,25 +5125,25 @@ window.BENCHMARK_DATA = {
             "range": "± 0.6722280336344283"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 244.9102566923414,
             "unit": "ns",
             "range": "± 0.6900132760734747"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 296.0225961367289,
             "unit": "ns",
             "range": "± 1.7726026622114859"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 505.5999168668474,
             "unit": "ns",
             "range": "± 1.904550599940643"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 584.8011826833089,
             "unit": "ns",
             "range": "± 1.1489727236691454"
@@ -5269,25 +5269,25 @@ window.BENCHMARK_DATA = {
             "range": "± 4.757827781093527"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 233.90351104736328,
             "unit": "ns",
             "range": "± 2.2406203865535224"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 296.74673741204396,
             "unit": "ns",
             "range": "± 1.1310646009932586"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 494.9072958139273,
             "unit": "ns",
             "range": "± 1.7738052815635863"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 611.3711045338557,
             "unit": "ns",
             "range": "± 1.4716393594859674"
@@ -5413,25 +5413,25 @@ window.BENCHMARK_DATA = {
             "range": "± 3.071980774476051"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 241.95335129329138,
             "unit": "ns",
             "range": "± 0.30460177203630684"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 297.79327398935953,
             "unit": "ns",
             "range": "± 1.7526231596090505"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 485.34048659006754,
             "unit": "ns",
             "range": "± 2.542222482516439"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 574.3593656222025,
             "unit": "ns",
             "range": "± 0.6929952309034533"
@@ -5557,25 +5557,25 @@ window.BENCHMARK_DATA = {
             "range": "± 2.0113702163597185"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 238.09613539622381,
             "unit": "ns",
             "range": "± 0.14591259576900864"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 291.4880851745605,
             "unit": "ns",
             "range": "± 1.024363991336923"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 496.853364944458,
             "unit": "ns",
             "range": "± 1.264574909863357"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 584.733644076756,
             "unit": "ns",
             "range": "± 2.731430908938918"
@@ -8847,25 +8847,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 118.94960220043475,
             "unit": "ns",
             "range": "± 0.5506268557624937"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 196.96039472307478,
             "unit": "ns",
             "range": "± 1.847880626516076"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 338.9589309692383,
             "unit": "ns",
             "range": "± 1.3672840053709572"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2177.157504741962,
             "unit": "ns",
             "range": "± 5.719918682476675"
@@ -8895,25 +8895,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 118.7998129771306,
             "unit": "ns",
             "range": "± 0.21908129056803408"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 197.72530873616537,
             "unit": "ns",
             "range": "± 0.7294867494106906"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 348.9277805600847,
             "unit": "ns",
             "range": "± 1.383211976520477"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2300.2125040690103,
             "unit": "ns",
             "range": "± 7.630543276907122"
@@ -8943,25 +8943,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 119.14459807532174,
             "unit": "ns",
             "range": "± 0.3660769381254266"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 199.2306879588536,
             "unit": "ns",
             "range": "± 0.5518417003601191"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 375.7016086578369,
             "unit": "ns",
             "range": "± 1.6975957132018156"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2232.765680948893,
             "unit": "ns",
             "range": "± 5.105933284802233"
@@ -8991,25 +8991,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 119.03251684629001,
             "unit": "ns",
             "range": "± 0.34285699310425927"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 195.39373837984525,
             "unit": "ns",
             "range": "± 0.3169037884462412"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 345.68349633898055,
             "unit": "ns",
             "range": "± 1.7389724438888132"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2297.857460608849,
             "unit": "ns",
             "range": "± 17.781840282795734"
@@ -9039,25 +9039,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 119.74014895302909,
             "unit": "ns",
             "range": "± 0.45041522118550353"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 197.5832462310791,
             "unit": "ns",
             "range": "± 1.0200458228299951"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 380.48488934834796,
             "unit": "ns",
             "range": "± 1.506920265920848"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2260.3265322171724,
             "unit": "ns",
             "range": "± 3.6334205329863405"
@@ -9087,25 +9087,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 118.91997030803135,
             "unit": "ns",
             "range": "± 0.20277037390447447"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 198.0091997555324,
             "unit": "ns",
             "range": "± 0.5610556993055554"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 368.3410867055257,
             "unit": "ns",
             "range": "± 1.5830210027680114"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2207.8350830078125,
             "unit": "ns",
             "range": "± 6.548283732583232"
@@ -9135,25 +9135,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 119.74222489765712,
             "unit": "ns",
             "range": "± 0.5490570349186782"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 237.26182324545724,
             "unit": "ns",
             "range": "± 0.6595858054264361"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 334.62127538827747,
             "unit": "ns",
             "range": "± 1.0756906614215322"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2174.8532431466238,
             "unit": "ns",
             "range": "± 6.100110959369057"
@@ -9183,25 +9183,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 120.53964478628976,
             "unit": "ns",
             "range": "± 0.4016821559725115"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 197.49478560227615,
             "unit": "ns",
             "range": "± 0.6825218304383088"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 345.83641460963656,
             "unit": "ns",
             "range": "± 0.9854517639587962"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2193.2872772216797,
             "unit": "ns",
             "range": "± 6.831529966912213"
@@ -9231,25 +9231,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 119.75100517272949,
             "unit": "ns",
             "range": "± 0.35697685890350617"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 197.90039221445718,
             "unit": "ns",
             "range": "± 0.8197762498729011"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 349.50909981360803,
             "unit": "ns",
             "range": "± 1.1821976652289297"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2195.6814399132363,
             "unit": "ns",
             "range": "± 9.224287326801104"
@@ -9279,25 +9279,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 116.51095610398512,
             "unit": "ns",
             "range": "± 0.5381799394588281"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 232.24732081095377,
             "unit": "ns",
             "range": "± 0.5428899455035645"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 351.0677178700765,
             "unit": "ns",
             "range": "± 4.706008512577614"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2215.359992980957,
             "unit": "ns",
             "range": "± 15.37753602876763"
@@ -9327,25 +9327,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 120.34016132354736,
             "unit": "ns",
             "range": "± 0.20672160040670085"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 201.85771147410074,
             "unit": "ns",
             "range": "± 0.5139906500204126"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 382.65794004712785,
             "unit": "ns",
             "range": "± 2.527150378081036"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2169.370346069336,
             "unit": "ns",
             "range": "± 8.086485518834541"
@@ -9375,25 +9375,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 118.70746612548828,
             "unit": "ns",
             "range": "± 0.1561440198216799"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 200.24508578436715,
             "unit": "ns",
             "range": "± 0.6924044769517104"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 354.46671758379256,
             "unit": "ns",
             "range": "± 1.660998849058668"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2281.8643136457963,
             "unit": "ns",
             "range": "± 78.46298311109284"
@@ -9423,25 +9423,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 119.29225554833046,
             "unit": "ns",
             "range": "± 0.3467290979114484"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 197.1500015258789,
             "unit": "ns",
             "range": "± 0.5589125122985179"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 341.7323772723858,
             "unit": "ns",
             "range": "± 5.589666904635364"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2227.791507427509,
             "unit": "ns",
             "range": "± 8.128177990362854"
@@ -9471,25 +9471,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 119.37900384267171,
             "unit": "ns",
             "range": "± 0.3248239276023877"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 197.85602887471518,
             "unit": "ns",
             "range": "± 0.35414677417510276"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 400.345253944397,
             "unit": "ns",
             "range": "± 1.054924873997155"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2227.3683166503906,
             "unit": "ns",
             "range": "± 6.422616836422211"
@@ -9519,25 +9519,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 120.23134742464337,
             "unit": "ns",
             "range": "± 0.21576264129369194"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 235.7056999206543,
             "unit": "ns",
             "range": "± 0.6018905236315426"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 399.536200932094,
             "unit": "ns",
             "range": "± 1.5548152968139315"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 2202.071980067662,
             "unit": "ns",
             "range": "± 4.718900153740782"
@@ -9565,25 +9565,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 132.1999247868856,
             "unit": "ns",
             "range": "± 0.8612927595730926"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 196.07309699058533,
             "unit": "ns",
             "range": "± 0.19709423644443935"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 319.05596415201825,
             "unit": "ns",
             "range": "± 0.4432622592526687"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 287.87380536397296,
             "unit": "ns",
             "range": "± 0.4644673057607764"
@@ -9613,25 +9613,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 128.6981050784771,
             "unit": "ns",
             "range": "± 0.4689945826176145"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 215.75374603271484,
             "unit": "ns",
             "range": "± 0.33392175479184605"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 330.43293952941895,
             "unit": "ns",
             "range": "± 0.37767400875431895"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 291.6379383632115,
             "unit": "ns",
             "range": "± 0.685434885025172"
@@ -9661,25 +9661,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 126.49250213916486,
             "unit": "ns",
             "range": "± 0.6544763767056437"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 197.83673967633928,
             "unit": "ns",
             "range": "± 0.44157991022783655"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 334.4305185171274,
             "unit": "ns",
             "range": "± 0.7430946185904482"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 294.3707840783255,
             "unit": "ns",
             "range": "± 0.6089617467528639"
@@ -9709,25 +9709,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 128.52911790211996,
             "unit": "ns",
             "range": "± 0.41317959996327164"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 204.6912942613874,
             "unit": "ns",
             "range": "± 0.4140316056495741"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 319.66874599456787,
             "unit": "ns",
             "range": "± 0.6686091658058759"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 278.94521126380334,
             "unit": "ns",
             "range": "± 0.6624276152977646"
@@ -9757,25 +9757,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 129.44029172261557,
             "unit": "ns",
             "range": "± 0.7053574040920065"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 201.2830036027091,
             "unit": "ns",
             "range": "± 0.25927843603653783"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 322.15265205928256,
             "unit": "ns",
             "range": "± 0.8277077197246052"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 284.29649557386125,
             "unit": "ns",
             "range": "± 0.7533063322226389"
@@ -9805,25 +9805,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 130.19526554987982,
             "unit": "ns",
             "range": "± 0.5113552972709001"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 200.67571798960367,
             "unit": "ns",
             "range": "± 0.30905029634433967"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 311.9860363006592,
             "unit": "ns",
             "range": "± 0.592525766521176"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 282.6888697487967,
             "unit": "ns",
             "range": "± 0.8628570777829071"
@@ -9853,25 +9853,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 132.6215420450483,
             "unit": "ns",
             "range": "± 0.40398244897298435"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 197.4855166215163,
             "unit": "ns",
             "range": "± 0.5254124445504662"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 332.8772953578404,
             "unit": "ns",
             "range": "± 1.1272987209375345"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 301.41448293413436,
             "unit": "ns",
             "range": "± 0.7319052335470602"
@@ -9901,25 +9901,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 127.72604737962995,
             "unit": "ns",
             "range": "± 0.6888937111819108"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 209.15582009724207,
             "unit": "ns",
             "range": "± 0.7839538362860707"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 309.1608558382307,
             "unit": "ns",
             "range": "± 0.3565865191101994"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 304.1752592722575,
             "unit": "ns",
             "range": "± 0.7804468548563537"
@@ -9949,25 +9949,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 128.2861598332723,
             "unit": "ns",
             "range": "± 0.7995815641151796"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 196.28779888153076,
             "unit": "ns",
             "range": "± 0.5506576159442722"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 318.2504619870867,
             "unit": "ns",
             "range": "± 0.6687900441849078"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 307.2752316792806,
             "unit": "ns",
             "range": "± 0.716704978854636"
@@ -9997,25 +9997,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 127.34290191105434,
             "unit": "ns",
             "range": "± 0.6599625382690543"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 200.12327092034477,
             "unit": "ns",
             "range": "± 0.317007162160333"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 319.8631103222187,
             "unit": "ns",
             "range": "± 1.0324452789308671"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 293.2307549885341,
             "unit": "ns",
             "range": "± 3.264467437715123"
@@ -10045,25 +10045,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 128.2785987854004,
             "unit": "ns",
             "range": "± 0.5443118145152765"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 214.71327940622965,
             "unit": "ns",
             "range": "± 0.5909323234932446"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 314.6019275371845,
             "unit": "ns",
             "range": "± 0.3564318927494174"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 283.0795447031657,
             "unit": "ns",
             "range": "± 0.5961291118701592"
@@ -10093,25 +10093,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 129.61177984873453,
             "unit": "ns",
             "range": "± 0.4404862612091625"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 199.26693269184656,
             "unit": "ns",
             "range": "± 0.3510550433724438"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 325.72054862976074,
             "unit": "ns",
             "range": "± 0.3938049721108289"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 288.8717761406532,
             "unit": "ns",
             "range": "± 0.7874264271428344"
@@ -10141,25 +10141,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 130.81154823303223,
             "unit": "ns",
             "range": "± 0.74501977898484"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 196.7867136001587,
             "unit": "ns",
             "range": "± 0.3894923714622413"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 320.37159374782016,
             "unit": "ns",
             "range": "± 0.6271441326440719"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 304.475736618042,
             "unit": "ns",
             "range": "± 0.5303336965895615"
@@ -10189,25 +10189,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 129.01916662851968,
             "unit": "ns",
             "range": "± 0.883723553822328"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 200.51422754923502,
             "unit": "ns",
             "range": "± 0.7245556881319892"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 323.43643052237377,
             "unit": "ns",
             "range": "± 0.7214816546996424"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 300.182503920335,
             "unit": "ns",
             "range": "± 0.586297425030365"
@@ -10237,25 +10237,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 130.71760450090682,
             "unit": "ns",
             "range": "± 0.33446578944934696"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 202.92496840159097,
             "unit": "ns",
             "range": "± 0.7086083175839735"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 325.68288803100586,
             "unit": "ns",
             "range": "± 0.6147322346993175"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 301.18919531504315,
             "unit": "ns",
             "range": "± 0.8422556714623814"
@@ -10285,25 +10285,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 126.96225484212239,
             "unit": "ns",
             "range": "± 0.5199167352917836"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 201.00088755289713,
             "unit": "ns",
             "range": "± 0.30926581740006703"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 323.71124854454627,
             "unit": "ns",
             "range": "± 0.7031489569762301"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 284.31790792025055,
             "unit": "ns",
             "range": "± 0.6554146841521326"
@@ -10333,25 +10333,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 124.99684370481052,
             "unit": "ns",
             "range": "± 1.4666880324733658"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 208.43472297375018,
             "unit": "ns",
             "range": "± 0.3744235648692517"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 314.4111728668213,
             "unit": "ns",
             "range": "± 0.3560950478284249"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 284.2391109466553,
             "unit": "ns",
             "range": "± 0.9994438215935887"
@@ -10381,25 +10381,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 138.6244407066932,
             "unit": "ns",
             "range": "± 1.6003754248078879"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 206.0977734052218,
             "unit": "ns",
             "range": "± 0.5389610130180728"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 315.5099528176444,
             "unit": "ns",
             "range": "± 1.3900394279186539"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 294.09696261088055,
             "unit": "ns",
             "range": "± 1.1065356592618865"
@@ -10429,25 +10429,25 @@ window.BENCHMARK_DATA = {
         "tool": "benchmarkdotnet",
         "benches": [
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 128.42153708140054,
             "unit": "ns",
             "range": "± 0.6239921532948395"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 204.05014294844406,
             "unit": "ns",
             "range": "± 0.25990374234242436"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 315.88941891988117,
             "unit": "ns",
             "range": "± 0.7697992439958008"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 284.4720204671224,
             "unit": "ns",
             "range": "± 0.8885318991298042"
@@ -10525,25 +10525,25 @@ window.BENCHMARK_DATA = {
             "range": "± 0.3724396881873275"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 136.80747066225325,
             "unit": "ns",
             "range": "± 0.34295153967417175"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 163.9792823791504,
             "unit": "ns",
             "range": "± 0.5447302465251022"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 267.9940920609694,
             "unit": "ns",
             "range": "± 0.5059017107682992"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 266.51358945029125,
             "unit": "ns",
             "range": "± 0.59079278705064"
@@ -10669,25 +10669,25 @@ window.BENCHMARK_DATA = {
             "range": "± 0.5682370991362677"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 133.57406775156656,
             "unit": "ns",
             "range": "± 0.13585743270921727"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 167.31598036629813,
             "unit": "ns",
             "range": "± 0.321292076269607"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 255.12844494410925,
             "unit": "ns",
             "range": "± 0.37694577541377927"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 263.6413904336783,
             "unit": "ns",
             "range": "± 0.4157312078392653"
@@ -10813,25 +10813,25 @@ window.BENCHMARK_DATA = {
             "range": "± 0.5639980516863892"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 135.08019924163818,
             "unit": "ns",
             "range": "± 0.31361474331221334"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 167.43343610029953,
             "unit": "ns",
             "range": "± 0.20496606127090644"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 260.4175347548265,
             "unit": "ns",
             "range": "± 0.4723698139557984"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 267.9614186286926,
             "unit": "ns",
             "range": "± 0.5916272095124633"
@@ -10957,25 +10957,25 @@ window.BENCHMARK_DATA = {
             "range": "± 0.46176681624648713"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
             "value": 138.31373964037215,
             "unit": "ns",
             "range": "± 0.28945019336640115"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
             "value": 168.27855706214905,
             "unit": "ns",
             "range": "± 0.2768814939879515"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
             "value": 262.0219198862712,
             "unit": "ns",
             "range": "± 0.5634563426420482"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
             "value": 268.2270622253418,
             "unit": "ns",
             "range": "± 1.0626627591550961"
@@ -69515,37 +69515,37 @@ window.BENCHMARK_DATA = {
             "range": "± 16079.06679227425"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersSmall(Params: Native,None)",
             "value": 2987.4684210526316,
             "unit": "ns",
             "range": "± 333.96367023182995"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersLarge(Params: Native,None)",
             "value": 2956.31914893617,
             "unit": "ns",
             "range": "± 480.4419328203682"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructSmall(Params: Native,None)",
             "value": 227536.51428571428,
             "unit": "ns",
             "range": "± 11078.648991226659"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructLarge(Params: Native,None)",
             "value": 224155.72972972973,
             "unit": "ns",
             "range": "± 7618.053490261175"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionSmall(Params: Native,None)",
             "value": 15640.477777777778,
             "unit": "ns",
             "range": "± 1604.0397402385859"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionLarge(Params: Native,None)",
             "value": 141045.68,
             "unit": "ns",
             "range": "± 11131.721371582447"
@@ -69719,37 +69719,37 @@ window.BENCHMARK_DATA = {
             "range": "± 17103.590216724813"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersSmall(Params: Native,None)",
             "value": 4410.255319148936,
             "unit": "ns",
             "range": "± 1149.595475239805"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersLarge(Params: Native,None)",
             "value": 4607.059139784947,
             "unit": "ns",
             "range": "± 1221.162057599642"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructSmall(Params: Native,None)",
             "value": 231403.75,
             "unit": "ns",
             "range": "± 5946.769479232437"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructLarge(Params: Native,None)",
             "value": 248466.0164835165,
             "unit": "ns",
             "range": "± 18864.945588968054"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionSmall(Params: Native,None)",
             "value": 25314.382978723403,
             "unit": "ns",
             "range": "± 4919.793377636087"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionLarge(Params: Native,None)",
             "value": 150040.47,
             "unit": "ns",
             "range": "± 16363.812899665307"
@@ -69923,37 +69923,37 @@ window.BENCHMARK_DATA = {
             "range": "± 14945.72121724503"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersSmall(Params: Native,None)",
             "value": 2974.8229166666665,
             "unit": "ns",
             "range": "± 749.7109477348647"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersLarge(Params: Native,None)",
             "value": 2677.308510638298,
             "unit": "ns",
             "range": "± 424.8358829638475"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructSmall(Params: Native,None)",
             "value": 226869.1875,
             "unit": "ns",
             "range": "± 8883.99544880053"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructLarge(Params: Native,None)",
             "value": 232374.3536585366,
             "unit": "ns",
             "range": "± 12225.30465486426"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionSmall(Params: Native,None)",
             "value": 16623.554347826088,
             "unit": "ns",
             "range": "± 2513.132847921011"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionLarge(Params: Native,None)",
             "value": 141116,
             "unit": "ns",
             "range": "± 14172.207509663753"
@@ -70129,37 +70129,37 @@ window.BENCHMARK_DATA = {
             "range": "± 966.1311405802882"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: Native,None)",
             "value": 1166.2604166666667,
             "unit": "ns",
             "range": "± 450.65927717165357"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: Native,None)",
             "value": 808.2989690721649,
             "unit": "ns",
             "range": "± 359.93318723029626"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: Native,None)",
             "value": 1651.6030927835052,
             "unit": "ns",
             "range": "± 692.1483084771896"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: Native,None)",
             "value": 205909.5,
             "unit": "ns",
             "range": "± 2020.016516584141"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: Native,None)",
             "value": 1840.659793814433,
             "unit": "ns",
             "range": "± 475.09178689048116"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: Native,None)",
             "value": 9019.708333333334,
             "unit": "ns",
             "range": "± 1006.5485886948076"
@@ -70333,37 +70333,37 @@ window.BENCHMARK_DATA = {
             "range": "± 2631.3138136833063"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: Native,None)",
             "value": 1483.9052631578948,
             "unit": "ns",
             "range": "± 496.5294247603616"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: Native,None)",
             "value": 938.6702127659574,
             "unit": "ns",
             "range": "± 368.7116377216104"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: Native,None)",
             "value": 2263.8645833333335,
             "unit": "ns",
             "range": "± 697.6464965158766"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: Native,None)",
             "value": 219520.1847826087,
             "unit": "ns",
             "range": "± 15137.855039115035"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: Native,None)",
             "value": 3910.96875,
             "unit": "ns",
             "range": "± 1876.7691244214295"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: Native,None)",
             "value": 18848.896907216495,
             "unit": "ns",
             "range": "± 5325.9470039854095"
@@ -70537,37 +70537,37 @@ window.BENCHMARK_DATA = {
             "range": "± 69.69848483201616"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: Native,None)",
             "value": 1204.5210526315789,
             "unit": "ns",
             "range": "± 578.8398885472113"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: Native,None)",
             "value": 848.3958333333334,
             "unit": "ns",
             "range": "± 382.1627231034244"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: Native,None)",
             "value": 1507.7938144329896,
             "unit": "ns",
             "range": "± 709.6152117248757"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: Native,None)",
             "value": 214272.95833333334,
             "unit": "ns",
             "range": "± 8472.173053800669"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: Native,None)",
             "value": 1949.6702127659576,
             "unit": "ns",
             "range": "± 449.12740698529035"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: Native,None)",
             "value": 7926.9375,
             "unit": "ns",
             "range": "± 159.42269547756786"
@@ -70741,37 +70741,37 @@ window.BENCHMARK_DATA = {
             "range": "± 705.4232689683989"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: Native,None)",
             "value": 1199.701030927835,
             "unit": "ns",
             "range": "± 413.5327517497973"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: Native,None)",
             "value": 794.6648351648352,
             "unit": "ns",
             "range": "± 297.90245471877614"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: Native,None)",
             "value": 1905.0515463917525,
             "unit": "ns",
             "range": "± 292.238215157815"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: Native,None)",
             "value": 216692.375,
             "unit": "ns",
             "range": "± 7528.978848210086"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: Native,None)",
             "value": 1888.2105263157894,
             "unit": "ns",
             "range": "± 372.3742367947109"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: Native,None)",
             "value": 7810.666666666667,
             "unit": "ns",
             "range": "± 124.9609636016081"
@@ -70947,37 +70947,37 @@ window.BENCHMARK_DATA = {
             "range": "± 22907.69329011196"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersSmall(Params: Native,None)",
             "value": 6835.789473684211,
             "unit": "ns",
             "range": "± 1478.2764395751267"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersLarge(Params: Native,None)",
             "value": 7067.391304347826,
             "unit": "ns",
             "range": "± 1460.6643600330658"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructSmall(Params: Native,None)",
             "value": 269796.9879518072,
             "unit": "ns",
             "range": "± 14768.360522557787"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructLarge(Params: Native,None)",
             "value": 275245.45454545453,
             "unit": "ns",
             "range": "± 23652.648798671835"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionSmall(Params: Native,None)",
             "value": 37521.50537634409,
             "unit": "ns",
             "range": "± 4645.985865855777"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionLarge(Params: Native,None)",
             "value": 144098.96907216494,
             "unit": "ns",
             "range": "± 23779.80364565942"
@@ -71151,37 +71151,37 @@ window.BENCHMARK_DATA = {
             "range": "± 28271.724988914222"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersSmall(Params: Native,None)",
             "value": 6807.291666666667,
             "unit": "ns",
             "range": "± 1344.6380684361573"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersLarge(Params: Native,None)",
             "value": 7260.8247422680415,
             "unit": "ns",
             "range": "± 1287.6461649257958"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructSmall(Params: Native,None)",
             "value": 297940,
             "unit": "ns",
             "range": "± 44154.87105969026"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructLarge(Params: Native,None)",
             "value": 283718.5393258427,
             "unit": "ns",
             "range": "± 30465.474480831348"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionSmall(Params: Native,None)",
             "value": 37075.555555555555,
             "unit": "ns",
             "range": "± 5395.072889743282"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionLarge(Params: Native,None)",
             "value": 165149.49494949495,
             "unit": "ns",
             "range": "± 27801.2346434741"
@@ -71355,37 +71355,37 @@ window.BENCHMARK_DATA = {
             "range": "± 23738.30457649971"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersSmall(Params: Native,None)",
             "value": 2886.9565217391305,
             "unit": "ns",
             "range": "± 626.2073860923074"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersLarge(Params: Native,None)",
             "value": 2520.689655172414,
             "unit": "ns",
             "range": "± 922.9802501142931"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructSmall(Params: Native,None)",
             "value": 279541,
             "unit": "ns",
             "range": "± 49378.67509913014"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructLarge(Params: Native,None)",
             "value": 264034.17721518985,
             "unit": "ns",
             "range": "± 19271.4341946029"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionSmall(Params: Native,None)",
             "value": 30360.752688172044,
             "unit": "ns",
             "range": "± 4960.528161868834"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionLarge(Params: Native,None)",
             "value": 131601.05263157896,
             "unit": "ns",
             "range": "± 21694.922902173286"
@@ -71559,37 +71559,37 @@ window.BENCHMARK_DATA = {
             "range": "± 27727.528147523666"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersSmall(Params: Native,None)",
             "value": 3880,
             "unit": "ns",
             "range": "± 1482.7088493412634"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ResetParametersLarge(Params: Native,None)",
             "value": 4204.123711340206,
             "unit": "ns",
             "range": "± 1636.1105762965456"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructSmall(Params: Native,None)",
             "value": 259512.88659793814,
             "unit": "ns",
             "range": "± 44953.69219075065"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.ConstructLarge(Params: Native,None)",
             "value": 249381.25,
             "unit": "ns",
             "range": "± 43926.75797039287"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionSmall(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionSmall(Params: Native,None)",
             "value": 26975.78947368421,
             "unit": "ns",
             "range": "± 5680.513832569698"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionLarge(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaRunnerOperations.CompileForSessionLarge(Params: Native,None)",
             "value": 134266.66666666666,
             "unit": "ns",
             "range": "± 28078.79946849288"
@@ -71765,37 +71765,37 @@ window.BENCHMARK_DATA = {
             "range": "± 2703.0119543630494"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: Native,None)",
             "value": 1444.4444444444443,
             "unit": "ns",
             "range": "± 1016.4890555239637"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: Native,None)",
             "value": 2151,
             "unit": "ns",
             "range": "± 2030.2507682102182"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: Native,None)",
             "value": 4716.326530612245,
             "unit": "ns",
             "range": "± 3077.0163576871732"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: Native,None)",
             "value": 290501.0101010101,
             "unit": "ns",
             "range": "± 49496.70880616966"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: Native,None)",
             "value": 5330.526315789473,
             "unit": "ns",
             "range": "± 3725.046727800889"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: Native,None)",
             "value": 15399.473684210527,
             "unit": "ns",
             "range": "± 4012.0794651824153"
@@ -71969,37 +71969,37 @@ window.BENCHMARK_DATA = {
             "range": "± 5654.904367375791"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: Native,None)",
             "value": 875.5208333333334,
             "unit": "ns",
             "range": "± 960.7013554160552"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: Native,None)",
             "value": 1328.125,
             "unit": "ns",
             "range": "± 1008.1460968686924"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: Native,None)",
             "value": 2869.387755102041,
             "unit": "ns",
             "range": "± 2758.768893339712"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: Native,None)",
             "value": 241566.32653061225,
             "unit": "ns",
             "range": "± 45561.81921161247"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: Native,None)",
             "value": 3515.151515151515,
             "unit": "ns",
             "range": "± 2239.185513199652"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: Native,None)",
             "value": 7066.666666666667,
             "unit": "ns",
             "range": "± 2810.6064776004896"
@@ -72173,37 +72173,37 @@ window.BENCHMARK_DATA = {
             "range": "± 3048.8480867956328"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: Native,None)",
             "value": 2452.0833333333335,
             "unit": "ns",
             "range": "± 1976.5455866587913"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: Native,None)",
             "value": 2214.1414141414143,
             "unit": "ns",
             "range": "± 2126.6535031958365"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: Native,None)",
             "value": 4570.408163265306,
             "unit": "ns",
             "range": "± 2547.4146661212785"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: Native,None)",
             "value": 284016.16161616164,
             "unit": "ns",
             "range": "± 46105.53489963843"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: Native,None)",
             "value": 5608.2474226804125,
             "unit": "ns",
             "range": "± 3894.9130847997526"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: Native,None)",
             "value": 15792.47311827957,
             "unit": "ns",
             "range": "± 3992.118228163976"
@@ -72377,37 +72377,37 @@ window.BENCHMARK_DATA = {
             "range": "± 5525.388509581764"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupHit(Params: Native,None)",
             "value": 1038.0434782608695,
             "unit": "ns",
             "range": "± 786.1217073381243"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LookupMiss(Params: Native,None)",
             "value": 764.2105263157895,
             "unit": "ns",
             "range": "± 751.8651686325887"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadOuterHit(Params: Native,None)",
             "value": 1503.2967032967033,
             "unit": "ns",
             "range": "± 1437.7799668973112"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadInnerHit(Params: Native,None)",
             "value": 242109.34065934067,
             "unit": "ns",
             "range": "± 39770.05008803589"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.LoadMiss(Params: Native,None)",
             "value": 1736.021505376344,
             "unit": "ns",
             "range": "± 1236.8957811576265"
           },
           {
-            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: None)",
+            "name": "BDN.benchmark.Lua.LuaScriptCacheOperations.Digest(Params: Native,None)",
             "value": 5655.102040816327,
             "unit": "ns",
             "range": "± 1452.2021989357163"
