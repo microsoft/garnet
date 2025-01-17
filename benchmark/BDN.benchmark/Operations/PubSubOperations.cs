@@ -24,7 +24,6 @@ namespace BDN.benchmark.Operations
             var opts = new GarnetServerOptions
             {
                 QuietMode = true,
-                EnableLua = true,
                 DisablePubSub = false,
             };
 
