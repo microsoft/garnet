@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737081911869,
+  "lastUpdate": 1737081921264,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -23597,6 +23597,84 @@ window.BENCHMARK_DATA = {
             "value": 96277.88347516741,
             "unit": "ns",
             "range": "± 215.46456926597367"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "talzacc@microsoft.com",
+            "name": "Tal Zaccai",
+            "username": "TalZaccai"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3f8f22a5865f6f79f3b7d41954b101f1201a975c",
+          "message": "Fixing module registration logic + Implementing no-op & JSON module benchmarking (#917)\n\n* wip\r\n\r\n* wip\r\n\r\n* wip\r\n\r\n* wip\r\n\r\n* wip\r\n\r\n* wip\r\n\r\n* format\r\n\r\n* Added comments\r\n\r\n* small fixes\r\n\r\n* Moved NoOpModule under playground/\r\n\r\n* Fixing NoOpModule csproj\r\n\r\n* Added programmatic load test\r\n\r\n* Adding \"warm-up\" command calls\r\n\r\n* wip\r\n\r\n* Added ModuleOperations to benchmark CI configs",
+          "timestamp": "2025-01-16T19:37:11-07:00",
+          "tree_id": "b133e9931d57dcdb723d3eafd4068128d2d73e60",
+          "url": "https://github.com/microsoft/garnet/commit/3f8f22a5865f6f79f3b7d41954b101f1201a975c"
+        },
+        "date": 1737081909648,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: ACL)",
+            "value": 119089.70075334821,
+            "unit": "ns",
+            "range": "± 250.20649722636284"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: ACL)",
+            "value": 103605.09730747768,
+            "unit": "ns",
+            "range": "± 301.88712115899926"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: ACL)",
+            "value": 100401.00911458333,
+            "unit": "ns",
+            "range": "± 168.9413283886587"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: AOF)",
+            "value": 142395.69373497597,
+            "unit": "ns",
+            "range": "± 319.37203930007854"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: AOF)",
+            "value": 115202.392578125,
+            "unit": "ns",
+            "range": "± 425.8899083197623"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: AOF)",
+            "value": 111022.13297526042,
+            "unit": "ns",
+            "range": "± 434.2816530624722"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: None)",
+            "value": 116591.73060825893,
+            "unit": "ns",
+            "range": "± 367.60645721777524"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: None)",
+            "value": 102080.83129882812,
+            "unit": "ns",
+            "range": "± 450.2168562692985"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: None)",
+            "value": 95372.62660435268,
+            "unit": "ns",
+            "range": "± 231.32307249628906"
           }
         ]
       }
