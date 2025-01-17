@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737058038651,
+  "lastUpdate": 1737075848311,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -61165,6 +61165,36 @@ window.BENCHMARK_DATA = {
             "value": 91.93149336484763,
             "unit": "ns",
             "range": "± 0.5171412771547741"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "96085550+vazois@users.noreply.github.com",
+            "name": "Vasileios Zois",
+            "username": "vazois"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5d93ac52a5c0a7d613454f77c20124139c847c1c",
+          "message": "Add BDN for PUBLISH (#918)\n\n* add BDN for standalone PUBLISH\r\n\r\n* add separate PubSubOperations BDN\r\n\r\n* warm up\r\n\r\n* check for null on dispose\r\n\r\n* remove LUA enabled",
+          "timestamp": "2025-01-16T17:01:50-08:00",
+          "tree_id": "993d742c64e18800c5f0b0d812151701665f2c8d",
+          "url": "https://github.com/microsoft/garnet/commit/5d93ac52a5c0a7d613454f77c20124139c847c1c"
+        },
+        "date": 1737075845229,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Network.BasicOperations.InlinePing(Params: None)",
+            "value": 122.16536747492276,
+            "unit": "ns",
+            "range": "± 0.331423777492585"
           }
         ]
       }
