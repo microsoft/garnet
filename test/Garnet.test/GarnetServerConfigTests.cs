@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CommandLine;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -244,6 +245,81 @@ namespace Garnet.test
                 // Delete blob
                 deviceFactory.Initialize(AzureTestDirectory);
                 deviceFactory.Delete(new FileDescriptor { directoryName = "" });
+            }
+        }
+
+        [Test]
+        public void LuaMemoryOptions()
+        {
+            // Defaults to Native with no limit
+            {
+                var args = new[] { "--lua" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.IsTrue(options.EnableLua);
+                ClassicAssert.AreEqual(LuaMemoryManagementMode.Native, options.LuaMemoryManagementMode);
+                ClassicAssert.IsNull(options.LuaScriptMemoryLimit);
+            }
+
+            // Native with limit rejected
+            {
+                var args = new[] { "--lua", "--lua-script-memory-limit", "10m" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                ClassicAssert.IsFalse(parseSuccessful);
+            }
+
+            // Tracked with no limit works
+            {
+                var args = new[] { "--lua", "--lua-memory-management-mode", "Tracked" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.IsTrue(options.EnableLua);
+                ClassicAssert.AreEqual(LuaMemoryManagementMode.Tracked, options.LuaMemoryManagementMode);
+                ClassicAssert.IsNull(options.LuaScriptMemoryLimit);
+            }
+
+            // Tracked with limit works
+            {
+                var args = new[] { "--lua", "--lua-memory-management-mode", "Tracked", "--lua-script-memory-limit", "10m" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.IsTrue(options.EnableLua);
+                ClassicAssert.AreEqual(LuaMemoryManagementMode.Tracked, options.LuaMemoryManagementMode);
+                ClassicAssert.AreEqual("10m", options.LuaScriptMemoryLimit);
+            }
+
+            // Tracked with bad limit rejected
+            {
+                var args = new[] { "--lua", "--lua-memory-management-mode", "Tracked", "--lua-script-memory-limit", "10Q" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                ClassicAssert.IsFalse(parseSuccessful);
+            }
+
+            // Managed with no limit works
+            {
+                var args = new[] { "--lua", "--lua-memory-management-mode", "Managed" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.IsTrue(options.EnableLua);
+                ClassicAssert.AreEqual(LuaMemoryManagementMode.Managed, options.LuaMemoryManagementMode);
+                ClassicAssert.IsNull(options.LuaScriptMemoryLimit);
+            }
+
+            // Managed with limit works
+            {
+                var args = new[] { "--lua", "--lua-memory-management-mode", "Managed", "--lua-script-memory-limit", "10m" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.IsTrue(options.EnableLua);
+                ClassicAssert.AreEqual(LuaMemoryManagementMode.Managed, options.LuaMemoryManagementMode);
+                ClassicAssert.AreEqual("10m", options.LuaScriptMemoryLimit);
+            }
+
+            // Managed with bad limit rejected
+            {
+                var args = new[] { "--lua", "--lua-memory-management-mode", "Managed", "--lua-script-memory-limit", "10Q" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                ClassicAssert.IsFalse(parseSuccessful);
             }
         }
     }

@@ -134,7 +134,7 @@ namespace Garnet.cluster
         /// <param name="address"></param>
         /// <param name="port"></param>
         public void RunMeetTask(string address, int port)
-            => Task.Run(() => TryMeet(address, port));
+            => Task.Run(async () => await TryMeetAsync(address, port));
 
         /// <summary>
         /// This task will immediately communicate with the new node and try to merge the retrieve configuration to its own.
@@ -143,7 +143,7 @@ namespace Garnet.cluster
         /// <param name="address">Address of node to issue meet to</param>
         /// <param name="port"> Port of node to issue meet to</param>
         /// <param name="acquireLock">Whether to acquire lock for merging. Default true</param>
-        public void TryMeet(string address, int port, bool acquireLock = true)
+        public async Task TryMeetAsync(string address, int port, bool acquireLock = true)
         {
             GarnetServerNode gsn = null;
             var conf = CurrentConfig;
@@ -165,10 +165,10 @@ namespace Garnet.cluster
 
                 // Initialize GarnetServerNode
                 // Thread-Safe initialization executes only once
-                gsn.Initialize();
+                await gsn.InitializeAsync();
 
                 // Send full config in Gossip
-                resp = gsn.TryMeet(conf.ToByteArray());
+                resp = await gsn.TryMeetAsync(conf.ToByteArray());
                 if (resp.Length > 0)
                 {
                     var other = ClusterConfig.FromByteArray(resp.Span.ToArray());
@@ -203,7 +203,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Main gossip async task
         /// </summary>
-        async void GossipMain()
+        async Task GossipMain()
         {
             // Main gossip loop
             try
@@ -211,7 +211,7 @@ namespace Garnet.cluster
                 while (true)
                 {
                     if (ctsGossip.Token.IsCancellationRequested) return;
-                    InitConnections();
+                    await InitConnections();
 
                     // Choose between full broadcast or sample gossip to few nodes
                     if (GossipSamplePercent == 100)
@@ -240,7 +240,7 @@ namespace Garnet.cluster
             }
 
             // Initialize connections for nodes that have either been dispose due to banlist (after expiry) or timeout
-            void InitConnections()
+            async Task InitConnections()
             {
                 DisposeBannedWorkerConnections();
 
@@ -263,7 +263,7 @@ namespace Garnet.cluster
                         };
                         try
                         {
-                            gsn.Initialize();
+                            await gsn.InitializeAsync();
                             if (!clusterConnectionStore.AddConnection(gsn))
                                 gsn.Dispose();
                         }

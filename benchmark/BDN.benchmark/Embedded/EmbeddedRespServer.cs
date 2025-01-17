@@ -2,8 +2,10 @@
 // Licensed under the MIT license.
 
 using Garnet;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Embedded.server
 {
@@ -13,6 +15,7 @@ namespace Embedded.server
     internal sealed class EmbeddedRespServer : GarnetServer
     {
         readonly GarnetServerEmbedded garnetServerEmbedded;
+        readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
 
         /// <summary>
         /// Creates an EmbeddedRespServer instance
@@ -23,6 +26,13 @@ namespace Embedded.server
         public EmbeddedRespServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, GarnetServerEmbedded server = null) : base(opts, loggerFactory, server)
         {
             this.garnetServerEmbedded = server;
+            this.subscribeBroker = opts.DisablePubSub ? null :
+                new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(
+                    new SpanByteKeySerializer(),
+                    null,
+                    opts.PubSubPageSizeBytes(),
+                    opts.SubscriberRefreshFrequencyMs,
+                    true);
         }
 
         /// <summary>
@@ -38,7 +48,7 @@ namespace Embedded.server
         /// <returns>A new RESP server session</returns>
         internal RespServerSession GetRespSession()
         {
-            return new RespServerSession(0, new EmbeddedNetworkSender(), storeWrapper, null, null, true);
+            return new RespServerSession(0, new EmbeddedNetworkSender(), storeWrapper, subscribeBroker: subscribeBroker, null, true);
         }
 
         internal EmbeddedNetworkHandler GetNetworkHandler()
