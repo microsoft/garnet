@@ -26,7 +26,7 @@ namespace Garnet.server
                 case GarnetObjectType.Persist:
                     return false;
                 default:
-                    if ((byte)type < CustomCommandManager.TypeIdStartOffset)
+                    if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
                         return GarnetObject.NeedToCreate(input.header);
                     else
                     {
@@ -44,7 +44,7 @@ namespace Garnet.server
         public bool InitialUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             var type = input.header.type;
-            if ((byte)type < CustomCommandManager.TypeIdStartOffset)
+            if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
                 value.Operate(ref input, ref output.spanByteAndMemory, out _, out _);
@@ -139,7 +139,7 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     return true;
                 default:
-                    if ((byte)input.header.type < CustomCommandManager.TypeIdStartOffset)
+                    if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
                         var operateSuccessful = value.Operate(ref input, ref output.spanByteAndMemory, out sizeChange,
                         out var removeKey);
@@ -231,7 +231,7 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     break;
                 default:
-                    if ((byte)input.header.type < CustomCommandManager.TypeIdStartOffset)
+                    if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
                         value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
                         if (removeKey)

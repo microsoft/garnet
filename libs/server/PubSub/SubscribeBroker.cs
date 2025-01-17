@@ -326,7 +326,6 @@ namespace Garnet.server
             }
         }
 
-
         /// <summary>
         /// List all subscriptions made by a session
         /// </summary>

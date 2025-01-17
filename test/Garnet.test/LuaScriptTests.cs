@@ -12,16 +12,30 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [TestFixture]
+    // Limits chosen here to allow completion - if you have to bump them up, consider that you might have introduced a regression
+    [TestFixture(LuaMemoryManagementMode.Native, "")]
+    [TestFixture(LuaMemoryManagementMode.Tracked, "")]
+    [TestFixture(LuaMemoryManagementMode.Tracked, "13m")]
+    [TestFixture(LuaMemoryManagementMode.Managed, "")]
+    [TestFixture(LuaMemoryManagementMode.Managed, "15m")]
     public class LuaScriptTests
     {
+        private readonly LuaMemoryManagementMode allocMode;
+        private readonly string limitBytes;
+
         protected GarnetServer server;
+
+        public LuaScriptTests(LuaMemoryManagementMode allocMode, string limitBytes)
+        {
+            this.allocMode = allocMode;
+            this.limitBytes = limitBytes;
+        }
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true, luaMemoryMode: allocMode, luaMemoryLimit: limitBytes);
             server.Start();
         }
 
@@ -304,7 +318,11 @@ namespace Garnet.test
             {
                 var randPostFix = rnd.Next(1, 1000);
                 valueKey = $"{valueKey}{randPostFix}";
+
                 var r = lightClientRequest.SendCommand($"EVALSHA {sha1SetScript} 1 {nameKey}{randPostFix} {valueKey}", 1);
+                // Check for error reply
+                ClassicAssert.IsTrue(r[0] != '-');
+
                 var g = Encoding.ASCII.GetString(lightClientRequest.SendCommand($"get {nameKey}{randPostFix}", 1));
                 var fstEndOfLine = g.IndexOf('\n', StringComparison.OrdinalIgnoreCase) + 1;
                 var strKeyValue = g.Substring(fstEndOfLine, valueKey.Length);
@@ -443,7 +461,7 @@ return redis.status_reply("OK")
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            for (int i = 0; i < 10; i++)
+            for (var i = 0; i < 10; i++)
             {
                 var response1 = (string[])db.ScriptEvaluate(script1, ["key1", "key2"]);
                 ClassicAssert.AreEqual(2, response1.Length);
@@ -616,8 +634,8 @@ return redis.status_reply("OK")
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            db.StringSet("2", "hello");
-            db.StringSet("2.1", "world");
+            _ = db.StringSet("2", "hello");
+            _ = db.StringSet("2.1", "world");
 
             var res = (string)db.ScriptEvaluate("return redis.call('GET', 2.1)");
             ClassicAssert.AreEqual("world", res);
@@ -682,14 +700,15 @@ return redis.status_reply("OK")
                 {
                     if (i != 1)
                     {
-                        tableDepth.Append(", ");
+                        _ = tableDepth.Append(", ");
                     }
-                    tableDepth.Append("{ ");
-                    tableDepth.Append(i);
+                    _ = tableDepth.Append("{ ");
+                    _ = tableDepth.Append(i);
                 }
+
                 for (var i = 1; i <= Depth; i++)
                 {
-                    tableDepth.Append(" }");
+                    _ = tableDepth.Append(" }");
                 }
 
                 var script = "return " + tableDepth.ToString();
@@ -785,6 +804,39 @@ return redis.status_reply("OK")
             ClassicAssert.AreEqual("bar", (string)ret[2]);
             ClassicAssert.AreEqual("jkl", (string)ret[3]);
             ClassicAssert.AreEqual("def", (string)ret[4]);
+        }
+
+        [Test]
+        public void IntentionalOOM()
+        {
+            if (string.IsNullOrEmpty(limitBytes))
+            {
+                ClassicAssert.Ignore("No memory limit enabled");
+                return;
+            }
+
+            const string ScriptOOMText = @"
+local foo = 'abcdefghijklmnopqrstuvwxyz'
+if @Ctrl == 'OOM' then
+    for i = 1, 10000000 do
+        foo = foo .. foo
+    end
+end
+
+return foo";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var scriptOOM = LuaScript.Prepare(ScriptOOMText);
+            var loadedScriptOOM = scriptOOM.Load(redis.GetServers()[0]);
+
+            // OOM actually happens and is reported
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(loadedScriptOOM, new { Ctrl = "OOM" }));
+            ClassicAssert.AreEqual("ERR Lua encountered an error: not enough memory", exc.Message);
+
+            // We can still run the script without issue (with non-crashing args) afterwards
+            var res = db.ScriptEvaluate(loadedScriptOOM, new { Ctrl = "Safe" });
+            ClassicAssert.AreEqual("abcdefghijklmnopqrstuvwxyz", (string)res);
         }
     }
 }

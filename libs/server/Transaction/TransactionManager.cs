@@ -197,7 +197,7 @@ namespace Garnet.server
                 // Log the transaction to AOF
                 Log(id, ref procInput);
 
-                // Commit
+                // Transaction Commit
                 Commit();
             }
             catch (Exception ex)

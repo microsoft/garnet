@@ -394,6 +394,21 @@ namespace Garnet.server
             return readHead;
         }
 
+        /// <summary>
+        /// For testing purposes, call <see cref="INetworkSender.EnterAndGetResponseObject"/> and update state accordingly.
+        /// </summary>
+        internal void EnterAndGetResponseObject()
+        => networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+
+        /// <summary>
+        /// For testing purposes, call <see cref="INetworkSender.ExitAndReturnResponseObject"/> and update state accordingly.
+        /// </summary>
+        internal void ExitAndReturnResponseObject()
+        {
+            networkSender.ExitAndReturnResponseObject();
+            dcurr = dend = (byte*)0;
+        }
+
         internal void SetTransactionMode(bool enable)
             => txnManager.state = enable ? TxnState.Running : TxnState.None;
 
@@ -759,6 +774,12 @@ namespace Garnet.server
                 RespCommand.EVALSHA => TryEVALSHA(),
                 // Slow commands
                 RespCommand.LCS => NetworkLCS(ref storageApi),
+
+                // Etag related commands
+                RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
+                RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
+                RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
+
                 _ => Process(command)
             };
 
@@ -826,8 +847,8 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomRawStringCommand((RespCommand)currentCustomRawStringCommand.id,
-                currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
+            var cmd = customCommandManagerSession.GetCustomRespCommand(currentCustomRawStringCommand.id);
+            TryCustomRawStringCommand(cmd, currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
             currentCustomRawStringCommand = null;
             return true;
         }
@@ -842,7 +863,8 @@ namespace Garnet.server
             }
 
             // Perform the operation
-            TryCustomObjectCommand((GarnetObjectType)currentCustomObjectCommand.id, currentCustomObjectCommand.subid,
+            var type = customCommandManagerSession.GetCustomGarnetObjectType(currentCustomObjectCommand.id);
+            TryCustomObjectCommand(type, currentCustomObjectCommand.subid,
                 currentCustomObjectCommand.type, ref storageApi);
             currentCustomObjectCommand = null;
             return true;
