@@ -20,7 +20,6 @@ namespace NoOpModule
         /// <inheritdoc />
         public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
-            WriteSimpleString(ref output, "SUCCESS");
         }
     }
 }

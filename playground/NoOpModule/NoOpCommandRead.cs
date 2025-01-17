@@ -38,7 +38,6 @@ namespace NoOpModule
         public override bool Reader(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> value,
             ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
         {
-            WriteNullBulkString(ref output);
             return true;
         }
     }
