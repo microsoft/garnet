@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -80,5 +81,16 @@ namespace Garnet.server
         /// <returns></returns>
         public int NewProcedure(string name, Func<CustomProcedure> customProcedure, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
             => provider.StoreWrapper.customCommandManager.Register(name, customProcedure, commandInfo, commandDocs);
+
+        /// <summary>
+        /// Register custom module with Garnet
+        /// </summary>
+        /// <param name="module"></param>
+        /// <param name="moduleArgs"></param>
+        /// <param name="logger"></param>
+        /// <param name="errorMessage"></param>
+        /// <returns></returns>
+        public bool NewModule(ModuleBase module, string[] moduleArgs, out ReadOnlySpan<byte> errorMessage, ILogger logger = null)
+            => provider.StoreWrapper.customCommandManager.RegisterModule(module, moduleArgs, logger, out errorMessage);
     }
 }
