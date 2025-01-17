@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737081727209,
+  "lastUpdate": 1737081729057,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -8591,6 +8591,90 @@ window.BENCHMARK_DATA = {
             "value": 131378.38745117188,
             "unit": "ns",
             "range": "± 496.6597230443948"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "talzacc@microsoft.com",
+            "name": "Tal Zaccai",
+            "username": "TalZaccai"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3f8f22a5865f6f79f3b7d41954b101f1201a975c",
+          "message": "Fixing module registration logic + Implementing no-op & JSON module benchmarking (#917)\n\n* wip\r\n\r\n* wip\r\n\r\n* wip\r\n\r\n* wip\r\n\r\n* wip\r\n\r\n* wip\r\n\r\n* format\r\n\r\n* Added comments\r\n\r\n* small fixes\r\n\r\n* Moved NoOpModule under playground/\r\n\r\n* Fixing NoOpModule csproj\r\n\r\n* Added programmatic load test\r\n\r\n* Adding \"warm-up\" command calls\r\n\r\n* wip\r\n\r\n* Added ModuleOperations to benchmark CI configs",
+          "timestamp": "2025-01-16T19:37:11-07:00",
+          "tree_id": "b133e9931d57dcdb723d3eafd4068128d2d73e60",
+          "url": "https://github.com/microsoft/garnet/commit/3f8f22a5865f6f79f3b7d41954b101f1201a975c"
+        },
+        "date": 1737081724714,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
+            "value": 16818.036323547363,
+            "unit": "ns",
+            "range": "± 13.852195760398994"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: DSV)",
+            "value": 16331.696983337402,
+            "unit": "ns",
+            "range": "± 13.198962345176094"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: DSV)",
+            "value": 15255.206003042367,
+            "unit": "ns",
+            "range": "± 33.95465393591003"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: DSV)",
+            "value": 15141.647967529298,
+            "unit": "ns",
+            "range": "± 44.65809504448621"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: DSV)",
+            "value": 125718.21883719308,
+            "unit": "ns",
+            "range": "± 1136.7817045377994"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: None)",
+            "value": 20990.906224568684,
+            "unit": "ns",
+            "range": "± 131.66623771274232"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: None)",
+            "value": 20656.57348045936,
+            "unit": "ns",
+            "range": "± 55.882407074321804"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: None)",
+            "value": 16976.653391520184,
+            "unit": "ns",
+            "range": "± 121.24358866601713"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: None)",
+            "value": 15340.469523838588,
+            "unit": "ns",
+            "range": "± 73.30721037310681"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: None)",
+            "value": 132851.15280761718,
+            "unit": "ns",
+            "range": "± 730.2619703797037"
           }
         ]
       }
