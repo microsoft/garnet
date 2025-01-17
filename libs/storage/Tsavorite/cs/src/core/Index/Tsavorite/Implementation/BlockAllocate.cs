@@ -179,7 +179,7 @@ namespace Tsavorite.core
             //      do we need a bit like the old Expiration bit for this? Same considerations on Revivification
 
             newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-            var newLogRecord = new LogRecord(newPhysicalAddress);
+            var newLogRecord = new LogRecord<TValue>(newPhysicalAddress);
             // TODO...
             ref var recordInfo = ref hlog.GetInfoRef(newPhysicalAddress);
             Debug.Assert(!recordInfo.IsNull, "RecordInfo should not be IsNull");
@@ -188,7 +188,7 @@ namespace Tsavorite.core
 
             // Dispose the record for either reuse or abandonment.
             ClearExtraValueSpace(ref recordInfo, ref recordValue, usedValueLength, fullValueLength);
-            storeFunctions.DisposeRecord(ref hlog.GetKey(newPhysicalAddress), ref recordValue, DisposeReason.RevivificationFreeList, newKeySize);
+            DisposeRecord(ref hlog.GetKey(newPhysicalAddress), ref recordValue, DisposeReason.RevivificationFreeList, newKeySize);
 
             if (newLogicalAddress <= minAddress || fullRecordLength < allocatedSize)
             {

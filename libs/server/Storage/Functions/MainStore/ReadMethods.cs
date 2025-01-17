@@ -10,39 +10,40 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, RawStringInput, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
-        public bool SingleReader(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
+        public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
-            if (value.MetadataSize != 0 && CheckExpiry(ref value))
+            if (CheckExpiry(ref srcLogRecord))
                 return false;
 
             var cmd = input.header.cmd;
+            var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
             if ((ushort)cmd >= CustomCommandManager.StartOffset)
             {
                 var valueLength = value.LengthWithoutMetadata;
-                (IMemoryOwner<byte> Memory, int Length) output = (dst.Memory, 0);
+                (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.Memory, 0);
                 var ret = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions
-                    .Reader(key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref output, ref readInfo);
+                    .Reader(srcLogRecord.Key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref memoryAndLength, ref readInfo);
                 Debug.Assert(valueLength <= value.LengthWithoutMetadata);
-                dst.Memory = output.Memory;
-                dst.Length = output.Length;
+                (output.Memory, output.Length) = memoryAndLength;
                 return ret;
             }
 
             if (cmd == RespCommand.NONE)
-                CopyRespTo(ref value, ref dst);
+                CopyRespTo(value, ref output);
             else
-                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
+                CopyRespToWithInput(ref input, value, ref output, readInfo.IsFromPending);
 
             return true;
         }
 
         /// <inheritdoc />
-        public bool ConcurrentReader(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        public bool ConcurrentReader(ref LogRecord<SpanByte> srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
         {
-            if (value.MetadataSize != 0 && CheckExpiry(ref value))
+            if (CheckExpiry(ref srcLogRecord))
             {
                 // TODO: we can proactively expire if we wish, but if we do, we need to write WAL entry
                 // readInfo.Action = ReadAction.Expire;
@@ -50,24 +51,22 @@ namespace Garnet.server
             }
 
             var cmd = input.header.cmd;
+            var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
             if ((ushort)cmd >= CustomCommandManager.StartOffset)
             {
                 var valueLength = value.LengthWithoutMetadata;
-                (IMemoryOwner<byte> Memory, int Length) output = (dst.Memory, 0);
+                (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.Memory, 0);
                 var ret = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions
-                    .Reader(key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref output, ref readInfo);
+                    .Reader(srcLogRecord.Key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref memoryAndLength, ref readInfo);
                 Debug.Assert(valueLength <= value.LengthWithoutMetadata);
-                dst.Memory = output.Memory;
-                dst.Length = output.Length;
+                (output.Memory, output.Length) = memoryAndLength;
                 return ret;
             }
 
             if (cmd == RespCommand.NONE)
-                CopyRespTo(ref value, ref dst);
+                CopyRespTo(value, ref output);
             else
-            {
-                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
-            }
+                CopyRespToWithInput(ref input, value, ref output, readInfo.IsFromPending);
 
             return true;
         }

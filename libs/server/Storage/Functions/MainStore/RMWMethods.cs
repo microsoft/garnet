@@ -13,7 +13,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, RawStringInput, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
         public readonly bool NeedInitialUpdate(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -46,7 +46,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool InitialUpdater(ref LogRecord logRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public readonly bool InitialUpdater(ref LogRecord<SpanByte> logRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             var value = logRecord.ValueSpan;
 

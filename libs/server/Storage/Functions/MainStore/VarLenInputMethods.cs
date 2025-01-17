@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Reflection;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -10,7 +12,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, RawStringInput, SpanByteAndMemory, long>
     {
         /// <summary>
         /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
@@ -67,79 +69,104 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public int GetRMWInitialValueLength(ref RawStringInput input)
+        public RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref RawStringInput input)
         {
             var cmd = input.header.cmd;
+            var fieldInfo = new RecordFieldInfo()
+            {
+                KeySize = key.TotalSize,
+                ValueSize = sizeof(int)     // initialize to size of the Length field
+            };
+
             switch (cmd)
             {
                 case RespCommand.SETBIT:
                     var bOffset = input.parseState.GetLong(0);
-                    return sizeof(int) + BitmapManager.Length(bOffset);
+                    fieldInfo.ValueSize += BitmapManager.Length(bOffset);
+                    return fieldInfo;
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    return sizeof(int) + BitmapManager.LengthFromType(bitFieldArgs);
+                    fieldInfo.ValueSize += BitmapManager.LengthFromType(bitFieldArgs);
+                    return fieldInfo;
                 case RespCommand.PFADD:
-                    return sizeof(int) + HyperLogLog.DefaultHLL.SparseInitialLength(ref input);
+                    fieldInfo.ValueSize += HyperLogLog.DefaultHLL.SparseInitialLength(ref input);
+                    return fieldInfo;
                 case RespCommand.PFMERGE:
-                    var length = input.parseState.GetArgSliceByRef(0).SpanByte.Length;
-                    return sizeof(int) + length;
+                    fieldInfo.ValueSize += input.parseState.GetArgSliceByRef(0).SpanByte.Length;
+                    return fieldInfo;
+
+                case RespCommand.SET:
+                case RespCommand.SETEXNX:
+                    fieldInfo.ValueSize += input.parseState.GetArgSliceByRef(0).SpanByte.Length;
+                    fieldInfo.HasExpiration = input.arg1 != 0;
+                    return fieldInfo;
+
+                case RespCommand.SETKEEPTTL:
+                    // Copy input to value; do not change expiration
+                    fieldInfo.ValueSize += input.parseState.GetArgSliceByRef(0).SpanByte.Length;
+                    return fieldInfo;
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(0);
                     var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
-                    return sizeof(int) + newValue.Length + offset;
+                    fieldInfo.ValueSize += newValue.Length + offset;
+                    return fieldInfo;
 
                 case RespCommand.APPEND:
                     var valueLength = input.parseState.GetArgSliceByRef(0).Length;
-                    return sizeof(int) + valueLength;
+                    fieldInfo.ValueSize += valueLength;
+                    return fieldInfo;
 
                 case RespCommand.INCR:
-                    return sizeof(int) + 1; // # of digits in "1"
+                    fieldInfo.ValueSize += 1; // # of digits in "1"
+                    return fieldInfo;
 
                 case RespCommand.DECR:
-                    return sizeof(int) + 2; // # of digits in "-1"
+                    fieldInfo.ValueSize += 2; // # of digits in "-1"
+                    return fieldInfo;
 
                 case RespCommand.INCRBY:
                     var fNeg = false;
                     var ndigits = NumUtils.NumDigitsInLong(input.arg1, ref fNeg);
 
-                    return sizeof(int) + ndigits + (fNeg ? 1 : 0);
+                    fieldInfo.ValueSize += ndigits + (fNeg ? 1 : 0);
+                    return fieldInfo;
 
                 case RespCommand.DECRBY:
                     fNeg = false;
                     ndigits = NumUtils.NumDigitsInLong(-input.arg1, ref fNeg);
 
-                    return sizeof(int) + ndigits + (fNeg ? 1 : 0);
+                    fieldInfo.ValueSize += ndigits + (fNeg ? 1 : 0);
+                    return fieldInfo;
 
                 case RespCommand.INCRBYFLOAT:
-                    if (!input.parseState.TryGetDouble(0, out var incrByFloat))
-                        return sizeof(int);
-
-                    ndigits = NumUtils.NumOfCharInDouble(incrByFloat, out var _, out var _, out var _);
-
-                    return sizeof(int) + ndigits;
+                    if (input.parseState.TryGetDouble(0, out var incrByFloat))
+                        fieldInfo.ValueSize += NumUtils.NumOfCharInDouble(incrByFloat, out var _, out var _, out var _);
+                    return fieldInfo;
 
                 default:
                     if ((ushort)cmd >= CustomCommandManager.StartOffset)
                     {
                         var functions = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions;
-                        // Compute metadata size for result
-                        int metadataSize = input.arg1 switch
-                        {
-                            -1 => 0,
-                            0 => 0,
-                            _ => 8,
-                        };
-                        return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
+                        fieldInfo.ValueSize += functions.GetInitialLength(ref input);
                     }
-
-                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length +
-                        (input.arg1 == 0 ? 0 : sizeof(long));
+                    else
+                        fieldInfo.ValueSize += input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
+                    fieldInfo.HasExpiration = input.arg1 != 0;
+                    return fieldInfo;
             }
         }
 
         /// <inheritdoc/>
-        public int GetRMWModifiedValueLength(ref SpanByte t, ref RawStringInput input)
+        public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
+            var fieldInfo = new RecordFieldInfo()
+            {
+                KeySize = srcLogRecord.Key.TotalSize,
+                ValueSize = sizeof(int),    // initialize to size of the Length field
+                HasExpiration = srcLogRecord.Info.HasExpiration
+            };
+
             if (input.header.cmd != RespCommand.NONE)
             {
                 var cmd = input.header.cmd;
@@ -149,123 +176,132 @@ namespace Garnet.server
                     case RespCommand.INCRBY:
                         var incrByValue = input.header.cmd == RespCommand.INCRBY ? input.arg1 : 1;
 
-                        var curr = NumUtils.BytesToLong(t.AsSpan());
+                        var curr = NumUtils.BytesToLong(srcLogRecord.ValueSpan.AsSpan());
                         var next = curr + incrByValue;
 
                         var fNeg = false;
-                        var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
-                        ndigits += fNeg ? 1 : 0;
-
-                        return sizeof(int) + ndigits + t.MetadataSize;
+                        fieldInfo.ValueSize += NumUtils.NumDigitsInLong(next, ref fNeg) + (fNeg ? 1 : 0);
+                        return fieldInfo;
 
                     case RespCommand.DECR:
                     case RespCommand.DECRBY:
                         var decrByValue = input.header.cmd == RespCommand.DECRBY ? input.arg1 : 1;
 
-                        curr = NumUtils.BytesToLong(t.AsSpan());
+                        curr = NumUtils.BytesToLong(srcLogRecord.ValueSpan.AsSpan());
                         next = curr - decrByValue;
 
                         fNeg = false;
-                        ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
-                        ndigits += fNeg ? 1 : 0;
 
-                        return sizeof(int) + ndigits + t.MetadataSize;
+                        fieldInfo.ValueSize += NumUtils.NumDigitsInLong(next, ref fNeg) + (fNeg ? 1 : 0);
+                        return fieldInfo;
+
                     case RespCommand.INCRBYFLOAT:
                         // We don't need to TryGetDouble here because InPlaceUpdater will raise an error before we reach this point
                         var incrByFloat = input.parseState.GetDouble(0);
 
-                        NumUtils.TryBytesToDouble(t.AsSpan(), out var currVal);
+                        _ = NumUtils.TryBytesToDouble(srcLogRecord.ValueSpan.AsSpan(), out var currVal);
                         var nextVal = currVal + incrByFloat;
 
-                        ndigits = NumUtils.NumOfCharInDouble(nextVal, out _, out _, out _);
+                        fieldInfo.ValueSize += NumUtils.NumOfCharInDouble(nextVal, out _, out _, out _);
+                        return fieldInfo;
 
-                        return sizeof(int) + ndigits + t.MetadataSize;
                     case RespCommand.SETBIT:
                         var bOffset = input.parseState.GetLong(0);
-                        return sizeof(int) + BitmapManager.NewBlockAllocLength(t.Length, bOffset);
+                        fieldInfo.ValueSize += BitmapManager.NewBlockAllocLength(srcLogRecord.ValueSpan.Length, bOffset);
+                        return fieldInfo;
+
                     case RespCommand.BITFIELD:
                         var bitFieldArgs = GetBitFieldArguments(ref input);
-                        return sizeof(int) + BitmapManager.NewBlockAllocLengthFromType(bitFieldArgs, t.Length);
+                        fieldInfo.ValueSize += BitmapManager.NewBlockAllocLengthFromType(bitFieldArgs, srcLogRecord.ValueSpan.Length);
+                        return fieldInfo;
+
                     case RespCommand.PFADD:
-                        var length = sizeof(int);
-                        var v = t.ToPointer();
-                        length += HyperLogLog.DefaultHLL.UpdateGrow(ref input, v);
-                        return length + t.MetadataSize;
+                        fieldInfo.ValueSize += HyperLogLog.DefaultHLL.UpdateGrow(ref input, srcLogRecord.ValueSpan.ToPointer());
+                        return fieldInfo;
 
                     case RespCommand.PFMERGE:
-                        length = sizeof(int);
                         var srcHLL = input.parseState.GetArgSliceByRef(0).SpanByte.ToPointer();
-                        var dstHLL = t.ToPointer();
-                        length += HyperLogLog.DefaultHLL.MergeGrow(srcHLL, dstHLL);
-                        return length + t.MetadataSize;
+                        var dstHLL = srcLogRecord.ValueSpan.ToPointer();
+                        fieldInfo.ValueSize += HyperLogLog.DefaultHLL.MergeGrow(srcHLL, dstHLL);
+                        return fieldInfo;
 
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
-                        var setValue = input.parseState.GetArgSliceByRef(0);
-                        return sizeof(int) + t.MetadataSize + setValue.Length;
+                        fieldInfo.ValueSize += input.parseState.GetArgSliceByRef(0).Length;
+                        return fieldInfo;
 
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
                         break;
+
                     case RespCommand.PERSIST:
-                        return sizeof(int) + t.LengthWithoutMetadata;
+                        fieldInfo.HasExpiration = false;
+                        fieldInfo.ValueSize += srcLogRecord.ValueSpan.Length;
+                        return fieldInfo;
 
                     case RespCommand.EXPIRE:
                     case RespCommand.PEXPIRE:
                     case RespCommand.EXPIREAT:
                     case RespCommand.PEXPIREAT:
-                        return sizeof(int) + t.Length + sizeof(long);
+                        fieldInfo.HasExpiration = true;
+                        fieldInfo.ValueSize += srcLogRecord.ValueSpan.Length;
+                        return fieldInfo;
 
                     case RespCommand.SETRANGE:
                         var offset = input.parseState.GetInt(0);
                         var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
-                        if (newValue.Length + offset > t.LengthWithoutMetadata)
-                            return sizeof(int) + newValue.Length + offset + t.MetadataSize;
-                        return sizeof(int) + t.Length;
+                        fieldInfo.ValueSize += (newValue.Length + offset > srcLogRecord.ValueSpan.Length)
+                            ? newValue.Length + offset
+                            : srcLogRecord.ValueSpan.Length;
+                        return fieldInfo;
 
                     case RespCommand.GETDEL:
                         // No additional allocation needed.
                         break;
 
                     case RespCommand.GETEX:
-                        return sizeof(int) + t.LengthWithoutMetadata + (input.arg1 > 0 ? sizeof(long) : 0);
+                        fieldInfo.ValueSize += srcLogRecord.ValueSpan.Length;
+                        fieldInfo.HasExpiration = input.arg1 > 0;
+                        return fieldInfo;
 
                     case RespCommand.APPEND:
-                        var valueLength = input.parseState.GetArgSliceByRef(0).Length;
-                        return sizeof(int) + t.Length + valueLength;
+                        fieldInfo.ValueSize += sizeof(int) + srcLogRecord.ValueSpan.Length + input.parseState.GetArgSliceByRef(0).Length;
+                        return fieldInfo;
 
                     default:
                         if ((ushort)cmd >= CustomCommandManager.StartOffset)
                         {
                             var functions = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions;
-                            // compute metadata for result
-                            var metadataSize = input.arg1 switch
-                            {
-                                -1 => 0,
-                                0 => t.MetadataSize,
-                                _ => 8,
-                            };
-                            return sizeof(int) + metadataSize + functions.GetLength(t.AsReadOnlySpan(), ref input);
+                            fieldInfo.ValueSize = functions.GetLength(srcLogRecord.ValueSpan.AsReadOnlySpan(), ref input);
+                            fieldInfo.HasExpiration = input.arg1 != 0;
+                            return fieldInfo;
                         }
                         throw new GarnetException("Unsupported operation on input");
                 }
             }
 
-            return sizeof(int) + input.parseState.GetArgSliceByRef(0).Length +
-                (input.arg1 == 0 ? 0 : sizeof(long));
+            fieldInfo.ValueSize += input.parseState.GetArgSliceByRef(0).Length;
+            fieldInfo.HasExpiration = input.arg1 != 0;
+            return fieldInfo;
         }
 
-        public int GetUpsertValueLength(ref SpanByte t, ref RawStringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref RawStringInput input)
         {
+            var fieldInfo = new RecordFieldInfo()
+            {
+                KeySize = key.TotalSize,
+                ValueSize = value.TotalSize
+            };
+
             switch (input.header.cmd)
             {
                 case RespCommand.SET:
                 case RespCommand.SETEX:
-                    return input.arg1 == 0 ? t.TotalSize : sizeof(int) + t.LengthWithoutMetadata + sizeof(long);
+                    fieldInfo.HasExpiration = input.arg1 != 0;
+                    break;
             }
-
-            return t.TotalSize;
+            return fieldInfo;
         }
     }
 }

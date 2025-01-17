@@ -15,19 +15,19 @@ namespace Garnet.server
             SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
         BasicContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>,
-            ObjectAllocator<StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>>>;
+            ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>>>;
     using TransactionalGarnetApi = GarnetApi<TransactionalContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
             /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
             SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
         TransactionalContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>,
-            ObjectAllocator<StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>>>;
+            ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>>>;
 
     using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
-    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>;
 
     /// <summary>
     /// Transaction manager
@@ -37,22 +37,22 @@ namespace Garnet.server
         /// <summary>
         /// Basic context for main store
         /// </summary>
-        readonly BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
+        readonly BasicContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
 
         /// <summary>
         /// Transactional context for main store
         /// </summary>
-        readonly TransactionalContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> transactionalContext;
+        readonly TransactionalContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> transactionalContext;
 
         /// <summary>
         /// Basic context for object store
         /// </summary>
-        readonly BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
+        readonly BasicContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
 
         /// <summary>
         /// Transactional context for object store
         /// </summary>
-        readonly TransactionalContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreTransactionalContext;
+        readonly TransactionalContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreTransactionalContext;
 
         // Not readonly to avoid defensive copy
         GarnetWatchApi<BasicGarnetApi> garnetTxPrepareApi;
@@ -80,11 +80,11 @@ namespace Garnet.server
         StoreType transactionStoreType;
         readonly ILogger logger;
 
-        internal TransactionalContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> TransactionalContext
+        internal TransactionalContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> TransactionalContext
             => transactionalContext;
-        internal TransactionalUnsafeContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> TransactionalUnsafeContext
+        internal TransactionalUnsafeContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> TransactionalUnsafeContext
             => basicContext.Session.TransactionalUnsafeContext;
-        internal TransactionalContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStoreTransactionalContext
+        internal TransactionalContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStoreTransactionalContext
             => objectStoreTransactionalContext;
 
         /// <summary>

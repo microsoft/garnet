@@ -29,7 +29,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public override bool ConcurrentReader(ref LogRecord logRecord, ref SpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
+        public override bool ConcurrentReader(ref LogRecord<SpanByte> logRecord, ref SpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
         {
             logRecord.ValueSpan.CopyTo(ref output, memoryPool);
             return true;
@@ -50,16 +50,16 @@ namespace Tsavorite.core
     public class SimpleRMWSpanByteFunctions : SessionFunctionsBase<SpanByte, SpanByte, Empty, Empty>
     {
         /// <inheritdoc/>
-        public override bool InitialUpdater(ref LogRecord logRecord, ref SpanByte input, ref Empty output, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref LogRecord<SpanByte> logRecord, ref SpanByte input, ref Empty output, ref RMWInfo rmwInfo)
             => logRecord.TrySetValueSpan(input);
 
         /// <inheritdoc/>
-        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref SpanByte input, ref Empty output, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref SpanByte input, ref Empty output, ref RMWInfo rmwInfo)
             => dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan);
 
         /// <inheritdoc/>
         // The default implementation of IPU simply writes input to destination, if there is space
-        public override bool InPlaceUpdater(ref LogRecord logRecord, ref SpanByte input, ref Empty output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord<SpanByte> logRecord, ref SpanByte input, ref Empty output, ref RMWInfo rmwInfo)
             => logRecord.TrySetValueSpan(input);
 
         /// <summary>

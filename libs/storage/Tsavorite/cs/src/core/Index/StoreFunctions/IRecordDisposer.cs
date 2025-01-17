@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -18,9 +17,9 @@ namespace Tsavorite.core
         public bool DisposeOnPageEviction { get; }
 
         /// <summary>
-        /// Dispose the Key and Value of a record, if necessary. See comments in <see cref="IStoreFunctions{TValue}.DisposeValueObject(IHeapObject, DisposeReason)"/> for details.
+        /// Dispose the Key and Value of a record, if necessary. See comments in <see cref="IStoreFunctions{TValue}.DisposeValueObject(TValue, DisposeReason)"/> for details.
         /// </summary>
-        void DisposeValueObject(IHeapObject valueObject, DisposeReason reason);
+        void DisposeValueObject(TValue valueObject, DisposeReason reason);
     }
 
     /// <summary>
@@ -42,7 +41,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Assumes the key and value have no need of Dispose(), and does nothing.
         /// </summary>
-        public readonly void DisposeValueObject(IHeapObject valueObject, DisposeReason reason) { }
+        public readonly void DisposeValueObject(TValue valueObject, DisposeReason reason) { }
     }
 
     /// <summary>
@@ -62,6 +61,6 @@ namespace Tsavorite.core
 
         /// <summary>No-op implementation because SpanByte values have no need for disposal.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void DisposeValueObject(IHeapObject valueObject, DisposeReason reason) { }
+        public unsafe void DisposeValueObject(SpanByte valueObject, DisposeReason reason) { }
     }
 }

@@ -21,7 +21,7 @@ namespace Tsavorite.core
         internal bool TryCopyToReadCache<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
                                         ref TSourceLogRecord srcLogRecord, ref TInput input, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TSourceLogRecord : ISourceLogRecord
+            where TSourceLogRecord : ISourceLogRecord<TValue>
         {
             var sizeInfo = new RecordSizeInfo() { FieldInfo = srcLogRecord.GetRecordFieldInfo() };
             hlog.PopulateRecordSizeInfo(ref sizeInfo);
@@ -74,7 +74,7 @@ namespace Tsavorite.core
                 if (success)
                     newLogRecord.InfoRef.UnsealAndValidate();
                 pendingContext.logicalAddress = upsertInfo.Address;
-                sessionFunctions.PostSingleWriter(ref newLogRecord, ref input, srcLogRecord.GetReadOnlyValueRef<TValue>(), ref output, ref upsertInfo, WriteReason.CopyToReadCache);
+                sessionFunctions.PostSingleWriter(ref newLogRecord, ref input, srcLogRecord.GetReadOnlyValueRef(), ref output, ref upsertInfo, WriteReason.CopyToReadCache);
                 stackCtx.ClearNewRecord();
                 return true;
             }

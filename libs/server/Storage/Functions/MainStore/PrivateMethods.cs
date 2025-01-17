@@ -13,7 +13,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, RawStringInput, SpanByteAndMemory, long>
     {
         static void CopyTo(SpanByte src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
@@ -83,7 +83,7 @@ namespace Garnet.server
             }
         }
 
-        void CopyRespToWithInput(ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory dst, bool isFromPending)
+        void CopyRespToWithInput(ref RawStringInput input, SpanByte value, ref SpanByteAndMemory dst, bool isFromPending)
         {
             switch (input.header.cmd)
             {
@@ -260,10 +260,10 @@ namespace Garnet.server
             }
         }
 
-        bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref SpanByteAndMemory output)
+        bool EvaluateExpireInPlace(ref LogRecord<SpanByte> logRecord, ExpireOption optionType, long newExpiry, ref SpanByteAndMemory output)
         {
             var expiryExists = logRecord.Info.HasExpiration;
-            ObjectOutputHeader* o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
+            var o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
             o->result1 = 0;
             if (expiryExists)
             {
@@ -288,7 +288,7 @@ namespace Garnet.server
                     case ExpireOption.XXLT:
                         if (newExpiry < logRecord.Expiration)
                         {
-                            logRecord.TrySetExpiration(newExpiry);
+                            _ = logRecord.TrySetExpiration(newExpiry);
                             o->result1 = 1;
                         }
                         return true;
@@ -315,10 +315,10 @@ namespace Garnet.server
             }
         }
 
-        bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, SpanByte newValue, ref SpanByteAndMemory output)
+        bool EvaluateExpireCopyUpdate(ref LogRecord<SpanByte> logRecord, ExpireOption optionType, long newExpiry, SpanByte newValue, ref SpanByteAndMemory output)
         {
             var expiryExists = logRecord.Info.HasExpiration;
-            ObjectOutputHeader* o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
+            var o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
             o->result1 = 0;
 
             if (!logRecord.TrySetValueSpan(newValue))
@@ -407,9 +407,11 @@ namespace Garnet.server
             return (0, 0);
         }
 
-        internal static bool CheckExpiry(ref SpanByte src) => src.ExtraMetadata < DateTimeOffset.UtcNow.Ticks;
+        internal static bool CheckExpiry<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+            => srcLogRecord.Info.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
 
-        static bool InPlaceUpdateNumber(ref LogRecord logRecord, long val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        static bool InPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, long val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             var fNeg = false;
             var ndigits = NumUtils.NumDigitsInLong(val, ref fNeg);
@@ -427,7 +429,7 @@ namespace Garnet.server
             return true;
         }
 
-        static bool InPlaceUpdateNumber(ref LogRecord logRecord, double val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        static bool InPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, double val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             var ndigits = NumUtils.NumOfCharInDouble(val, out var _, out var _, out var _);
 
@@ -443,7 +445,7 @@ namespace Garnet.server
             return true;
         }
 
-        static bool TryInPlaceUpdateNumber(ref LogRecord logRecord, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, long input)
+        static bool TryInPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, long input)
         {
             // Check if value contains a valid number
             var value = logRecord.ValueSpan;  // To reduce redundant length calculations getting to Value
@@ -463,7 +465,7 @@ namespace Garnet.server
             return InPlaceUpdateNumber(ref logRecord, val, ref output, ref rmwInfo);
         }
 
-        static bool TryInPlaceUpdateNumber(ref LogRecord logRecord, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, double input)
+        static bool TryInPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, double input)
         {
             var value = logRecord.ValueSpan;  // To reduce redundant length calculations getting to Value
 
@@ -507,8 +509,8 @@ namespace Garnet.server
         /// <param name="dstLogRecord">The destination log record</param>
         /// <param name="output">Output value</param>
         /// <param name="input">Parsed input value</param>
-        static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref SpanByteAndMemory output, long input)
-            where TSourceLogRecord : ISourceLogRecord
+        static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref SpanByteAndMemory output, long input)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
             if (!dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
                 return false;
@@ -545,8 +547,8 @@ namespace Garnet.server
         /// <param name="dstLogRecord">The destination log record</param>
         /// <param name="output">Output value</param>
         /// <param name="input">Parsed input value</param>
-        static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref SpanByteAndMemory output, double input)
-            where TSourceLogRecord : ISourceLogRecord
+        static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref SpanByteAndMemory output, double input)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
             if (!dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
                 return false;

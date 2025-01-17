@@ -8,11 +8,11 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>;
 
     /// <summary>
     /// Entry for a key to lock and unlock in transactions
@@ -31,18 +31,18 @@ namespace Garnet.server
 
         #region ITransactionalKey
         /// <inheritdoc/>
-        public long KeyHash { get => keyHash; }
+        public readonly long KeyHash { get => keyHash; }
 
         /// <inheritdoc/>
-        public LockType LockType { get => lockType; }
+        public readonly LockType LockType { get => lockType; }
         #endregion ITransactionalKey
 
         /// <inheritdoc />
-        public override string ToString()
+        public override readonly string ToString()
         {
             // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
             var keyHashSign = keyHash < 0 ? "-" : string.Empty;
-            var absKeyHash = this.keyHash >= 0 ? this.keyHash : -this.keyHash;
+            var absKeyHash = keyHash >= 0 ? keyHash : -keyHash;
             return $"{keyHashSign}{absKeyHash}:{(isObject ? "obj" : "raw")}:{(lockType == LockType.None ? "-" : (lockType == LockType.Shared ? "s" : "x"))}";
         }
     }
@@ -61,8 +61,8 @@ namespace Garnet.server
 
         public int phase;
 
-        internal TxnKeyEntries(int initialCount, TransactionalContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> transactionalContext,
-                TransactionalContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreTransactionalContext)
+        internal TxnKeyEntries(int initialCount, TransactionalContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> transactionalContext,
+                TransactionalContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreTransactionalContext)
         {
             keys = GC.AllocateArray<TxnKeyEntry>(initialCount, pinned: true);
             // We sort a single array for speed, and the sessions use the same sorting logic,
@@ -73,7 +73,7 @@ namespace Garnet.server
         {
             get
             {
-                bool readOnly = true;
+                var readOnly = true;
                 for (int i = 0; i < keyCount; i++)
                 {
                     if (keys[i].lockType == LockType.Exclusive)
@@ -90,7 +90,7 @@ namespace Garnet.server
         {
             var keyHash = !isObject
                 ? comparison.transactionalContext.GetKeyHash(keyArgSlice.SpanByte)
-                : comparison.objectStoreTransactionalContext.GetKeyHash(keyArgSlice.ToArray());
+                : comparison.objectStoreTransactionalContext.GetKeyHash(keyArgSlice.SpanByte);
 
             // Grow the buffer if needed
             if (keyCount >= keys.Length)
@@ -196,12 +196,12 @@ namespace Garnet.server
             for (int ii = 0; ii < keyCount; ii++)
             {
                 ref var entry = ref keys[ii];
-                sb.Append(delimiter);
-                sb.Append(entry.ToString());
+                _ = sb.Append(delimiter);
+                _ = sb.Append(entry.ToString());
             }
 
             if (sb.Length > 0)
-                sb.Append($" (phase: {(phase == 0 ? "none" : (phase == 1 ? "lock" : "unlock"))}))");
+                _ = sb.Append($" (phase: {(phase == 0 ? "none" : (phase == 1 ? "lock" : "unlock"))}))");
             return sb.ToString();
         }
     }

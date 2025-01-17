@@ -44,7 +44,7 @@ namespace Tsavorite.core
                 return false;
 
             long numRecords = 1;
-            bool stop = false;
+            var stop = false;
             for (; !stop && iter.PushNext(ref scanFunctions, numRecords, out stop); ++numRecords)
                 ;
 
@@ -63,7 +63,7 @@ namespace Tsavorite.core
         private readonly ClientSession<TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempKvSession;
         private readonly BasicContext<TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempbContext;
         private ITsavoriteScanIterator<TValue> mainKvIter;
-        private IPushScanIterator pushScanIterator;
+        private readonly IPushScanIterator<TValue> pushScanIterator;
         private ITsavoriteScanIterator<TValue> tempKvIter;
 
         enum IterationPhase
@@ -92,7 +92,7 @@ namespace Tsavorite.core
             tempKvSession = tempKv.NewSession<TInput, TOutput, TContext, TFunctions>(functions);
             tempbContext = tempKvSession.BasicContext;
             mainKvIter = store.Log.Scan(store.Log.BeginAddress, untilAddress);
-            pushScanIterator = mainKvIter as IPushScanIterator;
+            pushScanIterator = mainKvIter as IPushScanIterator<TValue>;
         }
 
         ITsavoriteScanIterator<TValue> CurrentIter => iterationPhase == IterationPhase.MainKv ? mainKvIter : tempKvIter;
@@ -231,7 +231,7 @@ namespace Tsavorite.core
                     _ = tempbContext.Delete(key);
             }
             else
-                _ = tempbContext.Upsert(key, mainKvIter.GetReadOnlyValueRef<TValue>());
+                _ = tempbContext.Upsert(key, mainKvIter.GetReadOnlyValueRef());
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -250,7 +250,7 @@ namespace Tsavorite.core
                     {
                         // Check if it's in-memory first so we don't spuriously create a tombstone record.
                         if (tempbContext.ContainsKeyInMemory(key, out _).Found)
-                            tempbContext.Delete(key);
+                            _ = tempbContext.Delete(key);
                     }
 
                     // If the record is not deleted, we can let the caller process it directly within mainKvIter.
@@ -278,11 +278,10 @@ namespace Tsavorite.core
         public unsafe SpanByte ValueSpan => CurrentIter.ValueSpan;
 
         /// <inheritdoc/>
-        public IHeapObject ValueObject => CurrentIter.ValueObject;
+        public TValue ValueObject => CurrentIter.ValueObject;
 
-        // TV will be TValue, but we don't want LogRecord to require a TValue type parameter just for this one method
         /// <inheritdoc/>
-        public unsafe ref TV GetReadOnlyValueRef<TV>() => ref CurrentIter.GetReadOnlyValueRef<TV>();
+        public unsafe ref TValue GetReadOnlyValueRef() => ref CurrentIter.GetReadOnlyValueRef();
 
         /// <inheritdoc/>
         public long ETag => CurrentIter.ETag;
@@ -291,7 +290,7 @@ namespace Tsavorite.core
         public long Expiration => CurrentIter.Expiration;
 
         /// <inheritdoc/>
-        public LogRecord AsLogRecord() => throw new TsavoriteException("Iterators cannot be converted to AsLogRecord");
+        public LogRecord<TValue> AsLogRecord() => throw new TsavoriteException("Iterators cannot be converted to AsLogRecord");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

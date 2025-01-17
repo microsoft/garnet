@@ -73,7 +73,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void DisposeValueObject(IHeapObject valueObject, DisposeReason reason) => recordDisposer.DisposeValueObject(valueObject, reason);
+        public readonly void DisposeValueObject(TValue valueObject, DisposeReason reason) => recordDisposer.DisposeValueObject(valueObject, reason);
         #endregion Record Disposer
 
         #region Checkpoint Completion
@@ -86,9 +86,9 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// A non-parameterized version of StoreFunctions that provides type-reduced Create() methods.
+    /// A minimally-parameterized version of StoreFunctions that provides type-reduced Create() methods.
     /// </summary>
-    public struct StoreFunctions<TKey, TValue>
+    public struct StoreFunctions<TValue>
     {
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.

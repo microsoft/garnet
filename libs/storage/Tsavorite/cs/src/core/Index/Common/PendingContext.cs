@@ -9,7 +9,7 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TValue>
         where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
-        internal struct PendingContext<TInput, TOutput, TContext> : ISourceLogRecord
+        internal struct PendingContext<TInput, TOutput, TContext> : ISourceLogRecord<TValue>
         {
             // User provided information
             internal OperationType type;
@@ -112,11 +112,11 @@ namespace Tsavorite.core
             public readonly unsafe SpanByte ValueSpan => IsObjectRecord ? throw new TsavoriteException("Cannot use ValueSpan on an Object record") : *(SpanByte*)Unsafe.AsPointer(ref value.Get());
 
             /// <inheritdoc/>
-            public readonly IHeapObject ValueObject => value.Get() as IHeapObject;
+            public readonly TValue ValueObject => value.Get();
 
             // TV will be TValue, but we don't want LogRecord to require a TValue type parameter just for this one method
             /// <inheritdoc/>
-            public readonly unsafe ref TV GetReadOnlyValueRef<TV>() => ref Unsafe.As<TValue, TV>(ref value.Get());
+            public readonly unsafe ref TValue GetReadOnlyValueRef() => ref value.Get();
 
             /// <inheritdoc/>
             public readonly long ETag => eTag;
@@ -125,7 +125,7 @@ namespace Tsavorite.core
             public readonly long Expiration => expiration;
 
             /// <inheritdoc/>
-            public readonly LogRecord AsLogRecord() => throw new TsavoriteException("PendingContext cannot be converted to AsLogRecord");
+            public readonly LogRecord<TValue> AsLogRecord() => throw new TsavoriteException("PendingContext cannot be converted to AsLogRecord");
 
             /// <inheritdoc/>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

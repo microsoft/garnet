@@ -59,7 +59,7 @@ namespace Tsavorite.core
                     try
                     {
                         // During the pending operation, a record for the key may have been added to the log or readcache. Don't look for this if we are reading at address (rather than key).
-                        LogRecord memoryRecord = default;
+                        LogRecord<TValue> memoryRecord = default;
                         if (!pendingContext.IsReadAtAddress)
                         {
                             if (TryFindRecordInMemory(diskRecord.Key, ref stackCtx, ref pendingContext))

@@ -35,7 +35,7 @@ namespace Tsavorite.core
         public virtual bool SingleWriter(ref LogRecord<TValue> dstLogRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             var ok = srcValue is IHeapObject heapObj
-                ? dstLogRecord.TrySetValueObject(heapObj)
+                ? dstLogRecord.TrySetValueObject((TValue)heapObj)
                 : dstLogRecord.TrySetValueSpan(Unsafe.As<TValue, SpanByte>(ref srcValue));
             // This does not try to set ETag or Expiration, which will come from TInput in fuller implementations.
             return ok;
@@ -173,7 +173,7 @@ namespace Tsavorite.core
         public override bool InitialUpdater(ref LogRecord<TValue> dstLogRecord, ref TValue input, ref TValue output, ref RMWInfo rmwInfo)
         {
             var ok = input is IHeapObject heapObj
-               ? dstLogRecord.TrySetValueObject(heapObj)
+               ? dstLogRecord.TrySetValueObject((TValue)heapObj)
                : dstLogRecord.TrySetValueSpan(Unsafe.As<TValue, SpanByte>(ref input));
             if (ok)
                 output = input;

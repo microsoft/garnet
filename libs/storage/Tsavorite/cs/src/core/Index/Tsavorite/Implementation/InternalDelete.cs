@@ -55,7 +55,7 @@ namespace Tsavorite.core
             if (!FindTagAndTryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out OperationStatus status))
                 return status;
 
-            LogRecord srcLogRecord = default;
+            LogRecord<TValue> srcLogRecord = default;
 
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
@@ -246,7 +246,7 @@ namespace Tsavorite.core
         /// <param name="sessionFunctions">The current session</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TValue, TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
-        private OperationStatus CreateNewRecordDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SpanByte key, ref LogRecord srcLogRecord, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+        private OperationStatus CreateNewRecordDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SpanByte key, ref LogRecord<TValue> srcLogRecord, ref PendingContext<TInput, TOutput, TContext> pendingContext,
                 TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {

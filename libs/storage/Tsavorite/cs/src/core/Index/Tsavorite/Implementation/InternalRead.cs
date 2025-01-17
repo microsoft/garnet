@@ -63,7 +63,7 @@ namespace Tsavorite.core
             if (!FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out var status))
                 return status;
 
-            LogRecord srcLogRecord = default;
+            LogRecord<TValue> srcLogRecord = default;
 
             ReadInfo readInfo = new()
             {
@@ -159,7 +159,7 @@ namespace Tsavorite.core
         }
 
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalRead to have this be a virtcall.
-        private OperationStatus CopyFromImmutable<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext,
+        private OperationStatus CopyFromImmutable<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord<TValue> srcLogRecord, ref TInput input, ref TOutput output, TContext userContext,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>

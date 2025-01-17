@@ -58,7 +58,7 @@ namespace Tsavorite.core
             if (!FindOrCreateTagAndTryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out OperationStatus status))
                 return status;
 
-            LogRecord srcLogRecord = default;
+            LogRecord<TValue> srcLogRecord = default;
 
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
@@ -199,7 +199,7 @@ namespace Tsavorite.core
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 
-        private bool TryRevivifyInChain<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord srcLogRecord, ref TInput input, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+        private bool TryRevivifyInChain<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord<TValue> srcLogRecord, ref TInput input, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
                 TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref UpsertInfo upsertInfo, out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -291,7 +291,7 @@ namespace Tsavorite.core
         /// <param name="sessionFunctions">The current session</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TValue, TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
-        private OperationStatus CreateNewRecordUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SpanByte key, ref LogRecord srcLogRecord, ref TInput input, TValue value, ref TOutput output,
+        private OperationStatus CreateNewRecordUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SpanByte key, ref LogRecord<TValue> srcLogRecord, ref TInput input, TValue value, ref TOutput output,
                                                                                              ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
                                                                                              ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
