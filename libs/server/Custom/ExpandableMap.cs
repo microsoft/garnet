@@ -248,20 +248,6 @@ namespace Garnet.server
             return true;
         }
 
-        /// <summary>
-        /// Maps map index to item ID
-        /// </summary>
-        /// <param name="index">Map index</param>
-        /// <returns>Item ID</returns>
-        private int GetIdFromIndex(int index) => descIds ? minId - index : index;
-
-        /// <summary>
-        /// Maps an item ID to a map index
-        /// </summary>
-        /// <param name="id">Item ID</param>
-        /// <returns>Map index</returns>
-        private int GetIndexFromId(int id) => descIds ? minId - id : id;
-
         public void Clear()
         {
             if (Map is not null)

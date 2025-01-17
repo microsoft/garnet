@@ -160,8 +160,8 @@ namespace Garnet.common
                     try
                     {
                         // NET9 seems to hold the assembly locked if it's opened from the path directly, causing tests to fail.
-                        //assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
-                        assembly = AssemblyLoadContext.Default.LoadFromStream(new FileStream(path, FileMode.Open, FileAccess.Read));
+                        using var fileStream = new FileStream(path, FileMode.Open, FileAccess.Read);
+                        assembly = AssemblyLoadContext.Default.LoadFromStream(fileStream);
                     }
                     catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException ||
                                                ex is NotSupportedException || ex is BadImageFormatException ||

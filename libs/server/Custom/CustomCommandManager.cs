@@ -58,9 +58,9 @@ namespace Garnet.server
             var newCmd = new CustomRawStringCommand(name, (ushort)extId, type, customFunctions, expirationTicks);
             var setSuccessful = rawStringCommandMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
-            if (commandInfo != null) 
+            if (commandInfo != null)
                 customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
-            if (commandDocs != null) 
+            if (commandDocs != null)
                 customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
             return extId;
         }
