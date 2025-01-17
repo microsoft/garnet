@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Linq;
+using System.Buffers.Binary;
 
 namespace Garnet.common;
 
@@ -12,71 +12,101 @@ namespace Garnet.common;
 public static class RespLengthEncodingUtils
 {
     /// <summary>
-    /// Decodes the RESP-encoded length and returns payload start
+    /// Maximum length that can be encoded
     /// </summary>
-    /// <param name="buff"></param>
-    /// <returns></returns>
-    /// <exception cref="ArgumentException"></exception>
-    public static (long Length, byte PayloadStart) DecodeLength(ref ReadOnlySpan<byte> buff)
-    {
-        // remove the value type byte
-        var encoded = buff.Slice(1);
+    private const int MaxLength = 0xFFFFFF;
 
-        if (encoded.Length == 0)
+    /// <summary>
+    /// Try read RESP-encoded length
+    /// </summary>
+    /// <param name="input"></param>
+    /// <param name="length"></param>
+    /// <param name="bytesRead"></param>
+    /// <returns></returns>
+    public static bool TryReadLength(ReadOnlySpan<byte> input, out int length, out int bytesRead)
+    {
+        length = 0;
+        bytesRead = 0;
+        if (input.Length < 1)
         {
-            throw new ArgumentException("Encoded length cannot be empty.", nameof(encoded));
+            return false;
         }
 
-        var firstByte = encoded[0];
-        return (firstByte >> 6) switch
+        var firstByte = input[0];
+        switch (firstByte >> 6)
         {
-            // 6-bit encoding
-            0 => (firstByte & 0x3F, 1),
-            // 14-bit encoding
-            1 when encoded.Length < 2 => throw new ArgumentException("Not enough bytes for 14-bit encoding."),
-            1 => (((firstByte & 0x3F) << 8) | encoded[1], 2),
-            // 32-bit encoding
-            2 when encoded.Length < 5 => throw new ArgumentException("Not enough bytes for 32-bit encoding."),
-            2 => ((long)((encoded[1] << 24) | (encoded[2] << 16) | (encoded[3] << 8) | encoded[4]), 5),
-            _ => throw new ArgumentException("Invalid encoding type.", nameof(encoded))
-        };
+            case 0:
+                bytesRead = 1;
+                length = firstByte & 0x3F;
+                return true;
+            case 1 when input.Length > 2:
+                bytesRead = 2;
+                length = ((firstByte & 0x3F) << 8) | input[1];
+                return true;
+            case 2:
+                bytesRead = 5;
+                return BinaryPrimitives.TryReadInt32BigEndian(input, out length);
+            default:
+                return false;
+        }
     }
 
     /// <summary>
-    /// Encoded payload length to RESP-encoded payload length
+    /// Try to write RESP-encoded length
     /// </summary>
     /// <param name="length"></param>
+    /// <param name="output"></param>
+    /// <param name="bytesWritten"></param>
     /// <returns></returns>
-    /// <exception cref="ArgumentOutOfRangeException"></exception>
-    public static byte[] EncodeLength(long length)
+    public static bool TryWriteLength(int length, Span<byte> output, out int bytesWritten)
     {
-        switch (length)
-        {
-            // 6-bit encoding (length ≤ 63)
-            case < 1 << 6:
-                return [(byte)(length & 0x3F)]; // 00xxxxxx
-            // 14-bit encoding (64 ≤ length ≤ 16,383)
-            case < 1 << 14:
-                {
-                    var firstByte = (byte)(((length >> 8) & 0x3F) | (1 << 6)); // 01xxxxxx
-                    var secondByte = (byte)(length & 0xFF);
-                    return [firstByte, secondByte];
-                }
-            // 32-bit encoding (length ≤ 4,294,967,295)
-            case <= 0xFFFFFFFF:
-                {
-                    var firstByte = (byte)(2 << 6); // 10xxxxxx
-                    var lengthBytes = BitConverter.GetBytes((uint)length); // Ensure unsigned
-                    if (BitConverter.IsLittleEndian)
-                    {
-                        Array.Reverse(lengthBytes); // Convert to big-endian
-                    }
+        bytesWritten = 0;
 
-                    return [firstByte, .. lengthBytes];
-                }
-            default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(length), "Length exceeds maximum allowed for Redis encoding (4,294,967,295).");
+        if (length > MaxLength)
+        {
+            return false;
         }
+
+        // 6-bit encoding (length ≤ 63)
+        if (length < 1 << 6)
+        {
+            if (output.Length < 1)
+            {
+                return false;
+            }
+
+            output[0] = (byte)(length & 0x3F);
+            bytesWritten = 1;
+            return true;
+        }
+
+        // 14-bit encoding (64 ≤ length ≤ 16,383)
+        if (length < 1 << 14)
+        {
+            if (output.Length < 2)
+            {
+                return false;
+            }
+
+            var firstByte = (byte)(((length >> 8) & 0x3F) | (1 << 6)); // 01xxxxxx
+            var secondByte = (byte)(length & 0xFF);
+
+            output[0] = firstByte;
+            output[1] = secondByte;
+            bytesWritten = 2;
+            return true;
+        }
+
+        // 32-bit encoding (length ≤ 4,294,967,295)
+        if (output.Length < 5)
+        {
+            return false;
+        }
+
+        output[0] = 2 << 6;
+
+        BinaryPrimitives.WriteUInt32BigEndian(output.Slice(1), (uint)length);
+        bytesWritten = 5;
+        return true;
     }
 }

@@ -91,10 +91,15 @@ namespace Garnet.server
             }
 
             // decode the length of payload
-            var (length, payloadStart) = RespLengthEncodingUtils.DecodeLength(ref valueSpan);
+            if (!RespLengthEncodingUtils.TryReadLength(valueSpan.Slice(1), out var length, out var payloadStart))
+            {
+                while (!RespWriteUtils.WriteError("ERR DUMP payload length format is invalid", ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             // Start from payload start and skip the value type byte
-            var val = value.ReadOnlySpan.Slice(payloadStart + 1, (int)length);
+            var val = value.ReadOnlySpan.Slice(payloadStart + 1, length);
 
             var valArgSlice = scratchBufferManager.CreateArgSlice(val);
 
@@ -135,7 +140,16 @@ namespace Garnet.server
                 return true;
             }
 
-            var encodedLength = RespLengthEncodingUtils.EncodeLength(value.ReadOnlySpan.Length);
+            Span<byte> encodedLength = stackalloc byte[5];
+
+            if (!RespLengthEncodingUtils.TryWriteLength(value.ReadOnlySpan.Length, encodedLength, out var bytesWritten))
+            {
+                while (!RespWriteUtils.WriteError("ERR DUMP payload length is invalid", ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            encodedLength = encodedLength.Slice(0, bytesWritten);
 
             // Len of the dump (payload type + redis encoded payload len + payload len + rdb version + crc64)
             var len = 1 + encodedLength.Length + value.ReadOnlySpan.Length + 2 + 8;
@@ -147,7 +161,7 @@ namespace Garnet.server
 
             var buffer = totalLength <= 128
                 ? stackalloc byte[totalLength]
-                : new byte[totalLength];
+                : ArrayPool<byte>.Shared.Rent(totalLength);
 
             var offset = 0;
 
@@ -183,7 +197,7 @@ namespace Garnet.server
 
             // Write final CRLF
             buffer[offset++] = 0x0D; // CR
-            buffer[offset++] = 0x0A; // LF
+            buffer[offset] = 0x0A; // LF
 
             while (!RespWriteUtils.WriteDirect(buffer.Slice(0, totalLength), ref dcurr, dend))
                 SendAndReset();
