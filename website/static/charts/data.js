@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737150590418,
+  "lastUpdate": 1737150642829,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -21785,6 +21785,90 @@ window.BENCHMARK_DATA = {
             "value": 146137.8466796875,
             "unit": "ns",
             "range": "± 627.6566903010247"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a7669babce9a7651ab409dcc93d0b8e28ec06b72",
+          "message": "Bump katex from 0.16.11 to 0.16.21 in /website (#921)\n\nBumps [katex](https://github.com/KaTeX/KaTeX) from 0.16.11 to 0.16.21.\r\n- [Release notes](https://github.com/KaTeX/KaTeX/releases)\r\n- [Changelog](https://github.com/KaTeX/KaTeX/blob/main/CHANGELOG.md)\r\n- [Commits](https://github.com/KaTeX/KaTeX/compare/v0.16.11...v0.16.21)\r\n\r\n---\r\nupdated-dependencies:\r\n- dependency-name: katex\r\n  dependency-type: indirect\r\n...\r\n\r\nSigned-off-by: dependabot[bot] <support@github.com>\r\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2025-01-17T14:42:59-07:00",
+          "tree_id": "62ccbb35112bfb4936085456f871f693f2f1863f",
+          "url": "https://github.com/microsoft/garnet/commit/a7669babce9a7651ab409dcc93d0b8e28ec06b72"
+        },
+        "date": 1737150632603,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
+            "value": 16933.803030160758,
+            "unit": "ns",
+            "range": "± 35.624059203670534"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: DSV)",
+            "value": 14947.637685139975,
+            "unit": "ns",
+            "range": "± 17.33759243975512"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: DSV)",
+            "value": 14122.222035725912,
+            "unit": "ns",
+            "range": "± 24.093236478906995"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: DSV)",
+            "value": 13185.894892765926,
+            "unit": "ns",
+            "range": "± 46.54456116436008"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: DSV)",
+            "value": 132447.3876953125,
+            "unit": "ns",
+            "range": "± 546.5378265925991"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: None)",
+            "value": 20873.744201660156,
+            "unit": "ns",
+            "range": "± 40.96975942311549"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: None)",
+            "value": 17979.952239990234,
+            "unit": "ns",
+            "range": "± 18.569073057056766"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: None)",
+            "value": 15374.432020920973,
+            "unit": "ns",
+            "range": "± 20.813498375663542"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: None)",
+            "value": 15392.450605119977,
+            "unit": "ns",
+            "range": "± 25.18818734572408"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: None)",
+            "value": 141636.083984375,
+            "unit": "ns",
+            "range": "± 158.31354879279607"
           }
         ]
       }
