@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737146883290,
+  "lastUpdate": 1737146939899,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -14537,6 +14537,54 @@ window.BENCHMARK_DATA = {
             "value": 29534.6443763146,
             "unit": "ns",
             "range": "± 25.586472666880315"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "darrenge@microsoft.com",
+            "name": "darrenge",
+            "username": "darrenge"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "eec5e3eaf2a924f67493c2c1e3839e749919b2c2",
+          "message": "Added PubSub BDN to the pipeline and corresponding expected values (#920)\n\n* Added Operations.PubSubOperations BDN to pipeline and updated expected values\r\n\r\n* Removed blank lines off the end of config file",
+          "timestamp": "2025-01-17T12:44:24-08:00",
+          "tree_id": "c670b99b2a6585add4958298be73c04af8a06ac3",
+          "url": "https://github.com/microsoft/garnet/commit/eec5e3eaf2a924f67493c2c1e3839e749919b2c2"
+        },
+        "date": 1737146931595,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.Get(Params: None)",
+            "value": 34775.69979154147,
+            "unit": "ns",
+            "range": "± 65.3116182828891"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.Set(Params: None)",
+            "value": 35965.41239420573,
+            "unit": "ns",
+            "range": "± 71.7054271399339"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.MGet(Params: None)",
+            "value": 30761.263803335336,
+            "unit": "ns",
+            "range": "± 28.96403051691309"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.MSet(Params: None)",
+            "value": 30259.988403320312,
+            "unit": "ns",
+            "range": "± 251.89485553350033"
           }
         ]
       }
