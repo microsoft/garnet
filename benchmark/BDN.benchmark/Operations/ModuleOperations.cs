@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Reflection;
-using System.Text;
 using BenchmarkDotNet.Attributes;
 using Embedded.server;
 
@@ -60,8 +58,15 @@ namespace BDN.benchmark.Operations
             SetupOperation(ref jsonSetCmd, JSONSETCMD);
 
             SlowConsumeMessage("*3\r\n$3\r\nSET\r\n$2\r\nk1\r\n$1\r\nc\r\n"u8);
+            SlowConsumeMessage(NOOPCMDREAD);
+            SlowConsumeMessage(NOOPCMDRMW);
+            SlowConsumeMessage(NOOPOBJREAD);
             SlowConsumeMessage(NOOPOBJRMW);
+            SlowConsumeMessage(NOOPPROC);
+            SlowConsumeMessage(NOOPTXN);
             SlowConsumeMessage("*4\r\n$8\r\nJSON.SET\r\n$2\r\nk3\r\n$1\r\n$\r\n$14\r\n{\"f1\":{\"a\":1}}\r\n"u8);
+            SlowConsumeMessage(JSONGETCMD);
+            SlowConsumeMessage(JSONSETCMD);
         }
 
         [Benchmark]
