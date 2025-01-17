@@ -36,7 +36,7 @@ namespace Garnet.cluster
         /// <param name="nodeId">Node-id to use for search the connection array</param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        private GarnetClient GetOrAddConnection(string nodeId)
+        private async Task<GarnetClient> GetOrAddConnectionAsync(string nodeId)
         {
             _ = clusterProvider.clusterManager.clusterConnectionStore.GetConnection(nodeId, out var gsn);
 
@@ -65,7 +65,7 @@ namespace Garnet.cluster
                     throw new GarnetException($"Connection not established to node {nodeId}");
             }
 
-            gsn.Initialize();
+            await gsn.InitializeAsync();
 
             return gsn.Client;
         }
@@ -75,7 +75,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeId">Id of node to create connection for</param>
         /// <returns></returns>
-        private GarnetClient CreateConnection(string nodeId)
+        private async Task<GarnetClient> CreateConnectionAsync(string nodeId)
         {
             var (address, port) = oldConfig.GetEndpointFromNodeId(nodeId);
             var client = new GarnetClient(
@@ -90,7 +90,7 @@ namespace Garnet.cluster
             try
             {
                 if (!client.IsConnected)
-                    client.ReconnectAsync().WaitAsync(failoverTimeout, cts.Token).GetAwaiter().GetResult();
+                    await client.ReconnectAsync().WaitAsync(failoverTimeout, cts.Token);
 
                 return client;
             }
@@ -108,9 +108,9 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeId"></param>
         /// <returns></returns>
-        private GarnetClient GetConnection(string nodeId)
+        private Task<GarnetClient> GetConnectionAsync(string nodeId)
         {
-            return useGossipConnections ? GetOrAddConnection(nodeId) : CreateConnection(nodeId);
+            return useGossipConnections ? GetOrAddConnectionAsync(nodeId) : CreateConnectionAsync(nodeId);
         }
 
         /// <summary>
@@ -120,7 +120,7 @@ namespace Garnet.cluster
         private async Task<bool> PauseWritesAndWaitForSync()
         {
             var primaryId = oldConfig.LocalNodePrimaryId;
-            var client = GetConnection(primaryId);
+            var client = await GetConnectionAsync(primaryId);
             try
             {
                 if (client == null)
@@ -210,7 +210,7 @@ namespace Garnet.cluster
         {
             var oldPrimaryId = oldConfig.LocalNodePrimaryId;
             var newConfig = clusterProvider.clusterManager.CurrentConfig;
-            var client = oldPrimaryId.Equals(replicaId) ? primaryClient : GetConnection(replicaId);
+            var client = oldPrimaryId.Equals(replicaId) ? primaryClient : await GetConnectionAsync(replicaId);
 
             try
             {

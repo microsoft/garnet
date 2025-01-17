@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal sealed unsafe partial class MigrateSession : IDisposable
+    internal sealed partial class MigrateSession : IDisposable
     {
         /// <summary>
         /// Begin migration task
@@ -49,7 +49,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Migrate slots session background task
         /// </summary>
-        private void BeginAsyncMigrationTask()
+        private async Task BeginAsyncMigrationTask()
         {
             var configResumed = true;
             try
@@ -91,7 +91,7 @@ namespace Garnet.cluster
                 // Lock config merge to avoid a background epoch bump
                 clusterProvider.clusterManager.SuspendConfigMerge();
                 configResumed = false;
-                clusterProvider.clusterManager.TryMeet(_targetAddress, _targetPort, acquireLock: false);
+                await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false);
 
                 // Change ownership of slots to target node.
                 if (!TrySetSlotRanges(GetTargetNodeId, MigrateState.NODE))
@@ -112,7 +112,7 @@ namespace Garnet.cluster
                 }
 
                 // Gossip again to ensure that source and target agree on the slot exchange
-                clusterProvider.clusterManager.TryMeet(_targetAddress, _targetPort, acquireLock: false);
+                await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false);
 
                 // Ensure that config merge resumes
                 clusterProvider.clusterManager.ResumeConfigMerge();
