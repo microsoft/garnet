@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737151494698,
+  "lastUpdate": 1737162406906,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -71317,6 +71317,36 @@ window.BENCHMARK_DATA = {
             "value": 90.88618748585382,
             "unit": "ns",
             "range": "± 0.5899125206190149"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "96085550+vazois@users.noreply.github.com",
+            "name": "Vasileios Zois",
+            "username": "vazois"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e9f6b5094a88b5285280e0ef2736d635304cbbd6",
+          "message": "fix bug with getting long value (#922)",
+          "timestamp": "2025-01-17T18:04:11-07:00",
+          "tree_id": "38828cbecbb22af2242609dfb567672c8c565ce2",
+          "url": "https://github.com/microsoft/garnet/commit/e9f6b5094a88b5285280e0ef2736d635304cbbd6"
+        },
+        "date": 1737162403535,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Network.BasicOperations.InlinePing(Params: None)",
+            "value": 89.49062202374141,
+            "unit": "ns",
+            "range": "± 0.18747457549316116"
           }
         ]
       }
