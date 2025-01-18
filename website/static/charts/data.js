@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737162744608,
+  "lastUpdate": 1737162761502,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -25973,6 +25973,84 @@ window.BENCHMARK_DATA = {
             "value": 95935.03981370192,
             "unit": "ns",
             "range": "± 148.68647413454633"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "96085550+vazois@users.noreply.github.com",
+            "name": "Vasileios Zois",
+            "username": "vazois"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e9f6b5094a88b5285280e0ef2736d635304cbbd6",
+          "message": "fix bug with getting long value (#922)",
+          "timestamp": "2025-01-17T18:04:11-07:00",
+          "tree_id": "38828cbecbb22af2242609dfb567672c8c565ce2",
+          "url": "https://github.com/microsoft/garnet/commit/e9f6b5094a88b5285280e0ef2736d635304cbbd6"
+        },
+        "date": 1737162742753,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: ACL)",
+            "value": 116560.0359235491,
+            "unit": "ns",
+            "range": "± 190.01556539575566"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: ACL)",
+            "value": 100631.67643229167,
+            "unit": "ns",
+            "range": "± 319.2640032882606"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: ACL)",
+            "value": 106015.52327473958,
+            "unit": "ns",
+            "range": "± 166.35835264423994"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: AOF)",
+            "value": 132232.97467912946,
+            "unit": "ns",
+            "range": "± 542.1559658539315"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: AOF)",
+            "value": 116214.42342122395,
+            "unit": "ns",
+            "range": "± 421.0633656051017"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: AOF)",
+            "value": 107104.02221679688,
+            "unit": "ns",
+            "range": "± 282.0509655570403"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: None)",
+            "value": 115722.95062725361,
+            "unit": "ns",
+            "range": "± 324.3669521054678"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: None)",
+            "value": 103818.63228934152,
+            "unit": "ns",
+            "range": "± 348.2902853026134"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: None)",
+            "value": 96008.68436373197,
+            "unit": "ns",
+            "range": "± 294.867887774984"
           }
         ]
       }
