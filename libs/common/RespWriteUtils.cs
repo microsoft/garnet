@@ -22,12 +22,12 @@ namespace Garnet.common
         /// </summary>
         public static bool WriteMapLength(int len, ref byte* curr, byte* end)
         {
-            var numDigits = NumUtils.NumDigits(len);
+            var numDigits = NumUtils.CountDigits(len);
             var totalLen = 1 + numDigits + 2;
             if (totalLen > (int)(end - curr))
                 return false;
             *curr++ = (byte)'%';
-            NumUtils.IntToBytes(len, numDigits, ref curr);
+            NumUtils.WriteInt32(len, numDigits, ref curr);
             WriteNewline(ref curr);
             return true;
         }
@@ -37,12 +37,12 @@ namespace Garnet.common
         /// </summary>
         public static bool WritePushLength(int len, ref byte* curr, byte* end)
         {
-            var numDigits = NumUtils.NumDigits(len);
+            var numDigits = NumUtils.CountDigits(len);
             var totalLen = 1 + numDigits + 2;
             if (totalLen > (int)(end - curr))
                 return false;
             *curr++ = (byte)'>';
-            NumUtils.IntToBytes(len, numDigits, ref curr);
+            NumUtils.WriteInt32(len, numDigits, ref curr);
             WriteNewline(ref curr);
             return true;
         }
@@ -52,7 +52,7 @@ namespace Garnet.common
         /// </summary>
         public static bool WritePaddedBulkStringLength(int len, int paddedLen, ref byte* curr, byte* end)
         {
-            var numDigits = NumUtils.NumDigits(len);
+            var numDigits = NumUtils.CountDigits(len);
             var totalLen = 1 + numDigits + 2;
             Debug.Assert(totalLen <= paddedLen);
             if (paddedLen > (int)(end - curr))
@@ -60,7 +60,7 @@ namespace Garnet.common
             *curr++ = (byte)'$';
             for (int i = 0; i < paddedLen - totalLen; i++)
                 *curr++ = (byte)'0';
-            NumUtils.IntToBytes(len, numDigits, ref curr);
+            NumUtils.WriteInt32(len, numDigits, ref curr);
             WriteNewline(ref curr);
             return true;
         }
@@ -70,24 +70,24 @@ namespace Garnet.common
         /// </summary>
         public static bool WriteArrayLength(int len, ref byte* curr, byte* end)
         {
-            var numDigits = NumUtils.NumDigits(len);
+            var numDigits = NumUtils.CountDigits(len);
             var totalLen = 1 + numDigits + 2;
             if (totalLen > (int)(end - curr))
                 return false;
             *curr++ = (byte)'*';
-            NumUtils.IntToBytes(len, numDigits, ref curr);
+            NumUtils.WriteInt32(len, numDigits, ref curr);
             WriteNewline(ref curr);
             return true;
         }
 
         public static bool WriteArrayLength(int len, ref byte* curr, byte* end, out int numDigits, out int totalLen)
         {
-            numDigits = NumUtils.NumDigits(len);
+            numDigits = NumUtils.CountDigits(len);
             totalLen = 1 + numDigits + 2;
             if (totalLen > (int)(end - curr))
                 return false;
             *curr++ = (byte)'*';
-            NumUtils.IntToBytes(len, numDigits, ref curr);
+            NumUtils.WriteInt32(len, numDigits, ref curr);
             WriteNewline(ref curr);
             return true;
         }
@@ -97,9 +97,9 @@ namespace Garnet.common
         /// </summary>
         public static bool WriteArrayItem(long integer, ref byte* curr, byte* end)
         {
-            var integerLen = NumUtils.NumDigitsInLong(integer);
+            var integerLen = NumUtils.CountDigits(integer);
             var sign = (byte)(integer < 0 ? 1 : 0);
-            var integerLenLen = NumUtils.NumDigits(sign + integerLen);
+            var integerLenLen = NumUtils.CountDigits(sign + integerLen);
 
             // $[integerLen]\r\n[integer]\r\n
             var totalLen = 1 + integerLenLen + 2 + sign + integerLen + 2;
@@ -107,9 +107,9 @@ namespace Garnet.common
                 return false;
 
             *curr++ = (byte)'$';
-            NumUtils.IntToBytes(sign + integerLen, integerLenLen, ref curr);
+            NumUtils.WriteInt32(sign + integerLen, integerLenLen, ref curr);
             WriteNewline(ref curr);
-            NumUtils.LongToBytes(integer, integerLen, ref curr);
+            NumUtils.WriteInt64(integer, integerLen, ref curr);
             WriteNewline(ref curr);
 
             return true;
@@ -183,13 +183,13 @@ namespace Garnet.common
         public static bool WriteLongAsSimpleString(long value, ref byte* curr, byte* end)
         {
             // Simple strings are of the form "+cc\r\n"
-            var longLength = NumUtils.NumDigitsInLong(value);
+            var longLength = NumUtils.CountDigits(value);
             var totalLen = 1 + longLength + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'+';
-            NumUtils.LongToBytes(value, longLength, ref curr);
+            NumUtils.WriteInt64(value, longLength, ref curr);
             WriteNewline(ref curr);
             return true;
         }
@@ -295,13 +295,13 @@ namespace Garnet.common
         /// </summary>
         public static bool WriteBulkStringLength(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
         {
-            var itemDigits = NumUtils.NumDigits(item.Length);
+            var itemDigits = NumUtils.CountDigits(item.Length);
             var totalLen = 1 + itemDigits + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'$';
-            NumUtils.IntToBytes(item.Length, itemDigits, ref curr);
+            NumUtils.WriteInt32(item.Length, itemDigits, ref curr);
             WriteNewline(ref curr);
             return true;
         }
@@ -311,13 +311,13 @@ namespace Garnet.common
         /// </summary>
         public static bool WriteBulkString(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
         {
-            var itemDigits = NumUtils.NumDigits(item.Length);
+            var itemDigits = NumUtils.CountDigits(item.Length);
             int totalLen = 1 + itemDigits + 2 + item.Length + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'$';
-            NumUtils.IntToBytes(item.Length, itemDigits, ref curr);
+            NumUtils.WriteInt32(item.Length, itemDigits, ref curr);
             WriteNewline(ref curr);
             item.CopyTo(new Span<byte>(curr, item.Length));
             curr += item.Length;
@@ -330,13 +330,13 @@ namespace Garnet.common
         /// </summary>
         public static bool WriteAsciiBulkString(ReadOnlySpan<char> chars, ref byte* curr, byte* end)
         {
-            var itemDigits = NumUtils.NumDigits(chars.Length);
+            var itemDigits = NumUtils.CountDigits(chars.Length);
             var totalLen = 1 + itemDigits + 2 + chars.Length + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'$';
-            NumUtils.IntToBytes(chars.Length, itemDigits, ref curr);
+            NumUtils.WriteInt32(chars.Length, itemDigits, ref curr);
             WriteNewline(ref curr);
             var bytesWritten = Encoding.ASCII.GetBytes(chars, new Span<byte>(curr, chars.Length));
             curr += bytesWritten;
@@ -352,13 +352,13 @@ namespace Garnet.common
             // Calculate the amount of bytes it takes to encoded the UTF16 string as UTF8
             var encodedByteCount = Encoding.UTF8.GetByteCount(chars);
 
-            var itemDigits = NumUtils.NumDigits(encodedByteCount);
+            var itemDigits = NumUtils.CountDigits(encodedByteCount);
             var totalLen = 1 + itemDigits + 2 + encodedByteCount + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'$';
-            NumUtils.IntToBytes(encodedByteCount, itemDigits, ref curr);
+            NumUtils.WriteInt32(encodedByteCount, itemDigits, ref curr);
             WriteNewline(ref curr);
             var bytesWritten = Encoding.UTF8.GetBytes(chars, new Span<byte>(curr, encodedByteCount));
             curr += bytesWritten;
@@ -383,14 +383,14 @@ namespace Garnet.common
         /// Get length of bulk string
         /// </summary>
         public static int GetBulkStringLength(int length)
-            => 1 + NumUtils.NumDigits(length) + 2 + length + 2;
+            => 1 + NumUtils.CountDigits(length) + 2 + length + 2;
 
         /// <summary>
         /// Write integer
         /// </summary>
         public static bool WriteInteger(int integer, ref byte* curr, byte* end)
         {
-            var integerLen = NumUtils.NumDigitsInLong(integer);
+            var integerLen = NumUtils.CountDigits((long)integer);
             var sign = (byte)(integer < 0 ? 1 : 0);
 
             //:integer\r\n
@@ -399,7 +399,7 @@ namespace Garnet.common
                 return false;
 
             *curr++ = (byte)':';
-            NumUtils.IntToBytes(integer, integerLen, ref curr);
+            NumUtils.WriteInt32(integer, integerLen, ref curr);
             WriteNewline(ref curr);
             return true;
         }
@@ -409,7 +409,7 @@ namespace Garnet.common
         /// </summary>
         public static bool WriteInteger(long integer, ref byte* curr, byte* end)
         {
-            var integerLen = NumUtils.NumDigitsInLong(integer);
+            var integerLen = NumUtils.CountDigits(integer);
             var sign = (byte)(integer < 0 ? 1 : 0);
 
             //:integer\r\n
@@ -418,7 +418,7 @@ namespace Garnet.common
                 return false;
 
             *curr++ = (byte)':';
-            NumUtils.LongToBytes(integer, integerLen, ref curr);
+            NumUtils.WriteInt64(integer, integerLen, ref curr);
             WriteNewline(ref curr);
             return true;
         }
@@ -428,7 +428,7 @@ namespace Garnet.common
         /// </summary>
         public static bool WriteInteger(long integer, ref byte* curr, byte* end, out int integerLen, out int totalLen)
         {
-            integerLen = NumUtils.NumDigitsInLong(integer);
+            integerLen = NumUtils.CountDigits(integer);
             byte sign = (byte)(integer < 0 ? 1 : 0);
 
             //:integer\r\n
@@ -437,7 +437,7 @@ namespace Garnet.common
                 return false;
 
             *curr++ = (byte)':';
-            NumUtils.LongToBytes(integer, integerLen, ref curr);
+            NumUtils.WriteInt64(integer, integerLen, ref curr);
             WriteNewline(ref curr);
             return true;
         }
@@ -463,10 +463,10 @@ namespace Garnet.common
         /// </summary>
         public static bool WriteIntegerAsBulkString(int integer, ref byte* curr, byte* end)
         {
-            var integerLen = NumUtils.NumDigitsInLong(integer);
+            var integerLen = NumUtils.CountDigits((long)integer);
             var sign = (byte)(integer < 0 ? 1 : 0);
 
-            var integerLenSize = NumUtils.NumDigits(integerLen + sign);
+            var integerLenSize = NumUtils.CountDigits(integerLen + sign);
 
             //$size\r\ninteger\r\n
             var totalLen = 1 + integerLenSize + 2 + sign + integerLen + 2;
@@ -474,9 +474,9 @@ namespace Garnet.common
                 return false;
 
             *curr++ = (byte)'$';
-            NumUtils.IntToBytes(integerLen + sign, integerLenSize, ref curr);
+            NumUtils.WriteInt32(integerLen + sign, integerLenSize, ref curr);
             WriteNewline(ref curr);
-            NumUtils.IntToBytes(integer, integerLen, ref curr);
+            NumUtils.WriteInt32(integer, integerLen, ref curr);
             WriteNewline(ref curr);
             return true;
         }
@@ -486,10 +486,10 @@ namespace Garnet.common
         /// </summary>
         public static bool WriteIntegerAsBulkString(long integer, ref byte* curr, byte* end, out int totalLen)
         {
-            var integerLen = NumUtils.NumDigitsInLong(integer);
+            var integerLen = NumUtils.CountDigits(integer);
             var sign = (byte)(integer < 0 ? 1 : 0);
 
-            var integerLenSize = NumUtils.NumDigits(integerLen + sign);
+            var integerLenSize = NumUtils.CountDigits(integerLen + sign);
 
             //$size\r\ninteger\r\n
             totalLen = 1 + integerLenSize + 2 + sign + integerLen + 2;
@@ -497,9 +497,9 @@ namespace Garnet.common
                 return false;
 
             *curr++ = (byte)'$';
-            NumUtils.IntToBytes(integerLen + sign, integerLenSize, ref curr);
+            NumUtils.WriteInt32(integerLen + sign, integerLenSize, ref curr);
             WriteNewline(ref curr);
-            NumUtils.LongToBytes(integer, integerLen, ref curr);
+            NumUtils.WriteInt64(integer, integerLen, ref curr);
             WriteNewline(ref curr);
             return true;
         }
@@ -509,10 +509,10 @@ namespace Garnet.common
         /// </summary>
         public static int GetIntegerAsBulkStringLength(int integer)
         {
-            var integerLen = NumUtils.NumDigitsInLong(integer);
+            var integerLen = NumUtils.CountDigits((long)integer);
             var sign = (byte)(integer < 0 ? 1 : 0);
 
-            var integerLenSize = NumUtils.NumDigits(integerLen + sign);
+            var integerLenSize = NumUtils.CountDigits(integerLen + sign);
 
             //$size\r\ninteger\r\n
             return 1 + integerLenSize + 2 + sign + integerLen + 2;
@@ -538,13 +538,13 @@ namespace Garnet.common
             if (!Utf8Formatter.TryFormat(value, buffer, out var bytesWritten, format: default))
                 return false;
 
-            var itemDigits = NumUtils.NumDigits(bytesWritten);
+            var itemDigits = NumUtils.CountDigits(bytesWritten);
             int totalLen = 1 + itemDigits + 2 + bytesWritten + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'$';
-            NumUtils.IntToBytes(bytesWritten, itemDigits, ref curr);
+            NumUtils.WriteInt32(bytesWritten, itemDigits, ref curr);
             WriteNewline(ref curr);
             buffer.Slice(0, bytesWritten).CopyTo(new Span<byte>(curr, bytesWritten));
             curr += bytesWritten;
@@ -572,7 +572,7 @@ namespace Garnet.common
             if (!Utf8Formatter.TryFormat(value, buffer, out var bytesWritten, format: default))
                 return false;
 
-            var itemDigits = NumUtils.NumDigits(bytesWritten);
+            var itemDigits = NumUtils.CountDigits(bytesWritten);
             int totalLen = 1 + bytesWritten + 2;
             if (totalLen > (int)(end - curr))
                 return false;
@@ -680,7 +680,7 @@ namespace Garnet.common
         /// </summary>
         public static bool WriteArrayWithNullElements(int len, ref byte* curr, byte* end)
         {
-            var numDigits = NumUtils.NumDigits(len);
+            var numDigits = NumUtils.CountDigits(len);
             var totalLen = 1 + numDigits + 2;
             totalLen += len * 5; // 5 is the length of $-1\r\n
 
@@ -688,7 +688,7 @@ namespace Garnet.common
                 return false;
 
             *curr++ = (byte)'*';
-            NumUtils.IntToBytes(len, numDigits, ref curr);
+            NumUtils.WriteInt32(len, numDigits, ref curr);
             WriteNewline(ref curr);
             for (var i = 0; i < len; i++)
             {

@@ -401,7 +401,7 @@ namespace Garnet.server
                     // Check optional parameters for previous sub-command
                     if (optionalParamsRead < 2 && args is RegisterCmdArgs cmdArgs)
                     {
-                        if (NumUtils.TryBytesToLong(token, out var expTicks))
+                        if (NumUtils.TryReadInt64(token, out var expTicks))
                         {
                             cmdArgs.ExpirationTicks = expTicks;
                             optionalParamsRead++;

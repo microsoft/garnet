@@ -432,7 +432,7 @@ namespace Garnet.server
 
         public unsafe GarnetStatus SETEX<TContext>(ArgSlice key, ArgSlice value, ArgSlice expiryMs, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            => SETEX(key, value, TimeSpan.FromMilliseconds(NumUtils.BytesToLong(expiryMs.Length, expiryMs.ptr)), ref context);
+            => SETEX(key, value, TimeSpan.FromMilliseconds(NumUtils.ReadInt64(expiryMs.Length, expiryMs.ptr)), ref context);
 
         public GarnetStatus SETEX<TContext>(ArgSlice key, ArgSlice value, TimeSpan expiry, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
@@ -818,7 +818,7 @@ namespace Garnet.server
         public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(ArgSlice key, ArgSlice expiryMs, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => EXPIRE(key, TimeSpan.FromMilliseconds(NumUtils.BytesToLong(expiryMs.Length, expiryMs.ptr)), out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext);
+            => EXPIRE(key, TimeSpan.FromMilliseconds(NumUtils.ReadInt64(expiryMs.Length, expiryMs.ptr)), out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext);
 
         /// <summary>
         /// Set a timeout on key.
@@ -954,10 +954,10 @@ namespace Garnet.server
             var found = false;
 
             // Serialize expiry + expiry options to parse state
-            var expiryLength = NumUtils.NumDigitsInLong(expiry);
+            var expiryLength = NumUtils.CountDigits(expiry);
             var expirySlice = scratchBufferManager.CreateArgSlice(expiryLength);
             var expirySpan = expirySlice.Span;
-            NumUtils.LongToSpanByte(expiry, expirySpan);
+            NumUtils.WriteInt64(expiry, expirySpan);
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
@@ -1119,7 +1119,7 @@ namespace Garnet.server
 
             Debug.Assert(_output.IsSpanByte);
 
-            output = NumUtils.BytesToLong(_output.Length, outputBuffer);
+            output = NumUtils.ReadInt64(_output.Length, outputBuffer);
             return GarnetStatus.OK;
         }
 

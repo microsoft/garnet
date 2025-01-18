@@ -529,17 +529,17 @@ namespace Garnet.client
             if (param1 != null)
             {
                 int len = Encoding.UTF8.GetByteCount(param1);
-                totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
                 arraySize++;
             }
             if (param2 != null)
             {
                 int len = Encoding.UTF8.GetByteCount(param2);
-                totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
                 arraySize++;
             }
 
-            totalLen += 1 + NumUtils.NumDigits(arraySize) + 2;
+            totalLen += 1 + NumUtils.CountDigits(arraySize) + 2;
             CheckLength(totalLen, tcs);
             await InputGateAsync(token);
 
@@ -641,26 +641,26 @@ namespace Garnet.client
             totalLen += op.Length;
 
             int len = clusterOp.Length;
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+            totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
             arraySize++;
 
             len = Encoding.UTF8.GetByteCount(nodeId);
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+            totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
             arraySize++;
 
-            len = NumUtils.NumDigitsInLong(currentAddress);
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+            len = NumUtils.CountDigits(currentAddress);
+            totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
             arraySize++;
 
-            len = NumUtils.NumDigitsInLong(nextAddress);
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+            len = NumUtils.CountDigits(nextAddress);
+            totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
             arraySize++;
 
             len = payloadLength;
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+            totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
             arraySize++;
 
-            totalLen += 1 + NumUtils.NumDigits(arraySize) + 2;
+            totalLen += 1 + NumUtils.CountDigits(arraySize) + 2;
 
             if (totalLen > networkWriter.PageSize)
             {
@@ -742,17 +742,17 @@ namespace Garnet.client
             if (!param1.IsEmpty)
             {
                 int len = param1.Length;
-                totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
                 arraySize++;
             }
             if (!param2.IsEmpty)
             {
                 int len = param2.Length;
-                totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
                 arraySize++;
             }
 
-            totalLen += 1 + NumUtils.NumDigits(arraySize) + 2;
+            totalLen += 1 + NumUtils.CountDigits(arraySize) + 2;
             CheckLength(totalLen, tcs);
             await InputGateAsync(token);
 
@@ -857,15 +857,15 @@ namespace Garnet.client
             tcs.timestamp = GetTimestamp();
             bool isArray = args != null;
             int arraySize = 1 + (isArray ? args.Count : 0);
-            int totalLen = 1 + NumUtils.NumDigits(arraySize) + 2 + //array header
-                1 + NumUtils.NumDigits(op.Length) + 2 + op.Length + 2;//op header + op data
+            int totalLen = 1 + NumUtils.CountDigits(arraySize) + 2 + //array header
+                1 + NumUtils.CountDigits(op.Length) + 2 + op.Length + 2;//op header + op data
 
             if (isArray)
             {
                 foreach (var arg in args)
                 {
                     int len = Encoding.UTF8.GetByteCount(arg);
-                    totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                    totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
                 }
             }
 
@@ -975,14 +975,14 @@ namespace Garnet.client
             tcs.timestamp = GetTimestamp();
             bool isArray = args != null;
             int arraySize = 1 + (isArray ? args.Count : 0);
-            int totalLen = 1 + NumUtils.NumDigits(arraySize) + 2 + respOp.Length;
+            int totalLen = 1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length;
 
             if (isArray)
             {
                 foreach (var arg in args)
                 {
                     int len = arg.Length;
-                    totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                    totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
                 }
             }
 

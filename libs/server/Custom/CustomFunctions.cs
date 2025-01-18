@@ -65,7 +65,7 @@ namespace Garnet.server
         /// </summary>
         protected static unsafe void WriteBulkStringArray(ref MemoryResult<byte> output, params ArgSlice[] values)
         {
-            var totalLen = 1 + NumUtils.NumDigits(values.Length) + 2;
+            var totalLen = 1 + NumUtils.CountDigits(values.Length) + 2;
             for (var i = 0; i < values.Length; i++)
                 totalLen += RespWriteUtils.GetBulkStringLength(values[i].Length);
 
@@ -93,7 +93,7 @@ namespace Garnet.server
         /// </summary>
         protected static unsafe void WriteBulkStringArray(ref MemoryResult<byte> output, List<ArgSlice> values)
         {
-            var totalLen = 1 + NumUtils.NumDigits(values.Count) + 2;
+            var totalLen = 1 + NumUtils.CountDigits(values.Count) + 2;
             for (var i = 0; i < values.Count; i++)
                 totalLen += RespWriteUtils.GetBulkStringLength(values[i].Length);
 

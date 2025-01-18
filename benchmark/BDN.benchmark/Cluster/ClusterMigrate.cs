@@ -69,9 +69,9 @@ namespace BDN.benchmark.Cluster
         private void SetSlot(int slot, string state, string nodeId)
         {
             var reqBytes = "*5\r\n"u8.Length + 4 + "CLUSTER\r\n"u8.Length + 4 + "SETSLOT\r\n"u8.Length +
-                1 + NumUtils.NumDigits(slot.ToString().Length) + 2 + slot.ToString().Length + 2 +
-                1 + NumUtils.NumDigits(state.Length) + 2 + state.Length + 2 +
-                1 + NumUtils.NumDigits(nodeId.Length) + 2 + nodeId.Length + 2;
+                1 + NumUtils.CountDigits(slot.ToString().Length) + 2 + slot.ToString().Length + 2 +
+                1 + NumUtils.CountDigits(state.Length) + 2 + state.Length + 2 +
+                1 + NumUtils.CountDigits(nodeId.Length) + 2 + nodeId.Length + 2;
 
             var setSlotReq = new Request(reqBytes);
             var curr = setSlotReq.ptr;

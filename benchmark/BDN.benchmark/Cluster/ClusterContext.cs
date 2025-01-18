@@ -49,8 +49,8 @@ namespace BDN.benchmark.Cluster
             foreach (var slotRange in slotRanges)
             {
                 var clusterAddSlotsRange = Encoding.ASCII.GetBytes($"*4\r\n$7\r\nCLUSTER\r\n$13\r\nADDSLOTSRANGE\r\n" +
-                    $"${NumUtils.NumDigits(slotRange.Item1)}\r\n{slotRange.Item1}\r\n" +
-                    $"${NumUtils.NumDigits(slotRange.Item2)}\r\n{slotRange.Item2}\r\n");
+                    $"${NumUtils.CountDigits(slotRange.Item1)}\r\n{slotRange.Item1}\r\n" +
+                    $"${NumUtils.CountDigits(slotRange.Item2)}\r\n{slotRange.Item2}\r\n");
                 fixed (byte* req = clusterAddSlotsRange)
                     _ = session.TryConsumeMessages(req, clusterAddSlotsRange.Length);
             }
@@ -68,7 +68,7 @@ namespace BDN.benchmark.Cluster
                 benchUtils.RandomBytes(ref pairs[i].Item2);
             }
 
-            var setByteCount = batchSize * ("*2\r\n$3\r\nSET\r\n"u8.Length + 1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2 + 1 + NumUtils.NumDigits(valueSize) + 2 + valueSize + 2);
+            var setByteCount = batchSize * ("*2\r\n$3\r\nSET\r\n"u8.Length + 1 + NumUtils.CountDigits(keySize) + 2 + keySize + 2 + 1 + NumUtils.CountDigits(valueSize) + 2 + valueSize + 2);
             var setReq = new Request(setByteCount);
             var curr = setReq.ptr;
             var end = curr + setReq.buffer.Length;
@@ -80,7 +80,7 @@ namespace BDN.benchmark.Cluster
                 _ = RespWriteUtils.WriteBulkString(pairs[i].Item2, ref curr, end);
             }
 
-            var getByteCount = batchSize * ("*2\r\n$3\r\nGET\r\n"u8.Length + 1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2);
+            var getByteCount = batchSize * ("*2\r\n$3\r\nGET\r\n"u8.Length + 1 + NumUtils.CountDigits(keySize) + 2 + keySize + 2);
             var getReq = new Request(getByteCount);
             curr = getReq.ptr;
             end = curr + getReq.buffer.Length;
@@ -105,8 +105,8 @@ namespace BDN.benchmark.Cluster
                 benchUtils.RandomBytes(ref pairs[i].Item2);
             }
 
-            var mGetHeaderSize = 1 + NumUtils.NumDigits(1 + batchSize) + 2 + "$4\r\nMGET\r\n"u8.Length;
-            var getRespSize = 1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2;
+            var mGetHeaderSize = 1 + NumUtils.CountDigits(1 + batchSize) + 2 + "$4\r\nMGET\r\n"u8.Length;
+            var getRespSize = 1 + NumUtils.CountDigits(keySize) + 2 + keySize + 2;
             var mGetByteCount = mGetHeaderSize + (batchSize * getRespSize);
             var mGetReq = new Request(mGetByteCount);
 
@@ -117,8 +117,8 @@ namespace BDN.benchmark.Cluster
             for (var i = 0; i < batchSize; i++)
                 _ = RespWriteUtils.WriteBulkString(pairs[i].Item1, ref curr, end);
 
-            var mSetHeaderSize = 1 + NumUtils.NumDigits(1 + (batchSize * 2)) + 2 + "$4\r\nMSET\r\n"u8.Length;
-            var setRespSize = 1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2 + 1 + NumUtils.NumDigits(valueSize) + 2 + valueSize + 2;
+            var mSetHeaderSize = 1 + NumUtils.CountDigits(1 + (batchSize * 2)) + 2 + "$4\r\nMSET\r\n"u8.Length;
+            var setRespSize = 1 + NumUtils.CountDigits(keySize) + 2 + keySize + 2 + 1 + NumUtils.CountDigits(valueSize) + 2 + valueSize + 2;
             var mSetByteCount = mSetHeaderSize + (batchSize * setRespSize);
             var mSetReq = new Request(mSetByteCount);
 
@@ -145,7 +145,7 @@ namespace BDN.benchmark.Cluster
                 benchUtils.RandomBytes(ref keys[i], startOffset: keyTag.Length);
             }
 
-            var ctxnsetByteCount = "*9\r\n$7\r\nCTXNSET\r\n"u8.Length + (8 * (1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2));
+            var ctxnsetByteCount = "*9\r\n$7\r\nCTXNSET\r\n"u8.Length + (8 * (1 + NumUtils.CountDigits(keySize) + 2 + keySize + 2));
             var ctxnsetReq = new Request(batchSize * ctxnsetByteCount);
             var curr = ctxnsetReq.ptr;
             var end = curr + ctxnsetReq.buffer.Length;

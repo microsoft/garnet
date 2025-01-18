@@ -284,8 +284,8 @@ namespace Garnet.server
 
             GarnetStatus status;
             // Get parameter lengths
-            var startLen = NumUtils.NumDigits(start);
-            var stopLen = NumUtils.NumDigits(stop);
+            var startLen = NumUtils.CountDigits(start);
+            var stopLen = NumUtils.CountDigits(stop);
 
             // Get buffer from scratch buffer manager
             var paramsSlice = scratchBufferManager.CreateArgSlice(startLen + stopLen);
@@ -293,11 +293,11 @@ namespace Garnet.server
 
             // Store parameters to buffer
             var startSpan = paramsSpan.Slice(0, startLen);
-            NumUtils.LongToSpanByte(start, startSpan);
+            NumUtils.WriteInt64(start, startSpan);
             var startSlice = ArgSlice.FromPinnedSpan(startSpan);
 
             var stopSpan = paramsSpan.Slice(startLen, stopLen);
-            NumUtils.LongToSpanByte(stop, stopSpan);
+            NumUtils.WriteInt64(stop, stopSpan);
             var stopSlice = ArgSlice.FromPinnedSpan(stopSpan);
 
             parseState.InitializeWithArguments(startSlice, stopSlice);
@@ -504,9 +504,9 @@ namespace Garnet.server
                 arguments.Add(scratchBufferManager.CreateArgSlice(limit.Item1));
 
                 // Count
-                var limitCountLength = NumUtils.NumDigitsInLong(limit.Item2);
+                var limitCountLength = NumUtils.CountDigits(limit.Item2);
                 var limitCountSlice = scratchBufferManager.CreateArgSlice(limitCountLength);
-                NumUtils.LongToSpanByte(limit.Item2, limitCountSlice.Span);
+                NumUtils.WriteInt64(limit.Item2, limitCountSlice.Span);
                 arguments.Add(limitCountSlice);
             }
 

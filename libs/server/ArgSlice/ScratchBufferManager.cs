@@ -290,7 +290,7 @@ namespace Garnet.server
         /// <param name="slice"></param>
         /// <returns></returns>
         static int GetRespFormattedStringLength(ArgSlice slice)
-            => 1 + NumUtils.NumDigits(slice.Length) + 2 + slice.Length + 2;
+            => 1 + NumUtils.CountDigits(slice.Length) + 2 + slice.Length + 2;
 
         void ExpandScratchBufferIfNeeded(int newLength)
         {

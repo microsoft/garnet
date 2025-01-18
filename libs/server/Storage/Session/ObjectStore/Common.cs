@@ -140,7 +140,7 @@ namespace Garnet.server
             // Prepare the parse state 
             var matchPattern = match.Trim();
 
-            var countLength = NumUtils.NumDigits(count);
+            var countLength = NumUtils.CountDigits(count);
 
             // Calculate # of bytes to store parameters
             var sliceBytes = CmdStrings.MATCH.Length +
@@ -175,7 +175,7 @@ namespace Garnet.server
 
             // Value
             var countValueSpan = paramsSpan.Slice(paramsSpanOffset, countLength);
-            NumUtils.LongToSpanByte(count, countValueSpan);
+            NumUtils.WriteInt64(count, countValueSpan);
             var countValueSlice = ArgSlice.FromPinnedSpan(countValueSpan);
 
             parseState.InitializeWithArguments(matchSlice, matchPatternSlice,

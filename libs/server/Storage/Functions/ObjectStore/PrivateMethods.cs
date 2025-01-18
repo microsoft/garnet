@@ -99,7 +99,7 @@ namespace Garnet.server
             {
                 byte* cc = ptr;
                 *cc++ = (byte)':';
-                NumUtils.LongToBytes(number, (int)integerLen, ref cc);
+                NumUtils.WriteInt64(number, (int)integerLen, ref cc);
                 *cc++ = (byte)'\r';
                 *cc++ = (byte)'\n';
             }
