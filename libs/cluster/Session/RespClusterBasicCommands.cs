@@ -286,7 +286,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            if (!parseState.TryGetInt(0, out var configEpoch))
+            if (!parseState.TryGetLong(0, out var configEpoch))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
