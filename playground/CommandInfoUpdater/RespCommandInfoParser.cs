@@ -38,7 +38,7 @@ namespace Garnet.server
                 || infoElemCount != 10) return false;
 
             // 1) Name
-            if (!RespReadUtils.ReadStringWithLengthHeader(out var name, ref ptr, end)) return false;
+            if (!RespReadUtils.TryReadStringWithLengthHeader(out var name, ref ptr, end)) return false;
 
             // 2) Arity
             if (!RespReadUtils.ReadIntegerAsString(out var strArity, ref ptr, end)
@@ -49,7 +49,7 @@ namespace Garnet.server
             if (!RespReadUtils.ReadUnsignedArrayLength(out var flagCount, ref ptr, end)) return false;
             for (var flagIdx = 0; flagIdx < flagCount; flagIdx++)
             {
-                if (!RespReadUtils.ReadSimpleString(out var strFlag, ref ptr, end)
+                if (!RespReadUtils.TryReadSimpleString(out var strFlag, ref ptr, end)
                     || !EnumUtils.TryParseEnumFromDescription<RespCommandFlags>(strFlag, out var flag))
                     return false;
                 flags |= flag;
@@ -72,14 +72,14 @@ namespace Garnet.server
             if (!RespReadUtils.ReadUnsignedArrayLength(out var aclCatCount, ref ptr, end)) return false;
             for (var aclCatIdx = 0; aclCatIdx < aclCatCount; aclCatIdx++)
             {
-                if (!RespReadUtils.ReadSimpleString(out var strAclCat, ref ptr, end)
+                if (!RespReadUtils.TryReadSimpleString(out var strAclCat, ref ptr, end)
                     || !EnumUtils.TryParseEnumFromDescription<RespAclCategories>(strAclCat.TrimStart('@'), out var aclCat))
                     return false;
                 aclCategories |= aclCat;
             }
 
             // 8) Tips
-            if (!RespReadUtils.ReadStringArrayWithLengthHeader(out var tips, ref ptr, end)) return false;
+            if (!RespReadUtils.TryReadStringArrayWithLengthHeader(out var tips, ref ptr, end)) return false;
 
             // 9) Key specifications
             if (!RespReadUtils.ReadUnsignedArrayLength(out var ksCount, ref ptr, end)) return false;
@@ -146,18 +146,18 @@ namespace Garnet.server
 
             for (var elemIdx = 0; elemIdx < elemCount; elemIdx += 2)
             {
-                if (!RespReadUtils.ReadStringWithLengthHeader(out var ksKey, ref ptr, end)) return false;
+                if (!RespReadUtils.TryReadStringWithLengthHeader(out var ksKey, ref ptr, end)) return false;
 
                 if (string.Equals(ksKey, "notes", StringComparison.Ordinal))
                 {
-                    if (!RespReadUtils.ReadStringWithLengthHeader(out notes, ref ptr, end)) return false;
+                    if (!RespReadUtils.TryReadStringWithLengthHeader(out notes, ref ptr, end)) return false;
                 }
                 else if (string.Equals(ksKey, "flags", StringComparison.Ordinal))
                 {
                     if (!RespReadUtils.ReadUnsignedArrayLength(out var flagsCount, ref ptr, end)) return false;
                     for (var flagIdx = 0; flagIdx < flagsCount; flagIdx++)
                     {
-                        if (!RespReadUtils.ReadSimpleString(out var strFlag, ref ptr, end)
+                        if (!RespReadUtils.TryReadSimpleString(out var strFlag, ref ptr, end)
                             || !EnumUtils.TryParseEnumFromDescription<KeySpecificationFlags>(strFlag, out var flag))
                             return false;
                         flags |= flag;
@@ -249,10 +249,10 @@ namespace Garnet.server
 
             if (!RespReadUtils.ReadUnsignedArrayLength(out var ksTypeElemCount, ref ptr, end)
                 || ksTypeElemCount != 4
-                || !RespReadUtils.ReadStringWithLengthHeader(out var ksTypeStr, ref ptr, end)
+                || !RespReadUtils.TryReadStringWithLengthHeader(out var ksTypeStr, ref ptr, end)
                 || !string.Equals(ksTypeStr, "type", StringComparison.Ordinal)
-                || !RespReadUtils.ReadStringWithLengthHeader(out var ksType, ref ptr, end)
-                || !RespReadUtils.ReadStringWithLengthHeader(out var ksSpecStr, ref ptr, end)
+                || !RespReadUtils.TryReadStringWithLengthHeader(out var ksType, ref ptr, end)
+                || !RespReadUtils.TryReadStringWithLengthHeader(out var ksSpecStr, ref ptr, end)
                 || !string.Equals(ksSpecStr, "spec", StringComparison.Ordinal)) return false;
 
             keySpecType = ksType;
@@ -301,7 +301,7 @@ namespace Garnet.server
 
                 if (!RespReadUtils.ReadUnsignedArrayLength(out var ksSpecElemCount, ref ptr, end)
                     || ksSpecElemCount != 2
-                    || !RespReadUtils.ReadStringWithLengthHeader(out var ksArgKey, ref ptr, end)
+                    || !RespReadUtils.TryReadStringWithLengthHeader(out var ksArgKey, ref ptr, end)
                     || !string.Equals(ksArgKey, "index", StringComparison.Ordinal)
                     || !RespReadUtils.ReadIntegerAsString(out var strIndex, ref ptr, end)
                     || !int.TryParse(strIndex, out var index)) return false;
@@ -340,10 +340,10 @@ namespace Garnet.server
 
                 if (!RespReadUtils.ReadUnsignedArrayLength(out var specElemCount, ref ptr, end)
                     || specElemCount != 4
-                    || !RespReadUtils.ReadStringWithLengthHeader(out var argKey, ref ptr, end)
+                    || !RespReadUtils.TryReadStringWithLengthHeader(out var argKey, ref ptr, end)
                     || !string.Equals(argKey, "keyword", StringComparison.Ordinal)
-                    || !RespReadUtils.ReadStringWithLengthHeader(out var keyword, ref ptr, end)
-                    || !RespReadUtils.ReadStringWithLengthHeader(out argKey, ref ptr, end)
+                    || !RespReadUtils.TryReadStringWithLengthHeader(out var keyword, ref ptr, end)
+                    || !RespReadUtils.TryReadStringWithLengthHeader(out argKey, ref ptr, end)
                     || !string.Equals(argKey, "startfrom", StringComparison.Ordinal)
                     || !RespReadUtils.ReadIntegerAsString(out var strStartFrom, ref ptr, end)
                     || !int.TryParse(strStartFrom, out var startFrom)) return false;
@@ -415,15 +415,15 @@ namespace Garnet.server
 
                 if (!RespReadUtils.ReadUnsignedArrayLength(out var specElemCount, ref ptr, end)
                     || specElemCount != 6
-                    || !RespReadUtils.ReadStringWithLengthHeader(out var argKey, ref ptr, end)
+                    || !RespReadUtils.TryReadStringWithLengthHeader(out var argKey, ref ptr, end)
                     || !string.Equals(argKey, "lastkey", StringComparison.Ordinal)
                     || !RespReadUtils.ReadIntegerAsString(out var strLastKey, ref ptr, end)
                     || !int.TryParse(strLastKey, out var lastKey)
-                    || !RespReadUtils.ReadStringWithLengthHeader(out argKey, ref ptr, end)
+                    || !RespReadUtils.TryReadStringWithLengthHeader(out argKey, ref ptr, end)
                     || !string.Equals(argKey, "keystep", StringComparison.Ordinal)
                     || !RespReadUtils.ReadIntegerAsString(out var strKeyStep, ref ptr, end)
                     || !int.TryParse(strKeyStep, out var keyStep)
-                    || !RespReadUtils.ReadStringWithLengthHeader(out argKey, ref ptr, end)
+                    || !RespReadUtils.TryReadStringWithLengthHeader(out argKey, ref ptr, end)
                     || !string.Equals(argKey, "limit", StringComparison.Ordinal)
                     || !RespReadUtils.ReadIntegerAsString(out var strLimit, ref ptr, end)
                     || !int.TryParse(strLimit, out var limit)) return false;
@@ -462,15 +462,15 @@ namespace Garnet.server
 
                 if (!RespReadUtils.ReadUnsignedArrayLength(out var specElemCount, ref ptr, end)
                     || specElemCount != 6
-                    || !RespReadUtils.ReadStringWithLengthHeader(out var argKey, ref ptr, end)
+                    || !RespReadUtils.TryReadStringWithLengthHeader(out var argKey, ref ptr, end)
                     || !string.Equals(argKey, "keynumidx", StringComparison.Ordinal)
                     || !RespReadUtils.ReadIntegerAsString(out var strKeyNumIdx, ref ptr, end)
                     || !int.TryParse(strKeyNumIdx, out var keyNumIdx)
-                    || !RespReadUtils.ReadStringWithLengthHeader(out argKey, ref ptr, end)
+                    || !RespReadUtils.TryReadStringWithLengthHeader(out argKey, ref ptr, end)
                     || !string.Equals(argKey, "firstkey", StringComparison.Ordinal)
                     || !RespReadUtils.ReadIntegerAsString(out var strFirstKey, ref ptr, end)
                     || !int.TryParse(strFirstKey, out var firstKey)
-                    || !RespReadUtils.ReadStringWithLengthHeader(out argKey, ref ptr, end)
+                    || !RespReadUtils.TryReadStringWithLengthHeader(out argKey, ref ptr, end)
                     || !string.Equals(argKey, "keystep", StringComparison.Ordinal)
                     || !RespReadUtils.ReadIntegerAsString(out var strKeyStep, ref ptr, end)
                     || !int.TryParse(strKeyStep, out var keyStep)) return false;

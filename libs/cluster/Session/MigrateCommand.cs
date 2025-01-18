@@ -52,7 +52,7 @@ namespace Garnet.cluster
                 MigrateCmdParseState.FAILEDTOADDKEY => CmdStrings.RESP_ERR_GENERIC_FAILEDTOADDKEY,
                 _ => CmdStrings.RESP_ERR_GENERIC_PARSING,
             };
-            while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                 SendAndReset();
             return false;
         }
@@ -84,7 +84,7 @@ namespace Garnet.cluster
                 !parseState.TryGetInt(4, out var timeout))
 
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -195,7 +195,7 @@ namespace Garnet.cluster
                     {
                         if (!parseState.TryGetInt(currTokenIdx++, out var slot))
                         {
-                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                                 SendAndReset();
                             return true;
                         }
@@ -245,7 +245,7 @@ namespace Garnet.cluster
                         if (!parseState.TryGetInt(currTokenIdx++, out var slotStart)
                             || !parseState.TryGetInt(currTokenIdx++, out var slotEnd))
                         {
-                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                                 SendAndReset();
                             return true;
                         }
@@ -314,7 +314,7 @@ namespace Garnet.cluster
                 out var mSession))
             {
                 // Migration task could not be added due to possible conflicting migration tasks
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_IOERR, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_IOERR, ref dcurr, dend))
                     SendAndReset();
             }
             else
@@ -322,12 +322,12 @@ namespace Garnet.cluster
                 //Start migration task
                 if (!mSession.TryStartMigrationTask(out var errorMessage))
                 {
-                    while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
             }

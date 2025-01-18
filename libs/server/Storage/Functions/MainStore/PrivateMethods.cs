@@ -637,7 +637,7 @@ namespace Garnet.server
         {
             byte* curr = dst.SpanByte.ToPointer();
             byte* end = curr + dst.SpanByte.Length;
-            if (RespWriteUtils.WriteInteger(number, ref curr, end, out int integerLen, out int totalLen))
+            if (RespWriteUtils.TryWriteInt64(number, ref curr, end, out int integerLen, out int totalLen))
             {
                 dst.SpanByte.Length = (int)(curr - dst.SpanByte.ToPointer());
                 return;

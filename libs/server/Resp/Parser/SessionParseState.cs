@@ -334,7 +334,7 @@ namespace Garnet.server
             ref var slice = ref Unsafe.AsRef<ArgSlice>(bufferPtr + i);
 
             // Parse RESP string header
-            if (!RespReadUtils.ReadUnsignedLengthHeader(out slice.length, ref ptr, end))
+            if (!RespReadUtils.TryReadUnsignedLengthHeader(out slice.length, ref ptr, end))
             {
                 return false;
             }

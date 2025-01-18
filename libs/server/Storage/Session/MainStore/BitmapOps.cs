@@ -260,7 +260,7 @@ namespace Garnet.server
                     fixed (byte* outputPtr = output.Memory.Memory.Span)
                     {
                         var refPtr = outputPtr;
-                        RespReadUtils.Read64Int(out result, ref refPtr, refPtr + sizeof(long));
+                        RespReadUtils.TryReadInt64(out result, ref refPtr, refPtr + sizeof(long));
                     }
                     output.Memory.Dispose();
                 }
@@ -373,7 +373,7 @@ namespace Garnet.server
                             fixed (byte* outputPtr = output.Memory.Memory.Span)
                             {
                                 var refPtr = outputPtr;
-                                if (!RespReadUtils.Read64Int(out resultCmd, ref refPtr, refPtr + output.Length))
+                                if (!RespReadUtils.TryReadInt64(out resultCmd, ref refPtr, refPtr + output.Length))
                                     error = true;
                             }
                             output.Memory.Dispose();
@@ -381,7 +381,7 @@ namespace Garnet.server
                         else
                         {
                             var refPtr = output.SpanByte.ToPointer();
-                            if (!RespReadUtils.Read64Int(out resultCmd, ref refPtr, refPtr + output.SpanByte.Length))
+                            if (!RespReadUtils.TryReadInt64(out resultCmd, ref refPtr, refPtr + output.SpanByte.Length))
                                 error = true;
                         }
                         result.Add(error ? null : resultCmd);

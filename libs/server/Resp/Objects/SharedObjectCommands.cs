@@ -41,7 +41,7 @@ namespace Garnet.server
             // Get cursor value
             if (!parseState.TryGetInt(1, out var cursorValue) || cursorValue < 0)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CURSORVALUE, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CURSORVALUE, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -80,13 +80,13 @@ namespace Garnet.server
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteScanOutputHeader(0, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteScanOutputHeader(0, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
             }

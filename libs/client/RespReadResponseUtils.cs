@@ -18,7 +18,7 @@ namespace Garnet.client
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool ReadSimpleString(out string result, ref byte* ptr, byte* end)
-            => RespReadUtils.ReadSimpleString(out result, ref ptr, end);
+            => RespReadUtils.TryReadSimpleString(out result, ref ptr, end);
 
         /// <summary>
         /// Read simple string
@@ -124,7 +124,7 @@ namespace Garnet.client
         static bool ReadPtrWithSignedLengthHeader(ref byte* keyPtr, ref int length, ref byte* ptr, byte* end)
         {
             // Parse RESP string header
-            if (!RespReadUtils.ReadSignedLengthHeader(out length, ref ptr, end))
+            if (!RespReadUtils.TryReadSignedLengthHeader(out length, ref ptr, end))
             {
                 return false;
             }
@@ -159,7 +159,7 @@ namespace Garnet.client
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool ReadErrorAsString(out string error, ref byte* ptr, byte* end)
-            => RespReadUtils.ReadErrorAsString(out error, ref ptr, end);
+            => RespReadUtils.TryReadErrorAsString(out error, ref ptr, end);
 
         /// <summary>
         /// Read string array with length header
@@ -253,7 +253,7 @@ namespace Garnet.client
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool ReadIntWithLengthHeader(out int number, ref byte* ptr, byte* end)
-            => RespReadUtils.ReadIntWithLengthHeader(out number, ref ptr, end);
+            => RespReadUtils.ReadInt32WithLengthHeader(out number, ref ptr, end);
 
         /// <summary>
         /// Read ASCII string without header until string terminator ('\r\n').

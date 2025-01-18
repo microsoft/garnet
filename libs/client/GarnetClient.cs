@@ -578,13 +578,13 @@ namespace Garnet.client
                 {
                     byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
                     byte* end = curr + totalLen;
-                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
+                    RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end);
 
-                    RespWriteUtils.WriteDirect(op.Span, ref curr, end);
+                    RespWriteUtils.TryWriteDirect(op.Span, ref curr, end);
                     if (param1 != null)
-                        RespWriteUtils.WriteUtf8BulkString(param1, ref curr, end);
+                        RespWriteUtils.TryWriteUtf8BulkString(param1, ref curr, end);
                     if (param2 != null)
-                        RespWriteUtils.WriteUtf8BulkString(param2, ref curr, end);
+                        RespWriteUtils.TryWriteUtf8BulkString(param2, ref curr, end);
 
                     Debug.Assert(curr == end);
                 }
@@ -702,14 +702,14 @@ namespace Garnet.client
                 {
                     byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
                     byte* end = curr + totalLen;
-                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
+                    RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end);
 
-                    RespWriteUtils.WriteDirect(op.Span, ref curr, end);
-                    RespWriteUtils.WriteBulkString(clusterOp.Span, ref curr, end);
-                    RespWriteUtils.WriteUtf8BulkString(nodeId, ref curr, end);
-                    RespWriteUtils.WriteArrayItem(currentAddress, ref curr, end);
-                    RespWriteUtils.WriteArrayItem(nextAddress, ref curr, end);
-                    RespWriteUtils.WriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end);
+                    RespWriteUtils.TryWriteDirect(op.Span, ref curr, end);
+                    RespWriteUtils.TryWriteBulkString(clusterOp.Span, ref curr, end);
+                    RespWriteUtils.TryWriteUtf8BulkString(nodeId, ref curr, end);
+                    RespWriteUtils.TryWriteArrayItem(currentAddress, ref curr, end);
+                    RespWriteUtils.TryWriteArrayItem(nextAddress, ref curr, end);
+                    RespWriteUtils.TryWriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end);
 
                     Debug.Assert(curr == end);
                 }
@@ -791,13 +791,13 @@ namespace Garnet.client
                 {
                     byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
                     byte* end = curr + totalLen;
-                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
+                    RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end);
 
-                    RespWriteUtils.WriteDirect(op.Span, ref curr, end);
+                    RespWriteUtils.TryWriteDirect(op.Span, ref curr, end);
                     if (!param1.IsEmpty)
-                        RespWriteUtils.WriteBulkString(param1.Span, ref curr, end);
+                        RespWriteUtils.TryWriteBulkString(param1.Span, ref curr, end);
                     if (!param2.IsEmpty)
-                        RespWriteUtils.WriteBulkString(param2.Span, ref curr, end);
+                        RespWriteUtils.TryWriteBulkString(param2.Span, ref curr, end);
 
                     Debug.Assert(curr == end);
                 }
@@ -907,13 +907,13 @@ namespace Garnet.client
                 {
                     byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
                     byte* end = curr + totalLen;
-                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
+                    RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end);
 
-                    RespWriteUtils.WriteAsciiBulkString(op, ref curr, end);//Write op data
+                    RespWriteUtils.TryWriteAsciiBulkString(op, ref curr, end);//Write op data
                     if (isArray)//Write arg data
                     {
                         foreach (var arg in args)
-                            RespWriteUtils.WriteUtf8BulkString(arg, ref curr, end);
+                            RespWriteUtils.TryWriteUtf8BulkString(arg, ref curr, end);
                     }
 
                     Debug.Assert(curr == end);
@@ -1024,12 +1024,12 @@ namespace Garnet.client
                 {
                     byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
                     byte* end = curr + totalLen;
-                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
-                    RespWriteUtils.WriteDirect(respOp.Span, ref curr, end);
+                    RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end);
+                    RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end);
                     if (isArray)//Write arg data
                     {
                         foreach (var arg in args)
-                            RespWriteUtils.WriteBulkString(arg.Span, ref curr, end);
+                            RespWriteUtils.TryWriteBulkString(arg.Span, ref curr, end);
                     }
                     Debug.Assert(curr == end);
                 }

@@ -608,7 +608,7 @@ namespace Garnet.server
                         var memoryHandle = o.Memory.Memory.Pin();
                         var ptrVal = (byte*)memoryHandle.Pointer;
 
-                        RespReadUtils.ReadUnsignedLengthHeader(out var headerLength, ref ptrVal, ptrVal + o.Length);
+                        RespReadUtils.TryReadUnsignedLengthHeader(out var headerLength, ref ptrVal, ptrVal + o.Length);
 
                         // Find expiration time of the old key
                         var expireSpan = new SpanByteAndMemory();
@@ -620,7 +620,7 @@ namespace Garnet.server
 
                             using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
                             var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
-                            RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
+                            RespReadUtils.TryReadInt64(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
 
                             input = isNX ? new RawStringInput(RespCommand.SETEXNX) : new RawStringInput(RespCommand.SET);
 
@@ -1262,13 +1262,13 @@ namespace Garnet.server
                 {
                     if (status1 != GarnetStatus.OK || status2 != GarnetStatus.OK)
                     {
-                        while (!RespWriteUtils.WriteInteger(0, ref curr, end))
+                        while (!RespWriteUtils.TryWriteInt32(0, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         return GarnetStatus.OK;
                     }
 
                     var len = ComputeLCSLength(val1.ReadOnlySpan, val2.ReadOnlySpan, minMatchLen);
-                    while (!RespWriteUtils.WriteInteger(len, ref curr, end))
+                    while (!RespWriteUtils.TryWriteInt32(len, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 else if (withIndices)
@@ -1291,13 +1291,13 @@ namespace Garnet.server
                 {
                     if (status1 != GarnetStatus.OK || status2 != GarnetStatus.OK)
                     {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_EMPTY, ref curr, end))
+                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTY, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         return GarnetStatus.OK;
                     }
 
                     var lcs = ComputeLCS(val1.ReadOnlySpan, val2.ReadOnlySpan, minMatchLen);
-                    while (!RespWriteUtils.WriteBulkString(lcs, ref curr, end))
+                    while (!RespWriteUtils.TryWriteBulkString(lcs, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
             }
@@ -1383,53 +1383,53 @@ namespace Garnet.server
             ref byte* curr, byte* end, ref SpanByteAndMemory output,
             ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle)
         {
-            while (!RespWriteUtils.WriteArrayLength(4, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayLength(4, ref curr, end))
                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
             // Write "matches" section identifier
-            while (!RespWriteUtils.WriteBulkString(CmdStrings.matches, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(CmdStrings.matches, ref curr, end))
                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
             // Write matches array
-            while (!RespWriteUtils.WriteArrayLength(matches.Count, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayLength(matches.Count, ref curr, end))
                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
             foreach (var match in matches)
             {
-                while (!RespWriteUtils.WriteArrayLength(withMatchLen ? 3 : 2, ref curr, end))
+                while (!RespWriteUtils.TryWriteArrayLength(withMatchLen ? 3 : 2, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
+                while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                while (!RespWriteUtils.WriteInteger(match.Start1, ref curr, end))
+                while (!RespWriteUtils.TryWriteInt32(match.Start1, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                while (!RespWriteUtils.WriteInteger(match.Start1 + match.Length - 1, ref curr, end))
+                while (!RespWriteUtils.TryWriteInt32(match.Start1 + match.Length - 1, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
+                while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                while (!RespWriteUtils.WriteInteger(match.Start2, ref curr, end))
+                while (!RespWriteUtils.TryWriteInt32(match.Start2, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                while (!RespWriteUtils.WriteInteger(match.Start2 + match.Length - 1, ref curr, end))
+                while (!RespWriteUtils.TryWriteInt32(match.Start2 + match.Length - 1, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (withMatchLen)
                 {
-                    while (!RespWriteUtils.WriteInteger(match.Length, ref curr, end))
+                    while (!RespWriteUtils.TryWriteInt32(match.Length, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
             }
 
             // Write "len" section identifier
-            while (!RespWriteUtils.WriteBulkString(CmdStrings.len, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(CmdStrings.len, ref curr, end))
                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
             // Write LCS length
-            while (!RespWriteUtils.WriteInteger(lcsLength, ref curr, end))
+            while (!RespWriteUtils.TryWriteInt32(lcsLength, ref curr, end))
                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
         }
 

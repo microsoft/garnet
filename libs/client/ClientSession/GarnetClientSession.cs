@@ -243,49 +243,49 @@ namespace Garnet.client
             byte* curr = offset;
             int arraySize = 7;
 
-            while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
                 Flush();
                 curr = offset;
             }
             offset = curr;
 
-            while (!RespWriteUtils.WriteDirect(CLUSTER, ref curr, end))
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
             {
                 Flush();
                 curr = offset;
             }
             offset = curr;
 
-            while (!RespWriteUtils.WriteBulkString(appendLog, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(appendLog, ref curr, end))
             {
                 Flush();
                 curr = offset;
             }
             offset = curr;
 
-            while (!RespWriteUtils.WriteAsciiBulkString(nodeId, ref curr, end))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(nodeId, ref curr, end))
             {
                 Flush();
                 curr = offset;
             }
             offset = curr;
 
-            while (!RespWriteUtils.WriteArrayItem(previousAddress, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(previousAddress, ref curr, end))
             {
                 Flush();
                 curr = offset;
             }
             offset = curr;
 
-            while (!RespWriteUtils.WriteArrayItem(currentAddress, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(currentAddress, ref curr, end))
             {
                 Flush();
                 curr = offset;
             }
             offset = curr;
 
-            while (!RespWriteUtils.WriteArrayItem(nextAddress, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(nextAddress, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -295,7 +295,7 @@ namespace Garnet.client
             if (payloadLength > networkBufferSettings.sendBufferSize)
                 throw new Exception($"Payload length {payloadLength} is larger than bufferSize {networkBufferSettings.sendBufferSize} bytes");
 
-            while (!RespWriteUtils.WriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -337,7 +337,7 @@ namespace Garnet.client
         private void InternalExecute(params string[] command)
         {
             byte* curr = offset;
-            while (!RespWriteUtils.WriteArrayLength(command.Length, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayLength(command.Length, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -346,7 +346,7 @@ namespace Garnet.client
 
             foreach (var cmd in command)
             {
-                while (!RespWriteUtils.WriteAsciiBulkString(cmd, ref curr, end))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(cmd, ref curr, end))
                 {
                     Flush();
                     curr = offset;

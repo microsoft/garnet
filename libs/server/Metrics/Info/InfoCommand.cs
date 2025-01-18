@@ -45,7 +45,7 @@ namespace Garnet.server
 
             if (invalid)
             {
-                while (!RespWriteUtils.WriteError($"ERR Invalid section {invalidSection}. Try INFO HELP", ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError($"ERR Invalid section {invalidSection}. Try INFO HELP", ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -58,7 +58,7 @@ namespace Garnet.server
             {
                 if (storeWrapper.monitor != null)
                     storeWrapper.monitor.resetEventFlags[InfoMetricsType.STATS] = true;
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else
@@ -68,12 +68,12 @@ namespace Garnet.server
                 var info = garnetInfo.GetRespInfo(sectionsArr, storeWrapper);
                 if (!string.IsNullOrEmpty(info))
                 {
-                    while (!RespWriteUtils.WriteAsciiBulkString(info, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(info, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -84,11 +84,11 @@ namespace Garnet.server
         private void GetHelpMessage()
         {
             List<string> sectionsHelp = InfoHelp.GetInfoTypeHelpMessage();
-            while (!RespWriteUtils.WriteArrayLength(sectionsHelp.Count, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteArrayLength(sectionsHelp.Count, ref dcurr, dend))
                 SendAndReset();
             foreach (var sectionInfo in sectionsHelp)
             {
-                while (!RespWriteUtils.WriteAsciiBulkString(sectionInfo, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(sectionInfo, ref dcurr, dend))
                     SendAndReset();
             }
         }

@@ -92,7 +92,7 @@ namespace Garnet.server
                 {
                     // Expire/Delete the destination key if the source key is not found
                     _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None, ref lockableContext, ref objectStoreLockableContext);
-                    while (!RespWriteUtils.WriteInteger(0, ref curr, end))
+                    while (!RespWriteUtils.TryWriteInt32(0, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     return GarnetStatus.OK;
                 }
@@ -108,7 +108,7 @@ namespace Garnet.server
 
                     if (RespReadUtils.TryReadErrorAsSpan(out var error, ref currOutPtr, endOutPtr))
                     {
-                        while (!RespWriteUtils.WriteError(error, ref curr, end))
+                        while (!RespWriteUtils.TryWriteError(error, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         return GarnetStatus.OK;
                     }
@@ -142,7 +142,7 @@ namespace Garnet.server
                     var zAddOutput = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
                     RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
 
-                    while (!RespWriteUtils.WriteInteger(foundItems, ref curr, end))
+                    while (!RespWriteUtils.TryWriteInt32(foundItems, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 finally

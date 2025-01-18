@@ -8,7 +8,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using Tsavorite.core;
 
 namespace Garnet.common
 {
@@ -18,9 +17,9 @@ namespace Garnet.common
     public static unsafe class RespWriteUtils
     {
         /// <summary>
-        /// Write map length
+        /// Writes a map length
         /// </summary>
-        public static bool WriteMapLength(int len, ref byte* curr, byte* end)
+        public static bool TryWriteMapLength(int len, ref byte* curr, byte* end)
         {
             var numDigits = NumUtils.CountDigits(len);
             var totalLen = 1 + numDigits + 2;
@@ -33,9 +32,9 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write push type length
+        /// Writes a push type length
         /// </summary>
-        public static bool WritePushLength(int len, ref byte* curr, byte* end)
+        public static bool TryWritePushLength(int len, ref byte* curr, byte* end)
         {
             var numDigits = NumUtils.CountDigits(len);
             var totalLen = 1 + numDigits + 2;
@@ -48,9 +47,9 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write bulk string length header, padded to specified total length (including protocol bytes)
+        /// Writes a bulk string length header, padded to specified total length (including protocol bytes)
         /// </summary>
-        public static bool WritePaddedBulkStringLength(int len, int paddedLen, ref byte* curr, byte* end)
+        public static bool TryWritePaddedBulkStringLength(int len, int paddedLen, ref byte* curr, byte* end)
         {
             var numDigits = NumUtils.CountDigits(len);
             var totalLen = 1 + numDigits + 2;
@@ -66,9 +65,9 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write array length
+        /// Writes an array length
         /// </summary>
-        public static bool WriteArrayLength(int len, ref byte* curr, byte* end)
+        public static bool TryWriteArrayLength(int len, ref byte* curr, byte* end)
         {
             var numDigits = NumUtils.CountDigits(len);
             var totalLen = 1 + numDigits + 2;
@@ -80,7 +79,7 @@ namespace Garnet.common
             return true;
         }
 
-        public static bool WriteArrayLength(int len, ref byte* curr, byte* end, out int numDigits, out int totalLen)
+        public static bool TryWriteArrayLength(int len, ref byte* curr, byte* end, out int numDigits, out int totalLen)
         {
             numDigits = NumUtils.CountDigits(len);
             totalLen = 1 + numDigits + 2;
@@ -93,9 +92,9 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write array item
+        /// Writes an array item
         /// </summary>
-        public static bool WriteArrayItem(long integer, ref byte* curr, byte* end)
+        public static bool TryWriteArrayItem(long integer, ref byte* curr, byte* end)
         {
             var integerLen = NumUtils.CountDigits(integer);
             var sign = (byte)(integer < 0 ? 1 : 0);
@@ -116,9 +115,9 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write null
+        /// Writes a null
         /// </summary>
-        public static bool WriteNull(ref byte* curr, byte* end)
+        public static bool TryWriteNull(ref byte* curr, byte* end)
         {
             if (5 > (int)(end - curr))
                 return false;
@@ -129,9 +128,9 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write null array
+        /// Writes a null array
         /// </summary>
-        public static bool WriteNullArray(ref byte* curr, byte* end)
+        public static bool TryWriteNullArray(ref byte* curr, byte* end)
         {
             if (5 > (int)(end - curr))
                 return false;
@@ -142,10 +141,10 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write simple string
+        /// Writes a simple string
         /// </summary>
         /// <param name="simpleString">An ASCII encoded simple string. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
-        public static bool WriteSimpleString(ReadOnlySpan<byte> simpleString, ref byte* curr, byte* end)
+        public static bool TryWriteSimpleString(ReadOnlySpan<byte> simpleString, ref byte* curr, byte* end)
         {
             // Simple strings are of the form "+OK\r\n"
             var totalLen = 1 + simpleString.Length + 2;
@@ -163,7 +162,7 @@ namespace Garnet.common
         /// Write simple string
         /// </summary>
         /// <param name="simpleString">An ASCII simple string. The string mustn't contain a CR (\r) or LF (\n) characters.</param>
-        public static bool WriteSimpleString(ReadOnlySpan<char> simpleString, ref byte* curr, byte* end)
+        public static bool TryWriteSimpleString(ReadOnlySpan<char> simpleString, ref byte* curr, byte* end)
         {
             // Simple strings are of the form "+OK\r\n"
             int totalLen = 1 + simpleString.Length + 2;
@@ -178,9 +177,9 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write a long as a simple string
+        /// Write a signed 64-bit integer as a simple string
         /// </summary>
-        public static bool WriteLongAsSimpleString(long value, ref byte* curr, byte* end)
+        public static bool TryWriteInt64AsSimpleString(long value, ref byte* curr, byte* end)
         {
             // Simple strings are of the form "+cc\r\n"
             var longLength = NumUtils.CountDigits(value);
@@ -198,7 +197,7 @@ namespace Garnet.common
         /// Write simple error
         /// </summary>
         /// <param name="errorString">An ASCII encoded error string. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
-        public static bool WriteError(ReadOnlySpan<byte> errorString, ref byte* curr, byte* end)
+        public static bool TryWriteError(ReadOnlySpan<byte> errorString, ref byte* curr, byte* end)
         {
             var totalLen = 1 + errorString.Length + 2;
             if (totalLen > (int)(end - curr))
@@ -215,7 +214,7 @@ namespace Garnet.common
         /// Write simple error
         /// </summary>
         /// <param name="errorString">An ASCII encoded error string. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
-        public static bool WriteError(ReadOnlySpan<byte> errorString, ref MemoryResult<byte> output)
+        public static bool TryWriteError(ReadOnlySpan<byte> errorString, ref MemoryResult<byte> output)
         {
             var totalLen = 1 + errorString.Length + 2;
             output.MemoryOwner = MemoryPool<byte>.Shared.Rent(totalLen);
@@ -236,7 +235,7 @@ namespace Garnet.common
         /// Write simple error
         /// </summary>
         /// <param name="errorString">An ASCII error string. The string mustn't contain a CR (\r) or LF (\n) characters.</param>
-        public static bool WriteError(ReadOnlySpan<char> errorString, ref byte* curr, byte* end)
+        public static bool TryWriteError(ReadOnlySpan<char> errorString, ref byte* curr, byte* end)
         {
             var totalLen = 1 + errorString.Length + 2;
             if (totalLen > (int)(end - curr))
@@ -253,7 +252,7 @@ namespace Garnet.common
         /// Writes the contents of <paramref name="span"/> as byte array to <paramref name="curr"/>
         /// </summary>
         /// <returns><see langword="true"/> if the <paramref name="span"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
-        public static bool WriteDirect(ReadOnlySpan<byte> span, ref byte* curr, byte* end)
+        public static bool TryWriteDirect(ReadOnlySpan<byte> span, ref byte* curr, byte* end)
         {
             if (span.Length > (int)(end - curr))
                 return false;
@@ -267,7 +266,7 @@ namespace Garnet.common
         /// Encodes the <paramref name="span"/> as ASCII to <paramref name="curr"/>
         /// </summary>
         /// <returns><see langword="true"/> if the <paramref name="span"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
-        public static bool WriteAsciiDirect(ReadOnlySpan<char> span, ref byte* curr, byte* end)
+        public static bool TryWriteAsciiDirect(ReadOnlySpan<char> span, ref byte* curr, byte* end)
         {
             if (span.Length > (int)(end - curr))
                 return false;
@@ -280,7 +279,7 @@ namespace Garnet.common
         /// <summary>
         /// Write struct directly
         /// </summary>
-        public static bool WriteDirect<T>(ref T item, ref byte* curr, byte* end) where T : unmanaged
+        public static bool TryWriteDirect<T>(ref T item, ref byte* curr, byte* end) where T : unmanaged
         {
             int totalLen = sizeof(T);
             if (totalLen > (int)(end - curr))
@@ -293,7 +292,7 @@ namespace Garnet.common
         /// <summary>
         /// Write length header of bulk string
         /// </summary>
-        public static bool WriteBulkStringLength(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
+        public static bool TryWriteBulkStringLength(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
         {
             var itemDigits = NumUtils.CountDigits(item.Length);
             var totalLen = 1 + itemDigits + 2;
@@ -309,7 +308,7 @@ namespace Garnet.common
         /// <summary>
         /// Write bulk string
         /// </summary>
-        public static bool WriteBulkString(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
+        public static bool TryWriteBulkString(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
         {
             var itemDigits = NumUtils.CountDigits(item.Length);
             int totalLen = 1 + itemDigits + 2 + item.Length + 2;
@@ -328,7 +327,7 @@ namespace Garnet.common
         /// <summary>
         /// Encodes the <paramref name="chars"/> as ASCII bulk string to <paramref name="curr"/>
         /// </summary>
-        public static bool WriteAsciiBulkString(ReadOnlySpan<char> chars, ref byte* curr, byte* end)
+        public static bool TryWriteAsciiBulkString(ReadOnlySpan<char> chars, ref byte* curr, byte* end)
         {
             var itemDigits = NumUtils.CountDigits(chars.Length);
             var totalLen = 1 + itemDigits + 2 + chars.Length + 2;
@@ -347,7 +346,7 @@ namespace Garnet.common
         /// <summary>
         /// Encodes the <paramref name="chars"/> as UTF8 bulk string to <paramref name="curr"/>
         /// </summary>
-        public static bool WriteUtf8BulkString(ReadOnlySpan<char> chars, ref byte* curr, byte* end)
+        public static bool TryWriteUtf8BulkString(ReadOnlySpan<char> chars, ref byte* curr, byte* end)
         {
             // Calculate the amount of bytes it takes to encoded the UTF16 string as UTF8
             var encodedByteCount = Encoding.UTF8.GetByteCount(chars);
@@ -369,7 +368,7 @@ namespace Garnet.common
         /// <summary>
         /// Write new line
         /// </summary>
-        public static bool WriteNewLine(ref byte* curr, byte* end)
+        public static bool TryWriteNewLine(ref byte* curr, byte* end)
         {
             var totalLen = 2;
             if (totalLen > (int)(end - curr))
@@ -388,10 +387,10 @@ namespace Garnet.common
         /// <summary>
         /// Write integer
         /// </summary>
-        public static bool WriteInteger(int integer, ref byte* curr, byte* end)
+        public static bool TryWriteInt32(int value, ref byte* curr, byte* end)
         {
-            var integerLen = NumUtils.CountDigits((long)integer);
-            var sign = (byte)(integer < 0 ? 1 : 0);
+            var integerLen = NumUtils.CountDigits((long)value);
+            var sign = (byte)(value < 0 ? 1 : 0);
 
             //:integer\r\n
             var totalLen = 1 + sign + integerLen + 2;
@@ -399,7 +398,7 @@ namespace Garnet.common
                 return false;
 
             *curr++ = (byte)':';
-            NumUtils.WriteInt32(integer, integerLen, ref curr);
+            NumUtils.WriteInt32(value, integerLen, ref curr);
             WriteNewline(ref curr);
             return true;
         }
@@ -407,10 +406,10 @@ namespace Garnet.common
         /// <summary>
         /// Write integer
         /// </summary>
-        public static bool WriteInteger(long integer, ref byte* curr, byte* end)
+        public static bool TryWriteInt64(long value, ref byte* curr, byte* end)
         {
-            var integerLen = NumUtils.CountDigits(integer);
-            var sign = (byte)(integer < 0 ? 1 : 0);
+            var integerLen = NumUtils.CountDigits(value);
+            var sign = (byte)(value < 0 ? 1 : 0);
 
             //:integer\r\n
             var totalLen = 1 + sign + integerLen + 2;
@@ -418,7 +417,7 @@ namespace Garnet.common
                 return false;
 
             *curr++ = (byte)':';
-            NumUtils.WriteInt64(integer, integerLen, ref curr);
+            NumUtils.WriteInt64(value, integerLen, ref curr);
             WriteNewline(ref curr);
             return true;
         }
@@ -426,10 +425,10 @@ namespace Garnet.common
         /// <summary>
         /// Write integer
         /// </summary>
-        public static bool WriteInteger(long integer, ref byte* curr, byte* end, out int integerLen, out int totalLen)
+        public static bool TryWriteInt64(long value, ref byte* curr, byte* end, out int integerLen, out int totalLen)
         {
-            integerLen = NumUtils.CountDigits(integer);
-            byte sign = (byte)(integer < 0 ? 1 : 0);
+            integerLen = NumUtils.CountDigits(value);
+            byte sign = (byte)(value < 0 ? 1 : 0);
 
             //:integer\r\n
             totalLen = 1 + sign + integerLen + 2;
@@ -437,7 +436,7 @@ namespace Garnet.common
                 return false;
 
             *curr++ = (byte)':';
-            NumUtils.WriteInt64(integer, integerLen, ref curr);
+            NumUtils.WriteInt64(value, integerLen, ref curr);
             WriteNewline(ref curr);
             return true;
         }
@@ -445,7 +444,7 @@ namespace Garnet.common
         /// <summary>
         /// Write integer from bytes
         /// </summary>
-        public static bool WriteIntegerFromBytes(ReadOnlySpan<byte> integerBytes, ref byte* curr, byte* end)
+        public static bool TryWriteIntegerFromBytes(ReadOnlySpan<byte> integerBytes, ref byte* curr, byte* end)
         {
             int totalLen = 1 + integerBytes.Length + 2;
             if ((int)(end - curr) < totalLen)
@@ -459,12 +458,12 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write integer as bulk string
+        /// Write a signed 32-bit integer as bulk string
         /// </summary>
-        public static bool WriteIntegerAsBulkString(int integer, ref byte* curr, byte* end)
+        public static bool TryWriteInt32AsBulkString(int value, ref byte* curr, byte* end)
         {
-            var integerLen = NumUtils.CountDigits((long)integer);
-            var sign = (byte)(integer < 0 ? 1 : 0);
+            var integerLen = NumUtils.CountDigits((long)value);
+            var sign = (byte)(value < 0 ? 1 : 0);
 
             var integerLenSize = NumUtils.CountDigits(integerLen + sign);
 
@@ -476,15 +475,15 @@ namespace Garnet.common
             *curr++ = (byte)'$';
             NumUtils.WriteInt32(integerLen + sign, integerLenSize, ref curr);
             WriteNewline(ref curr);
-            NumUtils.WriteInt32(integer, integerLen, ref curr);
+            NumUtils.WriteInt32(value, integerLen, ref curr);
             WriteNewline(ref curr);
             return true;
         }
 
         /// <summary>
-        /// Write integer as bulk string
+        /// Write a signed 64-bit integer as bulk string
         /// </summary>
-        public static bool WriteIntegerAsBulkString(long integer, ref byte* curr, byte* end, out int totalLen)
+        public static bool TryWriteInt64AsBulkString(long integer, ref byte* curr, byte* end, out int totalLen)
         {
             var integerLen = NumUtils.CountDigits(integer);
             var sign = (byte)(integer < 0 ? 1 : 0);
@@ -651,13 +650,13 @@ namespace Garnet.common
         /// <param name="curr"></param>
         /// <param name="end"></param>
         /// <returns></returns>
-        public static bool WriteScanOutputHeader(long cursor, ref byte* curr, byte* end)
+        public static bool TryWriteScanOutputHeader(long cursor, ref byte* curr, byte* end)
         {
-            if (!WriteArrayLength(2, ref curr, end))
+            if (!TryWriteArrayLength(2, ref curr, end))
                 return false;
 
             // Cursor value
-            if (!WriteIntegerAsBulkString((int)cursor, ref curr, end))
+            if (!TryWriteInt32AsBulkString((int)cursor, ref curr, end))
                 return false;
 
             return true;
@@ -666,7 +665,7 @@ namespace Garnet.common
         /// <summary>
         /// Write empty array
         /// </summary>
-        public static bool WriteEmptyArray(ref byte* curr, byte* end)
+        public static bool TryWriteEmptyArray(ref byte* curr, byte* end)
         {
             if (4 > (int)(end - curr))
                 return false;
@@ -678,7 +677,7 @@ namespace Garnet.common
         /// <summary>
         /// Write an array with len number of null elements
         /// </summary>
-        public static bool WriteArrayWithNullElements(int len, ref byte* curr, byte* end)
+        public static bool TryWriteArrayWithNullElements(int len, ref byte* curr, byte* end)
         {
             var numDigits = NumUtils.CountDigits(len);
             var totalLen = 1 + numDigits + 2;
@@ -692,7 +691,7 @@ namespace Garnet.common
             WriteNewline(ref curr);
             for (var i = 0; i < len; i++)
             {
-                if (!WriteNull(ref curr, end))
+                if (!TryWriteNull(ref curr, end))
                     return false;
             }
             return true;
@@ -700,7 +699,7 @@ namespace Garnet.common
 
         /// <summary>
         /// Writes an array consisting of an ETag followed by a Bulk string value into the buffer.
-        /// NOTE: Caller should make sure there is enough space in the buffer for sending the etag, and value array.
+        /// NOTE: Caller should make sure there is enough space in the buffer for sending the etag, and value array. Otherwise, this will quietly fail.
         /// </summary>
         /// <param name="etag">etag value to write in the array</param>
         /// <param name="value">value to write in the array</param>
@@ -710,23 +709,23 @@ namespace Garnet.common
         public static void WriteEtagValArray(long etag, ref ReadOnlySpan<byte> value, ref byte* curr, byte* end, bool writeDirect)
         {
             // Writes a Resp encoded Array of Integer for ETAG as first element, and bulk string for value as second element
-            RespWriteUtils.WriteArrayLength(2, ref curr, end);
-            RespWriteUtils.WriteInteger(etag, ref curr, end);
+            RespWriteUtils.TryWriteArrayLength(2, ref curr, end);
+            RespWriteUtils.TryWriteInt64(etag, ref curr, end);
 
             if (writeDirect)
-                RespWriteUtils.WriteDirect(value, ref curr, end);
+                RespWriteUtils.TryWriteDirect(value, ref curr, end);
             else
-                RespWriteUtils.WriteBulkString(value, ref curr, end);
+                RespWriteUtils.TryWriteBulkString(value, ref curr, end);
         }
 
         /// <summary>
-        /// Write newline (\r\n) to <paramref name="curr"/>
+        /// Writes newline (\r\n) to <paramref name="curr"/>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void WriteNewline(ref byte* curr) => WriteBytes<ushort>(ref curr, "\r\n"u8);
 
         /// <summary>
-        /// Write <paramref name="bytes"/> to <paramref name="curr"/> as type <typeparamref name="T"/> sized value.
+        /// Writes <paramref name="bytes"/> to <paramref name="curr"/> as type <typeparamref name="T"/> sized value.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void WriteBytes<T>(ref byte* curr, ReadOnlySpan<byte> bytes)

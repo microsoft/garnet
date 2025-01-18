@@ -73,7 +73,7 @@ namespace Garnet.client
             switch (*ptr)
             {
                 case (byte)':':
-                    if (!RespReadUtils.Read64Int(out number, ref ptr, end))
+                    if (!RespReadUtils.TryReadInt64(out number, ref ptr, end))
                         return false;
                     break;
 
