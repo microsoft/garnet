@@ -16,7 +16,7 @@ namespace Garnet.server
     public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, RawStringInput, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
-        public readonly bool NeedInitialUpdate(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool NeedInitialUpdate(SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             switch (input.header.cmd)
             {
@@ -46,7 +46,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool InitialUpdater(ref LogRecord<SpanByte> logRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public readonly bool InitialUpdater(ref LogRecord<SpanByte> logRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             var value = logRecord.ValueSpan;
 
@@ -132,7 +132,7 @@ namespace Garnet.server
 
                     // Always return 0 at initial updater because previous value was 0
                     _ = BitmapManager.UpdateBitmap(value.ToPointer(), bOffset, bSetVal);
-                    CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
+                    functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
                     break;
 
                 case RespCommand.BITFIELD:
@@ -148,9 +148,9 @@ namespace Garnet.server
 
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer(), value.Length);
                     if (!overflow)
-                        CopyRespNumber(bitfieldReturnValue, ref output);
+                        functionsState.CopyRespNumber(bitfieldReturnValue, ref output);
                     else
-                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
                     break;
 
                 case RespCommand.SETRANGE:
@@ -274,7 +274,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly void PostInitialUpdater(ref LogRecord logRecord, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly void PostInitialUpdater(ref LogRecord<SpanByte> logRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
@@ -285,9 +285,9 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public readonly bool InPlaceUpdater(ref LogRecord<SpanByte> logRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
-            if (InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo, ref recordInfo))
+            if (InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo))
             {
                 if (!logRecord.Info.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
@@ -298,7 +298,7 @@ namespace Garnet.server
             return false;
         }
 
-        private readonly bool InPlaceUpdaterWorker(ref LogRecord logRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        private readonly bool InPlaceUpdaterWorker(ref LogRecord<SpanByte> logRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             // Expired data
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
@@ -415,9 +415,9 @@ namespace Garnet.server
                     var valuePtr = valueRef.ToPointer();
                     var oldValSet = BitmapManager.UpdateBitmap(valuePtr, bOffset, bSetVal);
                     if (oldValSet == 0)
-                        CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
                     else
-                        CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output);
                     return true;
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
@@ -430,9 +430,9 @@ namespace Garnet.server
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, valuePtr, valueRef.Length);
 
                     if (!overflow)
-                        CopyRespNumber(bitfieldReturnValue, ref output);
+                        functionsState.CopyRespNumber(bitfieldReturnValue, ref output);
                     else
-                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
                     return true;
 
                 case RespCommand.PFADD:
@@ -551,15 +551,15 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByte oldValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : ISourceLogRecord
+        public readonly bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
             switch (input.header.cmd)
             {
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
                     // ExpireAndResume ensures that we set as new value, since it does not exist
-                    if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
+                    if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
                     {
                         rmwInfo.Action = RMWAction.ExpireAndResume;
                         return false;
@@ -568,13 +568,13 @@ namespace Garnet.server
                     if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
-                        CopyRespTo(oldValue, ref output);
+                        CopyRespTo(srcLogRecord.ValueSpan, ref output);
                     }
                     return false;
                 case RespCommand.SETEXXX:
                     // Expired data, return false immediately so we do not set, since it does not exist
                     // ExpireAndStop ensures that caller sees a NOTFOUND status
-                    if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
+                    if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
                     {
                         rmwInfo.Action = RMWAction.ExpireAndStop;
                         return false;
@@ -585,7 +585,7 @@ namespace Garnet.server
                     {
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
                         var ret = functionsState.customCommands[(ushort)input.header.cmd - CustomCommandManager.StartOffset].functions
-                            .NeedCopyUpdate(srcLogRecord.Key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(), ref outp);
+                            .NeedCopyUpdate(srcLogRecord.Key.AsReadOnlySpan(), ref input, srcLogRecord.ValueSpan.AsReadOnlySpan(), ref outp);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
                         return ret;
@@ -596,8 +596,8 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : ISourceLogRecord
+        public readonly bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
             // Expired data
             if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
@@ -715,7 +715,7 @@ namespace Garnet.server
                         oldValue.CopyTo(ref newValueRef);
                         break;
                     }
-                    TryCopyUpdateNumber(ref srcLogRecord, ref dstLogRecord, ref output, input: incrByFloat);
+                    _ = TryCopyUpdateNumber(ref srcLogRecord, ref dstLogRecord, ref output, input: incrByFloat);
                     break;
 
                 case RespCommand.SETBIT:
@@ -725,9 +725,9 @@ namespace Garnet.server
                     Buffer.MemoryCopy(oldValue.ToPointer(), newValuePtr, newValueRef.Length, oldValue.Length);
                     var oldValSet = BitmapManager.UpdateBitmap(newValuePtr, bOffset, bSetVal);
                     if (oldValSet == 0)
-                        CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
                     else
-                        CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output);
                     break;
 
                 case RespCommand.BITFIELD:
@@ -737,9 +737,9 @@ namespace Garnet.server
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, newValuePtr, newValueRef.Length);
 
                     if (!overflow)
-                        CopyRespNumber(bitfieldReturnValue, ref output);
+                        functionsState.CopyRespNumber(bitfieldReturnValue, ref output);
                     else
-                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
                     break;
 
                 case RespCommand.PFADD:
@@ -752,7 +752,7 @@ namespace Garnet.server
                     else
                     {
                         Buffer.MemoryCopy(oldValuePtr, newValuePtr, newValueRef.Length, oldValue.Length);
-                        HyperLogLog.DefaultHLL.Update(ref input, newValuePtr, newValueRef.Length, ref updated);
+                        _ = HyperLogLog.DefaultHLL.Update(ref input, newValuePtr, newValueRef.Length, ref updated);
                     }
                     *output.SpanByte.ToPointer() = updated ? (byte)1 : (byte)0;
                     break;
@@ -773,7 +773,7 @@ namespace Garnet.server
                     newInputValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
                     newInputValue.CopyTo(newValueRef.AsSpan().Slice(offset));
 
-                    CopyValueLengthToOutput(newValueRef, ref output);
+                    _ = CopyValueLengthToOutput(newValueRef, ref output);
                     break;
 
                 case RespCommand.GETDEL:
@@ -789,7 +789,7 @@ namespace Garnet.server
                     Debug.Assert(newValueRef.Length == oldValue.Length);
                     if (input.arg1 > 0)
                     {
-                        byte* pbOutput = stackalloc byte[ObjectOutputHeader.Size];
+                        var pbOutput = stackalloc byte[ObjectOutputHeader.Size];
                         var _output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
                         var newExpiry = input.arg1;
                         if (!EvaluateExpireCopyUpdate(ref dstLogRecord, ExpireOption.None, newExpiry, newValueRef, ref _output))
@@ -816,7 +816,7 @@ namespace Garnet.server
                     // Append the new value with the client input at the end of the old data
                     appendValue.ReadOnlySpan.CopyTo(newValueRef.AsSpan().Slice(oldValue.LengthWithoutMetadata));
 
-                    CopyValueLengthToOutput(newValueRef, ref output);
+                    _ = CopyValueLengthToOutput(newValueRef, ref output);
                     break;
 
                 default:
@@ -850,8 +850,8 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : ISourceLogRecord
+        public readonly bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)

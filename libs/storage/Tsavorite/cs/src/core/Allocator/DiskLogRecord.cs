@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.Utility;
 
@@ -57,8 +58,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : 0;
+
         /// <inheritdoc/>
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
+
+        /// <inheritdoc/>
+        public readonly void ClearValueObject(Action<TValue> disposer) { }  // Nothing done here; we dispose the object in the pending operation completion
+
         /// <inheritdoc/>
         public readonly LogRecord<TValue> AsLogRecord() => throw new TsavoriteException("DiskLogRecord cannot be converted to AsLogRecord");
         /// <inheritdoc/>

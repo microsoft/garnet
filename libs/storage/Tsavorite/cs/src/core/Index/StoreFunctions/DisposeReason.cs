@@ -4,7 +4,7 @@
 namespace Tsavorite.core
 {
     /// <summary>
-    /// The reason for a call to <see cref="IRecordDisposer{Value}.DisposeValueObject(IHeapObject, DisposeReason)"/>
+    /// The reason for a call to <see cref="IRecordDisposer{TValue}.DisposeValueObject(TValue, DisposeReason)"/>
     /// </summary>
     public enum DisposeReason
     {
@@ -12,6 +12,11 @@ namespace Tsavorite.core
         /// No Dispose() call was made
         /// </summary>
         None,
+
+        /// <summary>
+        /// CopyUpdate cleared the object immediately for more efficient size tracking
+        /// </summary>
+        CopyUpdated,
 
         /// <summary>
         /// Failure of SingleWriter insertion of a record at the tail of the cache.

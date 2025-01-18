@@ -290,6 +290,9 @@ namespace Tsavorite.core
         public long Expiration => CurrentIter.Expiration;
 
         /// <inheritdoc/>
+        public void ClearValueObject(Action<TValue> disposer) { }  // Not relevant for iterators
+
+        /// <inheritdoc/>
         public LogRecord<TValue> AsLogRecord() => throw new TsavoriteException("Iterators cannot be converted to AsLogRecord");
 
         /// <inheritdoc/>

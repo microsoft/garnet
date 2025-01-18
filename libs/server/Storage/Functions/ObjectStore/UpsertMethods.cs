@@ -26,9 +26,9 @@ namespace Garnet.server
                 WriteLogUpsert(ref key, ref input, ref src, upsertInfo.Version, upsertInfo.SessionID);
 
             if (reason == WriteReason.CopyToReadCache)
-                functionsState.objectStoreSizeTracker?.AddReadCacheTrackedSize(MemoryUtils.CalculateKeyValueSize(key, src));
+                functionsState.objectStoreSizeTracker?.AddReadCacheTrackedSize(src.Size);
             else
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateKeyValueSize(key, src));
+                functionsState.objectStoreSizeTracker?.AddTrackedSize(src.Size);
         }
 
         /// <inheritdoc />

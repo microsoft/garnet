@@ -142,7 +142,7 @@ namespace Garnet.test
 
             public override bool CopyUpdater(ref byte[] key, ref IGarnetObject input, ref IGarnetObject oldValue, ref IGarnetObject newValue, ref IGarnetObject output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
-                oldValue.CopyUpdate(ref oldValue, ref newValue, false);
+                oldValue.CopyUpdate(ref oldValue, ref newValue, false); // TODO note: Params on this CU were updated per LogRecord
                 return true;
             }
         }

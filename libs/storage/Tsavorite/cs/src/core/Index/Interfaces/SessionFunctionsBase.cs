@@ -42,7 +42,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public virtual bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref UpsertInfo upsertInfo, WriteReason reason)
+        public virtual bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord<TValue>
         {
             var ok = srcLogRecord.IsObjectRecord
@@ -184,7 +184,7 @@ namespace Tsavorite.core
         {
             // Simple base implementation does not use upsertInfo or WriteReason
             var upsertInfo = new UpsertInfo();
-            return base.SingleCopyWriter(ref srcLogRecord, ref dstLogRecord, ref upsertInfo, WriteReason.Upsert);
+            return base.SingleCopyWriter(ref srcLogRecord, ref dstLogRecord, ref input, ref output, ref upsertInfo, WriteReason.Upsert);
         }
         /// <inheritdoc/>
         public override bool InPlaceUpdater(ref LogRecord<TValue> logRecord, ref TValue input, ref TValue output, ref RMWInfo rmwInfo)

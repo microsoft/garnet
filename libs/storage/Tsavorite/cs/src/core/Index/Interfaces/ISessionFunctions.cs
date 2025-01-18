@@ -58,10 +58,12 @@ namespace Tsavorite.core
         /// <summary>Non-concurrent writer; called when copying a record to tail or readcache. The caller should be aware of ETag and Expiration in the source record</summary>
         /// <param name="srcLogRecord">The log record being copied from</param>
         /// <param name="dstLogRecord">The destination log record being copied to</param>
+        /// <param name="input">The user input to be used for computing <paramref name="output"/></param>
+        /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
         /// <param name="reason">The operation for which this write is being done</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref UpsertInfo upsertInfo, WriteReason reason)
+        bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord<TValue>;
 
         /// <summary>

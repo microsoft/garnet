@@ -11,11 +11,16 @@ namespace Garnet.server
     public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, RawStringInput, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
-        public bool SingleWriter(ref LogRecord<SpanByte> logRecord, ref RawStringInput input, SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
-            => logRecord.TrySetValueSpan(srcValue);
+        public bool SingleWriter(ref LogRecord<SpanByte> dstLogRecord, ref RawStringInput input, SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+            => dstLogRecord.TrySetValueSpan(srcValue);
 
         /// <inheritdoc />
-        public void PostSingleWriter(ref LogRecord<SpanByte> logRecord, ref RawStringInput input, ref SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+            => dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan);
+
+        /// <inheritdoc />
+        public void PostSingleWriter(ref LogRecord<SpanByte> logRecord, ref RawStringInput input, SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (reason == WriteReason.Upsert && functionsState.appendOnlyFile != null)
@@ -23,9 +28,9 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool ConcurrentWriter(ref LogRecord<SpanByte> logRecord, ref RawStringInput input, SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+        public bool ConcurrentWriter(ref LogRecord<SpanByte> logRecord, ref RawStringInput input, SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
-            if (ConcurrentWriterWorker(ref logRecord, srcValue, ref input, ref upsertInfo, ref recordInfo))
+            if (ConcurrentWriterWorker(ref logRecord, srcValue, ref input, ref upsertInfo))
             {
                 if (!logRecord.Info.Modified)
                     functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
@@ -36,7 +41,7 @@ namespace Garnet.server
             return false;
         }
 
-        static bool ConcurrentWriterWorker(ref LogRecord<SpanByte> logRecord, SpanByte srcValue, ref RawStringInput input, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+        static bool ConcurrentWriterWorker(ref LogRecord<SpanByte> logRecord, SpanByte srcValue, ref RawStringInput input, ref UpsertInfo upsertInfo)
             => logRecord.TrySetValueSpan(srcValue);
     }
 }

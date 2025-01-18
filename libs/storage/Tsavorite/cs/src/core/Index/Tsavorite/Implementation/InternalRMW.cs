@@ -424,6 +424,9 @@ namespace Tsavorite.core
                         allocOptions.elideSourceRecord = false;
                         newLogRecord.InfoRef.PreviousAddress = stackCtx.recSrc.LatestLogicalAddress;
                     }
+
+                    if (rmwInfo.ClearSourceValueObject)
+                        srcLogRecord.ClearValueObject(obj => storeFunctions.DisposeValueObject(obj, DisposeReason.CopyUpdated);
                     goto DoCAS;
                 }
                 if (rmwInfo.Action == RMWAction.CancelOperation)

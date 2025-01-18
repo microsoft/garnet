@@ -1,9 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using Tsavorite.core;
-
 namespace Garnet.server
 {
     /// <summary>
@@ -37,13 +34,5 @@ namespace Garnet.server
 
         /// <summary>.Net object avg. overhead for holding a hash set entry</summary>
         public const int HashSetEntryOverhead = 40;
-
-        internal static long CalculateKeyValueSize(byte[] key, IGarnetObject value)
-        {
-            // Round up key size to account for alignment during allocation 
-            // and add up overhead for allocating a byte array
-            return Utility.RoundUp(key.Length, IntPtr.Size) + ByteArrayOverhead +
-                value.Size;
-        }
     }
 }

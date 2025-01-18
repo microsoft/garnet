@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -123,6 +124,9 @@ namespace Tsavorite.core
 
             /// <inheritdoc/>
             public readonly long Expiration => expiration;
+
+            /// <inheritdoc/>
+            public readonly void ClearValueObject(Action<TValue> disposer) { }  // Not relevant for PendingContext
 
             /// <inheritdoc/>
             public readonly LogRecord<TValue> AsLogRecord() => throw new TsavoriteException("PendingContext cannot be converted to AsLogRecord");

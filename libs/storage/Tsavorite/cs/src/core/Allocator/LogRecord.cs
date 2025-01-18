@@ -95,6 +95,18 @@ namespace Tsavorite.core
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
 
         /// <inheritdoc/>
+        public readonly void ClearValueObject(Action<TValue> disposer)
+        {
+            Debug.Assert(IsObjectRecord, "ClearValueObject() is not valid for String log records");
+            if (IsObjectRecord)
+            {
+                ref var valueObject = ref objectIdMap.GetRef(ValueObjectId);
+                disposer(valueObject);
+                valueObject = default;
+            }
+        }
+
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly LogRecord<TValue> AsLogRecord() => this;
 

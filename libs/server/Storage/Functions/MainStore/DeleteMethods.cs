@@ -25,7 +25,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool ConcurrentDeleter(ref LogRecord<SpanByte> logRecord, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
+        public bool ConcurrentDeleter(ref LogRecord<SpanByte> logRecord, ref DeleteInfo deleteInfo)
         {
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);

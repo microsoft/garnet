@@ -16,9 +16,9 @@ namespace GarnetJSON
 
         public JsonSET(ILogger? logger = null) => this.logger = logger;
 
-        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input, ref (IMemoryOwner<byte>, int) output) => true;
+        public override bool NeedInitialUpdate(SpanByte key, ref ObjectInput input, ref (IMemoryOwner<byte>, int) output) => true;
 
-        public override bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject jsonObject, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        public override bool Updater(SpanByte key, ref ObjectInput input, IGarnetObject jsonObject, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(jsonObject is JsonObject);
 
@@ -41,7 +41,7 @@ namespace GarnetJSON
 
         public JsonGET(ILogger? logger = null) => this.logger = logger;
 
-        public override bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
+        public override bool Reader(SpanByte key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
         {
             Debug.Assert(value is JsonObject);
 

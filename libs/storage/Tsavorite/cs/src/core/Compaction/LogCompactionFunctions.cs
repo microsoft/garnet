@@ -74,9 +74,9 @@ namespace Tsavorite.core
         public bool SingleWriter(ref LogRecord<TValue> logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             => _functions.SingleWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo, reason);
 
-        public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord<TValue>
-            => _functions.SingleCopyWriter(ref srcLogRecord, ref dstLogRecord, ref upsertInfo, reason);
+            => _functions.SingleCopyWriter(ref srcLogRecord, ref dstLogRecord, ref input, ref output, ref upsertInfo, reason);
 
         public void PostSingleWriter(ref LogRecord<TValue> logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 

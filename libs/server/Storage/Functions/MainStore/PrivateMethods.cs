@@ -40,12 +40,12 @@ namespace Garnet.server
             int srcLength = end == -1 ? src.LengthWithoutMetadata : ((start < end) ? (end - start) : 0);
             if (srcLength == 0)
             {
-                CopyDefaultResp(CmdStrings.RESP_EMPTY, ref dst);
+                functionsState.CopyDefaultResp(CmdStrings.RESP_EMPTY, ref dst);
                 return;
             }
 
             var numLength = NumUtils.NumDigits(srcLength);
-            int totalSize = 1 + numLength + 2 + srcLength + 2; // $5\r\nvalue\r\n
+            var totalSize = 1 + numLength + 2 + srcLength + 2; // $5\r\nvalue\r\n
 
             if (dst.IsSpanByte)
             {
@@ -53,7 +53,7 @@ namespace Garnet.server
                 {
                     dst.Length = totalSize;
 
-                    byte* tmp = dst.SpanByte.ToPointer();
+                    var tmp = dst.SpanByte.ToPointer();
                     *tmp++ = (byte)'$';
                     NumUtils.IntToBytes(srcLength, numLength, ref tmp);
                     *tmp++ = (byte)'\r';
@@ -71,7 +71,7 @@ namespace Garnet.server
             dst.Length = totalSize;
             fixed (byte* ptr = dst.Memory.Memory.Span)
             {
-                byte* tmp = ptr;
+                var tmp = ptr;
                 *tmp++ = (byte)'$';
                 NumUtils.IntToBytes(srcLength, numLength, ref tmp);
                 *tmp++ = (byte)'\r';
@@ -138,9 +138,9 @@ namespace Garnet.server
                     var offset = input.parseState.GetLong(0);
                     var oldValSet = BitmapManager.GetBit(offset, value.ToPointer(), value.Length);
                     if (oldValSet == 0)
-                        CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref dst);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref dst);
                     else
-                        CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref dst);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref dst);
                     break;
 
                 case RespCommand.BITCOUNT:
@@ -161,7 +161,7 @@ namespace Garnet.server
                     }
 
                     var count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, value.ToPointer(), value.Length);
-                    CopyRespNumber(count, ref dst);
+                    functionsState.CopyRespNumber(count, ref dst);
                     break;
 
                 case RespCommand.BITPOS:
@@ -188,7 +188,7 @@ namespace Garnet.server
                     var pos = BitmapManager.BitPosDriver(bpSetVal, bpStartOffset, bpEndOffset, bpOffsetType,
                         value.ToPointer(), value.Length);
                     *(long*)dst.SpanByte.ToPointer() = pos;
-                    CopyRespNumber(pos, ref dst);
+                    functionsState.CopyRespNumber(pos, ref dst);
                     break;
 
                 case RespCommand.BITOP:
@@ -204,9 +204,9 @@ namespace Garnet.server
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     var (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer(), value.Length);
                     if (!overflow)
-                        CopyRespNumber(retValue, ref dst);
+                        functionsState.CopyRespNumber(retValue, ref dst);
                     else
-                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref dst);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref dst);
                     return;
 
                 case RespCommand.PFCOUNT:
@@ -228,12 +228,12 @@ namespace Garnet.server
 
                 case RespCommand.TTL:
                     var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
-                    CopyRespNumber(ttlValue, ref dst);
+                    functionsState.CopyRespNumber(ttlValue, ref dst);
                     return;
 
                 case RespCommand.PTTL:
                     var pttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
-                    CopyRespNumber(pttlValue, ref dst);
+                    functionsState.CopyRespNumber(pttlValue, ref dst);
                     return;
 
                 case RespCommand.GETRANGE:
@@ -247,12 +247,12 @@ namespace Garnet.server
 
                 case RespCommand.EXPIRETIME:
                     var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
-                    CopyRespNumber(expireTime, ref dst);
+                    functionsState.CopyRespNumber(expireTime, ref dst);
                     return;
 
                 case RespCommand.PEXPIRETIME:
                     var pexpireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
-                    CopyRespNumber(pexpireTime, ref dst);
+                    functionsState.CopyRespNumber(pexpireTime, ref dst);
                     return;
 
                 default:
@@ -262,10 +262,9 @@ namespace Garnet.server
 
         bool EvaluateExpireInPlace(ref LogRecord<SpanByte> logRecord, ExpireOption optionType, long newExpiry, ref SpanByteAndMemory output)
         {
-            var expiryExists = logRecord.Info.HasExpiration;
             var o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
             o->result1 = 0;
-            if (expiryExists)
+            if (logRecord.Info.HasExpiration)
             {
                 switch (optionType)
                 {
@@ -293,7 +292,7 @@ namespace Garnet.server
                         }
                         return true;
                     default:
-                        throw new GarnetException($"EvaluateExpireInPlace exception expiryExists:{expiryExists}, optionType{optionType}");
+                        throw new GarnetException($"EvaluateExpireInPlace exception expiryExists: True, optionType {optionType}");
                 }
             }
             else
@@ -303,14 +302,16 @@ namespace Garnet.server
                     case ExpireOption.NX:
                     case ExpireOption.None:
                     case ExpireOption.LT:  // If expiry doesn't exist, LT should treat the current expiration as infinite, so the new value must be less
-                        return logRecord.TrySetExpiration(newExpiry);
+                        var ok = logRecord.TrySetExpiration(newExpiry);
+                        o->result1 = 1;
+                        return ok;
                     case ExpireOption.XX:
                     case ExpireOption.GT:  // If expiry doesn't exist, GT should treat the current expiration as infinite, so the new value cannot be greater
                     case ExpireOption.XXGT:
                     case ExpireOption.XXLT:
                         return true;
                     default:
-                        throw new GarnetException($"EvaluateExpireInPlace exception expiryExists:{expiryExists}, optionType{optionType}");
+                        throw new GarnetException($"EvaluateExpireInPlace exception expiryExists: False, optionType {optionType}");
                 }
             }
         }
@@ -624,45 +625,6 @@ namespace Garnet.server
                 return false;
             }
             return true;
-        }
-
-        void CopyDefaultResp(ReadOnlySpan<byte> resp, ref SpanByteAndMemory dst)
-        {
-            if (resp.Length < dst.SpanByte.Length)
-            {
-                resp.CopyTo(dst.SpanByte.AsSpan());
-                dst.SpanByte.Length = resp.Length;
-                return;
-            }
-
-            dst.ConvertToHeap();
-            dst.Length = resp.Length;
-            dst.Memory = functionsState.memoryPool.Rent(resp.Length);
-            resp.CopyTo(dst.Memory.Memory.Span);
-        }
-
-        void CopyRespNumber(long number, ref SpanByteAndMemory dst)
-        {
-            byte* curr = dst.SpanByte.ToPointer();
-            byte* end = curr + dst.SpanByte.Length;
-            if (RespWriteUtils.WriteInteger(number, ref curr, end, out int integerLen, out int totalLen))
-            {
-                dst.SpanByte.Length = (int)(curr - dst.SpanByte.ToPointer());
-                return;
-            }
-
-            //handle resp buffer overflow here
-            dst.ConvertToHeap();
-            dst.Length = totalLen;
-            dst.Memory = functionsState.memoryPool.Rent(totalLen);
-            fixed (byte* ptr = dst.Memory.Memory.Span)
-            {
-                byte* cc = ptr;
-                *cc++ = (byte)':';
-                NumUtils.LongToBytes(number, integerLen, ref cc);
-                *cc++ = (byte)'\r';
-                *cc++ = (byte)'\n';
-            }
         }
 
         /// <summary>

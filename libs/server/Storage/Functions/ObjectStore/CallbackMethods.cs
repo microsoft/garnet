@@ -11,12 +11,12 @@ namespace Garnet.server
     public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
-        public void ReadCompletionCallback(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, long ctx, Status status, RecordMetadata recordMetadata)
+        public void ReadCompletionCallback(ref LogRecord<IGarnetObject> logRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, long ctx, Status status, RecordMetadata recordMetadata)
         {
         }
 
         /// <inheritdoc />
-        public void RMWCompletionCallback(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, long ctx, Status status, RecordMetadata recordMetadata)
+        public void RMWCompletionCallback(ref LogRecord<IGarnetObject> logRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, long ctx, Status status, RecordMetadata recordMetadata)
         {
         }
     }

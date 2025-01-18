@@ -120,6 +120,11 @@ namespace Tsavorite.core
         public bool PreserveCopyUpdaterSourceRecord { get; set; }
 
         /// <summary>
+        /// If set true by CopyUpdater, the source ValueObject will be cleared immediately (to manage object size tracking most effectively).
+        /// </summary>
+        public bool ClearSourceValueObject { get; set; }
+
+        /// <summary>
         /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public RMWAction Action { get; set; }

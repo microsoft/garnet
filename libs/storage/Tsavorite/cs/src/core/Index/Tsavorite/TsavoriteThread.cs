@@ -188,7 +188,7 @@ namespace Tsavorite.core
 
             unsafe
             {
-                DiskLogRecord diskLogRecord = new((long)request.record.GetValidPointer());
+                DiskLogRecord<TValue> diskLogRecord = new((long)request.record.GetValidPointer());
                 DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
             }
             request.Dispose();

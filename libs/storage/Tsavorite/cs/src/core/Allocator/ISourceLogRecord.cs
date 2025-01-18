@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+
 namespace Tsavorite.core
 {
     /// <summary>An interface to cover either an in-memory or on-disk log record for RCU</summary>
@@ -42,6 +44,10 @@ namespace Tsavorite.core
 
         /// <summary>The Expiration of the record, if any (see <see cref="RecordInfo.HasExpiration"/>; 0 by default.</summary>
         long Expiration { get; }
+
+        /// <summary>If requested by CopyUpdater, the source ValueObject will be cleared immediately (to manage object size tracking most effectively).</summary>
+        /// <remarks>The disposer is not inlined, but this is called after object cloning, so the perf hit won't matter</remarks>
+        void ClearValueObject(Action<TValue> disposer);
 
         /// <summary>A shim to "convert" a TSourceLogRecord generic type that is a <see cref="LogRecord{TValue}"/> to a <see cref="LogRecord{TValue}"/> type.
         /// Should throw if the TSourceLogRecord is not a <see cref="LogRecord{TValue}"/>.</summary>

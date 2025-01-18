@@ -75,17 +75,16 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void CopyUpdate(ref IGarnetObject oldValue, ref IGarnetObject newValue, bool isInNewVersion)
+        public IGarnetObject CopyUpdate(bool isInNewVersion, ref RMWInfo rmwInfo)
         {
-            newValue = Clone();
-            newValue.Expiration = Expiration;
+            var newValue = Clone();
 
             // If we are not currently taking a checkpoint, we can delete the old version
             // since the new version of the object is already created.
             if (!isInNewVersion)
             {
-                oldValue = null;
-                return;
+                rmwInfo.ClearSourceValueObject = true;
+                return newValue;
             }
 
             // Create a serialized version for checkpoint version (v)
@@ -99,14 +98,16 @@ namespace Garnet.server
                     serialized = ms.ToArray();
 
                     serializationState = (int)SerializationPhase.SERIALIZED;
-                    return;
+                    break;
                 }
 
                 if (serializationState >= (int)SerializationPhase.SERIALIZED)
-                    return;
+                    break;
 
-                Thread.Yield();
+                _ = Thread.Yield();
             }
+
+            return newValue;
         }
 
         /// <summary>
