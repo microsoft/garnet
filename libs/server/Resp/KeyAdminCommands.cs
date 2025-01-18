@@ -159,9 +159,10 @@ namespace Garnet.server
             // Total len (% + length of ascii bytes + CR LF + payload type + redis encoded payload len + payload len + rdb version + crc64 + CR LF)
             var totalLength = 1 + lengthInASCIIBytesLen + 2 + 1 + encodedLength.Length + value.ReadOnlySpan.Length + 2 + 8 + 2;
 
-            var buffer = totalLength <= 128
-                ? stackalloc byte[totalLength]
-                : ArrayPool<byte>.Shared.Rent(totalLength);
+            byte[] rentedBuffer = null;
+            var buffer = totalLength <= 256
+                ? stackalloc byte[256]
+                : (rentedBuffer = ArrayPool<byte>.Shared.Rent(totalLength));
 
             var offset = 0;
 
@@ -201,6 +202,11 @@ namespace Garnet.server
 
             while (!RespWriteUtils.WriteDirect(buffer.Slice(0, totalLength), ref dcurr, dend))
                 SendAndReset();
+
+            if (rentedBuffer is not null)
+            {
+                ArrayPool<byte>.Shared.Return(rentedBuffer);
+            }
 
             return true;
         }

@@ -39,7 +39,7 @@ public static class RespLengthEncodingUtils
                 bytesRead = 1;
                 length = firstByte & 0x3F;
                 return true;
-            case 1 when input.Length > 2:
+            case 1 when input.Length > 1:
                 bytesRead = 2;
                 length = ((firstByte & 0x3F) << 8) | input[1];
                 return true;
@@ -76,6 +76,7 @@ public static class RespLengthEncodingUtils
             }
 
             output[0] = (byte)(length & 0x3F);
+
             bytesWritten = 1;
             return true;
         }
@@ -88,11 +89,9 @@ public static class RespLengthEncodingUtils
                 return false;
             }
 
-            var firstByte = (byte)(((length >> 8) & 0x3F) | (1 << 6)); // 01xxxxxx
-            var secondByte = (byte)(length & 0xFF);
+            output[0] = (byte)(((length >> 8) & 0x3F) | (1 << 6));
+            output[1] = (byte)(length & 0xFF);
 
-            output[0] = firstByte;
-            output[1] = secondByte;
             bytesWritten = 2;
             return true;
         }
@@ -104,8 +103,8 @@ public static class RespLengthEncodingUtils
         }
 
         output[0] = 2 << 6;
-
         BinaryPrimitives.WriteUInt32BigEndian(output.Slice(1), (uint)length);
+
         bytesWritten = 5;
         return true;
     }
