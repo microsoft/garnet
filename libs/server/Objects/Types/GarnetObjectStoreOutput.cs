@@ -20,6 +20,11 @@ namespace Garnet.server
         /// </summary>
         public IGarnetObject garnetObject;
 
+        /// <summary>
+        /// True if an operation was attempted on the wrong type of object
+        /// </summary>
+        public bool wrongType;
+
         public void ConvertToHeap()
         {
             // Does not convert to heap when going pending, because we immediately complete pending operations for object store.

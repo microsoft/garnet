@@ -128,8 +128,10 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new ListObject(list, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
+        public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey, out bool wrongType)
         {
+            wrongType = false;
+
             fixed (byte* _output = output.SpanByte.AsSpan())
             {
                 removeKey = false;
@@ -137,6 +139,7 @@ namespace Garnet.server
                 if (input.header.type != GarnetObjectType.List)
                 {
                     // Indicates an incorrect type of key
+                    wrongType = true;
                     output.Length = 0;
                     sizeChange = 0;
                     return true;

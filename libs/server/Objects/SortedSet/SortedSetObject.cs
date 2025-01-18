@@ -212,14 +212,17 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new SortedSetObject(sortedSet, sortedSetDict, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
+        public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey, out bool wrongType)
         {
+            wrongType = false;
+
             fixed (byte* outputSpan = output.SpanByte.AsSpan())
             {
                 var header = input.header;
                 if (header.type != GarnetObjectType.SortedSet)
                 {
                     // Indicates an incorrect type of key
+                    wrongType = true;
                     output.Length = 0;
                     sizeChange = 0;
                     removeKey = false;

@@ -68,10 +68,11 @@ namespace Garnet.server
         public abstract override void Dispose();
 
         /// <inheritdoc />
-        public sealed override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
+        public sealed override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey, out bool wrongType)
         {
             sizeChange = 0;
             removeKey = false;
+            wrongType = false;
 
             switch (input.header.cmd)
             {
@@ -93,6 +94,7 @@ namespace Garnet.server
                     if ((byte)input.header.type != this.type)
                     {
                         // Indicates an incorrect type of key
+                        wrongType = true;
                         output.Length = 0;
                         return true;
                     }

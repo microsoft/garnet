@@ -108,15 +108,17 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new HashObject(hash, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
+        public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey, out bool wrongType)
         {
             removeKey = false;
+            wrongType = false;
 
             fixed (byte* _output = output.SpanByte.AsSpan())
             {
                 if (input.header.type != GarnetObjectType.Hash)
                 {
                     //Indicates when there is an incorrect type 
+                    wrongType = true;
                     output.Length = 0;
                     sizeChange = 0;
                     return true;

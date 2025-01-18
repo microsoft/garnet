@@ -47,7 +47,11 @@ namespace Garnet.server
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
-                value.Operate(ref input, ref output.spanByteAndMemory, out _, out _);
+                value.Operate(ref input, ref output.spanByteAndMemory, out _, out _, out var wrongType);
+                if (wrongType)
+                {
+                    output.wrongType = true;
+                }
                 return true;
             }
             else
@@ -142,7 +146,12 @@ namespace Garnet.server
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
                         var operateSuccessful = value.Operate(ref input, ref output.spanByteAndMemory, out sizeChange,
-                        out var removeKey);
+                        out var removeKey, out var wrongType);
+                        if (wrongType)
+                        {
+                            output.wrongType = true;
+                            return true;
+                        }
                         if (removeKey)
                         {
                             rmwInfo.Action = RMWAction.ExpireAndStop;
@@ -154,7 +163,10 @@ namespace Garnet.server
                     else
                     {
                         if (IncorrectObjectType(ref input, value, ref output.spanByteAndMemory))
+                        {
+                            output.wrongType = true;
                             return true;
+                        }
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
@@ -233,7 +245,12 @@ namespace Garnet.server
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
+                        value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey, out var wrongType);
+                        if (wrongType)
+                        {
+                            output.wrongType = true;
+                            return true;
+                        }
                         if (removeKey)
                         {
                             rmwInfo.Action = RMWAction.ExpireAndStop;
@@ -246,7 +263,10 @@ namespace Garnet.server
                         // TODO: Update to invoke CopyUpdater of custom object command without creating a new object
                         // using Clone. Currently, expire and persist commands are performed on the new copy of the object.
                         if (IncorrectObjectType(ref input, value, ref output.spanByteAndMemory))
+                        {
+                            output.wrongType = true;
                             return true;
+                        }
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);

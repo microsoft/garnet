@@ -47,10 +47,22 @@ namespace Garnet.server
 
                     default:
                         if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
-                            return value.Operate(ref input, ref dst.spanByteAndMemory, out _, out _);
+                        {
+                            var opResult = value.Operate(ref input, ref dst.spanByteAndMemory, out _, out _,
+                                out var wrongType);
+                            if (wrongType)
+                            {
+                                dst.wrongType = true;
+                                return true;
+                            }
+                            return opResult;
+                        }
 
                         if (IncorrectObjectType(ref input, value, ref dst.spanByteAndMemory))
+                        {
+                            dst.wrongType = true;
                             return true;
+                        }
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (dst.spanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
