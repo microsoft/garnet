@@ -576,18 +576,8 @@ namespace Garnet.server
         /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
         static bool IsValidNumber(int length, byte* source, Span<byte> output, out long val)
         {
-            val = 0;
-            try
-            {
-                // Check for valid number
-                if (!NumUtils.TryReadInt64(length, source, out val))
-                {
-                    // Signal value is not a valid number
-                    output[0] = (byte)OperationError.INVALID_TYPE;
-                    return false;
-                }
-            }
-            catch
+            // Check for valid number
+            if (!NumUtils.TryReadInt64(length, source, out val))
             {
                 // Signal value is not a valid number
                 output[0] = (byte)OperationError.INVALID_TYPE;
@@ -598,18 +588,8 @@ namespace Garnet.server
 
         static bool IsValidDouble(int length, byte* source, Span<byte> output, out double val)
         {
-            val = 0;
-            try
-            {
-                // Check for valid number
-                if (!NumUtils.TryReadDouble(length, source, out val) || !double.IsFinite(val))
-                {
-                    // Signal value is not a valid number
-                    output[0] = (byte)OperationError.INVALID_TYPE;
-                    return false;
-                }
-            }
-            catch
+            // Check for valid number
+            if (!NumUtils.TryReadDouble(length, source, out val) || !double.IsFinite(val))
             {
                 // Signal value is not a valid number
                 output[0] = (byte)OperationError.INVALID_TYPE;
