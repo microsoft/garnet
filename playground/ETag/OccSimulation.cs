@@ -131,7 +131,7 @@ namespace ETag
                 }
 
                 // Update the user info in the database, and then for the REPL
-                (initialEtag, userInfo) = await LockFreeUpdateUserInfo(db, userKey, initialEtag, userInfo, userUpdateAction);
+                (initialEtag, userInfo) = await ETagAbstractions.PerformLockFreeSafeUpdate<ContosoUserInfo>(db, userKey, initialEtag, userInfo, userUpdateAction);
                 Console.WriteLine($"Updated User Info: {JsonSerializer.Serialize(userInfo)}");
             }
 
@@ -143,7 +143,7 @@ namespace ETag
             }
             catch (OperationCanceledException)
             {
-                Console.WriteLine("Tasks were cancelled.");
+                Console.WriteLine("All clients killed.");
             }
         }
 
@@ -158,7 +158,7 @@ namespace ETag
             while (true)
             {
                 token.ThrowIfCancellationRequested();
-                (etag, userInfo) = await LockFreeUpdateUserInfo(db, userKey, etag, userInfo, (ContosoUserInfo userInfo) =>
+                (etag, userInfo) = await ETagAbstractions.PerformLockFreeSafeUpdate<ContosoUserInfo>(db, userKey, etag, userInfo, (ContosoUserInfo userInfo) =>
                 {
                     userInfo.NumberOfCats++;
                 });
@@ -177,46 +177,12 @@ namespace ETag
             while (true)
             {
                 token.ThrowIfCancellationRequested();
-                (etag, userInfo) = await LockFreeUpdateUserInfo(db, userKey, etag, userInfo, (ContosoUserInfo userInfo) =>
+                (etag, userInfo) = await ETagAbstractions.PerformLockFreeSafeUpdate<ContosoUserInfo>(db, userKey, etag, userInfo, (ContosoUserInfo userInfo) =>
                 {
                     userInfo.TooManyCats = userInfo.NumberOfCats % 5 == 0;
                 });
                 await Task.Delay(TimeSpan.FromSeconds(random.Next(0, 15)), token);
             }
-        }
-
-        static async Task<(long, ContosoUserInfo)> LockFreeUpdateUserInfo(IDatabase db, string userKey, long initialEtag, ContosoUserInfo initialUserInfo, Action<ContosoUserInfo> updateAction)
-        {
-            // Compare and Swap Updating
-            long etag = initialEtag;
-            ContosoUserInfo userInfo = initialUserInfo;
-            while (true)
-            {
-                // perform invoker passed update on userInfo 
-                updateAction(userInfo);
-
-                var (updatedSuccesful, newEtag, newUserInfo) = await UpdateUserIfMatch(db, etag, userKey, userInfo);
-                etag = newEtag;
-                userInfo = newUserInfo;
-
-                if (updatedSuccesful)
-                    break;
-            }
-
-            return (etag, userInfo);
-        }
-
-        static async Task<(bool updated, long etag, ContosoUserInfo)> UpdateUserIfMatch(IDatabase db, long etag, string key, ContosoUserInfo value)
-        {
-            // You may notice the "!" that is because we know that SETIFMATCH doesn't return null
-            string serializedUserInfo = JsonSerializer.Serialize(value);
-            RedisResult[] res = (RedisResult[])(await db.ExecuteAsync("SETIFMATCH", key, serializedUserInfo, etag))!;
-
-            if (res[1].IsNull)
-                return (true, (long)res[0], value);
-
-            ContosoUserInfo deserializedUserInfo = JsonSerializer.Deserialize<ContosoUserInfo>((string)res[1]!)!;
-            return (false, (long)res[0], deserializedUserInfo);
         }
 
         static string GarnetConnectionStr = "localhost:6379,connectTimeout=999999,syncTimeout=999999";

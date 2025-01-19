@@ -6,6 +6,9 @@ class Program
 {
     static async Task Main(string[] args)
     {
-        await OccSimulation.RunSimulation();
+        // Uncomment whichever example you want to run
+
+        // await OccSimulation.RunSimulation();
+        await Caching.RunSimulation();
     }
 }
