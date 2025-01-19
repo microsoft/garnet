@@ -1187,7 +1187,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
             }
 
-            parseState.TryExtractKeyandFlagsFromSpecs(cmdInfo.KeySpecifications, out var keys, out var flags);
+            parseState.TryExtractKeysAndFlagsFromSpecs(cmdInfo.KeySpecifications, out var keys, out var flags);
 
             while (!RespWriteUtils.WriteArrayLength(keys.Count, ref dcurr, dend))
                 SendAndReset();

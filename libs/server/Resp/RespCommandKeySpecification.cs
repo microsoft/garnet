@@ -4,11 +4,9 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Azure;
 using Garnet.common;
 
 namespace Garnet.server
@@ -230,6 +228,11 @@ namespace Garnet.server
             this.Index = index;
         }
 
+        /// <summary>
+        /// Gets the index for key extraction based on the current parse state.
+        /// </summary>
+        /// <param name="parseState">The current session parse state.</param>
+        /// <returns>The calculated index for key extraction.</returns>
         public int GetIndex(ref SessionParseState parseState)
         {
             if (Index < 0)
@@ -280,6 +283,12 @@ namespace Garnet.server
             this.StartFrom = startFrom;
         }
 
+        /// <summary>
+        /// Attempts to find the start index for key extraction based on the specified keyword.
+        /// </summary>
+        /// <param name="parseState">The current session parse state.</param>
+        /// <param name="index">The index where the keyword is found, plus one.</param>
+        /// <returns>True if the keyword is found; otherwise, false.</returns>
         public bool TryGetStartFrom(ref SessionParseState parseState, out int index)
         {
             var keyword = Encoding.UTF8.GetBytes(Keyword);
@@ -289,7 +298,7 @@ namespace Garnet.server
 
             // Determine the search direction
             int increment = StartFrom < 0 ? -1 : 1;
-            int start = StartFrom < 0 ? searchStartIndex : searchStartIndex;
+            int start = searchStartIndex;
             int end = StartFrom < 0 ? -1 : parseState.Count;
 
             // Search for the keyword
@@ -382,6 +391,12 @@ namespace Garnet.server
             this.Limit = limit;
         }
 
+        /// <summary>
+        /// Extracts keys from the specified parse state starting from the given index.
+        /// </summary>
+        /// <param name="state">The current session parse state.</param>
+        /// <param name="startIndex">The index from which to start extracting keys.</param>
+        /// <param name="keys">The list to which extracted keys will be added.</param>
         public void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys)
         {
             int lastKey;
@@ -457,6 +472,12 @@ namespace Garnet.server
             this.KeyStep = keyStep;
         }
 
+        /// <summary>
+        /// Extracts keys from the specified parse state starting from the given index.
+        /// </summary>
+        /// <param name="state">The current session parse state.</param>
+        /// <param name="startIndex">The index from which to start extracting keys.</param>
+        /// <param name="keys">The list to which extracted keys will be added.</param>
         public void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys)
         {
             int numKeys = 0;
@@ -488,7 +509,7 @@ namespace Garnet.server
             // Extract keys based on numKeys, firstKey, and keyStep
             if (numKeys > 0 && firstKey >= 0)
             {
-                for (int i = 0; i < numKeys && firstKey + i * KeyStep < state.Count; i++)
+                for (int i = 0; i < numKeys && firstKey + (i * KeyStep) < state.Count; i++)
                 {
                     var keyIndex = firstKey + i * KeyStep;
                     keys.Add(state.GetArgSliceByRef(keyIndex));
