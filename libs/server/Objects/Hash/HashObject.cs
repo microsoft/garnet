@@ -500,8 +500,8 @@ namespace Garnet.server
             if (expirationTimes.TryGetValue(key, out var currentExpiration))
             {
                 if (expireOption.HasFlag(ExpireOption.NX) ||
-                    expireOption.HasFlag(ExpireOption.GT) && expiration <= currentExpiration ||
-                    expireOption.HasFlag(ExpireOption.LT) && expiration >= currentExpiration)
+                    (expireOption.HasFlag(ExpireOption.GT) && expiration <= currentExpiration) ||
+                    (expireOption.HasFlag(ExpireOption.LT) && expiration >= currentExpiration))
                 {
                     return (int)ExpireResult.ExpireConditionNotMet;
                 }

@@ -512,6 +512,7 @@ namespace Garnet.server
         public GarnetStatus HashTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter, ref objectContext);
 
+        /// <inheritdoc />
         public GarnetStatus HashCollect(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input)
             => storageSession.HashCollect(keys, ref input, ref objectContext);
 

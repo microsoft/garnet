@@ -1016,9 +1016,10 @@ namespace Garnet.server
         GarnetStatus HashPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
-        /// Delete already expired fields from the hash.
+        /// Deletes already expired fields from the hash.
         /// </summary>
-        /// <param name="keys">The keys of the hash.</param>
+        /// <param name="keys">The keys of the hash fields to check for expiration.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
         /// <returns>The status of the operation.</returns>
         GarnetStatus HashCollect(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input);
 
