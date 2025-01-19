@@ -678,12 +678,12 @@ namespace Garnet.server
             int desiredLength = 4;
             ReadOnlySpan<byte> etagTruncatedVal;
             // get etag to write, default etag 0 for when no etag
-            long etag = hasEtagInVal ? value.GetEtagInPayload() : Constants.BaseEtag;
+            long etag = hasEtagInVal ? value.GetEtagInPayload() : EtagConstants.BaseEtag;
             // remove the length of the ETAG
             var etagAccountedValueLength = valueLength - etagSkippedStart;
             if (hasEtagInVal)
             {
-                etagAccountedValueLength = valueLength - Constants.EtagSize;
+                etagAccountedValueLength = valueLength - EtagConstants.EtagSize;
             }
 
             // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below

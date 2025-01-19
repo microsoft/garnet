@@ -57,6 +57,7 @@
     <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
     <ProjectReference Include="..\..\libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
     <ProjectReference Include="..\..\playground\GarnetJSON\GarnetJSON.csproj" />
+    <ProjectReference Include="..\..\playground\NoOpModule\NoOpModule.csproj" />
   </ItemGroup>
 
   <ItemGroup>

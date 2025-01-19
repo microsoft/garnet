@@ -394,6 +394,21 @@ namespace Garnet.server
             return readHead;
         }
 
+        /// <summary>
+        /// For testing purposes, call <see cref="INetworkSender.EnterAndGetResponseObject"/> and update state accordingly.
+        /// </summary>
+        internal void EnterAndGetResponseObject()
+        => networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+
+        /// <summary>
+        /// For testing purposes, call <see cref="INetworkSender.ExitAndReturnResponseObject"/> and update state accordingly.
+        /// </summary>
+        internal void ExitAndReturnResponseObject()
+        {
+            networkSender.ExitAndReturnResponseObject();
+            dcurr = dend = (byte*)0;
+        }
+
         internal void SetTransactionMode(bool enable)
             => txnManager.state = enable ? TxnState.Running : TxnState.None;
 

@@ -409,6 +409,8 @@ namespace Garnet.server
 
         public bool EnableObjectStoreReadCache = false;
 
+        public LuaOptions LuaOptions;
+
         /// <summary>
         /// Constructor
         /// </summary>

@@ -359,6 +359,7 @@ namespace Garnet.server
 
         // Lua scripting strings
         public static ReadOnlySpan<byte> LUA_OK => "OK"u8;
+        public static ReadOnlySpan<byte> LUA_ok => "ok"u8;
         public static ReadOnlySpan<byte> LUA_err => "err"u8;
         public static ReadOnlySpan<byte> LUA_No_session_available => "No session available"u8;
         public static ReadOnlySpan<byte> LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call => "ERR Please specify at least one argument for this redis lib call"u8;

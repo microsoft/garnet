@@ -5,6 +5,13 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    internal static class EtagConstants
+    {
+        public const byte EtagSize = sizeof(long);
+
+        public const long BaseEtag = 0;
+    }
+
     /// <summary>
     /// Indirection wrapper to provide a way to set offsets related to Etags and use the getters opaquely from outside.
     /// </summary>
@@ -32,15 +39,15 @@ namespace Garnet.server
         /// <summary>
         /// Field provides access to getting an Etag from a record, hiding whether it is actually present or not.
         /// </summary>
-        public long etag { get; private set; } = Constants.BaseEtag;
+        public long etag { get; private set; } = EtagConstants.BaseEtag;
 
         /// <summary>
         /// Sets the values to indicate the presence of an Etag as a part of the payload value
         /// </summary>
         public static void SetValsForRecordWithEtag(ref EtagState curr, ref SpanByte value)
         {
-            curr.etagOffsetForVarlen = Constants.EtagSize;
-            curr.etagSkippedStart = Constants.EtagSize;
+            curr.etagOffsetForVarlen = EtagConstants.EtagSize;
+            curr.etagSkippedStart = EtagConstants.EtagSize;
             curr.etagAccountedLength = value.LengthWithoutMetadata;
             curr.etag = value.GetEtagInPayload();
         }
@@ -49,7 +56,7 @@ namespace Garnet.server
         {
             curr.etagOffsetForVarlen = 0;
             curr.etagSkippedStart = 0;
-            curr.etag = Constants.BaseEtag;
+            curr.etag = EtagConstants.BaseEtag;
             curr.etagAccountedLength = -1;
         }
     }
