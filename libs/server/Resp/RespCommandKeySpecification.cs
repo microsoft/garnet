@@ -191,6 +191,14 @@ namespace Garnet.server
         /// Name of the key specification
         /// </summary>
         public sealed override string MethodName => "begin_search";
+
+        /// <summary>
+        /// Attempts to find the start index for key extraction based on the specified keyword.
+        /// </summary>
+        /// <param name="parseState">The current session parse state.</param>
+        /// <param name="index">The index where the keyword is found, plus one.</param>
+        /// <returns>True if the keyword is found; otherwise, false.</returns>
+        public abstract bool TryGetStartIndex(ref SessionParseState parseState, out int index);
     }
 
     /// <summary>
@@ -228,19 +236,17 @@ namespace Garnet.server
             this.Index = index;
         }
 
-        /// <summary>
-        /// Gets the index for key extraction based on the current parse state.
-        /// </summary>
-        /// <param name="parseState">The current session parse state.</param>
-        /// <returns>The calculated index for key extraction.</returns>
-        public int GetIndex(ref SessionParseState parseState)
+        /// <inheritdoc />
+        public override bool TryGetStartIndex(ref SessionParseState parseState, out int index)
         {
             if (Index < 0)
             {
-                return parseState.Count + Index;
+                index = parseState.Count + Index;
+                return true;
             }
 
-            return Index;
+            index = Index;
+            return true;
         }
     }
 
@@ -283,13 +289,8 @@ namespace Garnet.server
             this.StartFrom = startFrom;
         }
 
-        /// <summary>
-        /// Attempts to find the start index for key extraction based on the specified keyword.
-        /// </summary>
-        /// <param name="parseState">The current session parse state.</param>
-        /// <param name="index">The index where the keyword is found, plus one.</param>
-        /// <returns>True if the keyword is found; otherwise, false.</returns>
-        public bool TryGetStartFrom(ref SessionParseState parseState, out int index)
+        /// <inheritdoc />
+        public override bool TryGetStartIndex(ref SessionParseState parseState, out int index)
         {
             var keyword = Encoding.UTF8.GetBytes(Keyword);
 
@@ -333,6 +334,13 @@ namespace Garnet.server
         }
 
         private string respFormatSpec;
+
+        /// <inheritdoc />
+        public override bool TryGetStartIndex(ref SessionParseState parseState, out int index)
+        {
+            index = default;
+            return false;
+        }
     }
 
     /// <summary>
@@ -344,6 +352,14 @@ namespace Garnet.server
         /// Name of the key specification
         /// </summary>
         public sealed override string MethodName => "find_keys";
+
+        /// <summary>
+        /// Extracts keys from the specified parse state starting from the given index.
+        /// </summary>
+        /// <param name="state">The current session parse state.</param>
+        /// <param name="startIndex">The index from which to start extracting keys.</param>
+        /// <param name="keys">The list to which extracted keys will be added.</param>
+        public abstract void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys);
     }
 
     /// <summary>
@@ -391,13 +407,8 @@ namespace Garnet.server
             this.Limit = limit;
         }
 
-        /// <summary>
-        /// Extracts keys from the specified parse state starting from the given index.
-        /// </summary>
-        /// <param name="state">The current session parse state.</param>
-        /// <param name="startIndex">The index from which to start extracting keys.</param>
-        /// <param name="keys">The list to which extracted keys will be added.</param>
-        public void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys)
+        /// <inheritdoc />
+        public override void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys)
         {
             int lastKey;
             if (LastKey < 0)
@@ -472,13 +483,8 @@ namespace Garnet.server
             this.KeyStep = keyStep;
         }
 
-        /// <summary>
-        /// Extracts keys from the specified parse state starting from the given index.
-        /// </summary>
-        /// <param name="state">The current session parse state.</param>
-        /// <param name="startIndex">The index from which to start extracting keys.</param>
-        /// <param name="keys">The list to which extracted keys will be added.</param>
-        public void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys)
+        /// <inheritdoc />
+        public override void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys)
         {
             int numKeys = 0;
             int firstKey = startIndex + FirstKey;
@@ -535,6 +541,12 @@ namespace Garnet.server
         }
 
         private string respFormatSpec;
+
+        /// <inheritdoc />
+        public override void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys)
+        {
+            // Do nothing
+        }
     }
 
     /// <summary>

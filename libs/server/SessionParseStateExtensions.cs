@@ -341,13 +341,9 @@ namespace Garnet.server
         {
             int startIndex = 0;
 
-            if (spec.BeginSearch is BeginSearchIndex bsIndex)
+            if (spec.BeginSearch is BeginSearchKeySpecMethodBase bsKeyword)
             {
-                startIndex = bsIndex.GetIndex(ref state);
-            }
-            else if (spec.BeginSearch is BeginSearchKeyword bsKeyword)
-            {
-                if (!bsKeyword.TryGetStartFrom(ref state, out startIndex))
+                if (!bsKeyword.TryGetStartIndex(ref state, out startIndex))
                 {
                     return false;
                 }
@@ -356,13 +352,9 @@ namespace Garnet.server
             if (startIndex < 0 || startIndex >= state.Count)
                 return false;
 
-            if (spec.FindKeys is FindKeysRange range)
+            if (spec.FindKeys is FindKeysKeySpecMethodBase findKey)
             {
-                range.ExtractKeys(ref state, startIndex, keys);
-            }
-            else if (spec.FindKeys is FindKeysKeyNum keyNum)
-            {
-                keyNum.ExtractKeys(ref state, startIndex, keys);
+                findKey.ExtractKeys(ref state, startIndex, keys);
             }
 
             return true;
