@@ -33,7 +33,7 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            if (!parseState.TryGetDouble(parseState.Count - 2, out var ttl))
+            if (!parseState.TryGetInt(parseState.Count - 2, out var expiry))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
                     SendAndReset();
@@ -41,15 +41,6 @@ namespace Garnet.server
             }
 
             var value = parseState.GetArgSliceByRef(2);
-
-            // return error if key already exists 
-            var keyExists = storageApi.EXISTS(key);
-            if (keyExists is GarnetStatus.OK)
-            {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_BUSSYKEY, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
 
             var valueSpan = value.ReadOnlySpan;
 
@@ -111,23 +102,34 @@ namespace Garnet.server
 
             var valArgSlice = scratchBufferManager.CreateArgSlice(val);
 
-            if (ttl > 0)
+            var sbKey = key.SpanByte;
+
+            parseState.InitializeWithArgument(valArgSlice);
+
+            RawStringInput input;
+            if (expiry > 0)
             {
-                var exOption = ArgSlice.FromPinnedSpan(CmdStrings.EX);
-                var expireOption = parseState.GetArgSliceByRef(1);
-                var nxOption = ArgSlice.FromPinnedSpan(CmdStrings.NX);
-
-                parseState.InitializeWithArguments(key, valArgSlice, exOption, expireOption, nxOption);
-
-                return NetworkSETEXNX(ref storageApi);
+                var inputArg = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks;
+                input = new RawStringInput(RespCommand.SETEXNX, ref parseState, arg1: inputArg);
             }
             else
             {
-                var nxOption = ArgSlice.FromPinnedSpan(CmdStrings.NX);
-                parseState.InitializeWithArguments(key, valArgSlice, nxOption);
-
-                return NetworkSETEXNX(ref storageApi);
+                input = new RawStringInput(RespCommand.SETEXNX, ref parseState);
             }
+
+            var status = storageApi.SET_Conditional(ref sbKey, ref input);
+
+            if (status is GarnetStatus.NOTFOUND)
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_BUSSYKEY, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
         }
 
         /// <summary>
