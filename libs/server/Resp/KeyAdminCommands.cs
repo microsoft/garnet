@@ -46,7 +46,7 @@ namespace Garnet.server
             var keyExists = storageApi.EXISTS(key);
             if (keyExists is GarnetStatus.OK)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_KEY_ALREADY_EXISTS, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_BUSSYKEY, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -57,6 +57,14 @@ namespace Garnet.server
             if (valueSpan[0] != 0x00)
             {
                 while (!RespWriteUtils.WriteError("ERR RESTORE currently only supports string types", ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // check if length of value is at least 10
+            if (valueSpan.Length < 10)
+            {
+                while (!RespWriteUtils.WriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -105,17 +113,21 @@ namespace Garnet.server
 
             if (ttl > 0)
             {
-                storageApi.SETEX(key, valArgSlice, TimeSpan.FromMilliseconds(ttl));
+                var exOption = ArgSlice.FromPinnedSpan(CmdStrings.EX);
+                var expireOption = parseState.GetArgSliceByRef(1);
+                var nxOption = ArgSlice.FromPinnedSpan(CmdStrings.NX);
+
+                parseState.InitializeWithArguments(key, valArgSlice, exOption, expireOption, nxOption);
+
+                return NetworkSETEXNX(ref storageApi);
             }
             else
             {
-                storageApi.SET(key, valArgSlice);
+                var nxOption = ArgSlice.FromPinnedSpan(CmdStrings.NX);
+                parseState.InitializeWithArguments(key, valArgSlice, nxOption);
+
+                return NetworkSETEXNX(ref storageApi);
             }
-
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
-
-            return true;
         }
 
         /// <summary>

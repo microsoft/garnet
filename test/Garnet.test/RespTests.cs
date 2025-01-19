@@ -166,11 +166,11 @@ namespace Garnet.test
 
             var dump = db.KeyDump("mykey")!;
 
-            Assert.Throws<RedisConnectionException>(() => db.KeyRestore("mykey", dump));
+            Assert.Throws<RedisServerException>(() => db.KeyRestore("mykey", dump));
         }
 
         /// <summary>
-        /// Tests RESTORE command that restores payload with 32 bit encoded length
+        /// Tests that RESTORE command restores payload with 32 bit encoded length
         /// </summary>
         [Test]
         public void SingleRestore32Bit()
@@ -199,7 +199,7 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Tests RESTORE command that restores payload with 14 bit encoded length
+        /// Tests that RESTORE command restores payload with 14 bit encoded length
         /// </summary>
         [Test]
         public void SingleRestore14Bit()
@@ -228,7 +228,7 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Tests RESTORE command that restores payload with 6 bit encoded length
+        /// Tests that RESTORE command restores payload with 6 bit encoded length
         /// </summary>
         [Test]
         public void SingleRestore6Bit()
@@ -250,7 +250,29 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Tests DUMP command that returns payload with 6 bit encoded length
+        /// Tests that RESTORE command restores payload with 6 bit encoded length without TTL
+        /// </summary>
+        [Test]
+        public void SingleRestore6BitWithoutTtl()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+
+            var dump = db.KeyDump("mykey")!;
+
+            db.KeyDelete("mykey");
+
+            db.KeyRestore("mykey", dump);
+
+            var value = db.StringGet("mykey");
+
+            ClassicAssert.AreEqual("val", value.ToString());
+        }
+
+        /// <summary>
+        /// Tests that DUMP command returns payload with 6 bit encoded length
         /// </summary>
         [Test]
         public void SingleDump6Bit()
@@ -288,7 +310,7 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Tests DUMP command that returns payload with 14 bit encoded length
+        /// Tests that DUMP command returns payload with 14 bit encoded length
         /// </summary>
         [Test]
         public void SingleDump14Bit()
@@ -339,7 +361,7 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Tests DUMP command that returns payload with 32 bit encoded length
+        /// Tests that DUMP command returns payload with 32 bit encoded length
         /// </summary>
         [Test]
         public void SingleDump32Bit()
