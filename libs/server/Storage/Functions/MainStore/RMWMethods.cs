@@ -352,8 +352,8 @@ namespace Garnet.server
                     long newEtag = functionsState.etagState.etag + 1;
 
                     value.ShrinkSerializedLength(metadataSize + inputValue.Length + EtagConstants.EtagSize);
-                    rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
+                    rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
                     value.SetEtagInPayload(newEtag);
 
