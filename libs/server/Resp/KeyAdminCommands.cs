@@ -5,7 +5,6 @@ using System;
 using System.Buffers;
 using System.Diagnostics;
 using Garnet.common;
-using Garnet.server.Auth;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -174,8 +173,8 @@ namespace Garnet.server
             var totalLength = 1 + lengthInASCIIBytesLen + 2 + 1 + encodedLength.Length + value.ReadOnlySpan.Length + 2 + 8 + 2;
 
             byte[] rentedBuffer = null;
-            var buffer = totalLength <= 256
-                ? stackalloc byte[256]
+            var buffer = totalLength <= (dend - dcurr)
+                ? new Span<byte>(dcurr, (int)(dend - dcurr))
                 : (rentedBuffer = ArrayPool<byte>.Shared.Rent(totalLength));
 
             var offset = 0;
@@ -214,12 +213,16 @@ namespace Garnet.server
             buffer[offset++] = 0x0D; // CR
             buffer[offset] = 0x0A; // LF
 
-            while (!RespWriteUtils.WriteDirect(buffer.Slice(0, totalLength), ref dcurr, dend))
-                SendAndReset();
-
             if (rentedBuffer is not null)
             {
+                while (!RespWriteUtils.WriteDirect(buffer.Slice(0, totalLength), ref dcurr, dend))
+                    SendAndReset();
+
                 ArrayPool<byte>.Shared.Return(rentedBuffer);
+            }
+            else
+            {
+                dcurr += totalLength;
             }
 
             return true;
