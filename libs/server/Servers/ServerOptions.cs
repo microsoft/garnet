@@ -99,9 +99,9 @@ namespace Garnet.server
         public bool FailOnRecoveryError = false;
 
         /// <summary>
-        /// Skip checksum validation
+        /// Skip RDB restore checksum validation
         /// </summary>
-        public bool SkipChecksumValidation = false;
+        public bool SkipRDBRestoreChecksumValidation = false;
 
         /// <summary>
         /// Logger

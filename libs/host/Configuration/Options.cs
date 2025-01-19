@@ -510,8 +510,8 @@ namespace Garnet
         public bool? FailOnRecoveryError { get; set; }
 
         [OptionValidation]
-        [Option("skip-checksum-validation", Default = false, Required = false, HelpText = "Skip checksum validation")]
-        public bool? SkipChecksumValidation { get; set; }
+        [Option("skip-rdb-restore-checksum-validation", Default = false, Required = false, HelpText = "Skip RDB restore checksum validation")]
+        public bool? SkipRDBRestoreChecksumValidation { get; set; }
 
         [Option("lua-memory-management-mode", Default = LuaMemoryManagementMode.Native, Required = false, HelpText = "Memory management mode for Lua scripts, must be set to LimittedNative or Managed to impose script limits")]
         public LuaMemoryManagementMode LuaMemoryManagementMode { get; set; }
@@ -732,7 +732,7 @@ namespace Garnet
                 IndexResizeThreshold = IndexResizeThreshold,
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
-                SkipChecksumValidation = SkipChecksumValidation.GetValueOrDefault(),
+                SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
                 LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, logger) : null,
             };
         }
