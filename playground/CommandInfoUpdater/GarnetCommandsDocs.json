@@ -1,5 +1,142 @@
 [
   {
+    "Command": "CLIENT_KILL",
+    "Name": "CLIENT|KILL",
+    "Summary": "Terminates open connections.",
+    "Group": "Connection",
+    "Complexity": "O(N) where N is the number of client connections",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FILTER",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OLD-FORMAT",
+            "DisplayText": "ip:port",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "NEW-FORMAT",
+            "Type": "OneOf",
+            "ArgumentFlags": "Multiple",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "CLIENT-ID",
+                "DisplayText": "client-id",
+                "Type": "Integer",
+                "Token": "ID",
+                "ArgumentFlags": "Optional"
+              },
+              {
+                "TypeDiscriminator": "RespCommandContainerArgument",
+                "Name": "CLIENT-TYPE",
+                "Type": "OneOf",
+                "Token": "TYPE",
+                "ArgumentFlags": "Optional",
+                "Arguments": [
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "NORMAL",
+                    "DisplayText": "normal",
+                    "Type": "PureToken",
+                    "Token": "NORMAL"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "MASTER",
+                    "DisplayText": "master",
+                    "Type": "PureToken",
+                    "Token": "MASTER"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "SLAVE",
+                    "DisplayText": "slave",
+                    "Type": "PureToken",
+                    "Token": "SLAVE"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "REPLICA",
+                    "DisplayText": "replica",
+                    "Type": "PureToken",
+                    "Token": "REPLICA"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "PUBSUB",
+                    "DisplayText": "pubsub",
+                    "Type": "PureToken",
+                    "Token": "PUBSUB"
+                  }
+                ]
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "USERNAME",
+                "DisplayText": "username",
+                "Type": "String",
+                "Token": "USER",
+                "ArgumentFlags": "Optional"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ADDR",
+                "DisplayText": "ip:port",
+                "Type": "String",
+                "Token": "ADDR",
+                "ArgumentFlags": "Optional"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "LADDR",
+                "DisplayText": "ip:port",
+                "Type": "String",
+                "Token": "LADDR",
+                "ArgumentFlags": "Optional"
+              },
+              {
+                "TypeDiscriminator": "RespCommandContainerArgument",
+                "Name": "SKIPME",
+                "Type": "OneOf",
+                "Token": "SKIPME",
+                "ArgumentFlags": "Optional",
+                "Arguments": [
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "YES",
+                    "DisplayText": "yes",
+                    "Type": "PureToken",
+                    "Token": "YES"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "NO",
+                    "DisplayText": "no",
+                    "Type": "PureToken",
+                    "Token": "NO"
+                  }
+                ]
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "MAXAGE",
+                "DisplayText": "maxage",
+                "Type": "Integer",
+                "Token": "MAXAGE",
+                "ArgumentFlags": "Optional"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "COMMITAOF",
     "Name": "COMMITAOF",
     "Group": "Server",
@@ -333,6 +470,295 @@
             "DisplayText": "arg",
             "Type": "String",
             "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "GETIFNOTMATCH",
+    "Name": "GETIFNOTMATCH",
+    "Summary": "Gets the ETag and value if the key\u0027s current etag does not match the given etag.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "GETWITHETAG",
+    "Name": "GETWITHETAG",
+    "Summary": "Gets the ETag and value for the key",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "PURGEBP",
+    "Name": "PURGEBP",
+    "Group": "Cluster",
+    "Summary": "Purge cluster buffer pool for manager type.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "MANAGERTYPE",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIGRATIONMANAGER",
+            "DisplayText": "migrationmanager",
+            "Type": "PureToken",
+            "Token": "MIGRATIONMANAGER"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "REPLICATIONMANAGER",
+            "DisplayText": "replicationmanager",
+            "Type": "PureToken",
+            "Token": "REPLICATIONMANAGER"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SERVERLISTENER",
+            "DisplayText": "serverlistener",
+            "Type": "PureToken",
+            "Token": "SERVERLISTENER"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "RENAME",
+    "Name": "RENAME",
+    "Summary": "Renames a key and overwrites the destination.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "NEWKEY",
+        "DisplayText": "newkey",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHETAG",
+        "DisplayText": "WITHETAG",
+        "Type": "PureToken",
+        "ArgumentFlags": "Optional",
+        "Token": "WITHETAG"
+      }
+    ]
+  },
+  {
+    "Command": "RENAMENX",
+    "Name": "RENAMENX",
+    "Summary": "Renames a key and overwrites the destination if the newkey does not exist.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "NEWKEY",
+        "DisplayText": "newkey",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHETAG",
+        "DisplayText": "WITHETAG",
+        "Type": "PureToken",
+        "ArgumentFlags": "Optional",
+        "Token": "WITHETAG"
+      }
+    ]
+  },
+  {
+    "Command": "SET",
+    "Name": "SET",
+    "Summary": "Sets the string value of a key, ignoring its type. The key is created if it doesn\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "GET",
+        "DisplayText": "get",
+        "Type": "PureToken",
+        "Token": "GET",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHETAG",
+        "DisplayText": "WITHETAG",
+        "Type": "PureToken",
+        "ArgumentFlags": "Optional",
+        "Token": "WITHETAG"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "UNIX-TIME-SECONDS",
+            "DisplayText": "unix-time-seconds",
+            "Type": "UnixTime",
+            "Token": "EXAT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "UNIX-TIME-MILLISECONDS",
+            "DisplayText": "unix-time-milliseconds",
+            "Type": "UnixTime",
+            "Token": "PXAT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KEEPTTL",
+            "DisplayText": "keepttl",
+            "Type": "PureToken",
+            "Token": "KEEPTTL"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "SETIFMATCH",
+    "Name": "SETIFMATCH",
+    "Summary": "Sets the string value of a key, ignoring its type, if the key\u0027s current etag matches the given etag.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
           }
         ]
       }
