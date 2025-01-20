@@ -116,14 +116,14 @@ namespace Garnet.server
                     var destinationKey = destination.ToArray();
                     objectStoreLockableContext.Delete(ref destinationKey);
 
-                    RespReadUtils.ReadUnsignedArrayLength(out var foundItems, ref currOutPtr, endOutPtr);
+                    RespReadUtils.TryReadUnsignedArrayLength(out var foundItems, ref currOutPtr, endOutPtr);
 
                     // Prepare the parse state for sorted set add
                     parseState.Initialize(foundItems * 2);
 
                     for (var j = 0; j < foundItems; j++)
                     {
-                        RespReadUtils.ReadUnsignedArrayLength(out var innerLength, ref currOutPtr, endOutPtr);
+                        RespReadUtils.TryReadUnsignedArrayLength(out var innerLength, ref currOutPtr, endOutPtr);
                         Debug.Assert(innerLength == 2, "Should always has location and hash or distance");
 
                         // Read location into parse state

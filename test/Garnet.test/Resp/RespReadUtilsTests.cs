@@ -76,7 +76,7 @@ namespace Garnet.test.Resp
             {
                 var start = ptr;
                 var end = ptr + bytes.Length;
-                var success = RespReadUtils.ReadUnsignedArrayLength(out var length, ref start, end);
+                var success = RespReadUtils.TryReadUnsignedArrayLength(out var length, ref start, end);
 
                 ClassicAssert.IsTrue(success);
                 ClassicAssert.AreEqual(expected, length);
@@ -103,7 +103,7 @@ namespace Garnet.test.Resp
                 fixed (byte* ptr = bytes)
                 {
                     var start = ptr;
-                    _ = RespReadUtils.ReadUnsignedArrayLength(out var length, ref start, ptr + bytes.Length);
+                    _ = RespReadUtils.TryReadUnsignedArrayLength(out var length, ref start, ptr + bytes.Length);
                 }
             });
         }
@@ -123,7 +123,7 @@ namespace Garnet.test.Resp
             {
                 var start = ptr;
                 var end = ptr + bytes.Length;
-                var success = RespReadUtils.ReadInt32WithLengthHeader(out var length, ref start, end);
+                var success = RespReadUtils.TryReadInt32WithLengthHeader(out var length, ref start, end);
 
                 ClassicAssert.IsTrue(success);
                 ClassicAssert.AreEqual(expected, length);
@@ -148,7 +148,7 @@ namespace Garnet.test.Resp
                 fixed (byte* ptr = bytes)
                 {
                     var start = ptr;
-                    _ = RespReadUtils.ReadInt32WithLengthHeader(out var length, ref start, ptr + bytes.Length);
+                    _ = RespReadUtils.TryReadInt32WithLengthHeader(out var length, ref start, ptr + bytes.Length);
                 }
             });
         }
@@ -213,7 +213,7 @@ namespace Garnet.test.Resp
             {
                 var start = ptr;
                 var end = ptr + bytes.Length;
-                var success = RespReadUtils.ReadUInt64WithLengthHeader(out var length, ref start, end);
+                var success = RespReadUtils.TryReadUInt64WithLengthHeader(out var length, ref start, end);
 
                 ClassicAssert.IsTrue(success);
                 ClassicAssert.AreEqual(expected, length);
@@ -238,7 +238,7 @@ namespace Garnet.test.Resp
                 fixed (byte* ptr = bytes)
                 {
                     var start = ptr;
-                    _ = RespReadUtils.ReadUInt64WithLengthHeader(out var length, ref start, ptr + bytes.Length);
+                    _ = RespReadUtils.TryReadUInt64WithLengthHeader(out var length, ref start, ptr + bytes.Length);
                 }
             });
         }

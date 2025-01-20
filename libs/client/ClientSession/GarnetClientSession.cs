@@ -375,28 +375,28 @@ namespace Garnet.client
                 switch (*ptr)
                 {
                     case (byte)'+':
-                        if (!RespReadResponseUtils.ReadSimpleString(out result, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.TryReadSimpleString(out result, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
                     case (byte)':':
-                        if (!RespReadResponseUtils.ReadIntegerAsString(out result, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.TryReadIntegerAsString(out result, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
 
                     case (byte)'-':
                         error = true;
-                        if (!RespReadResponseUtils.ReadErrorAsString(out result, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.TryReadErrorAsString(out result, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
 
                     case (byte)'$':
-                        if (!RespReadResponseUtils.ReadStringWithLengthHeader(out result, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.TryReadStringWithLengthHeader(out result, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
 
                     case (byte)'*':
                         isArray = true;
-                        if (!RespReadResponseUtils.ReadStringArrayWithLengthHeader(out resultArray, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.TryReadStringArrayWithLengthHeader(out resultArray, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
 

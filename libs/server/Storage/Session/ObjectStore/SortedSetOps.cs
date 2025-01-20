@@ -758,7 +758,7 @@ namespace Garnet.server
                     var destinationKey = dstKey.ToArray();
                     objectStoreLockableContext.Delete(ref destinationKey);
 
-                    RespReadUtils.ReadUnsignedArrayLength(out var arrayLen, ref currOutPtr, endOutPtr);
+                    RespReadUtils.TryReadUnsignedArrayLength(out var arrayLen, ref currOutPtr, endOutPtr);
                     Debug.Assert(arrayLen % 2 == 0, "Should always contain element and its score");
                     result = arrayLen / 2;
 

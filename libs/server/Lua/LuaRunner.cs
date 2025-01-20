@@ -761,7 +761,7 @@ end
                     goto default;
 
                 case (byte)'*':
-                    if (RespReadUtils.ReadUnsignedArrayLength(out var itemCount, ref ptr, ptr + length))
+                    if (RespReadUtils.TryReadUnsignedArrayLength(out var itemCount, ref ptr, ptr + length))
                     {
                         // Create the new table
                         state.CreateTable(itemCount, 0);
@@ -1034,7 +1034,7 @@ end
                         return bulkStr;
 
                     case (byte)'*':
-                        var arrayLengthRes = RespReadUtils.ReadUnsignedArrayLength(out var itemCount, ref cur, end);
+                        var arrayLengthRes = RespReadUtils.TryReadUnsignedArrayLength(out var itemCount, ref cur, end);
                         Debug.Assert(arrayLengthRes, "Should never fail");
 
                         if (itemCount == 0)

@@ -44,7 +44,7 @@ namespace BDN.benchmark.Parsing
             fixed (byte* inputPtr = testCase.Bytes)
             {
                 var start = inputPtr;
-                RespReadUtils.ReadInt32WithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
+                RespReadUtils.TryReadInt32WithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
                 return value;
             }
         }
@@ -68,7 +68,7 @@ namespace BDN.benchmark.Parsing
             fixed (byte* inputPtr = testCase.Bytes)
             {
                 var start = inputPtr;
-                RespReadUtils.ReadUInt64WithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
+                RespReadUtils.TryReadUInt64WithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
                 return value;
             }
         }
