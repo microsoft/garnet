@@ -8,14 +8,14 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
     /// <summary>
     /// Session provider for Garnet, based on
     /// [K, V, I, O, C] = [SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long]
     /// </summary>
-    public sealed class GarnetProvider : TsavoriteKVProviderBase<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, MainStoreFunctions, MainStoreAllocator, SpanByteServerSerializer>
+    public sealed class GarnetProvider : TsavoriteKVProviderBase<SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, MainStoreFunctions, MainStoreAllocator, SpanByteServerSerializer>
     {
         readonly StoreWrapper storeWrapper;
 
@@ -33,7 +33,7 @@ namespace Garnet.server
         /// <param name="broker"></param>
         /// <param name="maxSizeSettings"></param>        
         public GarnetProvider(StoreWrapper storeWrapper,
-            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null,
+            SubscribeBroker<SpanByte, IKeySerializer> broker = null,
             MaxSizeSettings maxSizeSettings = default)
             : base(storeWrapper.store, new(), broker, false, maxSizeSettings)
         {

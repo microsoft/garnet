@@ -403,7 +403,7 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(new(ref key), true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(new(key), true, LockType.Exclusive);
                 foreach (var item in keys)
                     txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
                 _ = txnManager.Run(true);
@@ -431,7 +431,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                        _ = EXPIRE(new(key), TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
                             ref transactionalContext, ref setObjectStoreTransactionalContext);
                     }
 
@@ -565,7 +565,7 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(new (ref key), true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(new (key), true, LockType.Exclusive);
                 foreach (var item in keys)
                     txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
                 _ = txnManager.Run(true);
@@ -593,7 +593,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                        _ = EXPIRE(new(key), TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
                             ref transactionalContext, ref setObjectStoreTransactionalContext);
                     }
 
@@ -825,7 +825,7 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(new (ref key), true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(new (key), true, LockType.Exclusive);
                 foreach (var item in keys)
                     txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
                 _ = txnManager.Run(true);
@@ -852,7 +852,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                        _ = EXPIRE(new(key), TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
                             ref transactionalContext, ref setObjectStoreTransactionalContext);
                     }
 

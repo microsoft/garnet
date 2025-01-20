@@ -10,7 +10,7 @@ namespace Garnet.server
     /// <summary>
     /// Serializer for SpanByte. Used only on server-side.
     /// </summary>
-    public sealed unsafe class SpanByteServerSerializer : IServerSerializer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory>
+    public sealed unsafe class SpanByteServerSerializer : IServerSerializer<SpanByte, SpanByte, SpanByteAndMemory>
     {
         readonly int keyLength;
         readonly int valueLength;
@@ -57,7 +57,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool Write(ref SpanByte k, ref byte* dst, int length)
+        public bool Write(SpanByte k, ref byte* dst, int length)
         {
             if (k.Length > length) return false;
 

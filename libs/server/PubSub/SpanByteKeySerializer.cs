@@ -11,7 +11,7 @@ namespace Garnet.server
     /// <summary>
     /// Serializer for SpanByte.
     /// </summary>
-    public sealed unsafe class SpanByteKeySerializer : IKeySerializer<SpanByte>
+    public sealed unsafe class SpanByteKeySerializer : IKeySerializer
     {
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -23,7 +23,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool Match(ref SpanByte k, bool asciiKey, ref SpanByte pattern, bool asciiPattern)
+        public bool Match(SpanByte k, bool asciiKey, SpanByte pattern, bool asciiPattern)
         {
             if (asciiKey && asciiPattern)
             {

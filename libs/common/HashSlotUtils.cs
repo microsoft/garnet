@@ -76,7 +76,7 @@ namespace Garnet.common
         /// </summary>
         /// <param name="key"></param>
         /// <returns></returns>
-        public static unsafe ushort HashSlot(ref SpanByte key)
+        public static unsafe ushort HashSlot(SpanByte key)
             => HashSlot(key.ToPointer(), key.LengthWithoutMetadata);
 
         /// <summary>

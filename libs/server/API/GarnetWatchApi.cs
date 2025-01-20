@@ -25,7 +25,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus GET(SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
         {
-            garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
+            garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.GET(key, ref input, ref output);
         }
 
@@ -55,7 +55,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus GETRANGE(SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
         {
-            garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
+            garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.GETRANGE(key, ref input, ref output);
         }
         #endregion
@@ -64,14 +64,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus TTL(SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
         {
-            garnetApi.WATCH(new ArgSlice(ref key), storeType);
+            garnetApi.WATCH(key, storeType);
             return garnetApi.TTL(key, storeType, ref output);
         }
 
         /// <inheritdoc />
         public GarnetStatus PTTL(SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
         {
-            garnetApi.WATCH(new ArgSlice(ref key), storeType);
+            garnetApi.WATCH(key, storeType);
             return garnetApi.PTTL(key, storeType, ref output);
         }
 
@@ -82,14 +82,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus EXPIRETIME(SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
         {
-            garnetApi.WATCH(new ArgSlice(ref key), storeType);
+            garnetApi.WATCH(key, storeType);
             return garnetApi.EXPIRETIME(key, storeType, ref output);
         }
 
         /// <inheritdoc />
         public GarnetStatus PEXPIRETIME(SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
         {
-            garnetApi.WATCH(new ArgSlice(ref key), storeType);
+            garnetApi.WATCH(key, storeType);
             return garnetApi.PEXPIRETIME(key, storeType, ref output);
         }
 
@@ -440,7 +440,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus StringGetBit(SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
         {
-            garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
+            garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.StringGetBit(key, ref input, ref output);
         }
 
@@ -454,7 +454,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus StringBitCount(SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
         {
-            garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
+            garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.StringBitCount(key, ref input, ref output);
         }
 
@@ -468,14 +468,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus StringBitPosition(SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
         {
-            garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
+            garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.StringBitPosition(key, ref input, ref output);
         }
 
         /// <inheritdoc />
         public GarnetStatus StringBitFieldReadOnly(SpanByte key, ref RawStringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output)
         {
-            garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
+            garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.StringBitFieldReadOnly(key, ref input, secondaryCommand, ref output);
         }
 

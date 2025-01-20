@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using Garnet.common;
 using Garnet.networking;
 using Tsavorite.core;
 

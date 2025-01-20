@@ -465,12 +465,12 @@ namespace Garnet.cluster
         public static unsafe void DeleteKeysInSlotsFromMainStore(BasicGarnetApi BasicGarnetApi, HashSet<int> slots)
         {
             using var iter = BasicGarnetApi.IterateMainStore();
-            while (iter.GetNext(out _))
+            while (iter.GetNext())
             {
-                ref var key = ref iter.GetKey();
-                var s = HashSlotUtils.HashSlot(ref key);
+                var key = iter.Key;
+                var s = HashSlotUtils.HashSlot(key);
                 if (slots.Contains(s))
-                    _ = BasicGarnetApi.DELETE(ref key, StoreType.Main);
+                    _ = BasicGarnetApi.DELETE(key, StoreType.Main);
             }
         }
 
@@ -482,10 +482,9 @@ namespace Garnet.cluster
         public static unsafe void DeleteKeysInSlotsFromObjectStore(BasicGarnetApi BasicGarnetApi, HashSet<int> slots)
         {
             using var iterObject = BasicGarnetApi.IterateObjectStore();
-            while (iterObject.GetNext(out _))
+            while (iterObject.GetNext())
             {
-                ref var key = ref iterObject.GetKey();
-                ref var value = ref iterObject.GetValue();
+                var key = iterObject.Key;
                 var s = HashSlotUtils.HashSlot(key);
                 if (slots.Contains(s))
                     _ = BasicGarnetApi.DELETE(key, StoreType.Object);

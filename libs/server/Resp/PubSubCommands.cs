@@ -14,7 +14,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
+        readonly SubscribeBroker<SpanByte, IKeySerializer> subscribeBroker;
         bool isSubscriptionSession = false;
         int numActiveChannels = 0;
 

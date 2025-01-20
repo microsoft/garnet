@@ -38,7 +38,7 @@ namespace Garnet.server
         /// <summary>
         /// Create new ArgSlice from given SpanByte (without metadata header)
         /// </summary>
-        internal ArgSlice(ref SpanByte input)
+        internal ArgSlice(SpanByte input)
         {
             this.ptr = input.ToPointer();
             this.length = input.LengthWithoutMetadata;

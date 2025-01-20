@@ -237,7 +237,7 @@ namespace Garnet.server
 
                     #region mergeToDst
 
-                    var mergeSlice = new ArgSlice(ref mergeBuffer.SpanByte);
+                    var mergeSlice = new ArgSlice(mergeBuffer.SpanByte);
 
                     parseState.InitializeWithArgument(mergeSlice);
 

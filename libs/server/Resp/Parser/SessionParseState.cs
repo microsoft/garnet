@@ -317,7 +317,7 @@ namespace Garnet.server
             for (var i = 0; i < argCount; i++)
             {
                 ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
-                *(bufferPtr + i) = new ArgSlice(ref sbArgument);
+                *(bufferPtr + i) = new ArgSlice(sbArgument);
                 curr += sbArgument.TotalSize;
             }
 

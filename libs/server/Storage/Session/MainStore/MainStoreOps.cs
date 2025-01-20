@@ -1048,7 +1048,7 @@ namespace Garnet.server
 
         public void WATCH(ArgSlice key, StoreType type) => txnManager.Watch(key, type);
 
-        public unsafe void WATCH(SpanByte key, StoreType type) => WATCH(new ArgSlice(ref key), type);
+        public unsafe void WATCH(SpanByte key, StoreType type) => WATCH(key, type);
 
         public unsafe GarnetStatus SCAN<TContext>(long cursor, ArgSlice match, long count, ref TContext context) => GarnetStatus.OK;
 

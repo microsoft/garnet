@@ -13,11 +13,11 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>;
 
     /// <summary>
     /// Wrapper for store and store-specific information
@@ -40,12 +40,12 @@ namespace Garnet.server
         /// <summary>
         /// Session for main store
         /// </summary>
-        readonly BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
+        readonly BasicContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
 
         /// <summary>
         /// Session for object store
         /// </summary>
-        readonly BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
+        readonly BasicContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
 
         readonly Dictionary<int, List<byte[]>> inflightTxns;
         readonly byte[] buffer;
@@ -94,7 +94,7 @@ namespace Garnet.server
             objectStoreInput.parseState = parseState;
             customProcInput.parseState = parseState;
 
-            inflightTxns = new Dictionary<int, List<byte[]>>();
+            inflightTxns = [];
             buffer = new byte[BufferSizeUtils.ServerBufferSize(new MaxSizeSettings())];
             handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
             bufferPtr = (byte*)handle.AddrOfPinnedObject();
@@ -126,7 +126,7 @@ namespace Garnet.server
             logger?.LogInformation("Begin AOF replay");
             try
             {
-                int count = 0;
+                var count = 0;
                 if (untilAddress == -1) untilAddress = storeWrapper.appendOnlyFile.TailAddress;
                 using var scan = storeWrapper.appendOnlyFile.Scan(storeWrapper.appendOnlyFile.BeginAddress, untilAddress);
 
@@ -171,7 +171,7 @@ namespace Garnet.server
         /// </summary>
         public unsafe void ProcessAofRecordInternal(byte* ptr, int length, bool asReplica = false)
         {
-            AofHeader header = *(AofHeader*)ptr;
+            var header = *(AofHeader*)ptr;
 
             if (inflightTxns.ContainsKey(header.sessionID))
             {
@@ -288,7 +288,7 @@ namespace Garnet.server
             respServerSession.RunTransactionProc(id, ref customProcInput, ref output);
         }
 
-        static unsafe void StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+        static unsafe void StoreUpsert(BasicContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
             RawStringInput storeInput, byte* ptr)
         {
             var curr = ptr + sizeof(AofHeader);
@@ -304,12 +304,12 @@ namespace Garnet.server
             storeInput.DeserializeFrom(curr);
 
             SpanByteAndMemory output = default;
-            basicContext.Upsert(ref key, ref storeInput, ref value, ref output);
+            basicContext.Upsert(key, ref storeInput, value, ref output);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
         }
 
-        static unsafe void StoreRMW(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, byte* ptr)
+        static unsafe void StoreRMW(BasicContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, byte* ptr)
         {
             var curr = ptr + sizeof(AofHeader);
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
@@ -318,65 +318,62 @@ namespace Garnet.server
             // Reconstructing RawStringInput
 
             // input
-            storeInput.DeserializeFrom(curr);
+            _ = storeInput.DeserializeFrom(curr);
 
             var pbOutput = stackalloc byte[32];
             var output = new SpanByteAndMemory(pbOutput, 32);
 
-            if (basicContext.RMW(ref key, ref storeInput, ref output).IsPending)
+            if (basicContext.RMW(key, ref storeInput, ref output).IsPending)
                 basicContext.CompletePending(true);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
         }
 
-        static unsafe void StoreDelete(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
+        static unsafe void StoreDelete(BasicContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
-            basicContext.Delete(ref key);
+            basicContext.Delete(key);
         }
 
-        static unsafe void ObjectStoreUpsert(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
+        static unsafe void ObjectStoreUpsert(BasicContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
                 GarnetObjectSerializer garnetObjectSerializer, byte* ptr, byte* outputPtr, int outputLength)
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
-            var keyB = key.ToByteArray();
 
             ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
             var valB = garnetObjectSerializer.Deserialize(value.ToByteArray());
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
-            basicContext.Upsert(ref keyB, ref valB);
+            basicContext.Upsert(key, valB);
             if (!output.spanByteAndMemory.IsSpanByte)
                 output.spanByteAndMemory.Memory.Dispose();
         }
 
-        static unsafe void ObjectStoreRMW(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
+        static unsafe void ObjectStoreRMW(BasicContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
             ObjectInput objectStoreInput, byte* ptr, byte* outputPtr, int outputLength)
         {
             var curr = ptr + sizeof(AofHeader);
-            ref var key = ref Unsafe.AsRef<SpanByte>(curr);
+            var key = Unsafe.AsRef<SpanByte>(curr);
             curr += key.TotalSize;
-            var keyB = key.ToByteArray();
 
             // Reconstructing ObjectInput
 
             // input
-            objectStoreInput.DeserializeFrom(curr);
+            _ = objectStoreInput.DeserializeFrom(curr);
 
             // Call RMW with the reconstructed key & ObjectInput
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
-            if (basicContext.RMW(ref keyB, ref objectStoreInput, ref output).IsPending)
+            if (basicContext.RMW(key, ref objectStoreInput, ref output).IsPending)
                 basicContext.CompletePending(true);
 
             if (!output.spanByteAndMemory.IsSpanByte)
                 output.spanByteAndMemory.Memory.Dispose();
         }
 
-        static unsafe void ObjectStoreDelete(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext, byte* ptr)
+        static unsafe void ObjectStoreDelete(BasicContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext, byte* ptr)
         {
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
-            var keyB = key.ToByteArray();
-            basicContext.Delete(ref keyB);
+            var key = Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
+            basicContext.Delete(key);
         }
 
         /// <summary>
@@ -387,7 +384,7 @@ namespace Garnet.server
         /// <exception cref="GarnetException"></exception>
         bool SkipRecord(AofHeader header)
         {
-            AofStoreType storeType = ToAofStoreType(header.opType);
+            var storeType = ToAofStoreType(header.opType);
 
             return storeType switch
             {
