@@ -510,7 +510,7 @@ namespace Garnet.common
         /// <exception cref="RespParsingException">Thrown if the length header is negative.</exception>
         /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
-        /// <exception cref="RespParsingException">Thrown if not a not a number is read.</exception>
+        /// <exception cref="RespParsingException">Thrown if not a number is read.</exception>
         public static bool TryReadInt32WithLengthHeader(out int number, ref byte* ptr, byte* end)
         {
             number = 0;
@@ -551,7 +551,7 @@ namespace Garnet.common
         /// <exception cref="RespParsingException">Thrown if the length header is negative.</exception>
         /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
-        /// <exception cref="RespParsingException">Thrown if not a not a number is read.</exception>
+        /// <exception cref="RespParsingException">Thrown if not a number is read.</exception>
         public static bool TryReadInt64WithLengthHeader(out long number, ref byte* ptr, byte* end)
         {
             number = 0;
@@ -592,7 +592,7 @@ namespace Garnet.common
         /// <exception cref="RespParsingException">Thrown if the length header is negative.</exception>
         /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
-        /// <exception cref="RespParsingException">Thrown if not a not a number is read.</exception>
+        /// <exception cref="RespParsingException">Thrown if not a number is read.</exception>
         public static bool TryReadUInt64WithLengthHeader(out ulong number, ref byte* ptr, byte* end)
         {
             number = 0;
