@@ -14,9 +14,10 @@ namespace Garnet.server
     public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
-        public bool SingleReader(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput dst, ref ReadInfo readInfo)
+        public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput dst, ref ReadInfo readInfo)
+            where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
         {
-            if (value.Expiration > 0 && value.Expiration < DateTimeOffset.Now.UtcTicks)
+            if (srcLogRecord.Info.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.Now.UtcTicks)
             {
                 // Do not set 'value = null' or otherwise mark this; Reads should not update the database. We rely on consistently checking for expiration everywhere.
                 readInfo.Action = ReadAction.Expire;
@@ -28,45 +29,45 @@ namespace Garnet.server
                 switch (input.header.type)
                 {
                     case GarnetObjectType.Ttl:
-                        var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(value.Expiration > 0 ? value.Expiration : -1);
-                        CopyRespNumber(ttlValue, ref dst.spanByteAndMemory);
+                        var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
+                        functionsState.CopyRespNumber(ttlValue, ref dst.spanByteAndMemory);
                         return true;
                     case GarnetObjectType.PTtl:
-                        ttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(value.Expiration > 0 ? value.Expiration : -1);
-                        CopyRespNumber(ttlValue, ref dst.spanByteAndMemory);
+                        ttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
+                        functionsState.CopyRespNumber(ttlValue, ref dst.spanByteAndMemory);
                         return true;
 
                     case GarnetObjectType.ExpireTime:
-                        var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(value.Expiration > 0 ? value.Expiration : -1);
-                        CopyRespNumber(expireTime, ref dst.spanByteAndMemory);
+                        var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
+                        functionsState.CopyRespNumber(expireTime, ref dst.spanByteAndMemory);
                         return true;
                     case GarnetObjectType.PExpireTime:
-                        expireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(value.Expiration > 0 ? value.Expiration : -1);
-                        CopyRespNumber(expireTime, ref dst.spanByteAndMemory);
+                        expireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
+                        functionsState.CopyRespNumber(expireTime, ref dst.spanByteAndMemory);
                         return true;
 
                     default:
                         if ((byte)input.header.type < CustomCommandManager.TypeIdStartOffset)
-                            return value.Operate(ref input, ref dst.spanByteAndMemory, out _, out _);
+                            return srcLogRecord.ValueObject.Operate(ref input, ref dst.spanByteAndMemory, out _, out _);
 
-                        if (IncorrectObjectType(ref input, value, ref dst.spanByteAndMemory))
+                        if (IncorrectObjectType(ref input, srcLogRecord.ValueObject, ref dst.spanByteAndMemory))
                             return true;
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (dst.spanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var result = customObjectCommand.Reader(key, ref input, value, ref outp, ref readInfo);
+                        var result = customObjectCommand.Reader(srcLogRecord.Key, ref input, srcLogRecord.ValueObject, ref outp, ref readInfo);
                         dst.spanByteAndMemory.Memory = outp.Memory;
                         dst.spanByteAndMemory.Length = outp.Length;
                         return result;
                 }
             }
 
-            dst.garnetObject = value;
+            dst.garnetObject = srcLogRecord.ValueObject;
             return true;
         }
 
         /// <inheritdoc />
-        public bool ConcurrentReader(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-            => SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
+        public bool ConcurrentReader(ref LogRecord<IGarnetObject> srcLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref ReadInfo readInfo)
+            => SingleReader(ref srcLogRecord, ref input, ref output, ref readInfo);
     }
 }

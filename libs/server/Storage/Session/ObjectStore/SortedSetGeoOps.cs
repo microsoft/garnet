@@ -9,8 +9,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>;
 
     sealed partial class StorageSession : IDisposable
     {
@@ -24,8 +24,8 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus GeoAdd<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus GeoAdd<TObjectContext>(SpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+          where TObjectContext : ITsavoriteContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
           => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
 
         /// <summary>
@@ -40,8 +40,8 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus GeoCommands<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus GeoCommands<TObjectContext>(SpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+          where TObjectContext : ITsavoriteContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
             => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
 
         /// <summary>
@@ -55,7 +55,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus GeoSearchStore<TObjectContext>(ArgSlice key, ArgSlice destination, ref ObjectInput input, ref SpanByteAndMemory output, ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+          where TObjectContext : ITsavoriteContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             var createTransaction = false;
 
@@ -77,10 +77,9 @@ namespace Garnet.server
 
             try
             {
-                var sourceKey = key.ToArray();
                 SpanByteAndMemory searchOutMem = default;
                 var searchOut = new GarnetObjectStoreOutput { spanByteAndMemory = searchOutMem };
-                var status = GeoCommands(sourceKey, ref input, ref searchOut, ref objectStoreTransactionalContext);
+                var status = GeoCommands(key.SpanByte, ref input, ref searchOut, ref objectStoreTransactionalContext);
                 searchOutMem = searchOut.spanByteAndMemory;
 
                 if (status == GarnetStatus.WRONGTYPE)
@@ -113,23 +112,22 @@ namespace Garnet.server
                         return GarnetStatus.OK;
                     }
 
-                    var destinationKey = destination.ToArray();
-                    objectStoreTransactionalContext.Delete(ref destinationKey);
+                    _ = objectStoreTransactionalContext.Delete(destination.SpanByte);
 
-                    RespReadUtils.ReadUnsignedArrayLength(out var foundItems, ref currOutPtr, endOutPtr);
+                    _ = RespReadUtils.ReadUnsignedArrayLength(out var foundItems, ref currOutPtr, endOutPtr);
 
                     // Prepare the parse state for sorted set add
                     parseState.Initialize(foundItems * 2);
 
                     for (var j = 0; j < foundItems; j++)
                     {
-                        RespReadUtils.ReadUnsignedArrayLength(out var innerLength, ref currOutPtr, endOutPtr);
+                        _ = RespReadUtils.ReadUnsignedArrayLength(out var innerLength, ref currOutPtr, endOutPtr);
                         Debug.Assert(innerLength == 2, "Should always has location and hash or distance");
 
                         // Read location into parse state
-                        parseState.Read((2 * j) + 1, ref currOutPtr, endOutPtr);
+                        _ = parseState.Read((2 * j) + 1, ref currOutPtr, endOutPtr);
                         // Read score into parse state
-                        parseState.Read(2 * j, ref currOutPtr, endOutPtr);
+                        _ = parseState.Read(2 * j, ref currOutPtr, endOutPtr);
                     }
 
                     // Prepare the input
@@ -140,7 +138,7 @@ namespace Garnet.server
                     }, ref parseState);
 
                     var zAddOutput = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-                    RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreTransactionalContext, ref zAddOutput);
+                    RMWObjectStoreOperationWithOutput(destination.SpanByte, ref zAddInput, ref objectStoreTransactionalContext, ref zAddOutput);
 
                     while (!RespWriteUtils.WriteInteger(foundItems, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);

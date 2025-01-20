@@ -11,35 +11,37 @@ namespace Garnet.server
     public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
-        public bool SingleWriter(ref byte[] key, ref ObjectInput input, ref IGarnetObject src, ref IGarnetObject dst, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-        {
-            dst = src;
-            return true;
-        }
+        public bool SingleWriter(ref LogRecord<IGarnetObject> dstLogRecord, ref ObjectInput input, IGarnetObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            => dstLogRecord.TrySetValueObject(srcValue);
 
         /// <inheritdoc />
-        public void PostSingleWriter(ref byte[] key, ref ObjectInput input, ref IGarnetObject src, ref IGarnetObject dst, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<IGarnetObject> dstLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
+            => dstLogRecord.TrySetValueObject(srcLogRecord.ValueObject);
+
+        /// <inheritdoc />
+        public void PostSingleWriter(ref LogRecord<IGarnetObject> logRecord, ref ObjectInput input, IGarnetObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             if (reason != WriteReason.CopyToTail)
                 functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (reason == WriteReason.Upsert && functionsState.appendOnlyFile != null)
-                WriteLogUpsert(ref key, ref input, ref src, upsertInfo.Version, upsertInfo.SessionID);
+                WriteLogUpsert(logRecord.Key, ref input, srcValue, upsertInfo.Version, upsertInfo.SessionID);
 
             if (reason == WriteReason.CopyToReadCache)
-                functionsState.objectStoreSizeTracker?.AddReadCacheTrackedSize(src.Size);
+                functionsState.objectStoreSizeTracker?.AddReadCacheTrackedSize(srcValue.Size);
             else
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(src.Size);
+                functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.Size);
         }
 
         /// <inheritdoc />
-        public bool ConcurrentWriter(ref byte[] key, ref ObjectInput input, ref IGarnetObject src, ref IGarnetObject dst, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+        public bool ConcurrentWriter(ref LogRecord<IGarnetObject> logRecord, ref ObjectInput input, IGarnetObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo)
         {
-            dst = src;
-            if (!upsertInfo.RecordInfo.Modified)
+            logRecord.TrySetValueObject(srcValue);
+            if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogUpsert(ref key, ref input, ref src, upsertInfo.Version, upsertInfo.SessionID);
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(dst.Size - src.Size);
+                WriteLogUpsert(logRecord.Key, ref input, srcValue, upsertInfo.Version, upsertInfo.SessionID);
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(logRecord.ValueObject.Size - srcValue.Size);
             return true;
         }
     }

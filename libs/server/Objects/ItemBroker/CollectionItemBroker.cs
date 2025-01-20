@@ -428,22 +428,19 @@ namespace Garnet.server
 
             ArgSlice dstKey = default;
             if (command == RespCommand.BLMOVE)
-            {
                 dstKey = cmdArgs[0];
-            }
+
+            var asKey = storageSession.scratchBufferManager.CreateArgSlice(key);
 
             // Create a transaction if not currently in a running transaction
             if (storageSession.txnManager.state != TxnState.Running)
             {
                 Debug.Assert(storageSession.txnManager.state == TxnState.None);
                 createTransaction = true;
-                var asKey = storageSession.scratchBufferManager.CreateArgSlice(key);
                 storageSession.txnManager.SaveKeyEntryToLock(asKey, true, LockType.Exclusive);
 
                 if (command == RespCommand.BLMOVE)
-                {
                     storageSession.txnManager.SaveKeyEntryToLock(dstKey, true, LockType.Exclusive);
-                }
 
                 _ = storageSession.txnManager.Run(true);
             }
@@ -453,7 +450,7 @@ namespace Garnet.server
             try
             {
                 // Get the object stored at key
-                var statusOp = storageSession.GET(key, out var osObject, ref objectTransactionalContext);
+                var statusOp = storageSession.GET(asKey.SpanByte, out var osObject, ref objectTransactionalContext);
                 if (statusOp == GarnetStatus.NOTFOUND) return false;
 
                 IGarnetObject dstObj = null;
@@ -461,7 +458,7 @@ namespace Garnet.server
                 if (command == RespCommand.BLMOVE)
                 {
                     arrDstKey = dstKey.ToArray();
-                    var dstStatusOp = storageSession.GET(arrDstKey, out var osDstObject, ref objectTransactionalContext);
+                    var dstStatusOp = storageSession.GET(dstKey.SpanByte, out var osDstObject, ref objectTransactionalContext);
                     if (dstStatusOp != GarnetStatus.NOTFOUND) dstObj = osDstObject.garnetObject;
                 }
 
@@ -496,8 +493,7 @@ namespace Garnet.server
 
                                 if (isSuccessful && newObj)
                                 {
-                                    isSuccessful = storageSession.SET(arrDstKey, dstList, ref objectTransactionalContext) ==
-                                                   GarnetStatus.OK;
+                                    isSuccessful = storageSession.SET(dstKey.SpanByte, dstList, ref objectTransactionalContext) == GarnetStatus.OK;
                                 }
 
                                 return isSuccessful;

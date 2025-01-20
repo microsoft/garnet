@@ -426,7 +426,7 @@ namespace Tsavorite.core
                     }
 
                     if (rmwInfo.ClearSourceValueObject)
-                        srcLogRecord.ClearValueObject(obj => storeFunctions.DisposeValueObject(obj, DisposeReason.CopyUpdated);
+                        srcLogRecord.ClearValueObject(obj => storeFunctions.DisposeValueObject(obj, DisposeReason.CopyUpdated));
                     goto DoCAS;
                 }
                 if (rmwInfo.Action == RMWAction.CancelOperation)

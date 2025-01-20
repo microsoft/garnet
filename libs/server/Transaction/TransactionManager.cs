@@ -264,7 +264,7 @@ namespace Garnet.server
             if (type == StoreType.Main || type == StoreType.All)
                 basicContext.ResetModified(key.SpanByte);
             if ((type == StoreType.Object || type == StoreType.All) && !objectStoreBasicContext.IsNull)
-                objectStoreBasicContext.ResetModified(key.ToArray());
+                objectStoreBasicContext.ResetModified(key.SpanByte);
         }
 
         void UpdateTransactionStoreType(StoreType type)

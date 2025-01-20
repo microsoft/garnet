@@ -19,7 +19,7 @@ namespace Garnet.server
         /// a. ConcurrentWriter
         /// b. PostSingleWriter
         /// </summary>
-        void WriteLogUpsert(SpanByte key, ref ObjectInput input, ref IGarnetObject value, long version, int sessionID)
+        void WriteLogUpsert(SpanByte key, ref ObjectInput input, IGarnetObject value, long version, int sessionID)
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;

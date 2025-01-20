@@ -23,22 +23,17 @@ namespace Garnet.server
         /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
         static bool IsValidNumber(int length, byte* source, out long val)
         {
-            val = 0;
             try
             {
                 // Check for valid number
-                if (!NumUtils.TryBytesToLong(length, source, out val))
-                {
-                    // Signal value is not a valid number
-                    return false;
-                }
+                return NumUtils.TryBytesToLong(length, source, out val);
             }
             catch
             {
                 // Signal value is not a valid number
+                val = 0;
                 return false;
             }
-            return true;
         }
 
         /// <summary>
@@ -50,22 +45,17 @@ namespace Garnet.server
         /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
         static bool IsValidDouble(int length, byte* source, out double val)
         {
-            val = 0;
             try
             {
                 // Check for valid number
-                if (!NumUtils.TryBytesToDouble(length, source, out val) || !double.IsFinite(val))
-                {
-                    // Signal value is not a valid number
-                    return false;
-                }
+                return NumUtils.TryBytesToDouble(length, source, out val) || !double.IsFinite(val);
             }
             catch
             {
                 // Signal value is not a valid number
+                val = 0;
                 return false;
             }
-            return true;
         }
 
         /// <inheritdoc/>

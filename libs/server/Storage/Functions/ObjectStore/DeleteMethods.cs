@@ -24,13 +24,13 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool ConcurrentDeleter(ref byte[] key, ref IGarnetObject value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
+        public bool ConcurrentDeleter(ref LogRecord<IGarnetObject> logRecord, ref DeleteInfo deleteInfo)
         {
-            if (!deleteInfo.RecordInfo.Modified)
+            if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogDelete(ref key, deleteInfo.Version, deleteInfo.SessionID);
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(-value.Size);
+                WriteLogDelete(logRecord.Key, deleteInfo.Version, deleteInfo.SessionID);
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.Size);
             return true;
         }
     }

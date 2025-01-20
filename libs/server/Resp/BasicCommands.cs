@@ -33,7 +33,7 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.GET(ref key, ref input, ref o);
+            var status = storageApi.GET(key, ref input, ref o);
 
             switch (status)
             {
@@ -60,9 +60,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count < 1 || parseState.Count > 3)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETEX));
-            }
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
 
@@ -113,7 +111,7 @@ namespace Garnet.server
             var input = new RawStringInput(RespCommand.GETEX, ref parseState, startIdx: 1, arg1: expiry);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.GETEX(ref key, ref input, ref o);
+            var status = storageApi.GETEX(key, ref input, ref o);
 
             switch (status)
             {
@@ -147,7 +145,7 @@ namespace Garnet.server
             // network buffer, if the operation goes pending.
             var input = new RawStringInput(RespCommand.ASYNC);
 
-            var status = storageApi.GET_WithPending(ref key, ref input, ref o, asyncStarted, out var pending);
+            var status = storageApi.GET_WithPending(key, ref input, ref o, asyncStarted, out var pending);
 
             if (pending)
             {
@@ -194,7 +192,7 @@ namespace Garnet.server
                 // Store index in context, since completions are not in order
                 long ctx = firstPending == -1 ? 0 : c - firstPending;
 
-                var status = storageApi.GET_WithPending(ref key, ref input, ref o, ctx,
+                var status = storageApi.GET_WithPending(key, ref input, ref o, ctx,
                     out var isPending);
 
                 if (isPending)
@@ -242,7 +240,7 @@ namespace Garnet.server
             if (firstPending != -1)
             {
                 // First complete all pending ops
-                storageApi.GET_CompletePending(outputArr, true);
+                _ = storageApi.GET_CompletePending(outputArr, true);
 
                 // Write the outputs to network buffer
                 for (var i = 0; i < c - firstPending; i++)
@@ -288,7 +286,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var value = parseState.GetArgSliceByRef(1).SpanByte;
 
-            storageApi.SET(ref key, ref value);
+            _ = storageApi.SET(key, value);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -339,7 +337,7 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
-            storageApi.SETRANGE(key, ref input, ref output);
+            _ = storageApi.SETRANGE(key, ref input, ref output);
 
             while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();
@@ -365,7 +363,7 @@ namespace Garnet.server
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.GETRANGE(ref sbKey, ref input, ref o);
+            var status = storageApi.GETRANGE(sbKey, ref input, ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -417,7 +415,7 @@ namespace Garnet.server
             var sbVal = parseState.GetArgSliceByRef(2).SpanByte;
 
             var input = new RawStringInput(RespCommand.SETEX, 0, valMetadata);
-            _ = storageApi.SET(ref key, ref input, ref sbVal);
+            _ = storageApi.SET(key, ref input, sbVal);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -663,7 +661,7 @@ namespace Garnet.server
 
             var input = new RawStringInput(cmd, 0, valMetadata);
 
-            storageApi.SET(ref key, ref input, ref val);
+            storageApi.SET(key, ref input, val);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -688,8 +686,7 @@ namespace Garnet.server
             if (getValue)
             {
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.SET_Conditional(ref key,
-                    ref input, ref o);
+                var status = storageApi.SET_Conditional(key, ref input, ref o);
 
                 // Status tells us whether an old image was found during RMW or not
                 if (status == GarnetStatus.NOTFOUND)
@@ -708,7 +705,7 @@ namespace Garnet.server
             }
             else
             {
-                var status = storageApi.SET_Conditional(ref key, ref input);
+                var status = storageApi.SET_Conditional(key, ref input);
 
                 var ok = status != GarnetStatus.NOTFOUND;
 
@@ -759,7 +756,7 @@ namespace Garnet.server
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
             var input = new RawStringInput(cmd, 0, incrByValue);
-            storageApi.Increment(key, ref input, ref output);
+            _ = storageApi.Increment(key, ref input, ref output);
 
             var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1
                 ? (OperationError)output.Span[0]
@@ -802,7 +799,7 @@ namespace Garnet.server
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
             var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, startIdx: 1);
-            storageApi.Increment(key, ref input, ref output);
+            _ = storageApi.Increment(key, ref input, ref output);
 
             var errorFlag = output.Length == NumUtils.MaximumFormatDoubleLength + 1
                 ? (OperationError)output.Span[0]
@@ -839,7 +836,7 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = SpanByteAndMemory.FromPinnedSpan(outputBuffer);
 
-            storageApi.APPEND(ref sbKey, ref input, ref output);
+            storageApi.APPEND(sbKey, ref input, ref output);
 
             while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();

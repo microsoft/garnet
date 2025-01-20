@@ -7,15 +7,21 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    internal struct ObjectIdMap
+    /// <summary>
+    /// Constants for <see cref="ObjectIdMap{TValue}"/>
+    /// </summary>
+    public struct ObjectIdMap
     {
         /// <summary>We will never return a negative index from Allocate</summary>
-        internal const int InvalidObjectId = -1;
+        public const int InvalidObjectId = -1;
 
         /// <summary>Size of the object Id</summary>
-        internal const int ObjectIdSize = sizeof(int);
+        public const int ObjectIdSize = sizeof(int);
     }
 
+    /// <summary>
+    /// Maps the ObjectId in the ObjectAllocator's Value field to the actual object in the object vector
+    /// </summary>
     public unsafe class ObjectIdMap<TValue>
     {
         internal TValue[] objectVector;
