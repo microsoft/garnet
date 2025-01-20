@@ -833,10 +833,10 @@ namespace Garnet.common
         /// <para />
         /// NOTE: This is used with client implementation to parse responses that may include a null value (i.e. $-1\r\n)
         /// </summary>
-        /// <param name="result"></param>
-        /// <param name="ptr"></param>
-        /// <param name="end"></param>
-        /// <returns></returns>
+        /// <param name="result">If parsing was successful, contains the extracted string value.</param>
+        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP message.</param>
+        /// <returns>True if a RESP string was successfully read.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool TryReadStringResponseWithLengthHeader(out string result, ref byte* ptr, byte* end)
         {
@@ -855,18 +855,20 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// 
+        /// Try to read a RESP string and return pointer to the start of the string
+        /// <para />
+        /// NOTE: This is used with client implementation to parse responses that may include a null value (i.e. $-1\r\n)
         /// </summary>
-        /// <param name="keyPtr"></param>
-        /// <param name="length"></param>
-        /// <param name="ptr"></param>
-        /// <param name="end"></param>
-        /// <returns></returns>
+        /// <param name="stringPtr">If parsing was successful, contains the pointer to start of the parsed string value.</param>
+        /// <param name="length">If parsing was successful, contains the length of the string value.</param>
+        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP message.</param>
+        /// <returns>True if a RESP string was successfully read.</returns>
         /// <exception cref="RespParsingException">Thrown if the length header is negative.</exception>
         /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static bool TryReadPtrWithSignedLengthHeader(ref byte* keyPtr, ref int length, ref byte* ptr, byte* end)
+        static bool TryReadPtrWithSignedLengthHeader(ref byte* stringPtr, ref int length, ref byte* ptr, byte* end)
         {
             // Parse RESP string header
             if (!TryReadSignedLengthHeader(out length, ref ptr, end))
@@ -878,11 +880,11 @@ namespace Garnet.common
             if (length < 0)
             {
                 // NULL value ('$-1\r\n')
-                keyPtr = null;
+                stringPtr = null;
                 return true;
             }
 
-            keyPtr = ptr;
+            stringPtr = ptr;
 
             // Parse content: ensure that input contains key + '\r\n'
             ptr += length + 2;
@@ -902,6 +904,10 @@ namespace Garnet.common
         /// <summary>
         /// Read simple string
         /// </summary>
+        /// <param name="result">If parsing was successful, contains the extracted string value.</param>
+        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP message.</param>
+        /// <returns>True if a RESP simple string was successfully read.</returns>
         /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         public static bool TryReadSimpleString(out string result, ref byte* ptr, byte* end)
         {
@@ -924,6 +930,11 @@ namespace Garnet.common
         /// <summary>
         /// Read error as string
         /// </summary>
+        /// <param name="result">If parsing was successful, contains the extracted string value.</param>
+        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP message.</param>
+        /// <returns>True if a RESP error string was successfully read.</returns>
+        /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         public static bool TryReadErrorAsString(out string result, ref byte* ptr, byte* end)
         {
             result = null;
@@ -944,6 +955,10 @@ namespace Garnet.common
         /// <summary>
         /// Read error as span
         /// </summary>
+        /// <param name="result">If parsing was successful, contains the span pointing to parsed error string value.</param>
+        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP message.</param>
+        /// <returns>True if a RESP error was successfully read.</returns>
         public static bool TryReadErrorAsSpan(out ReadOnlySpan<byte> result, ref byte* ptr, byte* end)
         {
             result = null;
@@ -964,6 +979,11 @@ namespace Garnet.common
         /// <summary>
         /// Read integer as string
         /// </summary>
+        /// <param name="result">If parsing was successful, contains the parsed integer as a string.</param>
+        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP message.</param>
+        /// <returns>True if a RESP integer was successfully read.</returns>
+        /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         public static bool TryReadIntegerAsString(out string result, ref byte* ptr, byte* end)
         {
             var success = TryReadIntegerAsSpan(out var resultSpan, ref ptr, end);
@@ -974,6 +994,11 @@ namespace Garnet.common
         /// <summary>
         /// Read integer as string
         /// </summary>
+        /// <param name="result">If parsing was successful, contains a span pointing to the integer in the buffer.</param>
+        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP message.</param>
+        /// <returns>True if a RESP integer was successfully read.</returns>
+        /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         public static bool TryReadIntegerAsSpan(out ReadOnlySpan<byte> result, ref byte* ptr, byte* end)
         {
             result = null;
@@ -996,6 +1021,13 @@ namespace Garnet.common
         /// <para />
         /// NOTE: We use ReadUnsignedLengthHeader because server does not accept *-1\r\n headers.
         /// </summary>
+        /// <param name="result">If parsing was successful, contains a array of parsed string values.</param>
+        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP message.</param>
+        /// <returns>True if a RESP string array was successfully read.</returns>
+        /// <exception cref="RespParsingException">Thrown if the array length header is negative.</exception>
+        /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
+        /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
         public static bool TryReadStringArrayWithLengthHeader(out string[] result, ref byte* ptr, byte* end)
         {
             result = null;
@@ -1028,6 +1060,11 @@ namespace Garnet.common
         /// <summary>
         /// Read double with length header
         /// </summary>
+        /// <param name="result">If parsing was successful, contains the parsed <see langword="double"/> value.</param>
+        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP message.</param>
+        /// <returns>True if a RESP double was successfully read.</returns>
+        /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         public static bool TryReadDoubleWithLengthHeader(out double result, out bool parsed, ref byte* ptr, byte* end)
         {
             if (!TrySliceWithLengthHeader(out var resultBytes, ref ptr, end))
@@ -1082,6 +1119,9 @@ namespace Garnet.common
         /// <summary>
         /// Read ASCII string without header until string terminator ('\r\n').
         /// </summary>
+        /// <param name="result">If parsing was successful, contains the parsed string value.</param>
+        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP message.</param>
         public static bool TryReadString(out string result, ref byte* ptr, byte* end)
         {
             result = null;
