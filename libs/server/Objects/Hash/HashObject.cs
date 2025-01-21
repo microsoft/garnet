@@ -200,13 +200,13 @@ namespace Garnet.server
                         HashExists(ref input, outputSpan);
                         break;
                     case HashOperation.HEXPIRE:
-                        HashExpire(ref input, ref output);
+                        HashExpire(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HTTL:
-                        HashTimeToLive(ref input, ref output);
+                        HashTimeToLive(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HPERSIST:
-                        HashPersist(ref input, ref output);
+                        HashPersist(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HKEYS:
                         HashGetKeysOrValues(ref input, ref output.SpanByteAndMemory);
@@ -227,7 +227,7 @@ namespace Garnet.server
                         HashRandomField(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HCOLLECT:
-                        HashCollect(ref input, _output);
+                        HashCollect(ref input, outputSpan);
                         break;
                     case HashOperation.HSCAN:
                         if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
