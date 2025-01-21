@@ -139,7 +139,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Caller is expected to dispose pendingContext after this method completes
         /// </summary>
-        internal Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext<TValue> request,
+        internal unsafe Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext<TValue> request,
                                                                     ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext<TValue> newRequest)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -148,9 +148,10 @@ namespace Tsavorite.core
 
             // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
             // With the new overload of CompletePending that returns CompletedOutputs, pendingContext must have the key.
+            DiskLogRecord<TValue> diskLogRecord = new((long)request.record.GetValidPointer());
             if (pendingContext.IsNoKey && pendingContext.key == default)
-                pendingContext.key = hlog.GetKeyContainer(ref hlog.GetContextRecordKey(ref request));
-            ref TKey key = ref pendingContext.key.Get();
+                pendingContext.key = hlog.GetKeyContainer(diskLogRecord.Key);
+            var key = pendingContext.key.Get();
 
             OperationStatus internalStatus = pendingContext.type switch
             {
@@ -168,7 +169,7 @@ namespace Tsavorite.core
             {
                 if (pendingContext.type == OperationType.READ)
                 {
-                    sessionFunctions.ReadCompletionCallback(ref key,
+                    sessionFunctions.ReadCompletionCallback(ref diskLogRecord,
                                                      ref pendingContext.input.Get(),
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
@@ -177,7 +178,7 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    sessionFunctions.RMWCompletionCallback(ref key,
+                    sessionFunctions.RMWCompletionCallback(ref diskLogRecord,
                                                      ref pendingContext.input.Get(),
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
@@ -186,11 +187,7 @@ namespace Tsavorite.core
                 }
             }
 
-            unsafe
-            {
-                DiskLogRecord<TValue> diskLogRecord = new((long)request.record.GetValidPointer());
-                DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
-            }
+            DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
             request.Dispose();
             return status;
         }

@@ -7,8 +7,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    using EmptyStoreFunctions = StoreFunctions<byte, EmptyKeyComparer, DefaultRecordDisposer<byte>>;
-
     /// <summary>
     /// Scan iterator for hybrid log - only a single scan is supported per instance
     /// This modification allows us to use a SingleWaiterAutoResetEvent per iterator
@@ -18,7 +16,7 @@ namespace Tsavorite.core
     {
         readonly SingleWaiterAutoResetEvent onEnqueue;
 
-        internal TsavoriteLogScanSingleIterator(TsavoriteLog tsavoriteLog, BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> hlog, long beginAddress, long endAddress,
+        internal TsavoriteLogScanSingleIterator(TsavoriteLog tsavoriteLog, AofAllocatorImpl hlog, long beginAddress, long endAddress,
                 GetMemory getMemory, DiskScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
             : base(tsavoriteLog, hlog, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger)
         {

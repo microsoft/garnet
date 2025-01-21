@@ -18,7 +18,7 @@ namespace Tsavorite.core
         bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord<TValue>;
         bool ConcurrentReader(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo);
-        void ReadCompletionCallback(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
+        void ReadCompletionCallback(ref DiskLogRecord<TValue> diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
         #endregion reads
 
         #region Upserts
@@ -49,7 +49,7 @@ namespace Tsavorite.core
         bool InPlaceUpdater(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo, out OperationStatus status);
         #endregion InPlaceUpdater
 
-        void RMWCompletionCallback(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
+        void RMWCompletionCallback(ref DiskLogRecord<TValue> diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
         #endregion RMWs
 
         #region Deletes

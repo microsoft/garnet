@@ -110,7 +110,7 @@ namespace Tsavorite.core
                         // as GetKey and GetInfo
                         if (physicalAddress != 0)
                         {
-                            var hash = storeFunctions.GetKeyHashCode64(ref hlog.GetKey(physicalAddress));
+                            var hash = storeFunctions.GetKeyHashCode64(LogRecord.GetKey(physicalAddress));
                             if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
                             {
                                 // Insert in left
@@ -127,7 +127,7 @@ namespace Tsavorite.core
                                 left++;
 
                                 // Insert previous address in right
-                                entry.Address = TraceBackForOtherChainStart(hlog.GetInfo(physicalAddress).PreviousAddress, 1);
+                                entry.Address = TraceBackForOtherChainStart(LogRecord.GetInfo(physicalAddress).PreviousAddress, 1);
                                 if ((entry.Address != Constants.kInvalidAddress) && (entry.Address != Constants.kTempInvalidAddress))
                                 {
                                     if (right == right_end)
@@ -159,7 +159,7 @@ namespace Tsavorite.core
                                 right++;
 
                                 // Insert previous address in left
-                                entry.Address = TraceBackForOtherChainStart(hlog.GetInfo(physicalAddress).PreviousAddress, 0);
+                                entry.Address = TraceBackForOtherChainStart(LogRecord.GetInfo(physicalAddress).PreviousAddress, 0);
                                 if ((entry.Address != Constants.kInvalidAddress) && (entry.Address != Constants.kTempInvalidAddress))
                                 {
                                     if (left == left_end)
@@ -218,32 +218,25 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                HashBucketEntry entry = default;
-                entry.Address = logicalAddress;
+                HashBucketEntry entry = new() { Address = logicalAddress };
+                LogRecord logRecord;
                 if (entry.ReadCache)
                 {
                     if (logicalAddress < readCacheBase.HeadAddress)
                         break;
-                    var physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
-                    var hash = storeFunctions.GetKeyHashCode64(ref readcache.GetKey(physicalAddress));
-                    if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
-                    {
-                        return logicalAddress;
-                    }
-                    logicalAddress = readcache.GetInfo(physicalAddress).PreviousAddress;
+                    logRecord = new LogRecord(readcache.GetPhysicalAddress(logicalAddress));
                 }
                 else
                 {
                     if (logicalAddress < hlogBase.HeadAddress)
                         break;
-                    var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                    var hash = storeFunctions.GetKeyHashCode64(ref hlog.GetKey(physicalAddress));
-                    if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
-                    {
-                        return logicalAddress;
-                    }
-                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                    logRecord = new LogRecord(hlog.GetPhysicalAddress(logicalAddress));
                 }
+
+                var hash = storeFunctions.GetKeyHashCode64(logRecord.Key);
+                if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
+                    return logicalAddress;
+                logicalAddress = logRecord.Info.PreviousAddress;
             }
             return logicalAddress;
         }

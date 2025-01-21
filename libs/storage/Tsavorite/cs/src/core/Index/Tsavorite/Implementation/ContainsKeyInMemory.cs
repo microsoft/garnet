@@ -14,7 +14,7 @@ namespace Tsavorite.core
             SpanByte key, TSessionFunctionsWrapper sessionFunctions, out long logicalAddress, long fromAddress = -1)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
+            OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(key));
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -29,7 +29,7 @@ namespace Tsavorite.core
                 if (fromAddress < hlogBase.HeadAddress)
                     fromAddress = hlogBase.HeadAddress;
 
-                if (TryFindRecordInMainLog(ref key, ref stackCtx, fromAddress) && !stackCtx.recSrc.GetInfo().Tombstone)
+                if (TryFindRecordInMainLog(key, ref stackCtx, fromAddress) && !stackCtx.recSrc.GetInfo().Tombstone)
                 {
                     logicalAddress = stackCtx.recSrc.LogicalAddress;
                     return new(StatusCode.Found);

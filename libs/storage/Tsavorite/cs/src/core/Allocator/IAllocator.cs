@@ -57,5 +57,8 @@ namespace Tsavorite.core
 
         /// <summary>Return the <see cref="OverflowAllocator"/> for the in-memory page containing <paramref name="logicalAddress"/></summary>
         OverflowAllocator GetOverflowAllocator(long logicalAddress);
+
+        /// <summary>Return the initial IO size when reading a record for this allocator</summary>
+        int GetInitialRecordIOSize();
     }
 }

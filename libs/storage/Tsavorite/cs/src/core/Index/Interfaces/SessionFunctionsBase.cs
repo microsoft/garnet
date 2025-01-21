@@ -91,9 +91,9 @@ namespace Tsavorite.core
         public virtual void PostSingleDeleter(ref LogRecord<TValue> dstLogRecord, ref DeleteInfo deleteInfo) { }
         public virtual bool ConcurrentDeleter(ref LogRecord<TValue> dstLogRecord, ref DeleteInfo deleteInfo) => true;
 
-        public virtual void ReadCompletionCallback(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
+        public virtual void ReadCompletionCallback(ref DiskLogRecord<TValue> diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
         /// <inheritdoc/>
-        public virtual void RMWCompletionCallback(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
+        public virtual void RMWCompletionCallback(ref DiskLogRecord<TValue> diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
 
         // *FieldInfo require an implementation that knows what is in IInput
         /// <inheritdoc/>

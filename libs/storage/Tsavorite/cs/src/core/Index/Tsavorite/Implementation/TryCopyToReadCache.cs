@@ -43,7 +43,7 @@ namespace Tsavorite.core
             readcache.InitializeValue(newPhysicalAddress, newPhysicalAddress + sizeInfo.FieldInfo.ValueSize);
 
             TOutput output = default;
-            if (!sessionFunctions.SingleCopyWriter(ref srcLogRecord, ref newLogRecord, ref upsertInfo, WriteReason.CopyToReadCache))
+            if (!sessionFunctions.SingleCopyWriter(ref srcLogRecord, ref newLogRecord, ref input, ref output, ref upsertInfo, WriteReason.CopyToReadCache))
             {
                 stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
                 return false;

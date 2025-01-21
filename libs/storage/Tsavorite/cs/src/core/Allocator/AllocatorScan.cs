@@ -316,7 +316,7 @@ namespace Tsavorite.core
                 where TSourceLogRecord : ISourceLogRecord<TValue>
                 => true;
             public readonly bool ConcurrentReader(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo) => true;
-            public readonly void ReadCompletionCallback(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
+            public readonly void ReadCompletionCallback(ref DiskLogRecord<TValue> diskLogRecord, ref TInput input, ref TOutput output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
 
             public readonly bool SingleDeleter(ref LogRecord<TValue> logRecord, ref DeleteInfo deleteInfo) => true;
             public readonly void PostSingleDeleter(ref LogRecord<TValue> logRecord, ref DeleteInfo deleteInfo) { }
@@ -345,7 +345,7 @@ namespace Tsavorite.core
             public readonly bool InitialUpdater(ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
             public readonly void PostInitialUpdater(ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) { }
 
-            public readonly void RMWCompletionCallback(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
+            public readonly void RMWCompletionCallback(ref DiskLogRecord<TValue> diskLogRecord, ref TInput input, ref TOutput output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
 
             public readonly RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input)
                 where TSourceLogRecord : ISourceLogRecord<TValue>

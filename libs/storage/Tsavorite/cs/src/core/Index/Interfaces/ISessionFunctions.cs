@@ -39,7 +39,7 @@ namespace Tsavorite.core
         /// <param name="ctx">The application context passed through the pending operation</param>
         /// <param name="status">The result of the pending operation</param>
         /// <param name="recordMetadata">Metadata for the record</param>
-        void ReadCompletionCallback(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
+        void ReadCompletionCallback(ref DiskLogRecord<TValue> diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
         #endregion reads
 
         #region Upserts
@@ -181,7 +181,7 @@ namespace Tsavorite.core
         /// <param name="ctx">The application context passed through the pending operation</param>
         /// <param name="status">The result of the pending operation</param>
         /// <param name="recordMetadata">The metadata of the modified or inserted record</param>
-        void RMWCompletionCallback(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
+        void RMWCompletionCallback(ref DiskLogRecord<TValue> diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
         #endregion RMWs
 
         #region Deletes

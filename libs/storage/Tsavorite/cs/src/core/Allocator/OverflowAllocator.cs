@@ -67,11 +67,12 @@ namespace Tsavorite.core
                 if (newPageOffset.Page >= pageCount)
                 {
                     var newPageCount = pageCount == 0 ? InitialPageCount : pageCount * 2;
-                    var newPages = new byte*[newPageCount][];
+                    var newPages = new byte*[newPageCount];
                     if (pageCount != 0)
                         Array.Copy(pages, newPages, pageCount);
                     localPageOffset.Offset = 0;
                     pageCount = newPageCount;
+                    pages = newPages;
                 }
 
                 // Allocate the new page.

@@ -32,7 +32,7 @@ namespace Tsavorite.core
                                                         ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var diskRecord = new DiskLogRecord((long)request.record.GetValidPointer());
+            var diskRecord = new DiskLogRecord<TValue>((long)request.record.GetValidPointer());
 
             if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.key.Get(), diskRecord.Key))
                 goto NotFound;
@@ -186,7 +186,7 @@ namespace Tsavorite.core
                                                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var diskRecord = new DiskLogRecord((long)request.record.GetValidPointer());
+            var diskRecord = new DiskLogRecord<TValue>((long)request.record.GetValidPointer());
 
             SpinWaitUntilClosed(request.logicalAddress);
 
@@ -278,7 +278,7 @@ namespace Tsavorite.core
                 return OperationStatus.SUCCESS;
 
             // Prepare to copy to tail. Use data from pendingContext, not request; we're only made it to this line if the key was not found, and thus the request was not populated.
-            var diskRecord = new DiskLogRecord((long)request.record.GetValidPointer());
+            var diskRecord = new DiskLogRecord<TValue>((long)request.record.GetValidPointer());
             OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
 
             // See if the record was added above the highest address we checked before issuing the IO.

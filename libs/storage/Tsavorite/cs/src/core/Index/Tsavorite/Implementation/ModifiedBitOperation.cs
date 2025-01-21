@@ -31,8 +31,8 @@ namespace Tsavorite.core
 
             if (logicalAddress >= hlogBase.HeadAddress)
             {
-                ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
-                if (recordInfo.Invalid || !storeFunctions.KeysEqual(ref key, ref hlog.GetKey(physicalAddress)))
+                var recordInfo = LogRecord.GetInfo(physicalAddress);
+                if (recordInfo.Invalid || !storeFunctions.KeysEqual(key, LogRecord.GetKey(physicalAddress)))
                 {
                     logicalAddress = recordInfo.PreviousAddress;
                     TraceBackForKeyMatch(key, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out physicalAddress);
@@ -43,7 +43,7 @@ namespace Tsavorite.core
             modifiedInfo = default;
             if (logicalAddress >= hlogBase.HeadAddress)
             {
-                ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
+                ref var recordInfo = ref LogRecord.GetInfoRef(physicalAddress);
                 if (reset)
                 {
                     if (!recordInfo.TryResetModifiedAtomic())

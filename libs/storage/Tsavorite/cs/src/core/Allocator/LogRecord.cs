@@ -10,14 +10,37 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
-    internal struct LogRecord
+    /// <summary>A non-Generic form of the in-memory <see cref="LogRecord{TValue}"/> that provides access to <see cref="RecordInfo"/> and Key only.
+    /// Useful in quick recordInfo-testing and key-matching operations</summary>
+    public unsafe struct LogRecord(long physicalAddress)
     {
+        /// <summary>The physicalAddress in the log.</summary>
+        internal readonly long physicalAddress = physicalAddress;
+
         /// <summary>Number of bytes required to store an ETag</summary>
         public const int ETagSize = sizeof(long);
         /// <summary>Number of bytes required to store an Expiration</summary>
         public const int ExpirationSize = sizeof(long);
         /// <summary>Number of bytes required to store the FillerLen</summary>
         internal const int FillerLenSize = sizeof(int);
+
+        /// <summary>A ref to the record header</summary>
+        public readonly ref RecordInfo InfoRef => ref GetInfoRef(physicalAddress);
+        /// <summary>Fast access returning a copy of the record header</summary>
+        public readonly RecordInfo Info => GetInfoRef(physicalAddress);
+        /// <summary>Fast access to the record Key</summary>
+        public readonly SpanByte Key => GetKey(physicalAddress);
+
+        /// <summary>A ref to the record header</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref Unsafe.AsRef<RecordInfo>((byte*)physicalAddress);
+
+        /// <summary>Fast access returning a copy of the record header</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static RecordInfo GetInfo(long physicalAddress) => *(RecordInfo*)physicalAddress;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static SpanByte GetKey(long physicalAddress) => *(SpanByte*)(physicalAddress + RecordInfo.GetLength());
     }
 
     /// <summary>The in-memory record on the log: header, key, value, and optional fields

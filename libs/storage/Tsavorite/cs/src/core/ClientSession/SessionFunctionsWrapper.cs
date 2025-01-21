@@ -34,8 +34,8 @@ namespace Tsavorite.core
         public bool ConcurrentReader(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo)
             => _clientSession.functions.ConcurrentReader(ref logRecord, ref input, ref dst, ref readInfo);
 
-        public void ReadCompletionCallback(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata)
-            => _clientSession.functions.ReadCompletionCallback(ref logRecord, ref input, ref output, ctx, status, recordMetadata);
+        public void ReadCompletionCallback(ref DiskLogRecord<TValue> diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata)
+            => _clientSession.functions.ReadCompletionCallback(ref diskLogRecord, ref input, ref output, ctx, status, recordMetadata);
 
         #endregion Reads
 
@@ -141,8 +141,8 @@ namespace Tsavorite.core
         }
         #endregion InPlaceUpdater
 
-        public void RMWCompletionCallback(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata)
-            => _clientSession.functions.RMWCompletionCallback(ref logRecord, ref input, ref output, ctx, status, recordMetadata);
+        public void RMWCompletionCallback(ref DiskLogRecord<TValue> diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata)
+            => _clientSession.functions.RMWCompletionCallback(ref diskLogRecord, ref input, ref output, ctx, status, recordMetadata);
 
         #endregion RMWs
 

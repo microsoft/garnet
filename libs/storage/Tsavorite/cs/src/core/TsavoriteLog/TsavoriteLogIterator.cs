@@ -12,15 +12,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    using EmptyStoreFunctions = StoreFunctions<Empty, byte, EmptyKeyComparer, DefaultRecordDisposer<Empty, byte>>;
-
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
     public class TsavoriteLogScanIterator : ScanIteratorBase, IDisposable
     {
         protected readonly TsavoriteLog tsavoriteLog;
-        private readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
+        private readonly AofAllocatorImpl allocator;
         private readonly BlittableFrame frame;
         private readonly GetMemory getMemory;
         private readonly int headerSize;
@@ -34,9 +32,9 @@ namespace Tsavorite.core
         public bool Ended => (nextAddress >= endAddress) || (tsavoriteLog.LogCompleted && nextAddress == tsavoriteLog.TailAddress);
 
         /// <summary>Constructor</summary>
-        internal unsafe TsavoriteLogScanIterator(TsavoriteLog tsavoriteLog, BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> hlog, long beginAddress, long endAddress,
-                GetMemory getMemory, DiskScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, false, epoch, hlog.LogPageSizeBits, logger: logger)
+        internal unsafe TsavoriteLogScanIterator(TsavoriteLog tsavoriteLog, AofAllocatorImpl hlog, long beginAddress, long endAddress,
+                GetMemory getMemory, DiskScanBufferingMode diskScanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, diskScanBufferingMode, InMemoryScanBufferingMode.NoBuffering, includeSealedRecords: false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.tsavoriteLog = tsavoriteLog;
             allocator = hlog;

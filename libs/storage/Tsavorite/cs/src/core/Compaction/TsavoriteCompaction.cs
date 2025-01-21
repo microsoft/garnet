@@ -47,14 +47,14 @@ namespace Tsavorite.core
             using (var iter1 = Log.Scan(Log.BeginAddress, untilAddress))
             {
                 long numPending = 0;
-                while (iter1.GetNext(out var recordInfo))
+                while (iter1.GetNext())
                 {
-                    ref var key = ref iter1.GetKey();
-                    ref var value = ref iter1.GetValue();
+                    var key = iter1.Key;
+                    var value = iter1.GetReadOnlyValueRef();
 
-                    if (!recordInfo.Tombstone && !cf.IsDeleted(key, value))
+                    if (!iter1.Info.Tombstone && !cf.IsDeleted(key, value))
                     {
-                        var status = storebContext.CompactionCopyToTail(key, ref input, ref value, ref output, iter1.CurrentAddress, iter1.NextAddress);    // TODO use LogRecord
+                        var status = storebContext.CompactionCopyToTail(ref iter1, ref input, ref output, iter1.CurrentAddress, iter1.NextAddress);
                         if (status.IsPending && ++numPending > 256)
                         {
                             _ = storebContext.CompletePending(wait: true);
@@ -98,12 +98,12 @@ namespace Tsavorite.core
                 var tempbContext = tempKvSession.BasicContext;
                 using (var iter1 = Log.Scan(hlogBase.BeginAddress, untilAddress))
                 {
-                    while (iter1.GetNext(out var recordInfo))
+                    while (iter1.GetNext())
                     {
-                        ref var key = ref iter1.GetKey();
-                        ref var value = ref iter1.GetValue();
+                        var key = iter1.Key;
+                        var value = iter1.GetReadOnlyValueRef();
 
-                        if (recordInfo.Tombstone || cf.IsDeleted(key, value))
+                        if (iter1.Info.Tombstone || cf.IsDeleted(key, value))
                             _ = tempbContext.Delete(key);
                         else
                             _ = tempbContext.Upsert(key, value);
@@ -119,9 +119,9 @@ namespace Tsavorite.core
 
                 var numPending = 0;
                 using var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
-                while (iter3.GetNext(out var recordInfo))
+                while (iter3.GetNext())
                 {
-                    if (recordInfo.Tombstone)
+                    if (iter3.Info.Tombstone)
                         continue;
 
                     // Try to ensure we have checked all immutable records
@@ -130,12 +130,12 @@ namespace Tsavorite.core
                         ScanImmutableTailToRemoveFromTempKv(ref untilAddress, scanUntil, tempbContext);
 
                     // If record is not the latest in tempKv's memory for this key, ignore it (will not be returned if deleted)
-                    if (!tempbContext.ContainsKeyInMemory(iter3.GetKey(), out var tempKeyAddress).Found || iter3.CurrentAddress != tempKeyAddress)
+                    if (!tempbContext.ContainsKeyInMemory(iter3.Key, out var tempKeyAddress).Found || iter3.CurrentAddress != tempKeyAddress)
                         continue;
 
                     // As long as there's no record of the same key whose address is >= untilAddress (scan boundary), we are safe to copy the old record
                     // to the tail. We don't know the actualAddress of the key in the main kv, but we it will not be below untilAddress.
-                    var status = storebContext.CompactionCopyToTail(iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, iter3.CurrentAddress, untilAddress - 1);
+                    var status = storebContext.CompactionCopyToTail(ref iter3, ref input, ref output, iter3.CurrentAddress, untilAddress - 1);  // TODO: Make sure ETag and Expiration are copied
                     if (status.IsPending && ++numPending > 256)
                     {
                         _ = storebContext.CompletePending(wait: true);
@@ -154,9 +154,9 @@ namespace Tsavorite.core
             where TFunctions : ISessionFunctions<TValue, TInput, TOutput, TContext>
         {
             using var iter = Log.Scan(untilAddress, scanUntil);
-            while (iter.GetNext(out var _))
+            while (iter.GetNext())
             {
-                _ = tempbContext.Delete(iter.GetKey(), default);
+                _ = tempbContext.Delete(iter.Key, default);
                 untilAddress = iter.NextAddress;
             }
         }

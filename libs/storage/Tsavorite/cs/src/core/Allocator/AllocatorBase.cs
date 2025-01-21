@@ -394,8 +394,6 @@ namespace Tsavorite.core
             OnEvictionObserver?.OnCompleted();
         }
 
-        internal abstract OverflowAllocator GetOverflowAllocator(long logicalAddress);
-
         #endregion abstract and virtual methods
 
         #region LogRecord functions
@@ -423,7 +421,7 @@ namespace Tsavorite.core
                 return;
             }
 
-            var overflowAllocator = GetOverflowAllocator(logicalAddress);
+            var overflowAllocator = _wrapper.GetOverflowAllocator(logicalAddress);
             var overflowKey = overflowAllocator.Allocate(key.Length);
             key.CopyTo(ref overflowKey);
             logRecord.KeyRef = new(overflowKey.Length, (nint)overflowKey.ToPointer());

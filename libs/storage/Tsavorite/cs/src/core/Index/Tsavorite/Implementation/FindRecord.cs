@@ -81,7 +81,7 @@ namespace Tsavorite.core
             if (RevivificationManager.UseFreeRecordPool)
             {
                 // The EphemeralSLock here is necessary only for the tag chain to avoid record elision/revivification during traceback.
-                if (!TryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
+                if (!TryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out internalStatus))
                     return needIO = false;
             }
             else
@@ -94,7 +94,7 @@ namespace Tsavorite.core
 
                 // We don't have a pendingContext here, so pass the minAddress directly.
                 needIO = false;
-                if (TryFindRecordInMainLogForPendingOperation(ref key, ref stackCtx, minAddress < hlogBase.HeadAddress ? hlogBase.HeadAddress : minAddress, out internalStatus))
+                if (TryFindRecordInMainLogForPendingOperation(key, ref stackCtx, minAddress < hlogBase.HeadAddress ? hlogBase.HeadAddress : minAddress, out internalStatus))
                     return true;
 
                 needIO = stackCtx.recSrc.LogicalAddress >= minAddress && stackCtx.recSrc.LogicalAddress < hlogBase.HeadAddress && stackCtx.recSrc.LogicalAddress >= hlogBase.BeginAddress;
@@ -102,7 +102,7 @@ namespace Tsavorite.core
             }
             finally
             {
-                EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
             }
         }
 
@@ -113,16 +113,17 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TraceBackForKeyMatch(SpanByte key, ref RecordSource<TValue, TStoreFunctions, TAllocator> recSrc, long minAddress)
         {
-            // PhysicalAddress must already be populated by callers.
-            ref var recordInfo = ref recSrc.GetInfo();
-            if (IsValidTracebackRecord(recordInfo) && storeFunctions.KeysEqual(ref key, ref recSrc.GetKey()))
+            // recSrc.PhysicalAddress must already be populated by callers.
+            var recordInfo = LogRecord.GetInfo(recSrc.PhysicalAddress);
+
+            if (IsValidTracebackRecord(recordInfo) && storeFunctions.KeysEqual(key, LogRecord.GetKey(recSrc.PhysicalAddress)))
             {
                 recSrc.SetHasMainLogSrc();
                 return true;
             }
 
             recSrc.LogicalAddress = recordInfo.PreviousAddress;
-            if (TraceBackForKeyMatch(ref key, recSrc.LogicalAddress, minAddress, out recSrc.LogicalAddress, out recSrc.PhysicalAddress))
+            if (TraceBackForKeyMatch(key, recSrc.LogicalAddress, minAddress, out recSrc.LogicalAddress, out recSrc.PhysicalAddress))
             {
                 recSrc.SetHasMainLogSrc();
                 return true;

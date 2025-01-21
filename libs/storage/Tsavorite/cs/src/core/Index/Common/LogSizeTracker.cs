@@ -14,11 +14,9 @@ namespace Tsavorite.core
     public interface ILogSizeCalculator<TValue>
     {
         /// <summary>Calculates the size of a log record</summary>
-        /// <param name="recordInfo">Information about the record</param>
-        /// <param name="key">The key</param>
-        /// <param name="value">The value</param>
+        /// <param name="logRecord">The record being evaluated</param>
         /// <returns>The size of the record</returns>
-        long CalculateRecordSize(RecordInfo recordInfo, SpanByte key, TValue value);
+        long CalculateRecordSize<TSourceLogRecord>(ref readonly TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord<TValue>;
     }
 
     public enum LogOperationType
@@ -47,21 +45,14 @@ namespace Tsavorite.core
         public void OnNext(ITsavoriteScanIterator<TValue> records)
         {
             long size = 0;
-            while (records.GetNext(out RecordInfo info, out TKey key, out TValue value))
-            {
-                Debug.Assert(key != null);  // TODO handle for SpanByte being default
-                Debug.Assert(value != null);
-
-                size += logSizeTracker.LogSizeCalculator.CalculateRecordSize(info, key, value);
-            }
+            while (records.GetNext())
+                size += logSizeTracker.LogSizeCalculator.CalculateRecordSize(in records);
 
             if (size == 0)
                 return;
 
             if (logOperationType == LogOperationType.Deserialize)
-            {
                 logSizeTracker.IncrementSize(size);
-            }
         }
     }
 
@@ -142,15 +133,11 @@ namespace Tsavorite.core
         public void OnNext(ITsavoriteScanIterator<TValue> records)
         {
             long size = 0;
-            while (records.GetNext(out RecordInfo info, out TKey key, out TValue value))
-            {
-                Debug.Assert(key != null);  // TODO handle SpanByte being default
-                Debug.Assert(value != null);
+            while (records.GetNext())
+                size += LogSizeCalculator.CalculateRecordSize(in records);
 
-                size += LogSizeCalculator.CalculateRecordSize(info, key, value);
-            }
-
-            if (size == 0) return;
+            if (size == 0)
+                return;
 
             IncrementSize(-size); // Reduce size as records are being evicted
         }

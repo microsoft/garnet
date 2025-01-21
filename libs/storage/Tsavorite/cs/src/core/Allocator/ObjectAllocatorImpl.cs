@@ -128,7 +128,7 @@ namespace Tsavorite.core
         internal LogRecord<TValue> CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress, values[GetPageIndex(logicalAddress)].objectIdMap);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal override OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)].overflowAllocator;
+        internal OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)].overflowAllocator;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<TValue> logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize);

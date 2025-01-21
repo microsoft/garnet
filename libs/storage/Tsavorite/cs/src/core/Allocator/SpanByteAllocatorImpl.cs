@@ -43,6 +43,8 @@ namespace Tsavorite.core
             var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
             pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
             NativeMemory.Clear(pagePointers, bufferSizeInBytes);
+
+            values = new OverflowAllocator[BufferSize];
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -102,7 +104,7 @@ namespace Tsavorite.core
         internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord<SpanByte>(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal override OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)];
+        internal OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)];
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<SpanByte> logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize);

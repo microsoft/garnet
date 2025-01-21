@@ -150,7 +150,7 @@ namespace Tsavorite.core
                 else
                     request.callbackQueue = sessionCtx.readyResponses;
 
-                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, hlog.GetAverageRecordSize(), request);
+                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, hlog.GetInitialRecordIOSize(), request);
                 return new(StatusCode.Pending);
             }
             else

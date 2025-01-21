@@ -239,7 +239,7 @@ namespace Tsavorite.core
             if (readAtAddress < hlogBase.BeginAddress)
                 return OperationStatus.NOTFOUND;
 
-            pendingContext.IsReadAtAddress = true;
+            pendingContext.SetIsReadAtAddress();
 
             // We do things in a different order here than in InternalRead, in part to handle NoKey (especially with Revivification).
             if (readAtAddress < hlogBase.HeadAddress)

@@ -15,12 +15,6 @@ namespace Tsavorite.core
         /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
         private readonly ObjectAllocatorImpl<TValue, TStoreFunctions> _this;
 
-        internal ObjectAllocator(AllocatorSettings settings, TStoreFunctions storeFunctions)
-        {
-            // Called by TsavoriteKV via allocatorCreator; must pass a wrapperCreator to AllocatorBase
-            _this = new(settings, storeFunctions, @this => new ObjectAllocator<TValue, TStoreFunctions>(@this));
-        }
-
         internal ObjectAllocator(object @this)
         {
             // Called by AllocatorBase via primary ctor wrapperCreator
@@ -157,5 +151,11 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly OverflowAllocator GetOverflowAllocator(long logicalAddress) => _this.GetOverflowAllocator(logicalAddress);
+
+        /// <inheritdoc/>
+        public readonly int GetInitialRecordIOSize() => RecordInfo.GetLength()
+            + (1 << LogSettings.kMaxInlineKeySizeBits)
+            + ObjectIdMap.ObjectIdSize
+            + sizeof(long) * 2;                             // ETag and Expiration
     }
 }

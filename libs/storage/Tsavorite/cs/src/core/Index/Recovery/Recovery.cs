@@ -1055,7 +1055,7 @@ namespace Tsavorite.core
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
         }
 
-        private unsafe void ClearLocksOnPage(long page, RecoveryOptions options)
+        private unsafe void ClearLocksOnPage(long page, RecoveryOptions options)    // TODO is this needed if we can remove Sealed?
         {
             var startLogicalAddress = hlog.GetStartLogicalAddress(page);
             var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
@@ -1069,15 +1069,15 @@ namespace Tsavorite.core
 
             while (pointer < untilLogicalAddressInPage)
             {
-                long recordStart = physicalAddress + pointer;
-                ref RecordInfo info = ref hlog.GetInfo(recordStart);
+                var diskLogRecord = new DiskLogRecord<TValue>(physicalAddress + pointer);
+                ref var info = ref diskLogRecord.InfoRef;
                 info.ClearBitsForDiskImages();
 
                 if (info.IsNull)
                     pointer += RecordInfo.GetLength();
                 else
                 {
-                    int size = hlog.GetRecordSize(recordStart).Item2;
+                    var size = diskLogRecord.SerializedRecordLength;
                     Debug.Assert(size <= hlogBase.GetPageSize());
                     pointer += size;
                 }
