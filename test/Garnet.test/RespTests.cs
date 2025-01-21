@@ -3,9 +3,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -22,6 +24,7 @@ namespace Garnet.test
     {
         GarnetServer server;
         Random r;
+        private TaskFactory taskFactory = new();
 
         [SetUp]
         public void Setup()
@@ -4504,5 +4507,131 @@ namespace Garnet.test
         }
 
         #endregion
+
+        [Test]
+        [TestCase("BLOCKING", "ERROR", true, Description = "Unblock normal client with ERROR")]
+        [TestCase("BLOCKING", "TIMEOUT", true, Description = "Unblock normal client with TIMEOUT")]
+        [TestCase("BLOCKING", null, true, Description = "Unblock normal client without mode")]
+        public async Task ClientUnblockBasicTest(string clientType, string mode, bool expectedResult)
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var mainDB = mainConnection.GetDatabase(0);
+
+            // Start blocking client
+            using var blockingClient = TestUtils.CreateRequest();
+            var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"));
+            var clientId = clientIdResponse.Substring(1, clientIdResponse.IndexOf("\r\n") - 1);
+            Task blockingTask = null;
+            bool isError = false;
+            if (clientType == "BLOCKING")
+            {
+                blockingTask = taskFactory.StartNew(() =>
+                {
+                    var startTime = Stopwatch.GetTimestamp();
+                    var response = blockingClient.SendCommand("BLMPOP 10 1 keyA LEFT");
+                    if (Encoding.ASCII.GetString(response).Substring(0, "-UNBLOCKED".Length) == "-UNBLOCKED")
+                    {
+                        isError = true;
+                    }
+                    var totalTime = Stopwatch.GetElapsedTime(startTime);
+                    ClassicAssert.Less(totalTime.TotalSeconds, 9);
+                });
+            }
+            // Add other mode like XREAD Readis steam here
+
+            // Wait for client to enter blocking state
+            await Task.Delay(1000);
+
+            // Unblock from main connection
+            var args = new List<string> { "UNBLOCK", clientId };
+            if (mode != null)
+            {
+                args.Add(mode);
+            }
+            var unblockResult = (int)mainDB.Execute("CLIENT", [.. args]);
+            ClassicAssert.AreEqual(expectedResult ? 1 : 0, unblockResult);
+            blockingTask.Wait();
+
+            if (mode == "ERROR")
+            {
+                ClassicAssert.IsTrue(isError);
+            }
+            else
+            {
+                ClassicAssert.IsFalse(isError);
+            }
+
+            // Attempt to unblock again will return 0
+            unblockResult = (int)mainDB.Execute("CLIENT", [.. args]);
+            ClassicAssert.AreEqual(0, unblockResult);
+        }
+
+        [Test]
+        public async Task MultipleClientsUnblockAndAddTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "blockingList";
+            var value = "testValue";
+
+            // Start blocking client
+            using var blockingClient = TestUtils.CreateRequest();
+            var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"));
+            var clientId = clientIdResponse.Substring(1, clientIdResponse.IndexOf("\r\n") - 1);
+
+            string blockingResult = null;
+            var blockingTask = Task.Run(() =>
+            {
+                var response = blockingClient.SendCommand($"BLMPOP 10 1 {key} LEFT COUNT 30");
+                blockingResult = Encoding.ASCII.GetString(response);
+            });
+
+            // Wait for client to enter blocking state
+            await Task.Delay(1000);
+
+            // Start parallel unblock and add tasks
+            var unblockTasks = new List<Task<int>>();
+            var addTasks = new List<Task>();
+            for (int i = 0; i < 20; i++)
+            {
+                addTasks.Add(Task.Run(() => redis.GetDatabase(0).ListLeftPush(key, $"{value}{i}")));
+            }
+
+            for (int i = 0; i < 3; i++)
+            {
+                unblockTasks.Add(Task.Run(() => (int)redis.GetDatabase(0).Execute("CLIENT", "UNBLOCK", clientId, "ERROR")));
+            }
+
+            await Task.WhenAll(unblockTasks);
+            await Task.WhenAll(addTasks);
+            await blockingTask;
+
+            var numberOfItemsReturned = Regex.Matches(blockingResult, value).Count;
+
+            var listLength = db.ListLength(key);
+            ClassicAssert.AreEqual(20 - numberOfItemsReturned, listLength);
+        }
+
+        [Test]
+        [TestCase(-1, Description = "Unblock with invalid client ID")]
+        [TestCase(999999, Description = "Unblock with non-existent client ID")]
+        public void ClientUnblockInvalidIdTest(int invalidId)
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+
+            var unblockResult = (int)mainDB.Execute("CLIENT", "UNBLOCK", invalidId);
+            ClassicAssert.AreEqual(0, unblockResult);
+        }
+
+        [Test]
+        public void ClientUnblockInvalidModeTest()
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+
+            Assert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "UNBLOCK", 123, "INVALID"));
+        }
     }
 }
