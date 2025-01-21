@@ -15,7 +15,7 @@ public class Caching
     /*
     The whole idea of using ETag based commands for caching purposes is to reduce network utilization by only sending and recieving
     what is needed over the network.
-    
+
     Scenario:
         We are in an application, cache, and database setup. 
         In the read path the application always attempts to read from the cache and based on a hit or a miss it reaches into the database.
@@ -104,7 +104,7 @@ public class Caching
         Random random = new Random();
         using var redis = await ConnectionMultiplexer.ConnectAsync(GarnetConnectionStr);
         var db = redis.GetDatabase(0);
-        // Add 100 things with sufficiently large payloads into your cache, the maximum size of your values depends on your pagesize config on Garnet
+        // Add a bunch of things with sufficiently large payloads into your cache, the maximum size of your values depends on your pagesize config on Garnet
         for (int i = 0; i < 20; i++)
         {
             string key = i.ToString();

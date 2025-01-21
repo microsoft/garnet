@@ -26,7 +26,8 @@ public static class ETagAbstractions
         while (true)
         {
             // perform custom action, since item is updated to it's correct latest state by the server this action is performed exactly once on
-            // an item before it is finally updated on the server
+            // an item before it is finally updated on the server.
+            // NOTE: Based on your application's needs you can modify this method to update a pure function that returns a copy of the data and does not use mutations as side effects.
             updateAction(item);
 
             var (updatedSuccesful, newEtag, newItem) = await _updateItemIfMatch(db, etag, key, item);
