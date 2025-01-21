@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737491687266,
+  "lastUpdate": 1737491741536,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -21407,6 +21407,84 @@ window.BENCHMARK_DATA = {
             "value": 139874.81486002603,
             "unit": "ns",
             "range": "± 220.93794411485072"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "pon.vijaynirmal@outlook.com",
+            "name": "Vijay Nirmal",
+            "username": "Vijay-Nirmal"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "27ab5a8227700a3170303d0f939c4f81f35b32e7",
+          "message": "[Compatibility] Add hash expiration - HEXPIRE, HPEXPIRE, HEXPIREAT, HPEXPIREAT, HTTL, HPTTL, HEXPIRETIME, HPEXPIRETIME, HPERSIST and HCOLLECT (#864)\n\n* WIP of HEXPIRE\r\n\r\n* WIP of EXPIRE\r\n\r\n* Initial impelementation of HEXIRE and family\r\n\r\n* Added more test cases\r\n\r\n* Handling serialization and Deserialization\r\n\r\n* Added LTM test cases\r\n\r\n* Added docs\r\n\r\n* Added HCOLLECT and ACL, Slot verification tests\r\n\r\n* Add a background task to call HCOLLECT to delete expired items\r\n\r\n* Code format fix\r\n\r\n* Fixed creation of empty object\r\n\r\n* Finial commit before review comment fixes, hopefully\r\n\r\n* This time for sure, this is the last commit before review comments\r\n\r\n* Fixed code format issue\r\n\r\n* Trying to fix test failure in pipeline (not happening in local)\r\n\r\n* Removed AsEnumerable to remove the allocation\r\n\r\n* Fixed missed TODO\r\n\r\n* Review comment fixes\r\n\r\n* Review comment fixes\r\n\r\n* Test fix, maybe\r\n\r\n* Review command fix\r\n\r\n* Fixed test failure\r\n\r\n* Test fix\r\n\r\n* Test fix\r\n\r\n* Fixed review commands\r\n\r\n* Pipeline test fix\r\n\r\n* Fixed review commands\r\n\r\n---------\r\n\r\nCo-authored-by: Tal Zaccai <talzacc@microsoft.com>",
+          "timestamp": "2025-01-21T13:30:37-07:00",
+          "tree_id": "0e5b2569e5bff4e590dc481a19aabb9bd1b5fcc8",
+          "url": "https://github.com/microsoft/garnet/commit/27ab5a8227700a3170303d0f939c4f81f35b32e7"
+        },
+        "date": 1737491736462,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: ACL)",
+            "value": 154832.77280970983,
+            "unit": "ns",
+            "range": "± 684.8707507479961"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: ACL)",
+            "value": 138664.89835298978,
+            "unit": "ns",
+            "range": "± 329.54009397749047"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: ACL)",
+            "value": 128017.22229003906,
+            "unit": "ns",
+            "range": "± 494.8436602842109"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: AOF)",
+            "value": 167778.75662667412,
+            "unit": "ns",
+            "range": "± 724.0134273509186"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: AOF)",
+            "value": 158714.5185953776,
+            "unit": "ns",
+            "range": "± 556.9472931157898"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: AOF)",
+            "value": 146563.27801983172,
+            "unit": "ns",
+            "range": "± 618.7462272701549"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.ZAddRem(Params: None)",
+            "value": 150602.90423177084,
+            "unit": "ns",
+            "range": "± 1547.7515845095422"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: None)",
+            "value": 147603.00622558594,
+            "unit": "ns",
+            "range": "± 584.7898658103468"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.SAddRem(Params: None)",
+            "value": 128352.81555175781,
+            "unit": "ns",
+            "range": "± 257.9361575479595"
           }
         ]
       }
