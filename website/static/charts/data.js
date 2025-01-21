@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737491759173,
+  "lastUpdate": 1737491763636,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -10817,6 +10817,90 @@ window.BENCHMARK_DATA = {
             "value": 133975.44663492838,
             "unit": "ns",
             "range": "± 124.80903233372942"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "pon.vijaynirmal@outlook.com",
+            "name": "Vijay Nirmal",
+            "username": "Vijay-Nirmal"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "27ab5a8227700a3170303d0f939c4f81f35b32e7",
+          "message": "[Compatibility] Add hash expiration - HEXPIRE, HPEXPIRE, HEXPIREAT, HPEXPIREAT, HTTL, HPTTL, HEXPIRETIME, HPEXPIRETIME, HPERSIST and HCOLLECT (#864)\n\n* WIP of HEXPIRE\r\n\r\n* WIP of EXPIRE\r\n\r\n* Initial impelementation of HEXIRE and family\r\n\r\n* Added more test cases\r\n\r\n* Handling serialization and Deserialization\r\n\r\n* Added LTM test cases\r\n\r\n* Added docs\r\n\r\n* Added HCOLLECT and ACL, Slot verification tests\r\n\r\n* Add a background task to call HCOLLECT to delete expired items\r\n\r\n* Code format fix\r\n\r\n* Fixed creation of empty object\r\n\r\n* Finial commit before review comment fixes, hopefully\r\n\r\n* This time for sure, this is the last commit before review comments\r\n\r\n* Fixed code format issue\r\n\r\n* Trying to fix test failure in pipeline (not happening in local)\r\n\r\n* Removed AsEnumerable to remove the allocation\r\n\r\n* Fixed missed TODO\r\n\r\n* Review comment fixes\r\n\r\n* Review comment fixes\r\n\r\n* Test fix, maybe\r\n\r\n* Review command fix\r\n\r\n* Fixed test failure\r\n\r\n* Test fix\r\n\r\n* Test fix\r\n\r\n* Fixed review commands\r\n\r\n* Pipeline test fix\r\n\r\n* Fixed review commands\r\n\r\n---------\r\n\r\nCo-authored-by: Tal Zaccai <talzacc@microsoft.com>",
+          "timestamp": "2025-01-21T13:30:37-07:00",
+          "tree_id": "0e5b2569e5bff4e590dc481a19aabb9bd1b5fcc8",
+          "url": "https://github.com/microsoft/garnet/commit/27ab5a8227700a3170303d0f939c4f81f35b32e7"
+        },
+        "date": 1737491759027,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
+            "value": 16685.13560587565,
+            "unit": "ns",
+            "range": "± 152.91698512275744"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: DSV)",
+            "value": 16260.246597290039,
+            "unit": "ns",
+            "range": "± 16.683776018554155"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: DSV)",
+            "value": 15019.483895874024,
+            "unit": "ns",
+            "range": "± 70.5999610903648"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: DSV)",
+            "value": 13977.702191670736,
+            "unit": "ns",
+            "range": "± 90.15060295852105"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: DSV)",
+            "value": 122635.8105093149,
+            "unit": "ns",
+            "range": "± 270.2465053342331"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: None)",
+            "value": 21308.00772857666,
+            "unit": "ns",
+            "range": "± 29.738693230337397"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: None)",
+            "value": 20338.123827253068,
+            "unit": "ns",
+            "range": "± 134.94635596703523"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: None)",
+            "value": 16339.890101114908,
+            "unit": "ns",
+            "range": "± 18.95930252985604"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: None)",
+            "value": 15302.699307032994,
+            "unit": "ns",
+            "range": "± 55.999519433812175"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: None)",
+            "value": 132461.77530924478,
+            "unit": "ns",
+            "range": "± 1465.6959709704684"
           }
         ]
       }
