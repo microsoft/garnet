@@ -119,7 +119,6 @@ namespace Garnet.server
                     //Indicates when there is an incorrect type 
                     output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
                     output.SpanByteAndMemory.Length = 0;
-                    output.SizeChange = 0;
                     return true;
                 }
 
