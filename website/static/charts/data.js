@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737427981939,
+  "lastUpdate": 1737427998915,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -93575,6 +93575,48 @@ window.BENCHMARK_DATA = {
             "value": 9107.115391322544,
             "unit": "ns",
             "range": "± 16.85394964096467"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "tejaskulkarni98902@gmail.com",
+            "name": "Tejas  Kulkarni",
+            "username": "Xizt"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "43654fd79a68aa7cde1f4ef8bf1d1c31a8f27e34",
+          "message": "Require version bump for latest gossip changes (#932)\n\nCo-authored-by: Badrish Chandramouli <badrishc@microsoft.com>",
+          "timestamp": "2025-01-20T18:47:33-08:00",
+          "tree_id": "abdf5ef6da5a4face42bb1c148a16571a14d6ca2",
+          "url": "https://github.com/microsoft/garnet/commit/43654fd79a68aa7cde1f4ef8bf1d1c31a8f27e34"
+        },
+        "date": 1737427978120,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: ACL)",
+            "value": 9186.768747965494,
+            "unit": "ns",
+            "range": "± 24.907408444134408"
+          },
+          {
+            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: AOF)",
+            "value": 9146.624537876674,
+            "unit": "ns",
+            "range": "± 29.21118348741751"
+          },
+          {
+            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: None)",
+            "value": 9117.44613647461,
+            "unit": "ns",
+            "range": "± 16.162999971015537"
           }
         ]
       }
