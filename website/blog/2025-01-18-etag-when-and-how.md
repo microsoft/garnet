@@ -13,6 +13,8 @@ You can find the [ETag API documentation here](/docs/commands/garnet-specific-co
 
 This article explores when and how you can use this new Garnet feature for both your current and future applications.
 
+<!--truncate-->
+
 ---
 
 ## Why Read This Article?  
@@ -22,6 +24,7 @@ If you're looking to:
 2. **Avoid the cost of transactions when working with non-atomic values in your cache store.**
 
 We'll cover these scenarios case by case.
+
 
 ---
 
@@ -167,7 +170,7 @@ private static async Task<(bool, long, T)> _updateItemIfMatch<T>(IDatabase db, l
 }
 ```
 
-Every read-(extra logic/modify)-write call starts by first reading the latest etag and value for a key using `GETWITHETAG` [here](./docs/commands/garnet-specific-commands#getwithetag), it then wraps it's update logic in a callback action and then calls the `PerformLockFreeSafeUpdate` method in `ETagAbstractions` to safely apply the update.
+Every read-(extra logic/modify)-write call starts by first reading the latest etag and value for a key using `GETWITHETAG` [here](/docs/commands/garnet-specific-commands#getwithetag), it then wraps it's update logic in a callback action and then calls the `PerformLockFreeSafeUpdate` method in `ETagAbstractions` to safely apply the update.
 
 Internally the `PerformLockFreeSafeUpdate` method runs a loop that retrieves the data that performs your update on the object and sends a `SETIFMATCH` request, the server only then updates the value if your ETag indicates that at the time of your decision you had performed your update on the latest copy of the data. If the server sees that between your read and write there were any updates the value, the server sends the latest copy of the data along with the updated etag, your client code then reapplies the changes on the latest copy and resends the request back to the server for the update, this form of update will guarantees that eventually all changes synchronize themselves on the server one after other.
 
