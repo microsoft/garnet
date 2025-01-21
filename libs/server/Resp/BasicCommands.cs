@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
@@ -1132,6 +1133,95 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteNull(ref dcurr, dend))
                             SendAndReset();
                     }
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes COMMAND GETKEYS subcommand.
+        /// </summary>
+        private bool NetworkCOMMAND_GETKEYS()
+        {
+            if (parseState.Count == 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMAND_GETKEYS));
+            }
+
+            var cmdName = parseState.GetString(0);
+            bool cmdFound = RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
+                          storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo);
+
+            if (!cmdFound)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_INVALID_COMMAND_SPECIFIED);
+            }
+
+            if (cmdInfo.KeySpecifications == null || cmdInfo.KeySpecifications.Length == 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
+            }
+
+            parseState.TryExtractKeysFromSpecs(cmdInfo.KeySpecifications, out var keys);
+
+
+            while (!RespWriteUtils.WriteArrayLength(keys.Count, ref dcurr, dend))
+                SendAndReset();
+
+            foreach (var key in keys)
+            {
+                while (!RespWriteUtils.WriteBulkString(key.Span, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes COMMAND GETKEYSANDFLAGS subcommand.
+        /// </summary>
+        private bool NetworkCOMMAND_GETKEYSANDFLAGS()
+        {
+            if (parseState.Count == 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMAND_GETKEYSANDFLAGS));
+            }
+
+            var cmdName = parseState.GetString(0);
+            bool cmdFound = RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
+                          storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo);
+
+            if (!cmdFound)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_INVALID_COMMAND_SPECIFIED);
+            }
+
+            if (cmdInfo.KeySpecifications == null || cmdInfo.KeySpecifications.Length == 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
+            }
+
+            parseState.TryExtractKeysAndFlagsFromSpecs(cmdInfo.KeySpecifications, out var keys, out var flags);
+
+            while (!RespWriteUtils.WriteArrayLength(keys.Count, ref dcurr, dend))
+                SendAndReset();
+
+            for (int i = 0; i < keys.Count; i++)
+            {
+                while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.WriteBulkString(keys[i].Span, ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.WriteArrayLength(flags[i].Length, ref dcurr, dend))
+                    SendAndReset();
+
+                foreach (var flag in flags[i])
+                {
+                    while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(flag), ref dcurr, dend))
+                        SendAndReset();
                 }
             }
 

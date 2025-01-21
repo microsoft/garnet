@@ -455,6 +455,8 @@ namespace Garnet.test
                 RespCommand.COMMAND_COUNT,
                 RespCommand.COMMAND_DOCS,
                 RespCommand.COMMAND_INFO,
+                RespCommand.COMMAND_GETKEYS,
+                RespCommand.COMMAND_GETKEYSANDFLAGS,
                 RespCommand.MEMORY_USAGE,
                 // Config
                 RespCommand.CONFIG_GET,
@@ -616,6 +618,89 @@ namespace Garnet.test
                         break;
                 }
             }
+        }
+
+        /// <summary>
+        /// Test COMMAND GETKEYS command with various command signatures
+        /// </summary>
+        [Test]
+        [TestCase("SET", new[] { "mykey" }, new[] { "mykey", "value" }, Description = "Simple SET command")]
+        [TestCase("MSET", new[] { "key1", "key2" }, new[] { "key1", "value1", "key2", "value2" }, Description = "Multiple SET pairs")]
+        [TestCase("MGET", new[] { "key1", "key2", "key3" }, new[] { "key1", "key2", "key3" }, Description = "Multiple GET keys")]
+        [TestCase("ZUNIONSTORE", new[] { "destination", "key1", "key2" }, new[] { "destination", "2", "key1", "key2" }, Description = "ZUNIONSTORE with multiple source keys")]
+        [TestCase("EVAL", new[] { "key1", "key2" }, new[] { "return redis.call('GET', KEYS[1])", "2", "key1", "key2" }, Description = "EVAL with multiple keys")]
+        [TestCase("EXPIRE", new[] { "mykey" }, new[] { "mykey", "100", "NX" }, Description = "EXPIRE with NX option")]
+        [TestCase("MIGRATE", new[] { "key1", "key2" }, new[] { "127.0.0.1", "6379", "", "0", "5000", "KEYS", "key1", "key2" }, Description = "MIGRATE with multiple keys")]
+        [TestCase("GEOSEARCHSTORE", new[] { "dst", "src" }, new[] { "dst", "src", "FROMMEMBER", "member", "COUNT", "10", "ASC" }, Description = "GEOSEARCHSTORE with options")]
+        public void CommandGetKeysTest(string command, string[] expectedKeys, string[] args)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var cmdArgs = new object[] { "GETKEYS", command }.Union(args).ToArray();
+            var results = (RedisResult[])db.Execute("COMMAND", cmdArgs);
+
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(expectedKeys.Length, results.Length);
+
+            for (var i = 0; i < expectedKeys.Length; i++)
+            {
+                ClassicAssert.AreEqual(expectedKeys[i], results[i].ToString());
+            }
+        }
+
+        /// <summary>
+        /// Test COMMAND GETKEYSANDFLAGS command with various command signatures
+        /// </summary>
+        [Test]
+        [TestCase("SET", "mykey", "RW access update variable_flags", new[] { "mykey", "value" }, Description = "Simple SET command")]
+        [TestCase("MSET", "key1,key2", "OW update|OW update", new[] { "key1", "value1", "key2", "value2" }, Description = "Multiple SET pairs")]
+        [TestCase("MGET", "key1,key2,key3", "RO access|RO access|RO access", new[] { "key1", "key2", "key3" }, Description = "Multiple GET keys")]
+        [TestCase("ZUNIONSTORE", "destination,key1,key2", "OW update|RO access|RO access", new[] { "destination", "2", "key1", "key2" }, Description = "ZUNIONSTORE with multiple source keys")]
+        [TestCase("EVAL", "key1,key2", "RW access update|RW access update", new[] { "return redis.call('GET', KEYS[1])", "2", "key1", "key2" }, Description = "EVAL with multiple keys")]
+        [TestCase("EXPIRE", "mykey", "RW update", new[] { "mykey", "100", "NX" }, Description = "EXPIRE with NX option")]
+        [TestCase("MIGRATE", "key1,key2", "RW access delete incomplete|RW access delete incomplete", new[] { "127.0.0.1", "6379", "", "0", "5000", "KEYS", "key1", "key2" }, Description = "MIGRATE with multiple keys")]
+        [TestCase("GEOSEARCHSTORE", "dst,src", "OW update|RO access", new[] { "dst", "src", "FROMMEMBER", "member", "COUNT", "10", "ASC" }, Description = "GEOSEARCHSTORE with options")]
+        public void CommandGetKeysAndFlagsTest(string command, string expectedKeysStr, string expectedFlagsStr, string[] args)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var expectedKeys = expectedKeysStr.Split(',');
+            var expectedFlags = expectedFlagsStr.Split('|')
+                .Select(f => f.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                .ToArray();
+
+            var cmdArgs = new object[] { "GETKEYSANDFLAGS", command }.Union(args).ToArray();
+            var results = (RedisResult[])db.Execute("COMMAND", cmdArgs);
+
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(expectedKeys.Length, results.Length);
+
+            for (var i = 0; i < expectedKeys.Length; i++)
+            {
+                var keyInfo = (RedisResult[])results[i];
+                ClassicAssert.AreEqual(2, keyInfo.Length);
+                ClassicAssert.AreEqual(expectedKeys[i], keyInfo[0].ToString());
+
+                var flags = ((RedisResult[])keyInfo[1]).Select(f => f.ToString()).ToArray();
+                CollectionAssert.AreEquivalent(expectedFlags[i], flags);
+            }
+        }
+
+        /// <summary>
+        /// Test COMMAND GETKEYS and GETKEYSANDFLAGS with invalid input
+        /// </summary>
+        [Test]
+        [TestCase("GETKEYS", Description = "GETKEYS with no command")]
+        [TestCase("GETKEYSANDFLAGS", Description = "GETKEYSANDFLAGS with no command")]
+        public void CommandGetKeysInvalidInputTest(string subcommand)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            Assert.Throws<RedisServerException>(() => db.Execute("COMMAND", subcommand));
+            Assert.Throws<RedisServerException>(() => db.Execute("COMMAND", subcommand, "INVALIDCOMMAND", "key1"));
         }
     }
 }
