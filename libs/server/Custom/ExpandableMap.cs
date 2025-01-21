@@ -404,8 +404,10 @@ namespace Garnet.server
             value = default;
 
             // Take the current map instance and its size
-            var map = eMap.Map;
+            // Note: Map instance could be updated as the map expands, but in this context we only care about its current snapshot
+            // Map's actual size could only grow, which is why it's important to take the size snapshot before the map itself.
             var mapSize = eMap.ActualSize;
+            var map = eMap.Map;
 
             // Try to match the specified command with the commands in the current map
             for (var i = 0; i < mapSize; i++)
@@ -435,8 +437,10 @@ namespace Garnet.server
             value = default;
 
             // Take the current map instance and its size
-            var map = eMap.Map;
+            // Note: Map instance could be updated as the map expands, but in this context we only care about its current snapshot
+            // Map's actual size could only grow, which is why it's important to take the size snapshot before the map itself.
             var mapSize = eMap.ActualSize;
+            var map = eMap.Map;
 
             // Try to match the specified sub-command with each command's sub-command maps
             for (var i = 0; i < mapSize; i++)
