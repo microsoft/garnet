@@ -81,21 +81,19 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            if (InPlaceUpdaterWorker(ref key, ref input, ref value, ref output, ref rmwInfo, out long sizeChange))
+            if (InPlaceUpdaterWorker(ref key, ref input, ref value, ref output, ref rmwInfo))
             {
                 if (!rmwInfo.RecordInfo.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                 if (functionsState.appendOnlyFile != null) WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeChange);
+                functionsState.objectStoreSizeTracker?.AddTrackedSize(output.SizeChange);
                 return true;
             }
             return false;
         }
 
-        bool InPlaceUpdaterWorker(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, out long sizeChange)
+        bool InPlaceUpdaterWorker(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
-            sizeChange = 0;
-
             // Expired data
             if (value.Expiration > 0 && input.header.CheckExpiry(value.Expiration))
             {

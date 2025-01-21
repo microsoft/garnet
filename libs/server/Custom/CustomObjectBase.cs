@@ -70,6 +70,8 @@ namespace Garnet.server
         /// <inheritdoc />
         public sealed override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
+            output.SizeChange = 0;
+
             switch (input.header.cmd)
             {
                 // Scan Command

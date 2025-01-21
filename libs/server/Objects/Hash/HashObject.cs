@@ -110,6 +110,8 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
+            output.SizeChange = 0;
+
             fixed (byte* outputSpan = output.SpanByteAndMemory.SpanByte.AsSpan())
             {
                 if (input.header.type != GarnetObjectType.Hash)
@@ -117,9 +119,11 @@ namespace Garnet.server
                     //Indicates when there is an incorrect type 
                     output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
                     output.SpanByteAndMemory.Length = 0;
+                    output.SizeChange = 0;
                     return true;
                 }
 
+                var previousSize = this.Size;
                 switch (input.header.HashOp)
                 {
                     case HashOperation.HSET:
@@ -183,6 +187,8 @@ namespace Garnet.server
                     default:
                         throw new GarnetException($"Unsupported operation {input.header.HashOp} in HashObject.Operate");
                 }
+
+                output.SizeChange = this.Size - previousSize;
             }
 
             if (hash.Count == 0)

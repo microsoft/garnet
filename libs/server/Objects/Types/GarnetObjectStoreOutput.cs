@@ -48,6 +48,11 @@ namespace Garnet.server
         /// </summary>
         public ObjectStoreOutputFlags OutputFlags;
 
+        /// <summary>
+        /// Object size change
+        /// </summary>
+        public long SizeChange;
+
         public void ConvertToHeap()
         {
             // Does not convert to heap when going pending, because we immediately complete pending operations for object store.

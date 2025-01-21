@@ -114,6 +114,7 @@ namespace Garnet.server
                     // Indicates an incorrect type of key
                     output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
                     output.SpanByteAndMemory.Length = 0;
+                    output.SizeChange = 0;
                     return true;
                 }
 
@@ -160,6 +161,8 @@ namespace Garnet.server
                     default:
                         throw new GarnetException($"Unsupported operation {input.header.SetOp} in SetObject.Operate");
                 }
+
+                output.SizeChange = this.Size - prevSize;
             }
 
             if (set.Count == 0)
