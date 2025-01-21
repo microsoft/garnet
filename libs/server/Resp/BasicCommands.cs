@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
@@ -1077,11 +1078,25 @@ namespace Garnet.server
                 }
             }
 
-            while (!RespWriteUtils.WriteArrayLength(docsCount * 2, ref dcurr, dend))
-                SendAndReset();
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var startptr = output.SpanByte.ToPointer();
+            var currptr = startptr;
+            var endptr = startptr + output.Length;
 
-            while (!RespWriteUtils.WriteAsciiDirect(resultSb.ToString(), ref dcurr, dend))
-                SendAndReset();
+            while (!RespWriteUtils.WriteArrayLength(docsCount * 2, ref currptr, endptr))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref startptr, ref ptrHandle, ref currptr, ref endptr);
+
+            while (!RespWriteUtils.WriteAsciiDirect(resultSb.ToString(), ref currptr, endptr))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref startptr, ref ptrHandle, ref currptr, ref endptr);
+
+            output.Length = (int)(currptr - startptr);
+
+            if (!output.IsSpanByte)
+                SendAndReset(output.Memory, output.Length);
+            else
+                dcurr += output.Length;
 
             return true;
         }
