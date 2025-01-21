@@ -188,9 +188,5 @@ class MovieReview
         return stringBuilder.ToString();
     }
 
-    private static readonly string[] CommonWords =
-    [
-    "The", "Amazing", "Incredible", "Fantastic", "Journey", "Adventure", "Mystery", "Legend", "Quest", "Saga",
-    "John", "Jane", "Smith", "Doe", "Alice", "Bob", "Charlie", "David", "Eve", "Frank"
-    ];
+    private static readonly string[] CommonWords = ["The", "Amazing", "Incredible", "Fantastic", "Journey", "Adventure", "Mystery", "Legend", "Quest", "Saga", "John", "Jane", "Smith", "Doe", "Alice", "Bob", "Charlie", "David", "Eve", "Frank"];
 }
