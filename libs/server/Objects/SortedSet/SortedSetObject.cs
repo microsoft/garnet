@@ -327,7 +327,7 @@ namespace Garnet.server
 
             if (sortedSetDict.Count == 0)
                 output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;
-            
+
             return true;
         }
 

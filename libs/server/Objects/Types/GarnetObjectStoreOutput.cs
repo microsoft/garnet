@@ -21,7 +21,7 @@ namespace Garnet.server
         /// Remove key
         /// </summary>
         RemoveKey = 1,
-        
+
         /// <summary>
         /// Wrong type of object
         /// </summary>

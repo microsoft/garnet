@@ -144,7 +144,7 @@ namespace Garnet.server
                         var operateSuccessful = value.Operate(ref input, ref output);
                         if (output.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
                             return true;
-                        
+
                         if (output.OutputFlags.HasFlag(ObjectStoreOutputFlags.RemoveKey))
                         {
                             rmwInfo.Action = RMWAction.ExpireAndStop;
@@ -241,7 +241,7 @@ namespace Garnet.server
                         value.Operate(ref input, ref output);
                         if (output.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
                             return true;
-                        
+
                         if (output.OutputFlags.HasFlag(ObjectStoreOutputFlags.RemoveKey))
                         {
                             rmwInfo.Action = RMWAction.ExpireAndStop;

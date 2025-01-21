@@ -189,7 +189,7 @@ namespace Garnet.server
 
             if (list.Count == 0)
                 output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;
-            
+
             return true;
         }
 

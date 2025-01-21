@@ -51,7 +51,7 @@ namespace Garnet.server
                             var opResult = value.Operate(ref input, ref dst);
                             if (dst.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
                                 return true;
-                            
+
                             return opResult;
                         }
 
