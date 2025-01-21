@@ -9,7 +9,7 @@ tags: [garnet, concurrency, caching, lock-free, etags]
 ETags are a powerful feature that enable techniques such as **Optimistic Concurrency Control** and **more efficient network bandwidth utilization for caching.**
 
 Currently, Garnet provides ETags as raw strings. This feature is available without requiring any migration, allowing your existing key-value pairs to start leveraging ETags immediately without impacting performance metrics.  
-You can find the [ETag API documentation here](./docs/commands/garnet-specific-commands#native-etag-support).
+You can find the [ETag API documentation here](/docs/commands/garnet-specific-commands#native-etag-support).
 
 This article explores when and how you can use this new Garnet feature for both your current and future applications.
 
@@ -57,7 +57,7 @@ In the absence of ETags, the entire payload for `k1` is returned on every read, 
 
 While this might not matter when transferring small payloads (e.g., 100 bytes of data within a high-bandwidth local network), it becomes significant when you have **multiple machines egressing larger payloads (e.g., 1MB each)** on a cloud provider. You pay the cost of egress, bandwidth usage, and experience delays due to the transmission of larger amounts of data.  
 
-To address this, Garnet provides the `GETIFNOTMATCH` API [here](./docs/commands/garnet-specific-commands#getifnotmatch).
+To address this, Garnet provides the `GETIFNOTMATCH` API [here](/docs/commands/garnet-specific-commands#getifnotmatch).
 , allowing you to fetch data only if it has changed since your last retrieval. Server 1 can store the ETag received in the initial payload in application memory and use `GETIFNOTMATCH` to refresh the local copy only if the value has changed.
 
 This approach is particularly beneficial in read-heavy systems where data changes infrequently. However, for frequently updated keys, using the regular `GET` API may still be preferable, as updated data will always need to be transmitted.  
@@ -90,7 +90,7 @@ Without ETags, the following sequence of events might occur:
 
 This race condition results in lost updates.  
 
-With ETags, you can use the `SETIFMATCH` API [here](./docs/commands/garnet-specific-commands#setifmatch) to implement a **compare-and-swap** mechanism that guarantees no updates are lost. The following code snippets demonstrate how this can be achieved.
+With ETags, you can use the `SETIFMATCH` API [here](/docs/commands/garnet-specific-commands#setifmatch) to implement a **compare-and-swap** mechanism that guarantees no updates are lost. The following code snippets demonstrate how this can be achieved.
 
 ---
 
