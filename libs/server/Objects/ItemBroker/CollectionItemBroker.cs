@@ -462,12 +462,12 @@ namespace Garnet.server
                 {
                     arrDstKey = dstKey.ToArray();
                     var dstStatusOp = storageSession.GET(arrDstKey, out var osDstObject, ref objectLockableContext);
-                    if (dstStatusOp != GarnetStatus.NOTFOUND) dstObj = osDstObject.garnetObject;
+                    if (dstStatusOp != GarnetStatus.NOTFOUND) dstObj = osDstObject.GarnetObject;
                 }
 
                 // Check for type match between the observer and the actual object type
                 // If types match, get next item based on item type
-                switch (osObject.garnetObject)
+                switch (osObject.GarnetObject)
                 {
                     case ListObject listObj:
                         currCount = listObj.LnkList.Count;

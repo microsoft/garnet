@@ -116,7 +116,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
             var input = new ObjectInput(header, count);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
@@ -237,7 +237,7 @@ namespace Garnet.server
                 }
                 else if (statusOp == GarnetStatus.OK)
                 {
-                    if (sourceList.garnetObject is not ListObject srcListObject)
+                    if (sourceList.GarnetObject is not ListObject srcListObject)
                         return GarnetStatus.WRONGTYPE;
 
                     if (srcListObject.LnkList.Count == 0)
@@ -252,10 +252,10 @@ namespace Garnet.server
 
                         if (statusOp == GarnetStatus.NOTFOUND)
                         {
-                            destinationList.garnetObject = new ListObject();
+                            destinationList.GarnetObject = new ListObject();
                         }
 
-                        if (destinationList.garnetObject is not ListObject listObject)
+                        if (destinationList.GarnetObject is not ListObject listObject)
                             return GarnetStatus.WRONGTYPE;
 
                         dstListObject = listObject;

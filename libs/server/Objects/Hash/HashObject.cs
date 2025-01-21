@@ -108,91 +108,86 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new HashObject(hash, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey, out bool wrongType)
+        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            removeKey = false;
-            wrongType = false;
-
-            fixed (byte* _output = output.SpanByte.AsSpan())
+            fixed (byte* outputSpan = output.SpanByteAndMemory.SpanByte.AsSpan())
             {
                 if (input.header.type != GarnetObjectType.Hash)
                 {
                     //Indicates when there is an incorrect type 
-                    wrongType = true;
-                    output.Length = 0;
-                    sizeChange = 0;
+                    output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                    output.SpanByteAndMemory.Length = 0;
                     return true;
                 }
 
-                var previousSize = this.Size;
                 switch (input.header.HashOp)
                 {
                     case HashOperation.HSET:
-                        HashSet(ref input, _output);
+                        HashSet(ref input, outputSpan);
                         break;
                     case HashOperation.HMSET:
-                        HashSet(ref input, _output);
+                        HashSet(ref input, outputSpan);
                         break;
                     case HashOperation.HGET:
-                        HashGet(ref input, ref output);
+                        HashGet(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HMGET:
-                        HashMultipleGet(ref input, ref output);
+                        HashMultipleGet(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HGETALL:
-                        HashGetAll(ref input, ref output);
+                        HashGetAll(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HDEL:
-                        HashDelete(ref input, _output);
+                        HashDelete(ref input, outputSpan);
                         break;
                     case HashOperation.HLEN:
-                        HashLength(_output);
+                        HashLength(outputSpan);
                         break;
                     case HashOperation.HSTRLEN:
-                        HashStrLength(ref input, _output);
+                        HashStrLength(ref input, outputSpan);
                         break;
                     case HashOperation.HEXISTS:
-                        HashExists(ref input, _output);
+                        HashExists(ref input, outputSpan);
                         break;
                     case HashOperation.HKEYS:
-                        HashGetKeysOrValues(ref input, ref output);
+                        HashGetKeysOrValues(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HVALS:
-                        HashGetKeysOrValues(ref input, ref output);
+                        HashGetKeysOrValues(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HINCRBY:
-                        HashIncrement(ref input, ref output);
+                        HashIncrement(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HINCRBYFLOAT:
-                        HashIncrement(ref input, ref output);
+                        HashIncrement(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HSETNX:
-                        HashSet(ref input, _output);
+                        HashSet(ref input, outputSpan);
                         break;
                     case HashOperation.HRANDFIELD:
-                        HashRandomField(ref input, ref output);
+                        HashRandomField(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HSCAN:
-                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
-                                out var patternLength, out var limitCount, out bool isNoValue, out var error))
+                        if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
+                                out var patternLength, out var limitCount, out var isNoValue, out var error))
                         {
                             Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                                 patternLength: patternLength, isNoValue);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output);
+                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory);
                         }
                         else
                         {
-                            ObjectUtils.WriteScanError(error, ref output);
+                            ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory);
                         }
                         break;
                     default:
                         throw new GarnetException($"Unsupported operation {input.header.HashOp} in HashObject.Operate");
                 }
-
-                sizeChange = this.Size - previousSize;
             }
 
-            removeKey = hash.Count == 0;
+            if (hash.Count == 0)
+                output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;
+
             return true;
         }
 
