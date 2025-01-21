@@ -798,7 +798,7 @@ namespace Garnet.server
 
             bool NetworkCustomTxn()
             {
-                if (!IsCommandArityValid(currentCustomTransaction.NameStr, parseState.Count))
+                if (!IsCommandArityValid(currentCustomTransaction.NameStr, currentCustomTransaction.arity, parseState.Count))
                 {
                     currentCustomTransaction = null;
                     return true;
@@ -815,7 +815,7 @@ namespace Garnet.server
 
             bool NetworkCustomProcedure()
             {
-                if (!IsCommandArityValid(currentCustomProcedure.NameStr, parseState.Count))
+                if (!IsCommandArityValid(currentCustomProcedure.NameStr, currentCustomProcedure.Arity, parseState.Count))
                 {
                     currentCustomProcedure = null;
                     return true;
@@ -840,7 +840,7 @@ namespace Garnet.server
         private bool NetworkCustomRawStringCmd<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!IsCommandArityValid(currentCustomRawStringCommand.NameStr, parseState.Count))
+            if (!IsCommandArityValid(currentCustomRawStringCommand.NameStr, currentCustomRawStringCommand.arity, parseState.Count))
             {
                 currentCustomRawStringCommand = null;
                 return true;
@@ -856,7 +856,7 @@ namespace Garnet.server
         bool NetworkCustomObjCmd<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!IsCommandArityValid(currentCustomObjectCommand.NameStr, parseState.Count))
+            if (!IsCommandArityValid(currentCustomObjectCommand.NameStr, currentCustomObjectCommand.arity, parseState.Count))
             {
                 currentCustomObjectCommand = null;
                 return true;
@@ -870,19 +870,18 @@ namespace Garnet.server
             return true;
         }
 
-        private bool IsCommandArityValid(string cmdName, int count)
+        private bool IsCommandArityValid(string cmdName, int arity, int count)
         {
-            if (storeWrapper.customCommandManager.customCommandsInfo.TryGetValue(cmdName, out var cmdInfo))
-            {
-                Debug.Assert(cmdInfo != null, "Custom command info should not be null");
-                if ((cmdInfo.Arity > 0 && count != cmdInfo.Arity - 1) ||
-                    (cmdInfo.Arity < 0 && count < -cmdInfo.Arity - 1))
-                {
-                    while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName), ref dcurr, dend))
-                        SendAndReset();
+            // Arity is not set for this command
+            if (arity == 0) return true;
 
-                    return false;
-                }
+            if ((arity > 0 && count != arity - 1) ||
+                (arity < 0 && count < -arity - 1))
+            {
+                while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName), ref dcurr, dend))
+                    SendAndReset();
+
+                return false;
             }
 
             return true;

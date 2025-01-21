@@ -386,38 +386,36 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Extension methods for ConcurrentExpandableMap
+    /// Extension methods for ExpandableMap
     /// </summary>
-    internal static class ConcurrentExpandableMapExtensions
+    internal static class ExpandableMapExtensions
     {
         /// <summary>
         /// Match command name with existing commands in map and return first matching instance
         /// </summary>
         /// <typeparam name="T">Type of command</typeparam>
-        /// <param name="eMap">Current instance of ConcurrentExpandableMap</param>
+        /// <param name="eMap">Current instance of ExpandableMap</param>
         /// <param name="cmd">Command name to match</param>
         /// <param name="value">Value of command found</param>
         /// <returns>True if command found</returns>
-        internal static bool MatchCommandSafe<T>(this ConcurrentExpandableMap<T> eMap, ReadOnlySpan<byte> cmd, out T value)
+        internal static bool MatchCommand<T>(this ExpandableMap<T> eMap, ReadOnlySpan<byte> cmd, out T value)
             where T : ICustomCommand
         {
             value = default;
-            eMap.eMapLock.ReadLock();
-            try
+
+            // Take the current map instance and its size
+            var map = eMap.Map;
+            var mapSize = eMap.ActualSize;
+
+            // Try to match the specified command with the commands in the current map
+            for (var i = 0; i < mapSize; i++)
             {
-                for (var i = 0; i < eMap.eMapUnsafe.ActualSize; i++)
+                var currCmd = map[i];
+                if (currCmd != null && cmd.SequenceEqual(new ReadOnlySpan<byte>(currCmd.Name)))
                 {
-                    var currCmd = eMap.eMapUnsafe.Map[i];
-                    if (currCmd != null && cmd.SequenceEqual(new ReadOnlySpan<byte>(currCmd.Name)))
-                    {
-                        value = currCmd;
-                        return true;
-                    }
+                    value = currCmd;
+                    return true;
                 }
-            }
-            finally
-            {
-                eMap.eMapLock.ReadUnlock();
             }
 
             return false;
@@ -427,26 +425,27 @@ namespace Garnet.server
         /// Match sub-command name with existing sub-commands in map and return first matching instance
         /// </summary>
         /// <typeparam name="T">Type of command</typeparam>
-        /// <param name="eMap">Current instance of ConcurrentExpandableMap</param>
+        /// <param name="eMap">Current instance of ExpandableMap</param>
         /// <param name="cmd">Sub-command name to match</param>
         /// <param name="value">Value of sub-command found</param>
         /// <returns></returns>
-        internal static bool MatchSubCommandSafe<T>(this ConcurrentExpandableMap<T> eMap, ReadOnlySpan<byte> cmd, out CustomObjectCommand value)
+        internal static bool MatchSubCommand<T>(this ExpandableMap<T> eMap, ReadOnlySpan<byte> cmd, out CustomObjectCommand value)
             where T : CustomObjectCommandWrapper
         {
             value = default;
-            eMap.eMapLock.ReadLock();
-            try
+
+            // Take the current map instance and its size
+            var map = eMap.Map;
+            var mapSize = eMap.ActualSize;
+
+            // Try to match the specified sub-command with each command's sub-command maps
+            for (var i = 0; i < mapSize; i++)
             {
-                for (var i = 0; i < eMap.eMapUnsafe.ActualSize; i++)
+                var subCommandEMap = map[i]?.commandMap.eMapUnsafe;
+                if (subCommandEMap.HasValue && subCommandEMap.Value.MatchCommand(cmd, out value))
                 {
-                    if (eMap.eMapUnsafe.Map[i] != null && eMap.eMapUnsafe.Map[i].commandMap.MatchCommandSafe(cmd, out value))
-                        return true;
+                    return true;
                 }
-            }
-            finally
-            {
-                eMap.eMapLock.ReadUnlock();
             }
 
             return false;

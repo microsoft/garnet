@@ -2158,7 +2158,6 @@ namespace Garnet.server
                 {
                     return RespCommand.GETIFNOTMATCH;
                 }
-
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.
