@@ -130,6 +130,8 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
+            output.SizeChange = 0;
+
             fixed (byte* outputSpan = output.SpanByteAndMemory.SpanByte.AsSpan())
             {
                 if (input.header.type != GarnetObjectType.List)
@@ -137,7 +139,6 @@ namespace Garnet.server
                     // Indicates an incorrect type of key
                     output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
                     output.SpanByteAndMemory.Length = 0;
-                    output.SizeChange = 0;
                     return true;
                 }
 
