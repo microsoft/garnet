@@ -755,6 +755,8 @@ namespace Garnet.server
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
                 RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(),
                 RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(),
+                RespCommand.COMMAND_GETKEYS => NetworkCOMMAND_GETKEYS(),
+                RespCommand.COMMAND_GETKEYSANDFLAGS => NetworkCOMMAND_GETKEYSANDFLAGS(),
                 RespCommand.ECHO => NetworkECHO(),
                 RespCommand.HELLO => NetworkHELLO(),
                 RespCommand.TIME => NetworkTIME(),

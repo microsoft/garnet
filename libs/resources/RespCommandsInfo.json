@@ -849,6 +849,20 @@
         "Tips": [
           "nondeterministic_output_order"
         ]
+      },
+      {
+        "Command": "COMMAND_GETKEYS",
+        "Name": "COMMAND|GETKEYS",
+        "Arity": -3,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Connection, Slow"
+      },
+      {
+        "Command": "COMMAND_GETKEYSANDFLAGS",
+        "Name": "COMMAND|GETKEYSANDFLAGS",
+        "Arity": -3,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Connection, Slow"
       }
     ]
   },
