@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737491639721,
+  "lastUpdate": 1737491641941,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -96891,6 +96891,48 @@ window.BENCHMARK_DATA = {
             "value": 13090.839189801898,
             "unit": "ns",
             "range": "± 50.886835498153275"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "pon.vijaynirmal@outlook.com",
+            "name": "Vijay Nirmal",
+            "username": "Vijay-Nirmal"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "27ab5a8227700a3170303d0f939c4f81f35b32e7",
+          "message": "[Compatibility] Add hash expiration - HEXPIRE, HPEXPIRE, HEXPIREAT, HPEXPIREAT, HTTL, HPTTL, HEXPIRETIME, HPEXPIRETIME, HPERSIST and HCOLLECT (#864)\n\n* WIP of HEXPIRE\r\n\r\n* WIP of EXPIRE\r\n\r\n* Initial impelementation of HEXIRE and family\r\n\r\n* Added more test cases\r\n\r\n* Handling serialization and Deserialization\r\n\r\n* Added LTM test cases\r\n\r\n* Added docs\r\n\r\n* Added HCOLLECT and ACL, Slot verification tests\r\n\r\n* Add a background task to call HCOLLECT to delete expired items\r\n\r\n* Code format fix\r\n\r\n* Fixed creation of empty object\r\n\r\n* Finial commit before review comment fixes, hopefully\r\n\r\n* This time for sure, this is the last commit before review comments\r\n\r\n* Fixed code format issue\r\n\r\n* Trying to fix test failure in pipeline (not happening in local)\r\n\r\n* Removed AsEnumerable to remove the allocation\r\n\r\n* Fixed missed TODO\r\n\r\n* Review comment fixes\r\n\r\n* Review comment fixes\r\n\r\n* Test fix, maybe\r\n\r\n* Review command fix\r\n\r\n* Fixed test failure\r\n\r\n* Test fix\r\n\r\n* Test fix\r\n\r\n* Fixed review commands\r\n\r\n* Pipeline test fix\r\n\r\n* Fixed review commands\r\n\r\n---------\r\n\r\nCo-authored-by: Tal Zaccai <talzacc@microsoft.com>",
+          "timestamp": "2025-01-21T13:30:37-07:00",
+          "tree_id": "0e5b2569e5bff4e590dc481a19aabb9bd1b5fcc8",
+          "url": "https://github.com/microsoft/garnet/commit/27ab5a8227700a3170303d0f939c4f81f35b32e7"
+        },
+        "date": 1737491637741,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: ACL)",
+            "value": 13191.581836155483,
+            "unit": "ns",
+            "range": "± 81.20756191872022"
+          },
+          {
+            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: AOF)",
+            "value": 13184.059661865234,
+            "unit": "ns",
+            "range": "± 63.20498209972405"
+          },
+          {
+            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: None)",
+            "value": 13212.112935384115,
+            "unit": "ns",
+            "range": "± 69.83226783397427"
           }
         ]
       }
