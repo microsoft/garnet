@@ -11,7 +11,6 @@ using System.Threading;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Garnet.server
 {
@@ -246,10 +245,8 @@ end
         // This cannot be readonly, as it is a mutable struct
         LuaStateWrapper state;
 
-        // Timeout details, if any
-        readonly TimeSpan timeoutPerInvocation;
-        readonly long timeoutPerInvocationTicks;
-        long nextTimeout;
+        // Timeout details
+        long timeoutAtTimestamp;
 
         // We need to temporarily store these for P/Invoke reasons
         // You shouldn't be touching them outside of the Compile and Run methods
