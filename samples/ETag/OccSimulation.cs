@@ -80,7 +80,7 @@ namespace ETag
                     break;
                 }
 
-                Action<ContosoUserInfo> userUpdateAction = (userInfo) => {};
+                Action<ContosoUserInfo> userUpdateAction = (userInfo) => { };
                 switch (input)
                 {
                     case "FirstName":
