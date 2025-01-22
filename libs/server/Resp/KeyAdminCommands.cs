@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -215,9 +215,7 @@ namespace Garnet.server
 
             if (rentedBuffer is not null)
             {
-                while (!RespWriteUtils.WriteDirect(buffer.Slice(0, totalLength), ref dcurr, dend))
-                    SendAndReset();
-
+                WriteDirectLarge(buffer.Slice(0, totalLength));
                 ArrayPool<byte>.Shared.Return(rentedBuffer);
             }
             else
