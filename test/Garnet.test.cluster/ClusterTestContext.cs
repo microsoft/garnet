@@ -100,7 +100,7 @@ namespace Garnet.test.cluster
         /// <param name="timeout"></param>
         /// <param name="useTLS"></param>
         /// <param name="certificates"></param>
-        public void CreateInstances(
+        public GarnetServer[] CreateInstances(
             int shards,
             bool cleanClusterConfig = true,
             bool tryRecover = false,
@@ -167,6 +167,8 @@ namespace Garnet.test.cluster
 
             foreach (var node in nodes)
                 node.Start();
+
+            return nodes;
         }
 
         /// <summary>
