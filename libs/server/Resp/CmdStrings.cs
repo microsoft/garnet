@@ -36,6 +36,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> info => "info"u8;
         public static ReadOnlySpan<byte> DOCS => "DOCS"u8;
         public static ReadOnlySpan<byte> docs => "docs"u8;
+        public static ReadOnlySpan<byte> GETKEYS => "GETKEYS"u8;
+        public static ReadOnlySpan<byte> GETKEYSANDFLAGS => "GETKEYSANDFLAGS"u8;
         public static ReadOnlySpan<byte> COMMAND => "COMMAND"u8;
         public static ReadOnlySpan<byte> LATENCY => "LATENCY"u8;
         public static ReadOnlySpan<byte> CLUSTER => "CLUSTER"u8;
@@ -231,9 +233,12 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR => "ERR INCR option supports a single increment-element pair"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_BITFIELD_TYPE => "ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is"u8;
         public static ReadOnlySpan<byte> RESP_ERR_SCRIPT_FLUSH_OPTIONS => "ERR SCRIPT FLUSH only support SYNC|ASYNC option"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_BUSSYKEY => "BUSYKEY Target key name already exists."u8;
         public static ReadOnlySpan<byte> RESP_ERR_LENGTH_AND_INDEXES => "If you want both the length and indexes, please just use IDX."u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_EXPIRE_TIME => "ERR invalid expire time, must be >= 0"u8;
         public static ReadOnlySpan<byte> RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS => "ERR HCOLLECT scan already in progress"u8;
+        public static ReadOnlySpan<byte> RESP_INVALID_COMMAND_SPECIFIED => "Invalid command specified"u8;
+        public static ReadOnlySpan<byte> RESP_COMMAND_HAS_NO_KEY_ARGS => "The command has no key arguments"u8;
 
         /// <summary>
         /// Response string templates

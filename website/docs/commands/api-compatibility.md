@@ -111,8 +111,8 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="command">**COMMAND**</span> | [COMMAND](server.md#command) | ➕ |  |
 |  | [COUNT](server.md#command-count) | ➕ |  |
 |  | [DOCS](server.md#command-docs) | ➕ |  |
-|  | GETKEYS | ➖ |  |
-|  | GETKEYSANDFLAGS | ➖ |  | 
+|  | [GETKEYS](server.md#command-getkeys) | ➖ |  |
+|  | [GETKEYSANDFLAGS](server.md#command-getkeysandflags) | ➖ |  | 
 |  | HELP | ➖ |  | 
 |  | [INFO](server.md#command-info) | ➕ |  | 
 |  | LIST | ➖ |  | 
@@ -125,13 +125,13 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="functions">**FUNCTIONS**</span> | FCALL | ➖ |  |
 |  | FCALL_RO | ➖ |  |
 |  | DELETE | ➖ |
-|  | DUMP | ➖ |
+|  | DUMP | ➖ |  |
 |  | FLUSH | ➖ |
 |  | HELP | ➖ |
 |  | KILL | ➖ |
 |  | LIST | ➖ |
 |  | LOAD | ➖ |
-|  | RESTORE | ➖ |
+|  | RESTORE | ➖ |  |
 |  | STATS | ➖ |
 | <span id="generic">**GENERIC**</span> | [PERSIST](generic-commands.md#persist) | ➕ |  |
 |  | [PEXPIRE](generic-commands.md#pexpire) | ➕ |  |
@@ -141,7 +141,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | RANDOMKEY | ➖ |  |
 |  | [RENAME](generic-commands.md#rename) | ➕ |  |
 |  | [RENAMENX](generic-commands.md#renamenx) | ➕ |  |
-|  | RESTORE | ➖ |  |
+|  | [RESTORE](generic-commands.md#restore) | ➕ |
 |  | [SCAN](generic-commands.md#scan) | ➕ |  |
 |  | SORT | ➖ |  |
 |  | SORT_RO | ➖ |  |
@@ -193,7 +193,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | PFSELFTEST | ➖ | Internal command |
 | <span id="keys">**KEYS**</span> | COPY | ➖ |  |
 |  | [DEL](generic-commands.md#del) | ➕ |  |
-|  | DUMP | ➖ |  |
+|  | [DUMP](generic-commands.md#dump) | ➕ |
 |  | [EXISTS](generic-commands.md#exists) | ➕ |  |
 |  | [EXPIRE](generic-commands.md#expire) | ➕ |  |
 |  | [EXPIREAT](generic-commands.md#expireat) | ➕ |  |
@@ -318,9 +318,9 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | HELP | ➖ |  |
 |  | LEN | ➖ |  |
 |  | RESET | ➖ |  |
-| <span id="sorted-set">**SORTED SET**</span> | BZMPOP | ➖ |  |
-|  | BZPOPMAX | ➖ |  |
-|  | BZPOPMIN | ➖ |  |
+| <span id="sorted-set">**SORTED SET**</span> | [BZMPOP](data-structures.md#bzmpop) | ➕ |  |
+|  | [BZPOPMAX](data-structures.md#bzpopmax) | ➕ |  |
+|  | [BZPOPMIN](data-structures.md#bzpopmin) | ➕ |  |
 |  | [ZADD](data-structures.md#zadd) | ➕ |  |
 |  | [ZCARD](data-structures.md#zcard) | ➕ |  |
 |  | [ZCOUNT](data-structures.md#zcount) | ➕ |  |

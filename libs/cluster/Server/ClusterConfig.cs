@@ -764,11 +764,12 @@ namespace Garnet.cluster
             List<string> replicas = [];
             for (ushort i = 1; i < workers.Length; i++)
             {
+                var nodeId = workers[i].Nodeid;
                 var replicaOf = workers[i].ReplicaOfNodeId;
                 if (replicaOf != null && replicaOf.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
                     var info = default(ConnectionInfo);
-                    _ = clusterProvider?.clusterManager?.GetConnectionInfo(replicaOf, out info);
+                    _ = clusterProvider?.clusterManager?.GetConnectionInfo(nodeId, out info);
                     replicas.Add(GetNodeInfo(i, info));
                 }
             }

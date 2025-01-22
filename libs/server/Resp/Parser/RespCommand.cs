@@ -25,6 +25,7 @@ namespace Garnet.server
         BITPOS,
         COSCAN,
         DBSIZE,
+        DUMP,
         EXISTS,
         EXPIRETIME,
         GEODIST,
@@ -101,6 +102,9 @@ namespace Garnet.server
         // Write commands
         APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
         BITFIELD,
+        BZMPOP,
+        BZPOPMAX,
+        BZPOPMIN,
         DECR,
         DECRBY,
         DEL,
@@ -152,6 +156,7 @@ namespace Garnet.server
         PFMERGE,
         PSETEX,
         RENAME,
+        RESTORE,
         RENAMENX,
         RPOP,
         RPOPLPUSH,
@@ -280,6 +285,8 @@ namespace Garnet.server
         COMMAND_COUNT,
         COMMAND_DOCS,
         COMMAND_INFO,
+        COMMAND_GETKEYS,
+        COMMAND_GETKEYSANDFLAGS,
 
         MEMORY,
         // MEMORY_USAGE is a read-only command, so moved up
@@ -389,6 +396,8 @@ namespace Garnet.server
             RespCommand.COMMAND_COUNT,
             RespCommand.COMMAND_DOCS,
             RespCommand.COMMAND_INFO,
+            RespCommand.COMMAND_GETKEYS,
+            RespCommand.COMMAND_GETKEYSANDFLAGS,
             RespCommand.MEMORY_USAGE,
             // Config
             RespCommand.CONFIG_GET,
@@ -678,6 +687,7 @@ namespace Garnet.server
                         (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nGET\r\n"u8) => RespCommand.GET,
                         (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nDEL\r\n"u8) => RespCommand.DEL,
                         (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nTTL\r\n"u8) => RespCommand.TTL,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nDUMP\r\n"u8) => RespCommand.DUMP,
                         (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nINCR\r\n"u8) => RespCommand.INCR,
                         (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nPTTL\r\n"u8) => RespCommand.PTTL,
                         (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nDECR\r\n"u8) => RespCommand.DECR,
@@ -699,6 +709,7 @@ namespace Garnet.server
                         (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("PSETEX\r\n"u8) => RespCommand.PSETEX,
                         (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("SETBIT\r\n"u8) => RespCommand.SETBIT,
                         (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("SUBSTR\r\n"u8) => RespCommand.SUBSTR,
+                        (3 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("ESTORE\r\n"u8) && ptr[8] == 'R' => RespCommand.RESTORE,
                         (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("SE"u8) => RespCommand.SETRANGE,
                         (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("GE"u8) => RespCommand.GETRANGE,
 
@@ -1100,6 +1111,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.BLMPOP;
                                         }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZMPOP\r\n"u8))
+                                        {
+                                            return RespCommand.BZMPOP;
+                                        }
                                         break;
                                     case 'D':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("DBSIZE\r\n"u8))
@@ -1388,6 +1403,14 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPERSIST"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
                                 {
                                     return RespCommand.HPERSIST;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMAX"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.BZPOPMAX;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMIN"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.BZPOPMIN;
                                 }
                                 break;
                             case 9:
@@ -1781,6 +1804,16 @@ namespace Garnet.server
                 if (subCommand.SequenceEqual(CmdStrings.DOCS))
                 {
                     return RespCommand.COMMAND_DOCS;
+                }
+
+                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYS))
+                {
+                    return RespCommand.COMMAND_GETKEYS;
+                }
+
+                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYSANDFLAGS))
+                {
+                    return RespCommand.COMMAND_GETKEYSANDFLAGS;
                 }
             }
             else if (command.SequenceEqual(CmdStrings.PING))

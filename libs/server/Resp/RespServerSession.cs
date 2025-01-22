@@ -587,6 +587,8 @@ namespace Garnet.server
                 RespCommand.READWRITE => NetworkREADWRITE(),
                 RespCommand.EXPIREAT => NetworkEXPIREAT(RespCommand.EXPIREAT, ref storageApi),
                 RespCommand.PEXPIREAT => NetworkEXPIREAT(RespCommand.PEXPIREAT, ref storageApi),
+                RespCommand.DUMP => NetworkDUMP(ref storageApi),
+                RespCommand.RESTORE => NetworkRESTORE(ref storageApi),
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };
@@ -644,6 +646,9 @@ namespace Garnet.server
                 RespCommand.ZRANDMEMBER => SortedSetRandomMember(ref storageApi),
                 RespCommand.ZDIFF => SortedSetDifference(ref storageApi),
                 RespCommand.ZDIFFSTORE => SortedSetDifferenceStore(ref storageApi),
+                RespCommand.BZMPOP => SortedSetBlockingMPop(),
+                RespCommand.BZPOPMAX => SortedSetBlockingPop(cmd),
+                RespCommand.BZPOPMIN => SortedSetBlockingPop(cmd),
                 RespCommand.ZREVRANGE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANGEBYLEX => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
@@ -765,6 +770,8 @@ namespace Garnet.server
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
                 RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(),
                 RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(),
+                RespCommand.COMMAND_GETKEYS => NetworkCOMMAND_GETKEYS(),
+                RespCommand.COMMAND_GETKEYSANDFLAGS => NetworkCOMMAND_GETKEYSANDFLAGS(),
                 RespCommand.ECHO => NetworkECHO(),
                 RespCommand.HELLO => NetworkHELLO(),
                 RespCommand.TIME => NetworkTIME(),

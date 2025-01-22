@@ -663,6 +663,53 @@ namespace Garnet.test.cluster
         public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
     }
 
+    internal class DUMP : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(DUMP);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0]];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class RESTORE : BaseCommand
+    {
+        private int counter = -1;
+
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(RESTORE);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            counter += 1;
+
+            var payload = new byte[]
+            {
+                0x00, // value type
+                0x03, // length of payload
+                0x76, 0x61, 0x6C,       // 'v', 'a', 'l'
+                0x0B, 0x00, // RDB version
+                0xDB, 0x82, 0x3C, 0x30, 0x38, 0x78, 0x5A, 0x99 // Crc64
+            };
+
+            var ssk = GetSingleSlotKeys;
+            return [$"{ssk[0]}-{counter}", "0", Encoding.ASCII.GetString(payload)];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
     internal class WATCH : BaseCommand
     {
         public override bool IsArrayCommand => true;
