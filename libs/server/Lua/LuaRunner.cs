@@ -209,6 +209,8 @@ end
 
         private static readonly ReadOnlyMemory<byte> LoaderBlockBytes = Encoding.UTF8.GetBytes(LoaderBlock);
 
+        private static (int Start, ulong[] ByteMask) NoScriptDetails = InitializeNoScriptDetails();
+
         // References into Registry on the Lua side
         //
         // These are mix of objects we regularly update,
@@ -272,6 +274,9 @@ end
             if (respServerSession != null)
             {
                 respServerSession.respProtocolVersion = 2;
+
+                // The act of setting these fields causes NoScript checks to be performed
+                (respServerSession.noScriptStart, respServerSession.noScriptBitmap) = NoScriptDetails;
             }
 
             keysTableRegistryIndex = -1;
@@ -1485,6 +1490,47 @@ end
 
                 runner.state.Pop(1);
             }
+        }
+
+        /// <summary>
+        /// Construct a bitmap we can quickly check for NoScript commands in.
+        /// </summary>
+        /// <returns></returns>
+        private static (int Start, ulong[] Bitmap) InitializeNoScriptDetails()
+        {
+            if (!RespCommandsInfo.TryGetRespCommandsInfo(out var allCommands, externalOnly: true))
+            {
+                throw new InvalidOperationException("Could not build NoScript bitmap");
+            }
+
+            var noScript =
+                allCommands
+                    .Where(static kv => kv.Value.Flags.HasFlag(RespCommandFlags.NoScript))
+                    .Select(static kv => kv.Value.Command)
+                    .OrderBy(static x => x)
+                    .ToList();
+
+            var start = (int)noScript[0];
+            var end = (int)noScript[^1];
+            var size = end - start;
+            var numULongs = size / sizeof(ulong);
+            if ((size % numULongs) != 0)
+            {
+                numULongs++;
+            }
+
+            var bitmap = new ulong[numULongs];
+            foreach (var member in noScript)
+            {
+                var asInt = (int)member;
+                var stepped = asInt - start;
+                var ulongIndex = stepped / sizeof(ulong);
+                var bitIndex = stepped % sizeof(ulong);
+
+                bitmap[ulongIndex] |= 1UL << bitIndex;
+            }
+
+            return (start, bitmap);
         }
     }
 

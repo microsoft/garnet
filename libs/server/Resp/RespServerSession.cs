@@ -438,7 +438,9 @@ namespace Garnet.server
                 // Check ACL permissions for the command
                 if (cmd != RespCommand.INVALID)
                 {
-                    if (CheckACLPermissions(cmd))
+                    var noScriptPassed = true;
+
+                    if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
                         if (txnManager.state != TxnState.None)
                         {
@@ -463,8 +465,16 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
-                            SendAndReset();
+                        if (noScriptPassed)
+                        {
+                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOSCRIPT, ref dcurr, dend))
+                                SendAndReset();
+                        }
                     }
                 }
                 else

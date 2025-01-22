@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -18,6 +19,9 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
+        internal int noScriptStart;
+        internal ulong[] noScriptBitmap;
+
         private void ProcessAdminCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi) where TGarnetApi : IGarnetApi
         {
             /*
@@ -76,6 +80,32 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// For sessions that are hosting scripting calls, checks that the parsed command is runnable.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool CheckScriptPermissions(RespCommand cmd)
+        {
+            if (noScriptBitmap != null)
+            {
+                var ix = (int)cmd - noScriptStart;
+                var ulongIndex = ix / sizeof(ulong);
+                if (ulongIndex >= 0 && ulongIndex < noScriptBitmap.Length)
+                {
+                    var bitmapIndex = ix % sizeof(ulong);
+                    var mask = 1UL << bitmapIndex;
+
+                    if ((noScriptBitmap[ulongIndex] & mask) != 0)
+                    {
+                        OnACLOrNoScriptFailure(this, cmd);
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Performs permission checks for the current user and the given command.
         /// (NOTE: This function does not check keyspaces)
         /// </summary>
@@ -88,33 +118,39 @@ namespace Garnet.server
 
             if ((!_authenticator.IsAuthenticated || !_user.CanAccessCommand(cmd)) && !cmd.IsNoAuth())
             {
-                OnACLFailure(this, cmd);
+                OnACLOrNoScriptFailure(this, cmd);
                 return false;
             }
             return true;
+        }
 
-            // Failing should be rare, and is not important for performance so hide this behind
-            // a method call to keep icache pressure down
-            [MethodImpl(MethodImplOptions.NoInlining)]
-            static void OnACLFailure(RespServerSession self, RespCommand cmd)
+        /// <summary>
+        /// Handle ACL or NoScript failures.
+        /// 
+        /// Failing should be rare, and is not important for performance so hide this behind
+        /// a method call to keep icache pressure down
+        /// </summary>
+        /// <param name="self"></param>
+        /// <param name="cmd"></param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void OnACLOrNoScriptFailure(RespServerSession self, RespCommand cmd)
+        {
+            // If we're rejecting a command, we may need to cleanup some ambient state too
+            if (cmd == RespCommand.CustomRawStringCmd)
             {
-                // If we're rejecting a command, we may need to cleanup some ambient state too
-                if (cmd == RespCommand.CustomRawStringCmd)
-                {
-                    self.currentCustomRawStringCommand = null;
-                }
-                else if (cmd == RespCommand.CustomObjCmd)
-                {
-                    self.currentCustomObjectCommand = null;
-                }
-                else if (cmd == RespCommand.CustomTxn)
-                {
-                    self.currentCustomTransaction = null;
-                }
-                else if (cmd == RespCommand.CustomProcedure)
-                {
-                    self.currentCustomProcedure = null;
-                }
+                self.currentCustomRawStringCommand = null;
+            }
+            else if (cmd == RespCommand.CustomObjCmd)
+            {
+                self.currentCustomObjectCommand = null;
+            }
+            else if (cmd == RespCommand.CustomTxn)
+            {
+                self.currentCustomTransaction = null;
+            }
+            else if (cmd == RespCommand.CustomProcedure)
+            {
+                self.currentCustomProcedure = null;
             }
         }
 
