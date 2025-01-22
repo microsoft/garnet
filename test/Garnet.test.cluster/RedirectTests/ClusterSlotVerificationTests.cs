@@ -58,6 +58,8 @@ namespace Garnet.test.cluster
                 new PERSIST(),
                 new EXPIRE(),
                 new TTL(),
+                new DUMP(),
+                new RESTORE(),
                 new SDIFFSTORE(),
                 new SDIFF(),
                 new SMOVE(),
@@ -260,6 +262,8 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("DUMP")]
+        [TestCase("RESTORE")]
         [TestCase("SDIFFSTORE")]
         [TestCase("SDIFF")]
         [TestCase("SMOVE")]
@@ -422,6 +426,8 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("DUMP")]
+        [TestCase("RESTORE")]
         [TestCase("SDIFFSTORE")]
         [TestCase("SDIFF")]
         [TestCase("SMOVE")]
@@ -595,6 +601,8 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("DUMP")]
+        [TestCase("RESTORE")]
         [TestCase("SDIFFSTORE")]
         [TestCase("SDIFF")]
         [TestCase("SMOVE")]
@@ -933,6 +941,8 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("DUMP")]
+        [TestCase("RESTORE")]
         [TestCase("SDIFFSTORE")]
         [TestCase("SDIFF")]
         [TestCase("SMOVE")]
@@ -1123,6 +1133,8 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("DUMP")]
+        [TestCase("RESTORE")]
         [TestCase("SDIFFSTORE")]
         [TestCase("SDIFF")]
         [TestCase("SMOVE")]

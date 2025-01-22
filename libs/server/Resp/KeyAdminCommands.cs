@@ -1,7 +1,8 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
@@ -10,6 +11,220 @@ namespace Garnet.server
 {
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
+        /// <summary>
+        /// RDB format version
+        /// </summary>
+        private readonly byte RDB_VERSION = 11;
+
+        /// <summary>
+        /// RESTORE
+        /// </summary>
+        /// <param name="storageApi"></param>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <returns></returns>
+        bool NetworkRESTORE<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 3)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RESTORE));
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            if (!parseState.TryGetInt(parseState.Count - 2, out var expiry))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var value = parseState.GetArgSliceByRef(2);
+
+            var valueSpan = value.ReadOnlySpan;
+
+            // Restore is only implemented for string type
+            if (valueSpan[0] != 0x00)
+            {
+                while (!RespWriteUtils.WriteError("ERR RESTORE currently only supports string types", ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // check if length of value is at least 10
+            if (valueSpan.Length < 10)
+            {
+                while (!RespWriteUtils.WriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // get footer (2 bytes of rdb version + 8 bytes of crc)
+            var footer = valueSpan[^10..];
+
+            var rdbVersion = (footer[1] << 8) | footer[0];
+
+            if (rdbVersion > RDB_VERSION)
+            {
+                while (!RespWriteUtils.WriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (storeWrapper.serverOptions.SkipRDBRestoreChecksumValidation)
+            {
+                // crc is calculated over the encoded payload length, payload and the rdb version bytes
+                // skip's the value type byte and crc64 bytes
+                var calculatedCrc = new ReadOnlySpan<byte>(Crc64.Hash(valueSpan.Slice(0, valueSpan.Length - 8)));
+
+                // skip's rdb version bytes
+                var payloadCrc = footer[2..];
+
+                if (calculatedCrc.SequenceCompareTo(payloadCrc) != 0)
+                {
+                    while (!RespWriteUtils.WriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+            }
+
+            // decode the length of payload
+            if (!RespLengthEncodingUtils.TryReadLength(valueSpan.Slice(1), out var length, out var payloadStart))
+            {
+                while (!RespWriteUtils.WriteError("ERR DUMP payload length format is invalid", ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // Start from payload start and skip the value type byte
+            var val = value.ReadOnlySpan.Slice(payloadStart + 1, length);
+
+            var valArgSlice = scratchBufferManager.CreateArgSlice(val);
+
+            var sbKey = key.SpanByte;
+
+            parseState.InitializeWithArgument(valArgSlice);
+
+            RawStringInput input;
+            if (expiry > 0)
+            {
+                var inputArg = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks;
+                input = new RawStringInput(RespCommand.SETEXNX, ref parseState, arg1: inputArg);
+            }
+            else
+            {
+                input = new RawStringInput(RespCommand.SETEXNX, ref parseState);
+            }
+
+            var status = storageApi.SET_Conditional(ref sbKey, ref input);
+
+            if (status is GarnetStatus.NOTFOUND)
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_BUSSYKEY, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// DUMP 
+        /// </summary>
+        bool NetworkDUMP<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.DUMP));
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            var status = storageApi.GET(key, out var value);
+
+            if (status is GarnetStatus.NOTFOUND)
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            Span<byte> encodedLength = stackalloc byte[5];
+
+            if (!RespLengthEncodingUtils.TryWriteLength(value.ReadOnlySpan.Length, encodedLength, out var bytesWritten))
+            {
+                while (!RespWriteUtils.WriteError("ERR DUMP payload length is invalid", ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            encodedLength = encodedLength.Slice(0, bytesWritten);
+
+            // Len of the dump (payload type + redis encoded payload len + payload len + rdb version + crc64)
+            var len = 1 + encodedLength.Length + value.ReadOnlySpan.Length + 2 + 8;
+            Span<byte> lengthInASCIIBytes = stackalloc byte[NumUtils.NumDigitsInLong(len)];
+            var lengthInASCIIBytesLen = NumUtils.LongToSpanByte(len, lengthInASCIIBytes);
+
+            // Total len (% + length of ascii bytes + CR LF + payload type + redis encoded payload len + payload len + rdb version + crc64 + CR LF)
+            var totalLength = 1 + lengthInASCIIBytesLen + 2 + 1 + encodedLength.Length + value.ReadOnlySpan.Length + 2 + 8 + 2;
+
+            byte[] rentedBuffer = null;
+            var buffer = totalLength <= (dend - dcurr)
+                ? new Span<byte>(dcurr, (int)(dend - dcurr))
+                : (rentedBuffer = ArrayPool<byte>.Shared.Rent(totalLength));
+
+            var offset = 0;
+
+            // Write RESP bulk string prefix and length
+            buffer[offset++] = 0x24; // '$'
+            lengthInASCIIBytes.CopyTo(buffer[offset..]);
+            offset += lengthInASCIIBytes.Length;
+            buffer[offset++] = 0x0D; // CR
+            buffer[offset++] = 0x0A; // LF
+
+            // value type byte
+            buffer[offset++] = 0x00;
+
+            // length of the span
+            encodedLength.CopyTo(buffer[offset..]);
+            offset += encodedLength.Length;
+
+            // copy value to buffer
+            value.ReadOnlySpan.CopyTo(buffer[offset..]);
+            offset += value.ReadOnlySpan.Length;
+
+            // Write RDB version
+            buffer[offset++] = (byte)(RDB_VERSION & 0xff);
+            buffer[offset++] = (byte)((RDB_VERSION >> 8) & 0xff);
+
+            // Compute and write CRC64 checksum
+            var payloadToHash = buffer.Slice(1 + lengthInASCIIBytes.Length + 2 + 1,
+                encodedLength.Length + value.ReadOnlySpan.Length + 2);
+
+            var crcBytes = Crc64.Hash(payloadToHash);
+            crcBytes.CopyTo(buffer[offset..]);
+            offset += crcBytes.Length;
+
+            // Write final CRLF
+            buffer[offset++] = 0x0D; // CR
+            buffer[offset] = 0x0A; // LF
+
+            if (rentedBuffer is not null)
+            {
+                WriteDirectLarge(buffer.Slice(0, totalLength));
+                ArrayPool<byte>.Shared.Return(rentedBuffer);
+            }
+            else
+            {
+                dcurr += totalLength;
+            }
+
+            return true;
+        }
 
         /// <summary>
         /// TryRENAME
