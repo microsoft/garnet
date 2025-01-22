@@ -111,8 +111,8 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="command">**COMMAND**</span> | [COMMAND](server.md#command) | ➕ |  |
 |  | [COUNT](server.md#command-count) | ➕ |  |
 |  | [DOCS](server.md#command-docs) | ➕ |  |
-|  | GETKEYS | ➖ |  |
-|  | GETKEYSANDFLAGS | ➖ |  | 
+|  | [GETKEYS](server.md#command-getkeys) | ➖ |  |
+|  | [GETKEYSANDFLAGS](server.md#command-getkeysandflags) | ➖ |  | 
 |  | HELP | ➖ |  | 
 |  | [INFO](server.md#command-info) | ➕ |  | 
 |  | LIST | ➖ |  | 
