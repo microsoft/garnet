@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Net;
 using Garnet.client;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -131,8 +132,7 @@ namespace Garnet.cluster
                     current.LocalNodeId,
                     remoteNodeId,
                     new GarnetClientSession(
-                        address,
-                        port,
+                        new IPEndPoint(IPAddress.Parse(address), port),
                         clusterProvider.replicationManager.GetAofSyncNetworkBufferSettings,
                         clusterProvider.replicationManager.GetNetworkPool,
                         tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,

@@ -142,7 +142,7 @@ namespace Garnet.test
         public void SeSaveTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
-            IServer server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+            IServer server = redis.GetServer(TestUtils.EndPoint);
 
             var lastSave = server.LastSave();
 
@@ -171,7 +171,7 @@ namespace Garnet.test
                 db.StringSet("SeSaveRecoverTestKey", "SeSaveRecoverTestValue");
 
                 // Issue and wait for DB save
-                var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                var server = redis.GetServer(TestUtils.EndPoint);
                 server.Save(SaveType.BackgroundSave);
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
@@ -203,7 +203,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(ldata, returned_data_before_recovery);
 
                 // Issue and wait for DB save
-                var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                var server = redis.GetServer(TestUtils.EndPoint);
                 server.Save(SaveType.BackgroundSave);
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
@@ -242,7 +242,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(value, (string)retValue);
 
                 // Issue and wait for DB save
-                var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                var server = redis.GetServer(TestUtils.EndPoint);
                 server.Save(SaveType.BackgroundSave);
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
@@ -288,7 +288,7 @@ namespace Garnet.test
                 ValidateServerData(db, strKey, strValue, listKey, listValue);
 
                 // Issue and wait for DB save
-                var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                var server = redis.GetServer(TestUtils.EndPoint);
                 server.Save(SaveType.BackgroundSave);
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
@@ -329,7 +329,7 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
 
                 // Issue and wait for DB save
-                var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                var server = redis.GetServer(TestUtils.EndPoint);
                 server.Save(SaveType.BackgroundSave);
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
@@ -383,7 +383,7 @@ namespace Garnet.test
                 var inforesult = db.Execute("INFO");
 
                 // Issue and wait for DB save
-                var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                var server = redis.GetServer(TestUtils.EndPoint);
                 server.Save(SaveType.BackgroundSave);
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
 
@@ -447,7 +447,7 @@ namespace Garnet.test
         public void SeFlushDbAndFlushAllTest([Values(RespCommand.FLUSHALL, RespCommand.FLUSHDB)] RespCommand cmd)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
-            IServer server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+            IServer server = redis.GetServer(TestUtils.EndPoint);
 
             var db = redis.GetDatabase(0);
 

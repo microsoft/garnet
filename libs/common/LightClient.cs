@@ -43,20 +43,18 @@ namespace Garnet.common
         /// <summary>
         /// Create client instance to connect to specfied destination
         /// </summary>
-        /// <param name="address">IP address</param>
-        /// <param name="port">Port</param>
+        /// <param name="endpoint">The server endpoint</param>
         /// <param name="opType">Op type</param>
         /// <param name="onResponseDelegateUnsafe">Callback that takes in a byte array and length, and returns the number of bytes read and the number of requests processed</param>
         /// <param name="BufferSize">Message buffer size.</param>
         /// <param name="sslOptions">SSL options</param>
         public LightClient(
-            string address,
-            int port,
+            EndPoint endpoint,
             int opType,
             OnResponseDelegateUnsafe onResponseDelegateUnsafe = null,
             int BufferSize = 1 << 18,
             SslClientAuthenticationOptions sslOptions = null)
-            : base(address, port, BufferSize)
+            : base(endpoint, BufferSize)
         {
             this.networkBufferSettings = new NetworkBufferSettings(BufferSize, BufferSize);
             this.networkPool = networkBufferSettings.CreateBufferPool();
@@ -109,9 +107,9 @@ namespace Garnet.common
         /// </summary>
         public override void Connect()
         {
-            socket = GetSendSocket(address, port);
+            socket = GetSendSocket(endpoint);
             networkHandler = new LightClientTcpNetworkHandler(this, socket, networkBufferSettings, networkPool, sslOptions != null, this);
-            networkHandler.StartAsync(sslOptions, $"{address}:{port}").ConfigureAwait(false).GetAwaiter().GetResult();
+            networkHandler.StartAsync(sslOptions, endpoint.ToString()).ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
         }
@@ -161,18 +159,18 @@ namespace Garnet.common
             networkSender.GetResponseObject();
         }
 
-        private static Socket GetSendSocket(string address, int port, int millisecondsTimeout = -2)
+        private static Socket GetSendSocket(EndPoint endpoint, int millisecondsTimeout = -2)
         {
-            var ip = IPAddress.Parse(address);
-            var endPoint = new IPEndPoint(ip, port);
-            var socket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+            var socket = endpoint switch
             {
-                NoDelay = true
+                UnixDomainSocketEndPoint unix => new Socket(unix.AddressFamily, SocketType.Stream, ProtocolType.Unspecified),
+
+                _ => new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true }
             };
 
             if (millisecondsTimeout != -2)
             {
-                IAsyncResult result = socket.BeginConnect(endPoint, null, null);
+                IAsyncResult result = socket.BeginConnect(endpoint, null, null);
                 result.AsyncWaitHandle.WaitOne(millisecondsTimeout, true);
                 if (socket.Connected)
                     socket.EndConnect(result);
@@ -184,7 +182,7 @@ namespace Garnet.common
             }
             else
             {
-                socket.Connect(endPoint);
+                socket.Connect(endpoint);
             }
 
             return socket;

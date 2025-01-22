@@ -679,8 +679,7 @@ namespace Garnet.test.cluster
 
             if (gcsConnections[nodeIndex] == null)
             {
-                var endpoint = GetEndPoint(nodeIndex).ToIPEndPoint();
-                gcsConnections[nodeIndex] = new GarnetClientSession(endpoint.Address.ToString(), endpoint.Port, new());
+                gcsConnections[nodeIndex] = new GarnetClientSession(GetEndPoint(nodeIndex), new());
                 gcsConnections[nodeIndex].Connect();
             }
             return gcsConnections[nodeIndex];
@@ -866,16 +865,14 @@ namespace Garnet.test.cluster
         public static ResponseState ParseResponseState(
             byte[] result,
             out int slot,
-            out string address,
-            out int port,
+            out IPEndPoint endpoint,
             out string returnValue,
             out string[] returnValueArray)
         {
             returnValue = null;
             returnValueArray = null;
             slot = default;
-            address = default;
-            port = default;
+            endpoint = null;
 
             if (result[0] == (byte)'+' || result[0] == (byte)':' || result[0] == '*' || result[0] == '$')
             {
@@ -884,12 +881,12 @@ namespace Garnet.test.cluster
             }
             else if (result.AsSpan().StartsWith(MOVED))
             {
-                GetEndPointFromResponse(result, out slot, out address, out port);
+                GetEndPointFromResponse(result, out slot, out endpoint);
                 return ResponseState.MOVED;
             }
             else if (result.AsSpan().StartsWith(ASK))
             {
-                GetEndPointFromResponse(result, out slot, out address, out port);
+                GetEndPointFromResponse(result, out slot, out endpoint);
                 return ResponseState.ASK;
             }
             else if (result.AsSpan().StartsWith(MIGRATING))
@@ -914,20 +911,17 @@ namespace Garnet.test.cluster
             byte[] key,
             byte[] result,
             out int slot,
-            out string address,
-            out int port,
+            out IPEndPoint endpoint,
             out byte[] value,
             out string[] values)
         {
             value = null;
             values = null;
             slot = -1;
-            address = null;
-            port = -1;
+            endpoint = null;
             if (result[0] == (byte)'+' || result[0] == (byte)':' || result[0] == '*' || result[0] == '$')
             {
-                port = node.Port;
-                address = node.Address;
+                endpoint = node.EndPoint as IPEndPoint;
                 slot = HashSlot(key);
                 var strValue = ParseRespToString(result, out values);
                 if (strValue != null)
@@ -936,12 +930,12 @@ namespace Garnet.test.cluster
             }
             else if (result.AsSpan()[..MOVED.Length].SequenceEqual(MOVED))
             {
-                GetEndPointFromResponse(result, out slot, out address, out port);
+                GetEndPointFromResponse(result, out slot, out endpoint);
                 return ResponseState.MOVED;
             }
             else if (result.AsSpan()[..ASK.Length].SequenceEqual(ASK))
             {
-                GetEndPointFromResponse(result, out slot, out address, out port);
+                GetEndPointFromResponse(result, out slot, out endpoint);
                 return ResponseState.ASK;
             }
             else if (result.AsSpan()[..MIGRATING.Length].SequenceEqual(MIGRATING))
@@ -966,7 +960,7 @@ namespace Garnet.test.cluster
             LightClientRequest[] lightClientRequests = new LightClientRequest[Ports.Length];
             for (int i = 0; i < Ports.Length; i++)
             {
-                lightClientRequests[i] = new LightClientRequest("127.0.0.1", Ports[i], 0, LightReceive);
+                lightClientRequests[i] = new LightClientRequest(new IPEndPoint(IPAddress.Loopback, Ports[i]), 0, LightReceive);
             }
             return lightClientRequests;
         }
@@ -1553,13 +1547,16 @@ namespace Garnet.test.cluster
             return -1;
         }
 
-        public static void GetEndPointFromResponse(byte[] resp, out int slot, out string address, out int port)
+        public static void GetEndPointFromResponse(byte[] resp, out int slot, out IPEndPoint endpoint)
         {
             var strResp = Encoding.ASCII.GetString(resp);
             var data = strResp.Split(' ');
             slot = int.Parse(data[1]);
-            address = data[2].Split(':')[0];
-            port = int.Parse(data[2].Split(':')[1].Split('\r')[0]);
+
+            var endpointSplit = data[2].Split(':');
+            endpoint = new IPEndPoint(
+                IPAddress.Parse(endpointSplit[0]),
+                int.Parse(endpointSplit[1].Split('\r')[0]));
         }
 
         public string AddDelSlots(int nodeIndex, List<int> slots, bool addslot, ILogger logger = null)
@@ -2127,18 +2124,17 @@ namespace Garnet.test.cluster
             }
         }
 
-        public ResponseState SetKey(int nodeIndex, byte[] key, byte[] value, out int slot, out string address, out int port, bool asking = false, int expiry = -1, ILogger logger = null)
+        public ResponseState SetKey(int nodeIndex, byte[] key, byte[] value, out int slot, out IPEndPoint actualEndpoint, bool asking = false, int expiry = -1, ILogger logger = null)
         {
             var endPoint = GetEndPoint(nodeIndex);
-            return SetKey(endPoint, key, value, out slot, out address, out port, asking, expiry, logger);
+            return SetKey(endPoint, key, value, out slot, out actualEndpoint, asking, expiry, logger);
         }
 
-        public ResponseState SetKey(IPEndPoint endPoint, byte[] key, byte[] value, out int slot, out string address, out int port, bool asking = false, int expiry = -1, ILogger logger = null)
+        public ResponseState SetKey(IPEndPoint endPoint, byte[] key, byte[] value, out int slot, out IPEndPoint actualEndpoint, bool asking = false, int expiry = -1, ILogger logger = null)
         {
             var server = GetServer(endPoint);
             slot = -1;
-            address = endPoint.Address.ToString();
-            port = endPoint.Port;
+            actualEndpoint = endPoint;
 
             if (asking)
             {
@@ -2158,14 +2154,14 @@ namespace Garnet.test.cluster
             {
                 if (expiry == -1)
                 {
-                    ICollection<object> args = new List<object>() { (object)key, (object)value };
+                    ICollection<object> args = [key, value];
                     var resp = (string)server.Execute("set", args, CommandFlags.NoRedirect);
                     ClassicAssert.AreEqual("OK", resp);
                     return ResponseState.OK;
                 }
                 else
                 {
-                    ICollection<object> args = new List<object>() { (object)key, (object)expiry, (object)value };
+                    ICollection<object> args = [key, expiry, value];
                     var resp = (string)server.Execute("setex", args, CommandFlags.NoRedirect);
                     ClassicAssert.AreEqual("OK", resp);
                     return ResponseState.OK;
@@ -2176,15 +2172,15 @@ namespace Garnet.test.cluster
                 var tokens = e.Message.Split(' ');
                 if (tokens.Length > 10 && tokens[2].Equals("MOVED"))
                 {
-                    address = tokens[5].Split(':')[0];
-                    port = int.Parse(tokens[5].Split(':')[1]);
+                    var endpointSplit = tokens[5].Split(':');
+                    actualEndpoint = new IPEndPoint(IPAddress.Parse(endpointSplit[0]), int.Parse(endpointSplit[1]));
                     slot = int.Parse(tokens[8]);
                     return ResponseState.MOVED;
                 }
                 else if (tokens.Length > 10 && tokens[0].Equals("Endpoint"))
                 {
-                    address = tokens[1].Split(':')[0];
-                    port = int.Parse(tokens[1].Split(':')[1]);
+                    var endpointSplit = tokens[1].Split(':');
+                    actualEndpoint = new IPEndPoint(IPAddress.Parse(endpointSplit[0]), int.Parse(endpointSplit[1]));
                     slot = int.Parse(tokens[4]);
                     return ResponseState.ASK;
                 }
@@ -2206,17 +2202,16 @@ namespace Garnet.test.cluster
             }
         }
 
-        public string GetKey(int nodeIndex, byte[] key, out int slot, out string address, out int port, out ResponseState responseState, bool asking = false, ILogger logger = null)
+        public string GetKey(int nodeIndex, byte[] key, out int slot, out IPEndPoint actualEndpoint, out ResponseState responseState, bool asking = false, ILogger logger = null)
         {
             var endPoint = GetEndPoint(nodeIndex);
-            return GetKey(endPoint, key, out slot, out address, out port, out responseState, asking, logger);
+            return GetKey(endPoint, key, out slot, out actualEndpoint, out responseState, asking, logger);
         }
 
-        public string GetKey(IPEndPoint endPoint, byte[] key, out int slot, out string address, out int port, out ResponseState responseState, bool asking = false, ILogger logger = null)
+        public string GetKey(IPEndPoint endPoint, byte[] key, out int slot, out IPEndPoint actualEndpoint, out ResponseState responseState, bool asking = false, ILogger logger = null)
         {
             slot = -1;
-            address = endPoint.Address.ToString();
-            port = endPoint.Port;
+            actualEndpoint = endPoint;
             responseState = ResponseState.NONE;
             var server = GetServer(endPoint);
             string result;
@@ -2247,24 +2242,26 @@ namespace Garnet.test.cluster
                 var tokens = e.Message.Split(' ');
                 if (tokens.Length > 10 && tokens[2].Equals("MOVED"))
                 {
-                    address = tokens[5].Split(':')[0];
-                    port = int.Parse(tokens[5].Split(':')[1]);
+                    var endpointSplit = tokens[5].Split(':');
+                    actualEndpoint = new IPEndPoint(IPAddress.Parse(endpointSplit[0]), int.Parse(endpointSplit[1]));
                     slot = int.Parse(tokens[8]);
                     responseState = ResponseState.MOVED;
                     return "MOVED";
                 }
                 else if (tokens.Length > 10 && tokens[0].Equals("Endpoint"))
                 {
-                    address = tokens[1].Split(':')[0];
-                    port = int.Parse(tokens[1].Split(':')[1]);
+                    var endpointSplit = tokens[1].Split(':');
+                    actualEndpoint = new IPEndPoint(IPAddress.Parse(endpointSplit[0]), int.Parse(endpointSplit[1]));
+
                     slot = int.Parse(tokens[4]);
                     responseState = ResponseState.ASK;
                     return "ASK";
                 }
                 else if (tokens[0].Equals("ASK"))
                 {
-                    address = tokens[2].Split(':')[0];
-                    port = int.Parse(tokens[2].Split(':')[1]);
+                    var endpointSplit = tokens[2].Split(':');
+                    actualEndpoint = new IPEndPoint(IPAddress.Parse(endpointSplit[0]), int.Parse(endpointSplit[1]));
+
                     slot = int.Parse(tokens[1]);
                     responseState = ResponseState.ASK;
                     return "ASK";

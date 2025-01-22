@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
 using BDN.benchmark.CustomProcs;
@@ -34,7 +35,7 @@ namespace BDN.benchmark.Cluster
             {
                 QuietMode = true,
                 EnableCluster = !disableSlotVerification,
-                Port = port,
+                EndPoint = new IPEndPoint(IPAddress.Loopback, port),
                 CleanClusterConfig = true,
             };
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))

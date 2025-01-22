@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -159,7 +160,7 @@ namespace Garnet.cluster
 
                 if (gsn == null)
                 {
-                    gsn = new GarnetServerNode(clusterProvider, address, port, tlsOptions?.TlsClientOptions, logger: logger);
+                    gsn = new GarnetServerNode(clusterProvider, new IPEndPoint(IPAddress.Parse(address), port), tlsOptions?.TlsClientOptions, logger: logger);
                     created = true;
                 }
 
@@ -257,7 +258,7 @@ namespace Garnet.cluster
                     // Establish new connection only if it is not in banlist and not in dictionary
                     if (!workerBanList.ContainsKey(nodeId) && !clusterConnectionStore.GetConnection(nodeId, out var _))
                     {
-                        var gsn = new GarnetServerNode(clusterProvider, address, port, tlsOptions?.TlsClientOptions, logger: logger)
+                        var gsn = new GarnetServerNode(clusterProvider, new IPEndPoint(IPAddress.Parse(address), port), tlsOptions?.TlsClientOptions, logger: logger)
                         {
                             NodeId = nodeId
                         };
@@ -315,12 +316,12 @@ namespace Garnet.cluster
                         }
 
                         gossipStats.gossip_timeout_count++;
-                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.Address, currNode.Port);
+                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {endpoint}] timeout!", currNode.NodeId, currNode.EndPoint);
                         _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.Address, currNode.Port);
+                        logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {endpoint}] failed!", currNode.NodeId, currNode.EndPoint);
                         _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                         gossipStats.gossip_failed_count++;
                     }
@@ -364,12 +365,12 @@ namespace Garnet.cluster
                         }
 
                         gossipStats.gossip_timeout_count++;
-                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.Address, currNode.Port);
+                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {endpoint}] timeout!", currNode.NodeId, currNode.EndPoint);
                         _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.Address, currNode.Port);
+                        logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {endpoint}] failed!", currNode.NodeId, currNode.EndPoint);
                         _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                         gossipStats.gossip_failed_count++;
                     }

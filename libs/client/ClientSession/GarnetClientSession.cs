@@ -21,8 +21,7 @@ namespace Garnet.client
     /// </summary>
     public sealed unsafe partial class GarnetClientSession : IServerHook, IMessageConsumer
     {
-        readonly string address;
-        readonly int port;
+        readonly EndPoint endpoint;
         readonly int bufferSizeDigits;
         INetworkSender networkSender;
         readonly ElasticCircularBuffer<TaskType> tasksTypes = new();
@@ -88,8 +87,7 @@ namespace Garnet.client
         /// <summary>
         /// Create client instance
         /// </summary>
-        /// <param name="address">IP address of server</param>
-        /// <param name="port">Port of server</param>
+        /// <param name="endpoint">Endpoint of the server</param>
         /// <param name="tlsOptions">TLS options</param>
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
@@ -98,8 +96,7 @@ namespace Garnet.client
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
         /// <param name="logger">Logger</param>
         public GarnetClientSession(
-            string address,
-            int port,
+            EndPoint endpoint,
             NetworkBufferSettings networkBufferSettings,
             LimitedFixedBufferPool networkPool = null,
             SslClientAuthenticationOptions tlsOptions = null,
@@ -108,8 +105,7 @@ namespace Garnet.client
             int networkSendThrottleMax = 8,
             ILogger logger = null)
         {
-            this.address = address;
-            this.port = port;
+            this.endpoint = endpoint;
 
             this.usingManagedNetworkPool = networkPool != null;
             this.networkBufferSettings = networkBufferSettings;
@@ -131,7 +127,7 @@ namespace Garnet.client
         /// <param name="token"></param>
         public void Connect(int timeoutMs = 0, CancellationToken token = default)
         {
-            socket = GetSendSocket(address, port, timeoutMs);
+            socket = GetSendSocket(endpoint, timeoutMs);
             networkHandler = new GarnetClientSessionTcpNetworkHandler(
                 this,
                 socket,
@@ -141,7 +137,7 @@ namespace Garnet.client
                 messageConsumer: this,
                 networkSendThrottleMax: networkSendThrottleMax,
                 logger: logger);
-            networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false).GetAwaiter().GetResult();
+            networkHandler.StartAsync(sslOptions, endpoint.ToString(), token).ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
             offset = networkSender.GetResponseObjectHead();
@@ -448,18 +444,18 @@ namespace Garnet.client
             }
         }
 
-        private static Socket GetSendSocket(string address, int port, int millisecondsTimeout)
+        private static Socket GetSendSocket(EndPoint endpoint, int millisecondsTimeout)
         {
-            var ip = IPAddress.Parse(address);
-            var endPoint = new IPEndPoint(ip, port);
-            var socket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+            var socket = endpoint switch
             {
-                NoDelay = true
+                UnixDomainSocketEndPoint unix => new Socket(unix.AddressFamily, SocketType.Stream, ProtocolType.Unspecified),
+
+                _ => new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true }
             };
 
             if (millisecondsTimeout > 0)
             {
-                IAsyncResult result = socket.BeginConnect(endPoint, null, null);
+                IAsyncResult result = socket.BeginConnect(endpoint, null, null);
                 result.AsyncWaitHandle.WaitOne(millisecondsTimeout, true);
                 if (socket.Connected)
                     socket.EndConnect(result);
@@ -471,7 +467,7 @@ namespace Garnet.client
             }
             else
             {
-                socket.Connect(endPoint);
+                socket.Connect(endpoint);
             }
 
             return socket;

@@ -43,14 +43,9 @@ namespace Garnet.test
     internal static class TestUtils
     {
         /// <summary>
-        /// Address
+        /// Test server end point
         /// </summary>
-        public static string Address = "127.0.0.1";
-
-        /// <summary>
-        /// Port
-        /// </summary>
-        public static int Port = 33278;
+        public static EndPoint EndPoint = new IPEndPoint(IPAddress.Loopback, 33278);
 
         /// <summary>
         /// Whether to use a test progress logger
@@ -223,17 +218,17 @@ namespace Garnet.test
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
-            var _LogDir = logCheckpointDir;
+            var logDir = logCheckpointDir;
             if (UseAzureStorage)
-                _LogDir = $"{AzureTestContainer}/{AzureTestDirectory}";
+                logDir = $"{AzureTestContainer}/{AzureTestDirectory}";
 
-            if (logCheckpointDir != null && !UseAzureStorage) _LogDir = new DirectoryInfo(string.IsNullOrEmpty(_LogDir) ? "." : _LogDir).FullName;
+            if (logCheckpointDir != null && !UseAzureStorage) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
 
-            var _CheckpointDir = logCheckpointDir;
+            var checkpointDir = logCheckpointDir;
             if (UseAzureStorage)
-                _CheckpointDir = $"{AzureTestContainer}/{AzureTestDirectory}";
+                checkpointDir = $"{AzureTestContainer}/{AzureTestDirectory}";
 
-            if (logCheckpointDir != null && !UseAzureStorage) _CheckpointDir = new DirectoryInfo(string.IsNullOrEmpty(_CheckpointDir) ? "." : _CheckpointDir).FullName;
+            if (logCheckpointDir != null && !UseAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? "." : checkpointDir).FullName;
 
             if (useAcl)
             {
@@ -262,10 +257,9 @@ namespace Garnet.test
             GarnetServerOptions opts = new(logger)
             {
                 EnableStorageTier = logCheckpointDir != null,
-                LogDir = _LogDir,
-                CheckpointDir = _CheckpointDir,
-                Address = Address,
-                Port = Port,
+                LogDir = logDir,
+                CheckpointDir = checkpointDir,
+                EndPoint = EndPoint,
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexSize = indexSize,
@@ -421,19 +415,19 @@ namespace Garnet.test
                     timeout,
                     gossipDelay,
                     UseAzureStorage,
-                    UseTLS: UseTLS,
+                    useTLS: UseTLS,
                     cleanClusterConfig: cleanClusterConfig,
                     lowMemory: lowMemory,
-                    MemorySize: MemorySize,
-                    PageSize: PageSize,
-                    SegmentSize: SegmentSize,
-                    MainMemoryReplication: MainMemoryReplication,
-                    AofMemorySize: AofMemorySize,
-                    OnDemandCheckpoint: OnDemandCheckpoint,
-                    CommitFrequencyMs: CommitFrequencyMs,
-                    DisableStorageTier: DisableStorageTier,
-                    EnableIncrementalSnapshots: EnableIncrementalSnapshots,
-                    FastCommit: FastCommit,
+                    memorySize: MemorySize,
+                    pageSize: PageSize,
+                    segmentSize: SegmentSize,
+                    mainMemoryReplication: MainMemoryReplication,
+                    aofMemorySize: AofMemorySize,
+                    onDemandCheckpoint: OnDemandCheckpoint,
+                    commitFrequencyMs: CommitFrequencyMs,
+                    disableStorageTier: DisableStorageTier,
+                    enableIncrementalSnapshots: EnableIncrementalSnapshots,
+                    fastCommit: FastCommit,
                     authUsername: authUsername,
                     authPassword: authPassword,
                     useAcl: useAcl,
@@ -448,13 +442,18 @@ namespace Garnet.test
                     luaMemoryLimit: luaMemoryLimit);
 
                 ClassicAssert.IsNotNull(opts);
-                int iter = 0;
-                while (!IsPortAvailable(opts.Port))
+
+                if (opts.EndPoint is IPEndPoint ipEndpoint)
                 {
-                    ClassicAssert.Less(30, iter, "Failed to connect within 30 seconds");
-                    TestContext.Progress.WriteLine($"Waiting for Port {opts.Port} to become available for {TestContext.CurrentContext.WorkerId}:{iter++}");
-                    Thread.Sleep(1000);
+                    int iter = 0;
+                    while (!IsPortAvailable(ipEndpoint.Port))
+                    {
+                        ClassicAssert.Less(30, iter, "Failed to connect within 30 seconds");
+                        TestContext.Progress.WriteLine($"Waiting for Port {ipEndpoint.Port} to become available for {TestContext.CurrentContext.WorkerId}:{iter++}");
+                        Thread.Sleep(1000);
+                    }
                 }
+
                 nodes[i] = new GarnetServer(opts, loggerFactory);
             }
             return nodes;
@@ -463,27 +462,27 @@ namespace Garnet.test
         public static GarnetServerOptions GetGarnetServerOptions(
             string checkpointDir,
             string logDir,
-            int Port,
+            int port,
             bool disablePubSub = false,
             bool disableObjects = false,
             bool tryRecover = false,
             bool enableAOF = false,
             int timeout = -1,
             int gossipDelay = 5,
-            bool UseAzureStorage = false,
-            bool UseTLS = false,
+            bool useAzureStorage = false,
+            bool useTLS = false,
             bool cleanClusterConfig = false,
             bool lowMemory = false,
-            string MemorySize = default,
-            string PageSize = default,
-            string SegmentSize = "1g",
-            bool MainMemoryReplication = false,
-            string AofMemorySize = "64m",
-            bool OnDemandCheckpoint = false,
-            int CommitFrequencyMs = 0,
-            bool DisableStorageTier = false,
-            bool EnableIncrementalSnapshots = false,
-            bool FastCommit = true,
+            string memorySize = default,
+            string pageSize = default,
+            string segmentSize = "1g",
+            bool mainMemoryReplication = false,
+            string aofMemorySize = "64m",
+            bool onDemandCheckpoint = false,
+            int commitFrequencyMs = 0,
+            bool disableStorageTier = false,
+            bool enableIncrementalSnapshots = false,
+            bool fastCommit = true,
             string authUsername = null,
             string authPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
@@ -497,17 +496,17 @@ namespace Garnet.test
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "")
         {
-            if (UseAzureStorage)
+            if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
-            var _LogDir = logDir + $"/{Port}";
-            if (UseAzureStorage)
-                _LogDir = $"{AzureTestContainer}/{AzureTestDirectory}/{Port}";
-            if (logDir != null && !UseAzureStorage) _LogDir = new DirectoryInfo(string.IsNullOrEmpty(_LogDir) ? "." : _LogDir).FullName;
+            logDir += $"/{port}";
+            if (useAzureStorage)
+                logDir = $"{AzureTestContainer}/{AzureTestDirectory}/{port}";
+            if (logDir != null && !useAzureStorage) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
 
-            var _CheckpointDir = checkpointDir + $"/{Port}";
-            if (UseAzureStorage)
-                _CheckpointDir = $"{AzureTestContainer}/{AzureTestDirectory}/{Port}";
-            if (!UseAzureStorage) _CheckpointDir = new DirectoryInfo(string.IsNullOrEmpty(_CheckpointDir) ? "." : _CheckpointDir).FullName;
+            checkpointDir += $"/{port}";
+            if (useAzureStorage)
+                checkpointDir = $"{AzureTestContainer}/{AzureTestDirectory}/{port}";
+            if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? "." : checkpointDir).FullName;
 
             IAuthenticationSettings authenticationSettings = null;
             if (useAcl && aadAuthenticationSettings != null)
@@ -526,13 +525,12 @@ namespace Garnet.test
             GarnetServerOptions opts = new(logger)
             {
                 ThreadPoolMinThreads = 100,
-                SegmentSize = SegmentSize,
-                ObjectStoreSegmentSize = SegmentSize,
-                EnableStorageTier = UseAzureStorage ? true : DisableStorageTier ? false : logDir != null,
-                LogDir = DisableStorageTier ? null : _LogDir,
-                CheckpointDir = _CheckpointDir,
-                Address = Address,
-                Port = Port,
+                SegmentSize = segmentSize,
+                ObjectStoreSegmentSize = segmentSize,
+                EnableStorageTier = useAzureStorage ? true : disableStorageTier ? false : logDir != null,
+                LogDir = disableStorageTier ? null : logDir,
+                CheckpointDir = checkpointDir,
+                EndPoint = EndPoint,
                 DisablePubSub = disablePubSub,
                 DisableObjects = disableObjects,
                 Recover = tryRecover,
@@ -545,9 +543,9 @@ namespace Garnet.test
                 EnableAOF = enableAOF,
                 MemorySize = "1g",
                 GossipDelay = gossipDelay,
-                EnableFastCommit = FastCommit,
+                EnableFastCommit = fastCommit,
                 MetricsSamplingFrequency = metricsSamplingFrequency,
-                TlsOptions = UseTLS ? new GarnetTlsOptions(
+                TlsOptions = useTLS ? new GarnetTlsOptions(
                     certFileName: certFile,
                     certPassword: certPassword,
                     clientCertificateRequired: true,
@@ -568,14 +566,14 @@ namespace Garnet.test
                     },
                     logger: logger)
                 : null,
-                DeviceFactoryCreator = UseAzureStorage ?
+                DeviceFactoryCreator = useAzureStorage ?
                     () => new AzureStorageNamedDeviceFactory(AzureEmulatedStorageString, logger)
                     : () => new LocalStorageNamedDeviceFactory(logger: logger),
-                MainMemoryReplication = MainMemoryReplication,
-                AofMemorySize = AofMemorySize,
-                OnDemandCheckpoint = OnDemandCheckpoint,
-                CommitFrequencyMs = CommitFrequencyMs,
-                EnableIncrementalSnapshots = EnableIncrementalSnapshots,
+                MainMemoryReplication = mainMemoryReplication,
+                AofMemorySize = aofMemorySize,
+                OnDemandCheckpoint = onDemandCheckpoint,
+                CommitFrequencyMs = commitFrequencyMs,
+                EnableIncrementalSnapshots = enableIncrementalSnapshots,
                 AuthSettings = useAcl ? authenticationSettings : (authPassword != null ? authenticationSettings : null),
                 ClusterUsername = authUsername,
                 ClusterPassword = authPassword,
@@ -586,8 +584,8 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "1024" : MemorySize;
-                opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
+                opts.MemorySize = opts.ObjectStoreLogMemorySize = memorySize == default ? "1024" : memorySize;
+                opts.PageSize = opts.ObjectStorePageSize = pageSize == default ? "512" : pageSize;
             }
 
             return opts;
@@ -635,7 +633,7 @@ namespace Garnet.test
                 cmds.Remove("PUBLISH");
             }
 
-            EndPointCollection defaultEndPoints = endpoints == default ? new() { { Address, port == default ? Port : port }, } : endpoints;
+            EndPointCollection defaultEndPoints = endpoints == default ? [EndPoint] : endpoints;
             var configOptions = new ConfigurationOptions
             {
                 EndPoints = defaultEndPoints,
@@ -690,7 +688,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClient(Address, Port, sslOptions, recordLatency: recordLatency);
+            return new GarnetClient(EndPoint, sslOptions, recordLatency: recordLatency);
         }
 
         public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool recordLatency = false)
@@ -706,7 +704,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClientSession(Address, Port, new(), tlsOptions: sslOptions);
+            return new GarnetClientSession(EndPoint, new(), tlsOptions: sslOptions);
         }
 
         public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, CountResponseType countResponseType = CountResponseType.Tokens)
@@ -722,15 +720,16 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new LightClientRequest(Address, Port, 0, onReceive, sslOptions, countResponseType);
+            return new LightClientRequest(EndPoint, 0, onReceive, sslOptions, countResponseType);
         }
 
-        public static EndPointCollection GetEndPoints(int shards, int port = default)
+        public static EndPointCollection GetEndPoints(int shards, IPAddress address, int port)
         {
-            Port = port == default ? Port : port;
+            EndPoint = new IPEndPoint(address, port);
+
             EndPointCollection endPoints = [];
             for (int i = 0; i < shards; i++)
-                endPoints.Add(IPAddress.Parse("127.0.0.1"), Port + i);
+                endPoints.Add(address, port + i);
             return endPoints;
         }
 

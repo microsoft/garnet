@@ -43,11 +43,10 @@ namespace Garnet.cluster
             // If connection not available try to initialize it
             if (gsn == null)
             {
-                var (address, port) = oldConfig.GetEndpointFromNodeId(nodeId);
+                var endPoint = oldConfig.GetEndpointFromNodeId(nodeId);
                 gsn = new GarnetServerNode(
                     clusterProvider,
-                    address,
-                    port,
+                    endPoint,
                     clusterProvider.storeWrapper.serverOptions.TlsOptions?.TlsClientOptions,
                     logger: logger);
 
@@ -77,10 +76,9 @@ namespace Garnet.cluster
         /// <returns></returns>
         private async Task<GarnetClient> CreateConnectionAsync(string nodeId)
         {
-            var (address, port) = oldConfig.GetEndpointFromNodeId(nodeId);
+            var endpoint = oldConfig.GetEndpointFromNodeId(nodeId);
             var client = new GarnetClient(
-                address,
-                port,
+                endpoint,
                 clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                 sendPageSize: sendPageSize,
                 maxOutstandingTasks: 8,

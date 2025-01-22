@@ -99,8 +99,7 @@ namespace Resp.benchmark
                 clusterShards[i].count = 1 + (opts.ReplicaReads ? pNodes[i].Children.Count : 0);
                 IPEndPoint pEndpoint = (IPEndPoint)pNodes[i].EndPoint;
                 clusterShards[i].primary = new LightClient(
-                    pEndpoint.Address.ToString(),
-                    pEndpoint.Port,
+                    pEndpoint,
                     (int)opType,
                     lighClientOnResponseDelegate,
                     bufferSize,
@@ -115,8 +114,7 @@ namespace Resp.benchmark
                     {
                         IPEndPoint rEndpoint = (IPEndPoint)pNodes[i].Children[j].EndPoint;
                         clusterShards[i].replicas[j] = new LightClient(
-                            rEndpoint.Address.ToString(),
-                            rEndpoint.Port,
+                            rEndpoint,
                             (int)opType,
                             lighClientOnResponseDelegate,
                             bufferSize,
@@ -364,8 +362,7 @@ namespace Resp.benchmark
             {
                 var endpoint = (IPEndPoint)nodes[i].EndPoint;
                 clients[i] = new LightClient(
-                    endpoint.Address.ToString(),
-                    endpoint.Port,
+                    endpoint,
                     (int)opType,
                     lighClientOnResponseDelegate,
                     rg.GetBufferSize(),

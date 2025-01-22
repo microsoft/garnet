@@ -44,8 +44,7 @@ namespace Garnet.client
         static readonly Memory<byte> AUTH = "$4\r\nAUTH\r\n"u8.ToArray();
         static readonly MemoryResult<byte> RESP_OK = new(default(OK_MEM));
 
-        readonly string address;
-        readonly int port;
+        readonly EndPoint endpoint;
         readonly int sendPageSize;
         readonly int bufferSize;
         readonly int maxOutstandingTasks;
@@ -114,8 +113,7 @@ namespace Garnet.client
         /// <summary>
         /// Create client instance
         /// </summary>
-        /// <param name="address">IP address of server</param>
-        /// <param name="port">Port of server</param>
+        /// <param name="endpoint">Endpoint of the server</param>
         /// <param name="tlsOptions">TLS options</param>
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
@@ -128,8 +126,7 @@ namespace Garnet.client
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
         /// <param name="logger">Logger instance</param>
         public GarnetClient(
-            string address,
-            int port,
+            EndPoint endpoint,
             SslClientAuthenticationOptions tlsOptions = null,
             string authUsername = null,
             string authPassword = null,
@@ -143,8 +140,7 @@ namespace Garnet.client
             int networkSendThrottleMax = 8,
             ILogger logger = null)
         {
-            this.address = address;
-            this.port = port;
+            this.endpoint = endpoint;
             this.sendPageSize = (int)Utility.PreviousPowerOf2(sendPageSize);
             this.bufferSize = bufferSize;
             this.authUsername = authUsername;
@@ -190,7 +186,7 @@ namespace Garnet.client
         {
             socket = CreateSendSocket(timeoutMilliseconds);
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
-            networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false).GetAwaiter().GetResult();
+            networkHandler.StartAsync(sslOptions, endpoint.ToString(), token).ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
 
             if (timeoutMilliseconds > 0)
@@ -223,7 +219,7 @@ namespace Garnet.client
         {
             socket = CreateSendSocket(timeoutMilliseconds);
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
-            await networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false);
+            await networkHandler.StartAsync(sslOptions, endpoint.ToString(), token).ConfigureAwait(false);
             networkSender = networkHandler.GetNetworkSender();
 
             if (timeoutMilliseconds > 0)
@@ -257,31 +253,31 @@ namespace Garnet.client
         /// <exception cref="Exception"></exception>
         Socket CreateSendSocket(int millisecondsTimeout = 0)
         {
-            if (!IPAddress.TryParse(address, out var ip))
+            switch (endpoint)
             {
-                var hostEntries = Dns.GetHostEntry(address);
-                // Try all available DNS entries if a hostName is provided
-                foreach (var addressEntry in hostEntries.AddressList)
-                {
-                    var endPoint = new IPEndPoint(addressEntry, port);
-                    if (!TryConnectSocket(endPoint, millisecondsTimeout, out var socket))
-                        continue;
-                    return socket;
-                }
+                case DnsEndPoint dnsEndpoint:
+                    var hostEntries = Dns.GetHostEntry(dnsEndpoint.Host);
+                    // Try all available DNS entries if a hostName is provided
+                    foreach (var addressEntry in hostEntries.AddressList)
+                    {
+                        var endPoint = new IPEndPoint(addressEntry, dnsEndpoint.Port);
+                        if (!TryConnectSocket(endPoint, millisecondsTimeout, out var socket))
+                            continue;
+                        return socket;
+                    }
 
-                // Reaching this point means we failed to establish connection from any of the provided addresses
-                throw new Exception($"Failed to connect at {address}:{port}");
-            }
-            else
-            {
-                var endPoint = new IPEndPoint(ip, port);
-                if (!TryConnectSocket(endPoint, millisecondsTimeout, out var socket))
-                {
-                    // If failed here then provided endpoint does not accept connections
-                    logger?.LogWarning("Failed to connect at {address}:{port}", ip.ToString(), port);
-                    throw new Exception($"Failed to connect at {ip.ToString()}:{port}");
-                }
-                return socket;
+                    // Reaching this point means we failed to establish connection from any of the provided addresses
+                    throw new Exception($"Failed to connect at {endpoint}");
+                case UnixDomainSocketEndPoint unix:
+                    return new Socket(unix.AddressFamily, SocketType.Stream, ProtocolType.Unspecified);
+                default:
+                    if (!TryConnectSocket(endpoint, millisecondsTimeout, out socket))
+                    {
+                        // If failed here then provided endpoint does not accept connections
+                        logger?.LogWarning("Failed to connect at {endpoint}", endpoint);
+                        throw new Exception($"Failed to connect at {endpoint}");
+                    }
+                    return socket;
             }
         }
 
@@ -292,7 +288,7 @@ namespace Garnet.client
         /// <param name="millisecondsTimeout"></param>
         /// <param name="socket"></param>
         /// <returns></returns>
-        bool TryConnectSocket(IPEndPoint endPoint, int millisecondsTimeout, out Socket socket)
+        bool TryConnectSocket(EndPoint endPoint, int millisecondsTimeout, out Socket socket)
         {
             socket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
             {
@@ -312,7 +308,7 @@ namespace Garnet.client
                     else
                     {
                         socket.Close();
-                        throw new Exception($"Failed to connect server {address}:{port}.");
+                        throw new Exception($"Failed to connect server {endpoint}.");
                     }
                 }
                 else

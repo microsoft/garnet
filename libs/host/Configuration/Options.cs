@@ -7,8 +7,8 @@ using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using CommandLine;
 using Garnet.server;
@@ -520,6 +520,10 @@ namespace Garnet
         [Option("lua-script-memory-limit", Default = null, HelpText = "Memory limit for a Lua instances while running a script, lua-memory-management-mode must be set to something other than Native to use this flag")]
         public string LuaScriptMemoryLimit { get; set; }
 
+        [FilePathValidation(false, true, false)]
+        [Option("unixsocket", Required = false, HelpText = "Unix socket address path to bind server to")]
+        public string UnixSocketPath { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -579,9 +583,19 @@ namespace Garnet
             var checkpointDir = CheckpointDir;
             if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? (string.IsNullOrEmpty(logDir) ? "." : logDir) : checkpointDir).FullName;
 
-            var address = !string.IsNullOrEmpty(this.Address) && this.Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase)
-                ? IPAddress.Loopback.ToString()
-                : this.Address;
+            EndPoint endpoint;
+            if (!string.IsNullOrEmpty(UnixSocketPath))
+            {
+                endpoint = new UnixDomainSocketEndPoint(UnixSocketPath);
+            }
+            else
+            {
+                var address = string.IsNullOrEmpty(Address) || Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase)
+                    ? IPAddress.Loopback
+                    : IPAddress.Parse(Address);
+
+                endpoint = new IPEndPoint(address, Port);
+            }
 
             var revivBinRecordSizes = this.RevivBinRecordSizes?.ToArray();
             var revivBinRecordCounts = this.RevivBinRecordCounts?.ToArray();
@@ -627,8 +641,7 @@ namespace Garnet
 
             return new GarnetServerOptions(logger)
             {
-                Port = Port,
-                Address = address,
+                EndPoint = endpoint,
                 MemorySize = MemorySize,
                 PageSize = PageSize,
                 SegmentSize = SegmentSize,
@@ -733,6 +746,7 @@ namespace Garnet
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
                 LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, logger) : null,
+                UnixSocketPath = UnixSocketPath
             };
         }
 
