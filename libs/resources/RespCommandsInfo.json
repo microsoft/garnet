@@ -1121,6 +1121,31 @@
     "AclCategories": "Fast, Transaction"
   },
   {
+    "Command": "DUMP",
+    "Name": "DUMP",
+    "Arity": 2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "KeySpace, Read",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
     "Command": "ECHO",
     "Name": "ECHO",
     "Arity": 2,
@@ -3474,6 +3499,31 @@
     "Arity": 3,
     "Flags": "Admin, NoAsyncLoading, NoScript, Stale",
     "AclCategories": "Admin, Dangerous, Slow"
+  },
+  {
+    "Command": "RESTORE",
+    "Name": "RESTORE",
+    "Arity": -4,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Dangerous, KeySpace, Slow, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 0,
+          "Limit": 0
+        },
+        "Flags": "OW, Update"
+      }
+    ]
   },
   {
     "Command": "RPOP",

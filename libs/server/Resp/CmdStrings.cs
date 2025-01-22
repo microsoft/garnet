@@ -231,6 +231,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR => "ERR INCR option supports a single increment-element pair"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_BITFIELD_TYPE => "ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is"u8;
         public static ReadOnlySpan<byte> RESP_ERR_SCRIPT_FLUSH_OPTIONS => "ERR SCRIPT FLUSH only support SYNC|ASYNC option"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_BUSSYKEY => "BUSYKEY Target key name already exists."u8;
         public static ReadOnlySpan<byte> RESP_ERR_LENGTH_AND_INDEXES => "If you want both the length and indexes, please just use IDX."u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_EXPIRE_TIME => "ERR invalid expire time, must be >= 0"u8;
         public static ReadOnlySpan<byte> RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS => "ERR HCOLLECT scan already in progress"u8;

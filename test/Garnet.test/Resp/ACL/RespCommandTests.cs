@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.server;
@@ -6634,6 +6635,56 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task DumpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "DUMP",
+                [DoDUMPAsync]
+            );
+
+            static async Task DoDUMPAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("DUMP", ["foo"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task RestoreACLsAsync()
+        {
+            var count = 0;
+
+            await CheckCommandsAsync(
+                "RESTORE",
+                [DoRestoreAsync]
+            );
+
+            async Task DoRestoreAsync(GarnetClient client)
+            {
+                var payload = new byte[]
+                {
+                    0x00, // value type 
+                    0x03, // length of payload
+                    0x76, 0x61, 0x6C,       // 'v', 'a', 'l'
+                    0x0B, 0x00, // RDB version
+                    0xDB, 0x82, 0x3C, 0x30, 0x38, 0x78, 0x5A, 0x99 // Crc64
+                };
+
+                count++;
+
+                var val = await client.ExecuteForStringResultAsync(
+                    "$7\r\nRESTORE\r\n"u8.ToArray(),
+                    [
+                        Encoding.UTF8.GetBytes($"foo-{count}"),
+                        "0"u8.ToArray(),
+                        payload
+                    ]);
+
+                ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
         public async Task TypeACLsAsync()
         {
             await CheckCommandsAsync(
@@ -7081,6 +7132,5 @@ namespace Garnet.test.Resp.ACL
                 return false;
             }
         }
-
     }
 }
