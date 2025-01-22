@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.server;
+using Microsoft.Extensions.Azure;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -919,6 +920,105 @@ return retArray";
                     }
                 }
             }
+        }
+
+        [Test]
+        public void LuaToResp2Conversions()
+        {
+            // Per: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+            //
+            // Number -> Integer
+            // String -> Bulk String
+            // Table -> Array
+            // False -> Null Bulk
+            // True -> Integer 1
+            // Float -> Integer
+            // Table with nil key -> Array (truncated at first nil)
+            // Table with string keys -> Array (string keys excluded)
+            //
+            // Nil is unspecified, but experimentally is mapped to Null Bulk
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db = redis.GetDatabase();
+
+            var numberRes = db.ScriptEvaluate("return 1");
+            ClassicAssert.AreEqual(ResultType.Integer, numberRes.Resp2Type);
+
+            var stringRes = db.ScriptEvaluate("return 'hello'");
+            ClassicAssert.AreEqual(ResultType.BulkString, stringRes.Resp2Type);
+
+            var tableRes = db.ScriptEvaluate("return { 0, 1, 2 }");
+            ClassicAssert.AreEqual(ResultType.Array, tableRes.Resp2Type);
+            ClassicAssert.AreEqual(3, ((int[])tableRes).Length);
+
+            var falseRes = db.ScriptEvaluate("return false");
+            ClassicAssert.AreEqual(ResultType.BulkString, falseRes.Resp2Type);
+            ClassicAssert.True(falseRes.IsNull);
+
+            var trueRes = db.ScriptEvaluate("return true");
+            ClassicAssert.AreEqual(ResultType.Integer, trueRes.Resp2Type);
+            ClassicAssert.AreEqual(1, (int)trueRes);
+
+            var floatRes = db.ScriptEvaluate("return 3.7");
+            ClassicAssert.AreEqual(ResultType.Integer, floatRes.Resp2Type);
+            ClassicAssert.AreEqual(3, (int)floatRes);
+
+            var tableNilRes = db.ScriptEvaluate("return { 0, 1, nil, 2 }");
+            ClassicAssert.AreEqual(ResultType.Array, tableNilRes.Resp2Type);
+            ClassicAssert.AreEqual(2, ((int[])tableNilRes).Length);
+
+            var tableStringRes = db.ScriptEvaluate("local x = { 0, 1 }; x['y'] = 'hello'; return x");
+            ClassicAssert.AreEqual(ResultType.Array, tableStringRes.Resp2Type);
+            ClassicAssert.AreEqual(2, ((int[])tableStringRes).Length);
+
+            var nilRes = db.ScriptEvaluate("return nil");
+            ClassicAssert.AreEqual(ResultType.BulkString, nilRes.Resp2Type);
+            ClassicAssert.True(nilRes.IsNull);
+        }
+
+        [Test]
+        public void Resp2ToLuaConversions()
+        {
+            // Per: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#resp2-to-lua-type-conversion
+            //
+            // Integer -> Number
+            // Bulk String -> String
+            // Array -> Table
+            // Simple String -> Table with ok field
+            // Error reply -> Table with err field
+            // Null bulk -> false
+            // Null multibulk -> false
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db = redis.GetDatabase();
+
+            var integerRes = db.ScriptEvaluate("local res = redis.call('INCR', KEYS[1]); return type(res);", [(RedisKey)"foo"]);
+            ClassicAssert.AreEqual("number", (string)integerRes);
+
+            _ = db.StringSet("hello", "world");
+            var bulkStringRes = db.ScriptEvaluate("local res = redis.call('GET', KEYS[1]); return type(res);", [(RedisKey)"hello"]);
+            ClassicAssert.AreEqual("string", (string)bulkStringRes);
+
+            _ = db.ListLeftPush("fizz", "buzz");
+            var arrayRes = db.ScriptEvaluate("local res = redis.call('LRANGE', KEYS[1], '0', '1'); return type(res);", [(RedisKey)"fizz"]);
+            ClassicAssert.AreEqual("table", (string)arrayRes);
+
+            var simpleStringRes = (string[])db.ScriptEvaluate("local res = redis.call('PING'); return { type(res), res.ok };");
+            ClassicAssert.AreEqual(2, simpleStringRes.Length);
+            ClassicAssert.AreEqual("table", simpleStringRes[0]);
+            ClassicAssert.AreEqual("PONG", simpleStringRes[1]);
+
+            // todo: ERR reply - requires redis.pcall
+
+            var nullBulkRes = (string[])db.ScriptEvaluate("local res = redis.call('GET', KEYS[1]); return { type(res), tostring(res) };", [(RedisKey)"not-set-ever"]);
+            ClassicAssert.AreEqual(2, nullBulkRes.Length);
+            ClassicAssert.AreEqual("boolean", nullBulkRes[0]);
+            ClassicAssert.AreEqual("false", nullBulkRes[1]);
+
+            var nullMultiBulk = (string[])db.ScriptEvaluate("local res = redis.call('BLPOP', KEYS[1], '1'); return { type(res), tostring(res) };", [(RedisKey)"not-set-ever"]);
+            ClassicAssert.AreEqual(2, nullMultiBulk.Length);
+            ClassicAssert.AreEqual("boolean", nullMultiBulk[0]);
+            ClassicAssert.AreEqual("false", nullMultiBulk[1]);
         }
     }
 }
