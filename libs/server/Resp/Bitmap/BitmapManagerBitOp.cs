@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using Garnet.common;
 using static Garnet.common.Numerics.TensorPrimitives;
@@ -11,8 +10,6 @@ namespace Garnet.server
     // TODO: Guard Vector### logic behind IsSupported & IsHardwareAccelerated
     // TODO: Add Vector512 & Vector128 paths atleast
     // TODO: Get rid of "IBinaryOperator<ulong>" scalar logic?
-    // FÒLLOW-UP: Non-temporal stores after sizes larger than 256KB (like in TensorPrimitives)
-    // FÒLLOW-UP: Investigate alignment -> overlapping & jump-table (like in TensorPrimitives)
     public unsafe partial class BitmapManager
     {
         /// <summary>
@@ -123,11 +120,6 @@ namespace Garnet.server
             if (remainder >= 1) dstCurr[0] = (byte)~srcCurr[0];
         }
 
-        public static void GenericCodeGenDebugAid(byte* dstPtr, int dstLen, byte** srcStartPtrs, byte** srcEndPtrs, int srcKeyCount, int minSize, byte bitop)
-        {
-            InvokeMultiKeyBitwise<BitwiseAndOperator<byte>, BitwiseAndOperator<ulong>>(dstPtr, dstLen, srcStartPtrs, srcEndPtrs, srcKeyCount, minSize);
-        }
-
         /// <summary>
         /// Invokes bitwise bit-operation for multiple keys using hardware accelerated SIMD intrinsics when possible.
         /// </summary>
@@ -137,7 +129,6 @@ namespace Garnet.server
         /// <param name="srcEndPtrs">Pointer to end of bitmap sources</param>
         /// <param name="srcKeyCount">Number of source keys.</param>
         /// <param name="minSize">Minimum size of source bitmaps.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void InvokeMultiKeyBitwise<TBinaryOperator, TBinaryOperator2>(byte* dstPtr, int dstLen, byte** srcStartPtrs, byte** srcEndPtrs, int srcKeyCount, int minSize)
             where TBinaryOperator : struct, IBinaryOperator<byte>
             where TBinaryOperator2 : struct, IBinaryOperator<ulong>
