@@ -32,14 +32,9 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        private long LongRandom() => ((long)this.r.Next() << 32) | (long)this.r.Next();
+        private long LongRandom() => r.NextInt64();
 
-        private ulong ULongRandom()
-        {
-            ulong lsb = (ulong)(this.r.Next());
-            ulong msb = (ulong)(this.r.Next()) << 32;
-            return (msb | lsb);
-        }
+        private ulong ULongRandom() => (ulong)r.NextInt64(long.MinValue, long.MaxValue);
 
         private unsafe long ResponseToLong(byte[] response, int offset)
         {
@@ -879,16 +874,18 @@ namespace Garnet.test
             }
         }
 
-        private static void InitBitmap(ref byte[] dst, byte[] srcA, bool invert = false)
+        private static byte[] CopyBitmap(byte[] sourceBitmap, bool invert = false)
         {
-            dst = new byte[srcA.Length];
+            var dst = new byte[sourceBitmap.Length];
             if (invert)
-                for (int i = 0; i < srcA.Length; i++) dst[i] = (byte)~srcA[i];
+                for (int i = 0; i < sourceBitmap.Length; i++) dst[i] = (byte)~sourceBitmap[i];
             else
-                for (int i = 0; i < srcA.Length; i++) dst[i] = srcA[i];
+                sourceBitmap.AsSpan().CopyTo(dst);
+
+            return dst;
         }
 
-        private static void ApplyBitop(ref byte[] dst, byte[] srcA, Func<byte, byte, byte> f8)
+        private static void ApplyBitop(ref byte[] dst, byte[] srcA, Func<byte, byte, byte> op)
         {
             if (dst.Length < srcA.Length)
             {
@@ -899,12 +896,12 @@ namespace Garnet.test
 
             for (int i = 0; i < srcA.Length; i++)
             {
-                dst[i] = f8(dst[i], srcA[i]);
+                dst[i] = op(dst[i], srcA[i]);
             }
 
             for (int i = srcA.Length; i < dst.Length; i++)
             {
-                dst[i] = f8(dst[i], 0);
+                dst[i] = op(dst[i], 0);
             }
         }
 
@@ -930,7 +927,6 @@ namespace Garnet.test
             byte[] dataB = new byte[r.Next(1, maxBytes)];
             byte[] dataC = new byte[r.Next(1, maxBytes)];
             byte[] dataD = new byte[r.Next(1, maxBytes)];
-            byte[] dataX = null;
 
             for (int j = 0; j < bitwiseOps.Length; j++)
             {
@@ -946,25 +942,17 @@ namespace Garnet.test
                     db.StringSet(c, dataC);
                     db.StringSet(d, dataD);
 
-                    Func<byte, byte, byte> f8 = null;
-                    switch (bitwiseOps[j])
-                    {
-                        case Bitwise.And:
-                            f8 = (a, b) => (byte)(a & b);
-                            break;
-                        case Bitwise.Or:
-                            f8 = (a, b) => (byte)(a | b);
-                            break;
-                        case Bitwise.Xor:
-                            f8 = (a, b) => (byte)(a ^ b);
-                            break;
-                    }
+                    Func<byte, byte, byte> op = bitwiseOps[j] switch
+                    { 
+                        Bitwise.And => static (a, b) => (byte)(a & b),
+                        Bitwise.Or => static (a, b) => (byte)(a | b),
+                        Bitwise.Xor => static (a, b) => (byte)(a ^ b)
+                    };
 
-                    dataX = null;
-                    InitBitmap(ref dataX, dataA);
-                    ApplyBitop(ref dataX, dataB, f8);
-                    ApplyBitop(ref dataX, dataC, f8);
-                    ApplyBitop(ref dataX, dataD, f8);
+                    byte[] dataX = CopyBitmap(dataA);
+                    ApplyBitop(ref dataX, dataB, op);
+                    ApplyBitop(ref dataX, dataC, op);
+                    ApplyBitop(ref dataX, dataD, op);
 
                     long size = db.StringBitOperation(bitwiseOps[j], x, keys);
                     ClassicAssert.AreEqual(size, dataX.Length);
@@ -1032,7 +1020,7 @@ namespace Garnet.test
             string x = "x";
 
             byte[] dataA, dataB, dataC, dataD;
-            byte[] dataX;
+
             int minSize = 512;
             Bitwise[] bitwiseOps = [Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.And, Bitwise.Or, Bitwise.Xor];
             RedisKey[] keys = [a, b, c, d];
@@ -1042,15 +1030,14 @@ namespace Garnet.test
             {
                 dataA = new byte[r.Next(minSize, minSize + 32)];
                 r.NextBytes(dataA);
+                byte[] expectedX = CopyBitmap(dataA, invert: true);
+
                 db.StringSet(a, dataA);
-
-                dataX = null;
-                InitBitmap(ref dataX, dataA, true);
                 long size = db.StringBitOperation(Bitwise.Not, x, a);
-                ClassicAssert.AreEqual(size, dataX.Length);
+                ClassicAssert.AreEqual(expectedX.Length, size);
 
-                byte[] expectedX = db.StringGet(x);
-                ClassicAssert.AreEqual(dataX, expectedX);
+                byte[] actualX = db.StringGet(x);
+                ClassicAssert.AreEqual(expectedX, actualX);
             }
 
             //Test AND, OR, XOR
@@ -1062,8 +1049,7 @@ namespace Garnet.test
                     dataB = new byte[r.Next(minSize, minSize + 16)]; minSize = dataB.Length;
                     dataC = new byte[r.Next(minSize, minSize + 16)]; minSize = dataC.Length;
                     dataD = new byte[r.Next(minSize, minSize + 16)]; minSize = dataD.Length;
-                    minSize = 17;
-
+                    
                     r.NextBytes(dataA);
                     r.NextBytes(dataB);
                     r.NextBytes(dataC);
@@ -1074,32 +1060,24 @@ namespace Garnet.test
                     db.StringSet(c, dataC);
                     db.StringSet(d, dataD);
 
-                    Func<byte, byte, byte> f8 = null;
-                    switch (bitwiseOps[j])
+                    Func<byte, byte, byte> op = bitwiseOps[j] switch
                     {
-                        case Bitwise.And:
-                            f8 = (a, b) => (byte)(a & b);
-                            break;
-                        case Bitwise.Or:
-                            f8 = (a, b) => (byte)(a | b);
-                            break;
-                        case Bitwise.Xor:
-                            f8 = (a, b) => (byte)(a ^ b);
-                            break;
-                    }
+                        Bitwise.And => static (a, b) => (byte)(a & b),
+                        Bitwise.Or => static (a, b) => (byte)(a | b),
+                        Bitwise.Xor => static (a, b) => (byte)(a ^ b)
+                    };
 
-                    dataX = null;
-                    InitBitmap(ref dataX, dataA);
-                    ApplyBitop(ref dataX, dataB, f8);
-                    ApplyBitop(ref dataX, dataC, f8);
-                    ApplyBitop(ref dataX, dataD, f8);
+                    byte[] expectedX = CopyBitmap(dataA);
+                    ApplyBitop(ref expectedX, dataB, op);
+                    ApplyBitop(ref expectedX, dataC, op);
+                    ApplyBitop(ref expectedX, dataD, op);
 
                     long size = db.StringBitOperation(bitwiseOps[j], x, keys);
-                    ClassicAssert.AreEqual(size, dataX.Length);
-                    byte[] expectedX = db.StringGet(x);
+                    ClassicAssert.AreEqual(expectedX.Length, size);
+                    byte[] dataX = db.StringGet(x);
 
-                    ClassicAssert.AreEqual(expectedX.Length, dataX.Length);
-                    ClassicAssert.AreEqual(dataX, expectedX);
+                    ClassicAssert.AreEqual(expectedX.Length, expectedX.Length);
+                    ClassicAssert.AreEqual(expectedX, dataX);
                 }
             }
         }
