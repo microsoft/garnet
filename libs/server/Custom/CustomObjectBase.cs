@@ -68,9 +68,9 @@ namespace Garnet.server
         public abstract override void Dispose();
 
         /// <inheritdoc />
-        public sealed override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        public sealed override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
         {
-            output.SizeChange = 0;
+            sizeChange = 0;
 
             switch (input.header.cmd)
             {

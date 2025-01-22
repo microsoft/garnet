@@ -47,7 +47,7 @@ namespace Garnet.server
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
-                value.Operate(ref input, ref output);
+                value.Operate(ref input, ref output, out _);
                 return true;
             }
             else
@@ -81,19 +81,21 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            if (InPlaceUpdaterWorker(ref key, ref input, ref value, ref output, ref rmwInfo))
+            if (InPlaceUpdaterWorker(ref key, ref input, ref value, ref output, ref rmwInfo, out var sizeChange))
             {
                 if (!rmwInfo.RecordInfo.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                 if (functionsState.appendOnlyFile != null) WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(output.SizeChange);
+                functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeChange);
                 return true;
             }
             return false;
         }
 
-        bool InPlaceUpdaterWorker(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        bool InPlaceUpdaterWorker(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, out long sizeChange)
         {
+            sizeChange = 0;
+
             // Expired data
             if (value.Expiration > 0 && input.header.CheckExpiry(value.Expiration))
             {
@@ -139,7 +141,7 @@ namespace Garnet.server
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        var operateSuccessful = value.Operate(ref input, ref output);
+                        var operateSuccessful = value.Operate(ref input, ref output, out sizeChange);
                         if (output.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
                             return true;
 
@@ -236,7 +238,7 @@ namespace Garnet.server
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        value.Operate(ref input, ref output);
+                        value.Operate(ref input, ref output, out _);
                         if (output.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
                             return true;
 

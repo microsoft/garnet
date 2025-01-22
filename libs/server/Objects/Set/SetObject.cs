@@ -105,9 +105,9 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new SetObject(set, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
         {
-            output.SizeChange = 0;
+            sizeChange = 0;
 
             fixed (byte* outputSpan = output.SpanByteAndMemory.SpanByte.AsSpan())
             {
@@ -163,7 +163,7 @@ namespace Garnet.server
                         throw new GarnetException($"Unsupported operation {input.header.SetOp} in SetObject.Operate");
                 }
 
-                output.SizeChange = this.Size - prevSize;
+                sizeChange = this.Size - prevSize;
             }
 
             if (set.Count == 0)

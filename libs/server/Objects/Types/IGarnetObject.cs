@@ -33,8 +33,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="input"></param>
         /// <param name="output"></param>
+        /// <param name="sizeChange"></param>
         /// <returns></returns>
-        bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output);
+        bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange);
 
         /// <summary>
         /// Serializer
