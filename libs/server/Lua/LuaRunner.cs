@@ -629,7 +629,8 @@ end
                     }
                     else
                     {
-                        state.PushNil();
+                        // Redis is weird, but false instead of Nil is correct here
+                        state.PushBoolean(false);
                     }
 
                     return 1;
@@ -719,7 +720,12 @@ end
                     length--;
                     if (RespReadUtils.ReadAsSpan(out var resultSpan, ref ptr, ptr + length))
                     {
+                        // Construct a table = { 'ok': value }
+                        state.CreateTable(0, 1);
+                        state.PushConstantString(okLowerConstStringRegistryIndex);
                         state.PushBuffer(resultSpan);
+                        state.RawSet(1);
+
                         return 1;
                     }
                     goto default;
@@ -767,42 +773,50 @@ end
                     goto default;
 
                 case (byte)'*':
-                    if (RespReadUtils.ReadUnsignedArrayLength(out var itemCount, ref ptr, ptr + length))
+                    if (RespReadUtils.ReadSignedArrayLength(out var itemCount, ref ptr, ptr + length))
                     {
-                        // Create the new table
-                        state.CreateTable(itemCount, 0);
-
-                        for (var itemIx = 0; itemIx < itemCount; itemIx++)
+                        if (itemCount == -1)
                         {
-                            if (*ptr == '$')
+                            // Null multi-bulk -> maps to false
+                            state.PushBoolean(false);
+                        }
+                        else
+                        {
+                            // Create the new table
+                            state.CreateTable(itemCount, 0);
+
+                            for (var itemIx = 0; itemIx < itemCount; itemIx++)
                             {
-                                // Bulk String
-                                if (length >= 4 && new ReadOnlySpan<byte>(ptr + 1, 4).SequenceEqual("-1\r\n"u8))
+                                if (*ptr == '$')
                                 {
-                                    // Null strings are mapped to false
-                                    // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                                    state.PushBoolean(false);
-                                }
-                                else if (RespReadUtils.ReadSpanWithLengthHeader(out var strSpan, ref ptr, ptr + length))
-                                {
-                                    state.PushBuffer(strSpan);
+                                    // Bulk String
+                                    if (length >= 4 && new ReadOnlySpan<byte>(ptr + 1, 4).SequenceEqual("-1\r\n"u8))
+                                    {
+                                        // Null strings are mapped to false
+                                        // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                                        state.PushBoolean(false);
+                                    }
+                                    else if (RespReadUtils.ReadSpanWithLengthHeader(out var strSpan, ref ptr, ptr + length))
+                                    {
+                                        state.PushBuffer(strSpan);
+                                    }
+                                    else
+                                    {
+                                        // Error, drop the table we allocated
+                                        state.Pop(1);
+                                        goto default;
+                                    }
                                 }
                                 else
                                 {
-                                    // Error, drop the table we allocated
-                                    state.Pop(1);
-                                    goto default;
+                                    // In practice, we ONLY ever return bulk strings
+                                    // So just... not implementing the rest for now
+                                    throw new NotImplementedException($"Unexpected sigil: {(char)*ptr}");
                                 }
-                            }
-                            else
-                            {
-                                // In practice, we ONLY ever return bulk strings
-                                // So just... not implementing the rest for now
-                                throw new NotImplementedException($"Unexpected sigil: {(char)*ptr}");
-                            }
 
-                            // Stack now has table and value at itemIx on it
-                            state.RawSetInteger(1, itemIx + 1);
+                                // Stack now has table and value at itemIx on it
+                                state.RawSetInteger(1, itemIx + 1);
+                            }
                         }
 
                         return 1;

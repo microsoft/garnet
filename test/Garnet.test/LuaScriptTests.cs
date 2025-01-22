@@ -1008,12 +1008,18 @@ return retArray";
             ClassicAssert.AreEqual("table", simpleStringRes[0]);
             ClassicAssert.AreEqual("PONG", simpleStringRes[1]);
 
-            // Todo: ERR reply - requires redis.pcall
+            // TODO: ERR reply - requires redis.pcall
 
             var nullBulkRes = (string[])db.ScriptEvaluate("local res = redis.call('GET', KEYS[1]); return { type(res), tostring(res) };", [(RedisKey)"not-set-ever"]);
             ClassicAssert.AreEqual(2, nullBulkRes.Length);
             ClassicAssert.AreEqual("boolean", nullBulkRes[0]);
             ClassicAssert.AreEqual("false", nullBulkRes[1]);
+
+            // Since GET is special cased, use a different nil responding command to test that path
+            var nullBulk2Res = (string[])db.ScriptEvaluate("local res = redis.call('HGET', KEYS[1], ARGV[1]); return { type(res), tostring(res) };", [(RedisKey)"not-set-ever"], [(RedisValue)"never-ever"]);
+            ClassicAssert.AreEqual(2, nullBulk2Res.Length);
+            ClassicAssert.AreEqual("boolean", nullBulk2Res[0]);
+            ClassicAssert.AreEqual("false", nullBulk2Res[1]);
 
             var nullMultiBulk = (string[])db.ScriptEvaluate("local res = redis.call('BLPOP', KEYS[1], '1'); return { type(res), tostring(res) };", [(RedisKey)"not-set-ever"]);
             ClassicAssert.AreEqual(2, nullMultiBulk.Length);
