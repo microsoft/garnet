@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using Garnet.common;
 
 namespace Garnet.server
@@ -273,6 +274,88 @@ namespace Garnet.server
                 value = ExpirationOption.KEEPTTL;
             else
                 return false;
+
+            return true;
+        }
+        /// <summary>
+        /// Tries to extract keys from the key specifications in the given RespCommandsInfo.
+        /// </summary>
+        /// <param name="state">The SessionParseState instance.</param>
+        /// <param name="keySpecs">The RespCommandKeySpecification array contains the key specification</param>
+        /// <param name="keys">The list to store extracted keys.</param>
+        /// <returns>True if keys were successfully extracted, otherwise false.</returns>
+        internal static bool TryExtractKeysFromSpecs(this ref SessionParseState state, RespCommandKeySpecification[] keySpecs, out List<ArgSlice> keys)
+        {
+            keys = new();
+
+            foreach (var spec in keySpecs)
+            {
+                if (!ExtractKeysFromSpec(ref state, keys, spec))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Tries to extract keys and their associated flags from the key specifications in the given RespCommandsInfo.
+        /// </summary>
+        /// <param name="state">The SessionParseState instance.</param>
+        /// <param name="keySpecs">The RespCommandKeySpecification array containing the key specifications.</param>
+        /// <param name="keys">The list to store extracted keys.</param>
+        /// <param name="flags">The list to store associated flags for each key.</param>
+        /// <returns>True if keys and flags were successfully extracted, otherwise false.</returns>
+        internal static bool TryExtractKeysAndFlagsFromSpecs(this ref SessionParseState state, RespCommandKeySpecification[] keySpecs, out List<ArgSlice> keys, out List<string[]> flags)
+        {
+            keys = new();
+            flags = new();
+
+            foreach (var spec in keySpecs)
+            {
+                var prevKeyCount = keys.Count;
+                if (!ExtractKeysFromSpec(ref state, keys, spec))
+                {
+                    return false;
+                }
+
+                var keyFlags = spec.RespFormatFlags;
+                for (int i = prevKeyCount; i < keys.Count; i++)
+                {
+                    flags.Add(keyFlags);
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Extracts keys from the given key specification in the provided SessionParseState.
+        /// </summary>
+        /// <param name="state">The SessionParseState instance.</param>
+        /// <param name="keys">The list to store extracted keys.</param>
+        /// <param name="spec">The key specification to use for extraction.</param>
+        /// <returns>True if keys were successfully extracted, otherwise false.</returns>
+        private static bool ExtractKeysFromSpec(ref SessionParseState state, List<ArgSlice> keys, RespCommandKeySpecification spec)
+        {
+            int startIndex = 0;
+
+            if (spec.BeginSearch is BeginSearchKeySpecMethodBase bsKeyword)
+            {
+                if (!bsKeyword.TryGetStartIndex(ref state, out startIndex))
+                {
+                    return false;
+                }
+            }
+
+            if (startIndex < 0 || startIndex >= state.Count)
+                return false;
+
+            if (spec.FindKeys is FindKeysKeySpecMethodBase findKey)
+            {
+                findKey.ExtractKeys(ref state, startIndex, keys);
+            }
 
             return true;
         }

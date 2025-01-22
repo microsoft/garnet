@@ -15,15 +15,17 @@ namespace Garnet.test
     {
         GarnetServer server;
         private string testModuleDir;
+        string binPath;
 
         [SetUp]
         public void Setup()
         {
             testModuleDir = Path.Combine(TestUtils.MethodTestDir, "testModules");
+            binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 disablePubSub: true,
-                extensionBinPaths: [testModuleDir],
+                extensionBinPaths: [testModuleDir, binPath],
                 extensionAllowUnsignedAssemblies: true);
             server.Start();
         }
@@ -36,7 +38,7 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(Directory.GetParent(testModuleDir)?.FullName);
         }
 
-        private string CreateTestModule(string onLoadBody, string moduleName = "TestModule.dll")
+        private string CreateTestModule(string onLoadBody, string moduleName)
         {
             var runtimePath = RuntimeEnvironment.GetRuntimeDirectory();
             var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
@@ -248,7 +250,7 @@ namespace Garnet.test
         [Test]
         public void TestUninitializedModule()
         {
-            var modulePath = CreateTestModule("");
+            var modulePath = CreateTestModule("", "TestModule4.dll");
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -268,7 +270,7 @@ namespace Garnet.test
         public void TestAlreadyLoadedModule()
         {
             var modulePath = CreateTestModule(
-                @"context.Initialize(""TestAlreadyLoadedModule"", 1);");
+                @"context.Initialize(""TestAlreadyLoadedModule"", 1);", "TestModule5.dll");
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -303,6 +305,53 @@ namespace Garnet.test
             {
                 ClassicAssert.AreEqual("ERR unable to access one or more binary files.", ex.Message);
             }
+        }
+
+        [Test]
+        [TestCase(true)]
+        [TestCase(false)]
+        public void TestNoOpModule(bool loadFromDll)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Test loading no-op module
+            if (loadFromDll)
+            {
+                var noOpModulePath = Path.Join(binPath, "NoOpModule.dll");
+                db.Execute($"MODULE", "LOADCS", noOpModulePath);
+            }
+            else
+            {
+                server.Register.NewModule(new NoOpModule.NoOpModule(), [], out _);
+            }
+
+            // Test raw string command in no-op module
+            var key = $"mykey";
+            var value = $"myval";
+            db.StringSet(key, value);
+
+            var retValue = db.Execute("NoOpModule.NOOPCMDREAD", key);
+            ClassicAssert.AreEqual("OK", (string)retValue);
+
+            retValue = db.Execute("NoOpModule.NOOPCMDRMW", key);
+            ClassicAssert.AreEqual("OK", (string)retValue);
+
+            // Test object commands in no-op module
+            var objKey = "myobjkey";
+            retValue = db.Execute("NoOpModule.NOOPOBJRMW", objKey);
+            ClassicAssert.AreEqual("OK", (string)retValue);
+
+            retValue = db.Execute("NoOpModule.NOOPOBJREAD", objKey);
+            ClassicAssert.IsNull((string)retValue);
+
+            // Test transaction in no-op module
+            retValue = db.Execute("NoOpModule.NOOPTXN");
+            ClassicAssert.AreEqual("OK", (string)retValue);
+
+            // Test procedure in no-op module
+            retValue = db.Execute("NoOpModule.NOOPPROC");
+            ClassicAssert.AreEqual("OK", (string)retValue);
         }
     }
 }
