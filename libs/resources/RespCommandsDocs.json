@@ -748,6 +748,7 @@
     "Summary": "Pops an element from a list, pushes it to another list and returns it. Block until an element is available otherwise. Deletes the list if the last element was popped.",
     "Group": "List",
     "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060BLMOVE\u0060 with the \u0060RIGHT\u0060 and \u0060LEFT\u0060 arguments",
     "Arguments": [
       {
@@ -1426,6 +1427,7 @@
         "Summary": "Returns the mapping of cluster slots to nodes.",
         "Group": "Cluster",
         "Complexity": "O(N) where N is the total number of Cluster nodes",
+        "DocFlags": "Deprecated",
         "ReplacedBy": "\u0060CLUSTER SHARDS\u0060"
       }
     ]
@@ -2879,6 +2881,7 @@
     "Summary": "Returns the previous string value of a key after setting it to a new value.",
     "Group": "String",
     "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060SET\u0060 with the \u0060!GET\u0060 argument",
     "Arguments": [
       {
@@ -3365,6 +3368,7 @@
     "Summary": "Sets the values of multiple fields.",
     "Group": "Hash",
     "Complexity": "O(N) where N is the number of fields being set.",
+    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060HSET\u0060 with multiple field-value pairs",
     "Arguments": [
       {
@@ -5015,6 +5019,7 @@
     "Summary": "Sets both string value and expiration time in milliseconds of a key. The key is created if it doesn\u0027t exist.",
     "Group": "String",
     "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060SET\u0060 with the \u0060PX\u0060 argument",
     "Arguments": [
       {
@@ -5197,6 +5202,7 @@
     "Summary": "Closes the connection.",
     "Group": "Connection",
     "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
     "ReplacedBy": "just closing the connection"
   },
   {
