@@ -5502,6 +5502,7 @@
     "Summary": "Returns the last element of a list after removing and pushing it to another list. Deletes the list if the last element was popped.",
     "Group": "List",
     "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060LMOVE\u0060 with the \u0060RIGHT\u0060 and \u0060LEFT\u0060 arguments",
     "Arguments": [
       {
@@ -5994,6 +5995,7 @@
     "Summary": "Sets the string value and expiration time of a key. Creates the key if it doesn\u0027t exist.",
     "Group": "String",
     "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060SET\u0060 with the \u0060EX\u0060 argument",
     "Arguments": [
       {
@@ -6073,6 +6075,7 @@
     "Summary": "Set the string value of a key only when the key doesn\u0027t exist.",
     "Group": "String",
     "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060SET\u0060 with the \u0060NX\u0060 argument",
     "Arguments": [
       {
@@ -6218,6 +6221,7 @@
     "Summary": "Sets a Redis server as a replica of another, or promotes it to being a master.",
     "Group": "Server",
     "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060REPLICAOF\u0060",
     "Arguments": [
       {
@@ -6482,6 +6486,7 @@
     "Summary": "Returns a substring from a string value.",
     "Group": "String",
     "Complexity": "O(N) where N is the length of the returned string. The complexity is ultimately determined by the returned length, but because creating a substring from an existing string is very cheap, it can be considered O(1) for small strings.",
+    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060GETRANGE\u0060",
     "Arguments": [
       {
@@ -7353,6 +7358,7 @@
     "Summary": "Returns members in a sorted set within a range of scores.",
     "Group": "SortedSet",
     "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
+    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060BYSCORE\u0060 argument",
     "Arguments": [
       {
@@ -7634,6 +7640,7 @@
     "Summary": "Returns members in a sorted set within a range of indexes in reverse order.",
     "Group": "SortedSet",
     "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements returned.",
+    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060REV\u0060 argument",
     "Arguments": [
       {
@@ -7671,6 +7678,7 @@
     "Summary": "Returns members in a sorted set within a lexicographical range in reverse order.",
     "Group": "SortedSet",
     "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
+    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060REV\u0060 and \u0060BYLEX\u0060 arguments",
     "Arguments": [
       {
@@ -7721,6 +7729,7 @@
     "Summary": "Returns members in a sorted set within a range of scores in reverse order.",
     "Group": "SortedSet",
     "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
+    "DocFlags": "Deprecated",
     "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060REV\u0060 and \u0060BYSCORE\u0060 arguments",
     "Arguments": [
       {
