@@ -838,5 +838,87 @@ return foo";
             var res = db.ScriptEvaluate(loadedScriptOOM, new { Ctrl = "Safe" });
             ClassicAssert.AreEqual("abcdefghijklmnopqrstuvwxyz", (string)res);
         }
+
+        [Test]
+        public void Issue939()
+        {
+            // See: https://github.com/microsoft/garnet/issues/939
+            const string Script = @"
+local retArray = {}
+local lockValue = ''
+local writeLockValue = redis.call('GET',@LockName)
+if writeLockValue ~= false then
+    lockValue = writeLockValue
+end
+retArray[1] = lockValue
+if lockValue == '' then 
+    retArray[2] = redis.call('GET',@CollectionName) 
+else 
+    retArray[2] = ''
+end
+
+local SessionTimeout = redis.call('GET', @TimeoutName)
+if SessionTimeout ~= false then
+    retArray[3] = SessionTimeout
+    redis.call('EXPIRE',@CollectionName, SessionTimeout)
+    redis.call('EXPIRE',@TimeoutName, SessionTimeout)
+else
+    retArray[3] = '-1'
+end
+
+return retArray";
+
+            const string LockName = "{/hello}-lockname";
+            const string CollectionName = "{/hello}-collectionName";
+            const string TimeoutName = "{/hello}-sessionTimeout";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var preparedScript = LuaScript.Prepare(Script);
+
+            // 8 combos, keys presents or not for all 8
+
+            Span<bool> present = [true, false];
+
+            foreach (var lockSet in present)
+            {
+                foreach (var colSet in present)
+                {
+                    foreach (var sessionSet in present)
+                    {
+                        if (lockSet)
+                        {
+                            ClassicAssert.True(db.StringSet(LockName, "present"));
+                        }
+                        else
+                        {
+                            _ = db.KeyDelete(LockName);
+                        }
+
+                        if (colSet)
+                        {
+                            ClassicAssert.True(db.StringSet(CollectionName, "present"));
+                        }
+                        else
+                        {
+                            _ = db.KeyDelete(CollectionName);
+                        }
+
+                        if (sessionSet)
+                        {
+                            ClassicAssert.True(db.StringSet(TimeoutName, "123456"));
+                        }
+                        else
+                        {
+                            _ = db.KeyDelete(TimeoutName);
+                        }
+
+                        var res = (RedisResult[])db.ScriptEvaluate(preparedScript, new { LockName, CollectionName, TimeoutName });
+                        ClassicAssert.AreEqual(3, res.Length);
+                    }
+                }
+            }
+        }
     }
 }
