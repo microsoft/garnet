@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using Garnet.common;
 using static Garnet.common.Numerics.TensorPrimitives;
@@ -122,9 +123,9 @@ namespace Garnet.server
             if (remainder >= 1) dstCurr[0] = (byte)~srcCurr[0];
         }
 
-        public static void GenericCodeGenDebugAid(int dstLen, int srcKeyCount, int minSize)
+        public static void GenericCodeGenDebugAid(byte* dstPtr, int dstLen, byte** srcStartPtrs, byte** srcEndPtrs, int srcKeyCount, int minSize, byte bitop)
         {
-            InvokeMultiKeyBitwise<BitwiseAndOperator<byte>, BitwiseAndOperator<ulong>>((byte*)0, dstLen, (byte**)0, (byte**)0, srcKeyCount, minSize);
+            InvokeMultiKeyBitwise<BitwiseAndOperator<byte>, BitwiseAndOperator<ulong>>(dstPtr, dstLen, srcStartPtrs, srcEndPtrs, srcKeyCount, minSize);
         }
 
         /// <summary>
@@ -136,6 +137,7 @@ namespace Garnet.server
         /// <param name="srcEndPtrs">Pointer to end of bitmap sources</param>
         /// <param name="srcKeyCount">Number of source keys.</param>
         /// <param name="minSize">Minimum size of source bitmaps.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void InvokeMultiKeyBitwise<TBinaryOperator, TBinaryOperator2>(byte* dstPtr, int dstLen, byte** srcStartPtrs, byte** srcEndPtrs, int srcKeyCount, int minSize)
             where TBinaryOperator : struct, IBinaryOperator<byte>
             where TBinaryOperator2 : struct, IBinaryOperator<ulong>
@@ -259,21 +261,9 @@ namespace Garnet.server
                         d00 = TBinaryOperator.Invoke(d00, *srcStartPtrs[i]);
                         srcStartPtrs[i]++;
                     }
-                    else
+                    else if (typeof(TBinaryOperator) == typeof(BitwiseAndOperator<byte>))
                     {
-                        if (typeof(TBinaryOperator) == typeof(BitwiseAndOperator<byte>))
-                        {
-                            d00 = 0;
-                        }
-                        else if (typeof(TBinaryOperator) == typeof(BitwiseOrOperator<byte>))
-                        {
-                            // nop
-                        }
-                        else if (typeof(TBinaryOperator) == typeof(BitwiseXorOperator<byte>))
-                        {
-                            // TODO: I _think_ there's a error in this logic and we should have here:
-                            // d00 ^= 0;
-                        }
+                        d00 = 0;
                     }
                 }
 

@@ -943,7 +943,7 @@ namespace Garnet.test
                     db.StringSet(d, dataD);
 
                     Func<byte, byte, byte> op = bitwiseOps[j] switch
-                    { 
+                    {
                         Bitwise.And => static (a, b) => (byte)(a & b),
                         Bitwise.Or => static (a, b) => (byte)(a | b),
                         Bitwise.Xor => static (a, b) => (byte)(a ^ b)
@@ -1049,7 +1049,7 @@ namespace Garnet.test
                     dataB = new byte[r.Next(minSize, minSize + 16)]; minSize = dataB.Length;
                     dataC = new byte[r.Next(minSize, minSize + 16)]; minSize = dataC.Length;
                     dataD = new byte[r.Next(minSize, minSize + 16)]; minSize = dataD.Length;
-                    
+
                     r.NextBytes(dataA);
                     r.NextBytes(dataB);
                     r.NextBytes(dataC);
