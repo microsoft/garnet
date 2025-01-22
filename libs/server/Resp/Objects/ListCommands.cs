@@ -196,7 +196,7 @@ namespace Garnet.server
             // Read count of keys
             if (!parseState.TryGetInt(currTokenId++, out var numKeys))
             {
-                var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys");
+                var err = string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "numkeys");
                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
             }
 
@@ -237,7 +237,7 @@ namespace Garnet.server
                 // Read count
                 if (!parseState.TryGetInt(currTokenId, out popCount))
                 {
-                    var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "count");
+                    var err = string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "count");
                     return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
                 }
             }

@@ -701,6 +701,15 @@ namespace Garnet.server
                 RespCommand.HVALS => HashKeys(cmd, ref storageApi),
                 RespCommand.HINCRBY => HashIncrement(cmd, ref storageApi),
                 RespCommand.HINCRBYFLOAT => HashIncrement(cmd, ref storageApi),
+                RespCommand.HEXPIRE => HashExpire(cmd, ref storageApi),
+                RespCommand.HPEXPIRE => HashExpire(cmd, ref storageApi),
+                RespCommand.HEXPIREAT => HashExpire(cmd, ref storageApi),
+                RespCommand.HPEXPIREAT => HashExpire(cmd, ref storageApi),
+                RespCommand.HTTL => HashTimeToLive(cmd, ref storageApi),
+                RespCommand.HPTTL => HashTimeToLive(cmd, ref storageApi),
+                RespCommand.HEXPIRETIME => HashTimeToLive(cmd, ref storageApi),
+                RespCommand.HPEXPIRETIME => HashTimeToLive(cmd, ref storageApi),
+                RespCommand.HPERSIST => HashPersist(ref storageApi),
                 RespCommand.HSETNX => HashSet(cmd, ref storageApi),
                 RespCommand.HRANDFIELD => HashRandomField(cmd, ref storageApi),
                 RespCommand.HSCAN => ObjectScan(GarnetObjectType.Hash, ref storageApi),
@@ -749,6 +758,8 @@ namespace Garnet.server
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
                 RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(),
                 RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(),
+                RespCommand.COMMAND_GETKEYS => NetworkCOMMAND_GETKEYS(),
+                RespCommand.COMMAND_GETKEYSANDFLAGS => NetworkCOMMAND_GETKEYSANDFLAGS(),
                 RespCommand.ECHO => NetworkECHO(),
                 RespCommand.HELLO => NetworkHELLO(),
                 RespCommand.TIME => NetworkTIME(),
@@ -783,7 +794,7 @@ namespace Garnet.server
                 RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
                 RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
 
-                _ => Process(command)
+                _ => Process(command, ref storageApi)
             };
 
             bool NetworkCLIENTID()
@@ -831,9 +842,9 @@ namespace Garnet.server
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            bool Process(RespCommand command)
+            bool Process(RespCommand command, ref TGarnetApi storageApi)
             {
-                ProcessAdminCommands(command);
+                ProcessAdminCommands(command, ref storageApi);
                 return true;
             }
 
