@@ -268,6 +268,12 @@ end
 
             scratchBufferManager = respServerSession?.scratchBufferManager ?? new();
 
+            // Explicitly force to RESP2 for now
+            if (respServerSession != null)
+            {
+                respServerSession.respProtocolVersion = 2;
+            }
+
             keysTableRegistryIndex = -1;
             argvTableRegistryIndex = -1;
             loadSandboxedRegistryIndex = -1;

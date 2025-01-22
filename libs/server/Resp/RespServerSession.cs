@@ -148,7 +148,7 @@ namespace Garnet.server
         /// <summary>
         /// RESP protocol version (RESP2 is the default)
         /// </summary>
-        byte respProtocolVersion = 2;
+        internal byte respProtocolVersion = 2;
 
         /// <summary>
         /// Client name for the session

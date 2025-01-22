@@ -1008,7 +1008,7 @@ return retArray";
             ClassicAssert.AreEqual("table", simpleStringRes[0]);
             ClassicAssert.AreEqual("PONG", simpleStringRes[1]);
 
-            // todo: ERR reply - requires redis.pcall
+            // Todo: ERR reply - requires redis.pcall
 
             var nullBulkRes = (string[])db.ScriptEvaluate("local res = redis.call('GET', KEYS[1]); return { type(res), tostring(res) };", [(RedisKey)"not-set-ever"]);
             ClassicAssert.AreEqual(2, nullBulkRes.Length);
@@ -1019,6 +1019,21 @@ return retArray";
             ClassicAssert.AreEqual(2, nullMultiBulk.Length);
             ClassicAssert.AreEqual("boolean", nullMultiBulk[0]);
             ClassicAssert.AreEqual("false", nullMultiBulk[1]);
+        }
+
+        [Test]
+        public void NoScriptCommandsForbidden()
+        {
+            ClassicAssert.True(RespCommandsInfo.TryGetRespCommandsInfo(out var allCommands, externalOnly: true));
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            foreach (var (cmd, _) in allCommands.Where(static kv => kv.Value.Flags.HasFlag(RespCommandFlags.NoScript)))
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}')"));
+                ClassicAssert.True(exc.Message.StartsWith("ERR This Redis command is not allowed from script"), $"Allowed NoScript command: {cmd}");
+            }
         }
     }
 }
