@@ -16,7 +16,7 @@ namespace Tsavorite.core
         /// <summary>Calculates the size of a log record</summary>
         /// <param name="logRecord">The record being evaluated</param>
         /// <returns>The size of the record</returns>
-        long CalculateRecordSize<TSourceLogRecord>(ref readonly TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord<TValue>;
+        long CalculateRecordSize<TSourceLogRecord>(ref TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord<TValue>;
     }
 
     public enum LogOperationType
@@ -46,7 +46,7 @@ namespace Tsavorite.core
         {
             long size = 0;
             while (records.GetNext())
-                size += logSizeTracker.LogSizeCalculator.CalculateRecordSize(in records);
+                size += logSizeTracker.LogSizeCalculator.CalculateRecordSize(ref records);
 
             if (size == 0)
                 return;
@@ -134,7 +134,7 @@ namespace Tsavorite.core
         {
             long size = 0;
             while (records.GetNext())
-                size += LogSizeCalculator.CalculateRecordSize(in records);
+                size += LogSizeCalculator.CalculateRecordSize(ref records);
 
             if (size == 0)
                 return;

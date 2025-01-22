@@ -19,19 +19,19 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Tsavorite log
+    /// Tsavorite AOF (Append-Only File)
     /// </summary>
-    public sealed class TsavoriteLog : IDisposable
+    public sealed class TsavoriteAof : IDisposable
     {
         private Exception cannedException = null;
 
         readonly AofAllocatorImpl allocator;
         readonly LightEpoch epoch;
-        readonly ILogCommitManager logCommitManager;
-        readonly bool disposeLogCommitManager;
+        readonly IAofCommitManager aofCommitManager;
+        readonly bool disposeAofCommitManager;
         readonly GetMemory getMemory;
         readonly int headerSize;
-        readonly LogChecksumType logChecksum;
+        readonly AofChecksumType aofChecksum;
         readonly WorkQueueLIFO<CommitInfo> commitQueue;
 
         internal readonly bool readOnlyMode;
@@ -44,14 +44,14 @@ namespace Tsavorite.core
         internal TaskCompletionSource<Empty> refreshUncommittedTcs;
 
         // Offsets for all currently unprocessed commit records
-        readonly Queue<(long, TsavoriteLogRecoveryInfo)> ongoingCommitRequests;
-        readonly List<TsavoriteLogRecoveryInfo> coveredCommits = new();
+        readonly Queue<(long, TsavoriteAofRecoveryInfo)> ongoingCommitRequests;
+        readonly List<TsavoriteAofRecoveryInfo> coveredCommits = new();
         long commitNum, commitCoveredAddress;
 
-        readonly LogCommitPolicy commitPolicy;
+        readonly AofCommitPolicy commitPolicy;
 
         /// <summary>
-        /// Beginning address of log
+        /// Beginning address of aof
         /// </summary>
         public long BeginAddress => beginAddress;
 
@@ -60,32 +60,32 @@ namespace Tsavorite.core
         /// </summary>
         internal long AllocatorBeginAddress => allocator.BeginAddress;
 
-        // Here's a soft begin address that is observed by all access at the TsavoriteLog level but not actually on the
+        // Here's a soft begin address that is observed by all access at the TsavoriteAof level but not actually on the
         // allocator. This is to make sure that any potential physical deletes only happen after commit.
         long beginAddress;
 
         /// <summary>
-        /// Tail address of log
+        /// Tail address of aof
         /// </summary>
         public long TailAddress => allocator.GetTailAddress();
 
         /// <summary>
-        /// Log flushed until address
+        /// Aof flushed until address
         /// </summary>
         public long FlushedUntilAddress => allocator.FlushedUntilAddress;
 
         /// <summary>
-        /// Log safe read-only address
+        /// Aof safe read-only address
         /// </summary>
         public long SafeTailAddress;
 
         /// <summary>
-        /// Log committed until address
+        /// Aof committed until address
         /// </summary>
         public long CommittedUntilAddress;
 
         /// <summary>
-        /// Log committed begin address
+        /// Aof committed begin address
         /// </summary>
         public long CommittedBeginAddress;
 
@@ -95,7 +95,7 @@ namespace Tsavorite.core
         public byte[] RecoveredCookie;
 
         /// <summary>
-        /// Header size used by TsavoriteLog
+        /// Header size used by TsavoriteAof
         /// </summary>
         public int HeaderSize => headerSize;
 
@@ -105,7 +105,7 @@ namespace Tsavorite.core
         internal Task<LinkedCommitInfo> CommitTask => commitTcs.Task;
 
         /// <summary>
-        /// Task notifying log flush completions
+        /// Task notifying aof flush completions
         /// </summary>
         internal CompletionEvent FlushEvent => allocator.FlushEvent;
 
@@ -116,7 +116,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Number of references to log, including itself
-        /// Used to determine disposability of log
+        /// Used to determine disposability of aof
         /// </summary>
         internal int logRefCount = 1;
 
@@ -173,25 +173,25 @@ namespace Tsavorite.core
         public long MemorySizeBytes => ((long)(allocator.AllocatedPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
 
         /// <summary>
-        /// Create new log instance
+        /// Create new aof instance
         /// </summary>
         /// <param name="logSettings">Log settings</param>
         /// <param name="logger">Log settings</param>
-        public TsavoriteLog(TsavoriteLogSettings logSettings, ILogger logger = null)
+        public TsavoriteAof(TsavoriteAofLogSettings logSettings, ILogger logger = null)
             : this(logSettings, logSettings.TryRecoverLatest, logger)
         { }
 
         /// <summary>
-        /// Create new log instance
+        /// Create new aof instance
         /// </summary>
         /// <param name="logSettings">Log settings</param>
         /// <param name="syncRecover">Recover synchronously</param>
         /// <param name="logger">Log settings</param>
-        private TsavoriteLog(TsavoriteLogSettings logSettings, bool syncRecover, ILogger logger = null)
+        private TsavoriteAof(TsavoriteAofLogSettings logSettings, bool syncRecover, ILogger logger = null)
         {
             this.logger = logger;
             AutoCommit = logSettings.AutoCommit;
-            logCommitManager = logSettings.LogCommitManager ??
+            aofCommitManager = logSettings.LogCommitManager ??
                 new DeviceLogCommitCheckpointManager
                 (new LocalStorageNamedDeviceFactory(),
                     new DefaultCheckpointNamingScheme(
@@ -200,11 +200,11 @@ namespace Tsavorite.core
                     !logSettings.ReadOnlyMode && logSettings.RemoveOutdatedCommits);
 
             if (logSettings.LogCommitManager == null)
-                disposeLogCommitManager = true;
+                disposeAofCommitManager = true;
 
             // Reserve 8 byte checksum in header if requested
-            logChecksum = logSettings.LogChecksum;
-            headerSize = logChecksum == LogChecksumType.PerEntry ? 12 : 4;
+            aofChecksum = logSettings.LogChecksum;
+            headerSize = aofChecksum == AofChecksumType.PerEntry ? 12 : 4;
             getMemory = logSettings.GetMemory;
             epoch = new LightEpoch();
             CommittedUntilAddress = Constants.kFirstValidAddress;
@@ -215,7 +215,7 @@ namespace Tsavorite.core
             allocator.Initialize();
             beginAddress = allocator.BeginAddress;
 
-            // TsavoriteLog is used as a read-only iterator
+            // TsavoriteAof is used as a read-only iterator
             if (logSettings.ReadOnlyMode)
             {
                 readOnlyMode = true;
@@ -224,8 +224,8 @@ namespace Tsavorite.core
 
             fastCommitMode = logSettings.FastCommitMode;
 
-            ongoingCommitRequests = new Queue<(long, TsavoriteLogRecoveryInfo)>();
-            commitPolicy = logSettings.LogCommitPolicy ?? LogCommitPolicy.Default();
+            ongoingCommitRequests = new Queue<(long, TsavoriteAofRecoveryInfo)>();
+            commitPolicy = logSettings.AofCommitPolicy ?? AofCommitPolicy.Default();
             commitPolicy.OnAttached(this);
 
             tolerateDeviceFailure = logSettings.TolerateDeviceFailure;
@@ -358,7 +358,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Reset TsavoriteLog to empty state
+        /// Reset TsavoriteAof to empty state
         /// WARNING: Run after database is quiesced
         /// </summary>
         public void Reset()
@@ -374,7 +374,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Initialize new log instance safely by notifying readers that initialization is in progress.
+        /// Initialize new aof instance safely by notifying readers that initialization is in progress.
         /// </summary>
         /// <param name="beginAddress"></param>
         /// <param name="committedUntilAddress"></param>
@@ -399,7 +399,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Initialize new log instance with specific begin address and (optional) last commit number
+        /// Initialize new aof instance with specific begin address and (optional) last commit number
         /// </summary>
         /// <param name="beginAddress"></param>
         /// <param name="committedUntilAddress"></param>
@@ -433,7 +433,7 @@ namespace Tsavorite.core
                 commitNum = lastCommitNum;
                 this.beginAddress = beginAddress;
 
-                if (lastCommitNum > 0) logCommitManager.OnRecovery(lastCommitNum);
+                if (lastCommitNum > 0) aofCommitManager.OnRecovery(lastCommitNum);
             }
             finally
             {
@@ -442,7 +442,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Recover TsavoriteLog to the specific commit number, or latest if -1
+        /// Recover TsavoriteAof to the specific commit number, or latest if -1
         /// </summary>
         /// <param name="requestedCommitNum">Requested commit number</param>
         public void Recover(long requestedCommitNum = -1)
@@ -457,19 +457,19 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Create new log instance asynchronously
+        /// Create new aof instance asynchronously
         /// </summary>
         /// <param name="logSettings"></param>
         /// <param name="cancellationToken"></param>
-        public static async ValueTask<TsavoriteLog> CreateAsync(TsavoriteLogSettings logSettings, CancellationToken cancellationToken = default)
+        public static async ValueTask<TsavoriteAof> CreateAsync(TsavoriteAofLogSettings logSettings, CancellationToken cancellationToken = default)
         {
-            var log = new TsavoriteLog(logSettings, false);
+            var aof = new TsavoriteAof(logSettings, false);
             if (logSettings.TryRecoverLatest)
             {
-                var cookie = await log.RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
-                log.RecoveredCookie = cookie;
+                var cookie = await aof.RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
+                aof.RecoveredCookie = cookie;
             }
-            return log;
+            return aof;
         }
 
         /// <summary>
@@ -482,10 +482,10 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Mark the log as complete. A completed log will no longer allow enqueues, and all currently enqueued items will
+        /// Mark the aof as complete. A completed aof log will no longer allow enqueues, and all currently enqueued items will
         /// be immediately committed.
         /// </summary>
-        /// <param name="spinWait"> whether to spin until log completion becomes committed </param>
+        /// <param name="spinWait"> whether to spin until aof completion becomes committed </param>
         public void CompleteLog(bool spinWait = false)
         {
             // Ensure progress even if there is no thread in epoch table. Also, BumpCurrentEpoch must be done on a protected thread.
@@ -494,7 +494,7 @@ namespace Tsavorite.core
                 epoch.Resume();
             try
             {
-                // Ensure all currently started entries will enqueue before we declare log closed
+                // Ensure all currently started entries will enqueue before we declare aof closed
                 epoch.BumpCurrentEpoch(() =>
                 {
                     CommitInternal(out _, out _, false, [], long.MaxValue, null);
@@ -511,10 +511,10 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Check if the log is complete. A completed log will no longer allow enqueues, and all currently enqueued items will
+        /// Check if the aof is complete. A completed aof log will no longer allow enqueues, and all currently enqueued items will
         /// be immediately committed.
         /// </summary>
-        public bool LogCompleted => commitNum == long.MaxValue;
+        public bool AofCompleted => commitNum == long.MaxValue;
 
         internal void TrueDispose()
         {
@@ -522,18 +522,18 @@ namespace Tsavorite.core
             safeTailRefreshCallbackCompleted?.Signal();
             safeTailRefreshEntryEnqueued?.Signal();
             commitQueue.Dispose();
-            commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
+            commitTcs.TrySetException(new ObjectDisposedException("Aof has been disposed"));
             allocator.Dispose();
             epoch.Dispose();
-            if (disposeLogCommitManager)
-                logCommitManager.Dispose();
+            if (disposeAofCommitManager)
+                aofCommitManager.Dispose();
         }
 
         #region Enqueue
         /// <summary>
-        /// Enqueue entry to log (in memory) - no guarantee of flush/commit
+        /// Enqueue entry to aof (in memory) - no guarantee of flush/commit
         /// </summary>
-        /// <param name="entry">Entry to be enqueued to log</param>
+        /// <param name="entry">Entry to be enqueued to aof</param>
         /// <returns>Logical address of added entry</returns>
         public long Enqueue(byte[] entry)
         {
@@ -544,9 +544,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Enqueue entry to log (in memory) - no guarantee of flush/commit
+        /// Enqueue entry to aof (in memory) - no guarantee of flush/commit
         /// </summary>
-        /// <param name="entry">Entry to be enqueued to log</param>
+        /// <param name="entry">Entry to be enqueued to aof</param>
         /// <returns>Logical address of added entry</returns>
         public long Enqueue(ReadOnlySpan<byte> entry)
         {
@@ -557,9 +557,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Enqueue raw pre-formatted bytes with headers to the log (in memory).
+        /// Enqueue raw pre-formatted bytes with headers to the aof (in memory).
         /// </summary>
-        /// <param name="entryBytes">Raw bytes to be enqueued to log</param>
+        /// <param name="entryBytes">Raw bytes to be enqueued to aof</param>
         /// <param name="noCommit">Do not auto-commit</param>
         /// <returns>First logical address of added entries</returns>
         public long UnsafeEnqueueRaw(ReadOnlySpan<byte> entryBytes, bool noCommit = false)
@@ -572,11 +572,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Commit metadata only (no records added to main log)
+        /// Commit metadata only (no records added to main aof)
         /// </summary>
         /// <param name="info"></param>
         /// <param name="isProtected"></param>
-        public void UnsafeCommitMetadataOnly(TsavoriteLogRecoveryInfo info, bool isProtected)
+        public void UnsafeCommitMetadataOnly(TsavoriteAofRecoveryInfo info, bool isProtected)
         {
             lock (ongoingCommitRequests)
             {
@@ -608,9 +608,9 @@ namespace Tsavorite.core
             => allocator.GetReadOnlyAddressLagOffset();
 
         /// <summary>
-        /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
+        /// Enqueue batch of entries to aof (in memory) - no guarantee of flush/commit
         /// </summary>
-        /// <param name="readOnlySpanBatch">Batch of entries to be enqueued to log</param>
+        /// <param name="readOnlySpanBatch">Batch of entries to be enqueued to aof</param>
         /// <returns>Logical address of added entry</returns>
         public long Enqueue(IReadOnlySpanBatch readOnlySpanBatch)
         {
@@ -621,12 +621,12 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
+        /// Enqueue batch of entries to aof (in memory) - no guarantee of flush/commit
         /// </summary>
-        /// <param name="entry">Entry to be enqueued to log</param>
+        /// <param name="entry">Entry to be enqueued to aof</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of added entry</returns>
-        public long Enqueue<T>(T entry) where T : ILogEnqueueEntry
+        public long Enqueue<T>(T entry) where T : IAofEnqueueEntry
         {
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
@@ -635,12 +635,12 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
+        /// Enqueue batch of entries to aof (in memory) - no guarantee of flush/commit
         /// </summary>
-        /// <param name="entries">Batch of entries to be enqueued to log</param>
+        /// <param name="entries">Batch of entries to be enqueued to aof</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of added entry</returns>
-        public long Enqueue<T>(IEnumerable<T> entries) where T : ILogEnqueueEntry
+        public long Enqueue<T>(IEnumerable<T> entries) where T : IAofEnqueueEntry
         {
             long logicalAddress;
             while (!TryEnqueue(entries, out logicalAddress))
@@ -651,14 +651,14 @@ namespace Tsavorite.core
 
         #region TryEnqueue
         /// <summary>
-        /// Try to enqueue entry to log (in memory). If it returns true, we are
+        /// Try to enqueue entry to aof (in memory). If it returns true, we are
         /// done. If it returns false, we need to retry.
         /// </summary>
-        /// <param name="entry">Entry to be enqueued to log</param>
+        /// <param name="entry">Entry to be enqueued to aof</param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue<T>(T entry, out long logicalAddress) where T : ILogEnqueueEntry
+        public unsafe bool TryEnqueue<T>(T entry, out long logicalAddress) where T : IAofEnqueueEntry
         {
             logicalAddress = 0;
             var length = entry.SerializedLength;
@@ -667,7 +667,7 @@ namespace Tsavorite.core
 
             epoch.Resume();
 
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed aof");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
@@ -691,11 +691,11 @@ namespace Tsavorite.core
         /// Try to enqueue batch of entries as a single atomic unit (to memory). Entire 
         /// batch needs to fit on one log page.
         /// </summary>
-        /// <param name="entries">Batch to be appended to log</param>
+        /// <param name="entries">Batch to be appended to aof</param>
         /// <param name="logicalAddress">Logical address of first added entry</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue<T>(IEnumerable<T> entries, out long logicalAddress) where T : ILogEnqueueEntry
+        public unsafe bool TryEnqueue<T>(IEnumerable<T> entries, out long logicalAddress) where T : IAofEnqueueEntry
         {
             logicalAddress = 0;
 
@@ -734,10 +734,10 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to enqueue entry to log (in memory). If it returns true, we are
+        /// Try to enqueue entry to aof (in memory). If it returns true, we are
         /// done. If it returns false, we need to retry.
         /// </summary>
-        /// <param name="entry">Entry to be enqueued to log</param>
+        /// <param name="entry">Entry to be enqueued to aof</param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
         public unsafe bool TryEnqueue(byte[] entry, out long logicalAddress)
@@ -749,7 +749,7 @@ namespace Tsavorite.core
 
             epoch.Resume();
 
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed aof");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
@@ -771,10 +771,10 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to enqueue raw pre-formatted bytes with headers to the log (in memory). If it returns true, we are
+        /// Try to enqueue raw pre-formatted bytes with headers to the aof (in memory). If it returns true, we are
         /// done. If it returns false, we need to retry.
         /// </summary>
-        /// <param name="entryBytes">Entry bytes to be enqueued to log</param>
+        /// <param name="entryBytes">Entry bytes to be enqueued to aof</param>
         /// <param name="noCommit">Do not auto-commit</param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
@@ -790,7 +790,7 @@ namespace Tsavorite.core
 
             epoch.Resume();
 
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed aof");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
@@ -809,7 +809,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to append entry to log. If it returns true, we are
+        /// Try to append entry to aof. If it returns true, we are
         /// done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="entry">Entry to be appended to log</param>
@@ -824,7 +824,7 @@ namespace Tsavorite.core
 
             epoch.Resume();
 
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed aof");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
@@ -845,7 +845,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header atomically to the log.
+        /// Append a user-defined blittable struct header atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
@@ -870,7 +870,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and one <see cref="SpanByte"/> entry atomically to the log.
+        /// Append a user-defined blittable struct header and one <see cref="SpanByte"/> entry atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
@@ -897,7 +897,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and two <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and two <see cref="SpanByte"/> entries entries atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
@@ -926,7 +926,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
@@ -957,7 +957,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="input"></param>
@@ -983,7 +983,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
@@ -1011,7 +1011,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
@@ -1042,7 +1042,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined header byte and a <see cref="SpanByte"/> entry atomically to the log.
+        /// Append a user-defined header byte and a <see cref="SpanByte"/> entry atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
@@ -1094,7 +1094,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to append a user-defined blittable struct header and two <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Try to append a user-defined blittable struct header and two <see cref="SpanByte"/> entries entries atomically to the aof.
         /// If it returns true, we are done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
@@ -1132,7 +1132,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Try to append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the aof.
         /// If it returns true, we are done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
@@ -1172,7 +1172,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to append a user-defined header byte and a <see cref="SpanByte"/> entry atomically to the log. If it returns true, we are
+        /// Try to append a user-defined header byte and a <see cref="SpanByte"/> entry atomically to the aof. If it returns true, we are
         /// done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
@@ -1210,7 +1210,7 @@ namespace Tsavorite.core
         /// Try to enqueue batch of entries as a single atomic unit (to memory). Entire 
         /// batch needs to fit on one log page.
         /// </summary>
-        /// <param name="readOnlySpanBatch">Batch to be appended to log</param>
+        /// <param name="readOnlySpanBatch">Batch to be appended to aof</param>
         /// <param name="logicalAddress">Logical address of first added entry</param>
         /// <returns>Whether the append succeeded</returns>
         public bool TryEnqueue(IReadOnlySpanBatch readOnlySpanBatch, out long logicalAddress)
@@ -1221,7 +1221,7 @@ namespace Tsavorite.core
 
         #region EnqueueAsync
         /// <summary>
-        /// Enqueue entry to log in memory (async) - completes after entry is 
+        /// Enqueue entry to aof in memory (async) - completes after entry is 
         /// appended to memory, NOT committed to storage.
         /// </summary>
         /// <param name="entry">Entry to enqueue</param>
@@ -1236,7 +1236,7 @@ namespace Tsavorite.core
             return SlowEnqueueAsync(this, entry, token);
         }
 
-        private static async ValueTask<long> SlowEnqueueAsync(TsavoriteLog @this, byte[] entry, CancellationToken token)
+        private static async ValueTask<long> SlowEnqueueAsync(TsavoriteAof @this, byte[] entry, CancellationToken token)
         {
             long logicalAddress;
             while (true)
@@ -1256,7 +1256,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Enqueue entry to log in memory (async) - completes after entry is 
+        /// Enqueue entry to aof in memory (async) - completes after entry is 
         /// appended to memory, NOT committed to storage.
         /// </summary>
         /// <param name="entry">Entry to enqueue</param>
@@ -1271,7 +1271,7 @@ namespace Tsavorite.core
             return SlowEnqueueAsync(this, entry, token);
         }
 
-        private static async ValueTask<long> SlowEnqueueAsync(TsavoriteLog @this, ReadOnlyMemory<byte> entry, CancellationToken token)
+        private static async ValueTask<long> SlowEnqueueAsync(TsavoriteAof @this, ReadOnlyMemory<byte> entry, CancellationToken token)
         {
             long logicalAddress;
             while (true)
@@ -1291,7 +1291,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Enqueue batch of entries to log in memory (async) - completes after entry is 
+        /// Enqueue batch of entries to aof in memory (async) - completes after entry is 
         /// appended to memory, NOT committed to storage.
         /// </summary>
         /// <param name="readOnlySpanBatch">Batch to enqueue</param>
@@ -1306,7 +1306,7 @@ namespace Tsavorite.core
             return SlowEnqueueAsync(this, readOnlySpanBatch, token);
         }
 
-        private static async ValueTask<long> SlowEnqueueAsync(TsavoriteLog @this, IReadOnlySpanBatch readOnlySpanBatch, CancellationToken token)
+        private static async ValueTask<long> SlowEnqueueAsync(TsavoriteAof @this, IReadOnlySpanBatch readOnlySpanBatch, CancellationToken token)
         {
             long logicalAddress;
             while (true)
@@ -1326,14 +1326,14 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Enqueue entry to log in memory (async) - completes after entry is 
+        /// Enqueue entry to aof in memory (async) - completes after entry is 
         /// appended to memory, NOT committed to storage.
         /// </summary>
         /// <param name="entry">Entry to enqueue</param>
         /// <param name="token">Cancellation token</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of added entry</returns>
-        public ValueTask<long> EnqueueAsync<T>(T entry, CancellationToken token = default) where T : ILogEnqueueEntry
+        public ValueTask<long> EnqueueAsync<T>(T entry, CancellationToken token = default) where T : IAofEnqueueEntry
         {
             token.ThrowIfCancellationRequested();
             if (TryEnqueue(entry, out long logicalAddress))
@@ -1342,8 +1342,8 @@ namespace Tsavorite.core
             return SlowEnqueueAsync(this, entry, token);
         }
 
-        private static async ValueTask<long> SlowEnqueueAsync<T>(TsavoriteLog @this, T entry, CancellationToken token)
-            where T : ILogEnqueueEntry
+        private static async ValueTask<long> SlowEnqueueAsync<T>(TsavoriteAof @this, T entry, CancellationToken token)
+            where T : IAofEnqueueEntry
         {
             long logicalAddress;
             while (true)
@@ -1363,14 +1363,14 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Enqueue batch of entries to log in memory (async) - completes after entry is 
+        /// Enqueue batch of entries to aof in memory (async) - completes after entry is 
         /// appended to memory, NOT committed to storage.
         /// </summary>
         /// <param name="entries">Entry to enqueue</param>
         /// <param name="token">Cancellation token</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of first added entry</returns>
-        public ValueTask<long> EnqueueAsync<T>(IEnumerable<T> entries, CancellationToken token = default) where T : ILogEnqueueEntry
+        public ValueTask<long> EnqueueAsync<T>(IEnumerable<T> entries, CancellationToken token = default) where T : IAofEnqueueEntry
         {
             token.ThrowIfCancellationRequested();
             if (TryEnqueue(entries, out long logicalAddress))
@@ -1379,8 +1379,8 @@ namespace Tsavorite.core
             return SlowEnqueueAsync(this, entries, token);
         }
 
-        private static async ValueTask<long> SlowEnqueueAsync<T>(TsavoriteLog @this, IEnumerable<T> entry, CancellationToken token)
-            where T : ILogEnqueueEntry
+        private static async ValueTask<long> SlowEnqueueAsync<T>(TsavoriteAof @this, IEnumerable<T> entry, CancellationToken token)
+            where T : IAofEnqueueEntry
         {
             long logicalAddress;
             while (true)
@@ -1460,7 +1460,7 @@ namespace Tsavorite.core
             {
                 token.ThrowIfCancellationRequested();
 
-                if (LogCompleted && nextAddress == TailAddress) return false;
+                if (AofCompleted && nextAddress == TailAddress) return false;
 
                 var tcs = refreshUncommittedTcs;
                 if (tcs == null)
@@ -1518,7 +1518,7 @@ namespace Tsavorite.core
         /// <param name="spinWait">If true, spin-wait until commit completes. Otherwise, issue commit and return immediately</param>
         /// <param name="cookie">
         /// A custom piece of metadata to be associated with this commit. If commit is successful, any recovery from
-        /// this commit will recover the cookie in RecoveredCookie field. Note that cookies are not stored by TsavoriteLog
+        /// this commit will recover the cookie in RecoveredCookie field. Note that cookies are not stored by TsavoriteAof
         /// itself, so the user is responsible for tracking cookie content and supplying it to every commit call if needed
         /// </param>
         /// <param name="proposedCommitNum">
@@ -1621,7 +1621,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="cookie">
         /// A custom piece of metadata to be associated with this commit. If commit is successful, any recovery from
-        /// this commit will recover the cookie in RecoveredCookie field. Note that cookies are not stored by TsavoriteLog
+        /// this commit will recover the cookie in RecoveredCookie field. Note that cookies are not stored by TsavoriteAof
         /// itself, so the user is responsible for tracking cookie content and supplying it to every commit call if needed
         /// </param>
         /// <param name="proposedCommitNum">
@@ -1650,7 +1650,7 @@ namespace Tsavorite.core
         #region EnqueueAndWaitForCommit
 
         /// <summary>
-        /// Append entry to log - spin-waits until entry is committed to storage.
+        /// Append entry to aof - spin-waits until entry is committed to storage.
         /// Does NOT itself issue flush!
         /// </summary>
         /// <param name="entry"></param>
@@ -1665,7 +1665,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append entry to log - spin-waits until entry is committed to storage.
+        /// Append entry to aof - spin-waits until entry is committed to storage.
         /// Does NOT itself issue flush!
         /// </summary>
         /// <param name="entry"></param>
@@ -1680,7 +1680,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append batch of entries to log - spin-waits until entry is committed to storage.
+        /// Append batch of entries to aof - spin-waits until entry is committed to storage.
         /// Does NOT itself issue flush!
         /// </summary>
         /// <param name="readOnlySpanBatch"></param>
@@ -1695,13 +1695,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append entry to log - spin-waits until entry is committed to storage.
+        /// Append entry to aof - spin-waits until entry is committed to storage.
         /// Does NOT itself issue flush!
         /// </summary>
-        /// <param name="entry">Entry to be enqueued to log</param>
+        /// <param name="entry">Entry to be enqueued to aof</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of added entry</returns>
-        public long EnqueueAndWaitForCommit<T>(T entry) where T : ILogEnqueueEntry
+        public long EnqueueAndWaitForCommit<T>(T entry) where T : IAofEnqueueEntry
         {
             long logicalAddress;
             while (!TryEnqueue(entry, out logicalAddress))
@@ -1711,13 +1711,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append entry to log - spin-waits until entry is committed to storage.
+        /// Append entry to aof - spin-waits until entry is committed to storage.
         /// Does NOT itself issue flush!
         /// </summary>
-        /// <param name="entries">Entries to be enqueued to log</param>
+        /// <param name="entries">Entries to be enqueued to aof</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of first added entry</returns>
-        public long EnqueueAndWaitForCommit<T>(IEnumerable<T> entries) where T : ILogEnqueueEntry
+        public long EnqueueAndWaitForCommit<T>(IEnumerable<T> entries) where T : IAofEnqueueEntry
         {
             long logicalAddress;
             while (!TryEnqueue(entries, out logicalAddress))
@@ -1731,7 +1731,7 @@ namespace Tsavorite.core
         #region EnqueueAndWaitForCommitAsync
 
         /// <summary>
-        /// Append entry to log (async) - completes after entry is committed to storage.
+        /// Append entry to aof (async) - completes after entry is committed to storage.
         /// Does NOT itself issue flush!
         /// </summary>
         /// <param name="entry">Entry to enqueue</param>
@@ -1783,7 +1783,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append entry to log (async) - completes after entry is committed to storage.
+        /// Append entry to aof (async) - completes after entry is committed to storage.
         /// Does NOT itself issue flush!
         /// </summary>
         /// <param name="entry">Entry to enqueue</param>
@@ -1835,7 +1835,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append batch of entries to log (async) - completes after batch is committed to storage.
+        /// Append batch of entries to aof (async) - completes after batch is committed to storage.
         /// Does NOT itself issue flush!
         /// </summary>
         /// <param name="readOnlySpanBatch"></param>
@@ -1887,14 +1887,14 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append entry to log (async) - completes after entry is committed to storage.
+        /// Append entry to aof (async) - completes after entry is committed to storage.
         /// Does NOT itself issue flush!
         /// </summary>
         /// <param name="entry">Entry to enqueue</param>
         /// <param name="token">Cancellation token</param>
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of added entry</returns>
-        public async ValueTask<long> EnqueueAndWaitForCommitAsync<T>(T entry, CancellationToken token = default) where T : ILogEnqueueEntry
+        public async ValueTask<long> EnqueueAndWaitForCommitAsync<T>(T entry, CancellationToken token = default) where T : IAofEnqueueEntry
         {
             token.ThrowIfCancellationRequested();
             long logicalAddress;
@@ -1940,7 +1940,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append batch of entries to log (async) - completes after batch is committed to storage.
+        /// Append batch of entries to aof (async) - completes after batch is committed to storage.
         /// Does NOT itself issue flush!
         /// </summary>
         /// <param name="entries"> entries to enqueue</param>
@@ -1948,7 +1948,7 @@ namespace Tsavorite.core
         /// <typeparam name="T">type of entry</typeparam>
         /// <returns>Logical address of added entry</returns>
         public async ValueTask<long> EnqueueAndWaitForCommitAsync<T>(IEnumerable<T> entries,
-            CancellationToken token = default) where T : ILogEnqueueEntry
+            CancellationToken token = default) where T : IAofEnqueueEntry
         {
             token.ThrowIfCancellationRequested();
             long logicalAddress;
@@ -1995,7 +1995,7 @@ namespace Tsavorite.core
         #endregion
 
         /// <summary>
-        /// Truncate the log until, but not including, untilAddress. **User should ensure
+        /// Truncate the aof until, but not including, untilAddress. **User should ensure
         /// that the provided address is a valid starting address for some record.** The
         /// truncation is not persisted until the next commit.
         /// </summary>
@@ -2006,7 +2006,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Unsafely shift the begin address of the log and optionally truncate files on disk, without committing.
+        /// Unsafely shift the begin address of the aof and optionally truncate files on disk, without committing.
         /// Do not use unless you know what you are doing.
         /// </summary>
         /// <param name="untilAddress"></param>
@@ -2035,7 +2035,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Truncate the log until the start of the page corresponding to untilAddress. This is 
+        /// Truncate the aof until the start of the page corresponding to untilAddress. This is 
         /// safer than TruncateUntil, as page starts are always a valid truncation point. The
         /// truncation is not persisted until the next commit.
         /// </summary>
@@ -2046,7 +2046,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Pull-based iterator interface for scanning Tsavorite log
+        /// Pull-based iterator interface for scanning Tsavorite aof
         /// </summary>
         /// <param name="beginAddress">Begin address for scan.</param>
         /// <param name="endAddress">End address for scan (or long.MaxValue for tailing).</param>
@@ -2055,35 +2055,35 @@ namespace Tsavorite.core
         /// <param name="scanUncommitted">Whether we scan uncommitted data</param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public TsavoriteLogScanIterator Scan(long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        public TsavoriteAofScanIterator Scan(long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
         {
             if (readOnlyMode)
             {
                 scanBufferingMode = DiskScanBufferingMode.SinglePageBuffering;
 
                 if (scanUncommitted)
-                    throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
+                    throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteAof");
             }
 
             if (scanUncommitted && SafeTailRefreshFrequencyMs < 0)
-                throw new TsavoriteException("Cannot use scanUncommitted without setting SafeTailRefreshFrequencyMs to a non-negative value in TsavoriteLog settings");
+                throw new TsavoriteException("Cannot use scanUncommitted without setting SafeTailRefreshFrequencyMs to a non-negative value in TsavoriteAof settings");
 
-            var iter = new TsavoriteLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
+            var iter = new TsavoriteAofScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
 
             if (Interlocked.Increment(ref logRefCount) == 1)
-                throw new TsavoriteException("Cannot scan disposed log instance");
+                throw new TsavoriteException("Cannot scan disposed aof instance");
             return iter;
         }
 
-        List<TsavoriteLogScanSingleIterator> activeSingleIterators;
+        List<TsavoriteAofScanSingleIterator> activeSingleIterators;
 
-        public void RemoveIterator(TsavoriteLogScanSingleIterator iterator)
+        public void RemoveIterator(TsavoriteAofScanSingleIterator iterator)
         {
             lock (this)
             {
                 if (activeSingleIterators != null)
                 {
-                    List<TsavoriteLogScanSingleIterator> newList = null;
+                    List<TsavoriteAofScanSingleIterator> newList = null;
                     foreach (var it in activeSingleIterators)
                     {
                         if (it != iterator)
@@ -2097,34 +2097,34 @@ namespace Tsavorite.core
             }
         }
 
-        public TsavoriteLogScanSingleIterator ScanSingle(long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        public TsavoriteAofScanSingleIterator ScanSingle(long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
         {
             if (readOnlyMode)
             {
                 scanBufferingMode = DiskScanBufferingMode.SinglePageBuffering;
 
                 if (scanUncommitted)
-                    throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
+                    throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteAof");
             }
 
             if (scanUncommitted && SafeTailRefreshFrequencyMs < 0)
-                throw new TsavoriteException("Cannot use scanUncommitted without setting SafeTailRefreshFrequencyMs to a non-negative value in TsavoriteLog settings");
+                throw new TsavoriteException("Cannot use scanUncommitted without setting SafeTailRefreshFrequencyMs to a non-negative value in TsavoriteAof settings");
 
-            var iter = new TsavoriteLogScanSingleIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
+            var iter = new TsavoriteAofScanSingleIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
 
             lock (this)
             {
-                List<TsavoriteLogScanSingleIterator> newList = activeSingleIterators == null ? new() { iter } : new(activeSingleIterators) { iter };
+                List<TsavoriteAofScanSingleIterator> newList = activeSingleIterators == null ? new() { iter } : new(activeSingleIterators) { iter };
                 activeSingleIterators = newList;
             }
 
             if (Interlocked.Increment(ref logRefCount) == 1)
-                throw new TsavoriteException("Cannot scan disposed log instance");
+                throw new TsavoriteException("Cannot scan disposed aof instance");
             return iter;
         }
 
         /// <summary>
-        /// Random read record from log, at given address
+        /// Random read record from aof, at given address
         /// </summary>
         /// <param name="address">Logical address to read from</param>
         /// <param name="estimatedLength">Estimated length of entry, if known</param>
@@ -2154,7 +2154,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Random read record from log as IMemoryOwner&lt;byte&gt;, at given address
+        /// Random read record from aof as IMemoryOwner&lt;byte&gt;, at given address
         /// </summary>
         /// <param name="address">Logical address to read from</param>
         /// <param name="memoryPool">MemoryPool to rent the destination buffer from</param>
@@ -2185,7 +2185,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Random read record from log, at given address
+        /// Random read record from aof, at given address
         /// </summary>
         /// <param name="address">Logical address to read from</param>
         /// <param name="token">Cancellation token</param>
@@ -2228,7 +2228,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Commit log
+        /// Commit aof
         /// </summary>
         private void CommitCallback(CommitInfo commitInfo)
         {
@@ -2237,7 +2237,7 @@ namespace Tsavorite.core
             commitQueue.AddWorkItem(commitInfo);
         }
 
-        private unsafe bool TryEnqueueCommitRecord(ref TsavoriteLogRecoveryInfo info)
+        private unsafe bool TryEnqueueCommitRecord(ref TsavoriteAofRecoveryInfo info)
         {
             var entryBodySize = info.SerializedSize();
 
@@ -2268,12 +2268,12 @@ namespace Tsavorite.core
             return true;
         }
 
-        private bool ShouldCommmitMetadata(ref TsavoriteLogRecoveryInfo info)
+        private bool ShouldCommmitMetadata(ref TsavoriteAofRecoveryInfo info)
         {
             return beginAddress > CommittedBeginAddress || info.Cookie != null;
         }
 
-        private void CommitMetadataOnly(ref TsavoriteLogRecoveryInfo info)
+        private void CommitMetadataOnly(ref TsavoriteAofRecoveryInfo info)
         {
             var fromAddress = CommittedUntilAddress > info.BeginAddress ? CommittedUntilAddress : info.BeginAddress;
             var untilAddress = FlushedUntilAddress > info.BeginAddress ? FlushedUntilAddress : info.BeginAddress;
@@ -2286,21 +2286,21 @@ namespace Tsavorite.core
             });
         }
 
-        private void UpdateCommittedState(TsavoriteLogRecoveryInfo recoveryInfo)
+        private void UpdateCommittedState(TsavoriteAofRecoveryInfo recoveryInfo)
         {
             CommittedBeginAddress = recoveryInfo.BeginAddress;
             CommittedUntilAddress = recoveryInfo.UntilAddress;
             Utility.MonotonicUpdate(ref persistedCommitNum, recoveryInfo.CommitNum, out _);
         }
 
-        private void WriteCommitMetadata(TsavoriteLogRecoveryInfo recoveryInfo)
+        private void WriteCommitMetadata(TsavoriteAofRecoveryInfo recoveryInfo)
         {
             // TODO: can change to write this in separate thread for fast commit
 
             // If we are in fast-commit, we may not write every metadata to disk. However, when we are deleting files
             // on disk, we have to write metadata for the new start location on disk so we know where to scan forward from.
             bool forceWriteMetadata = fastCommitMode && (allocator.BeginAddress < recoveryInfo.BeginAddress);
-            logCommitManager.Commit(recoveryInfo.BeginAddress, recoveryInfo.UntilAddress,
+            aofCommitManager.Commit(recoveryInfo.BeginAddress, recoveryInfo.UntilAddress,
                 recoveryInfo.ToByteArray(), recoveryInfo.CommitNum, forceWriteMetadata);
 
             // If not fast committing, set committed state as we commit metadata explicitly only after metadata commit
@@ -2399,24 +2399,24 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Synchronously recover instance to TsavoriteLog's latest valid commit, when being used as a readonly log iterator
+        /// Synchronously recover instance to TsavoriteAof's latest valid commit, when being used as a readonly log iterator
         /// </summary>
         public void RecoverReadOnly()
         {
             if (!readOnlyMode)
-                throw new TsavoriteException("This method can only be used with a read-only TsavoriteLog instance used for iteration. Set TsavoriteLogSettings.ReadOnlyMode to true during creation to indicate this.");
+                throw new TsavoriteException("This method can only be used with a read-only TsavoriteAof instance used for iteration. Set TsavoriteAofSettings.ReadOnlyMode to true during creation to indicate this.");
 
             RestoreLatest(out _);
             SignalWaitingROIterators();
         }
 
         /// <summary>
-        /// Asynchronously recover instance to TsavoriteLog's latest commit, when being used as a readonly log iterator
+        /// Asynchronously recover instance to TsavoriteAof's latest commit, when being used as a readonly log iterator
         /// </summary>
         public async ValueTask RecoverReadOnlyAsync(CancellationToken cancellationToken = default)
         {
             if (!readOnlyMode)
-                throw new TsavoriteException("This method can only be used with a read-only TsavoriteLog instance used for iteration. Set TsavoriteLogSettings.ReadOnlyMode to true during creation to indicate this.");
+                throw new TsavoriteException("This method can only be used with a read-only TsavoriteAof instance used for iteration. Set TsavoriteAofSettings.ReadOnlyMode to true during creation to indicate this.");
 
             await RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
             SignalWaitingROIterators();
@@ -2424,7 +2424,7 @@ namespace Tsavorite.core
 
         private void SignalWaitingROIterators()
         {
-            // One RecoverReadOnly use case is to allow a TsavoriteLogIterator to continuously read a mirror TsavoriteLog (over the same log storage) of a primary TsavoriteLog.
+            // One RecoverReadOnly use case is to allow a TsavoriteAofIterator to continuously read a mirror TsavoriteAof (over the same log storage) of a primary TsavoriteAof.
             // In this scenario, when the iterator arrives at the tail after a previous call to RestoreReadOnly, it will wait asynchronously until more data
             // is committed and read by a subsequent call to RecoverReadOnly. Here, we signal iterators that we have completed recovery.
             var _commitTcs = commitTcs;
@@ -2442,16 +2442,16 @@ namespace Tsavorite.core
             _commitTcs?.TrySetResult(lci);
         }
 
-        private bool LoadCommitMetadata(long commitNum, out TsavoriteLogRecoveryInfo info)
+        private bool LoadCommitMetadata(long commitNum, out TsavoriteAofRecoveryInfo info)
         {
-            var commitInfo = logCommitManager.GetCommitMetadata(commitNum);
+            var commitInfo = aofCommitManager.GetCommitMetadata(commitNum);
             if (commitInfo is null)
             {
                 info = default;
                 return false;
             }
 
-            info = new TsavoriteLogRecoveryInfo();
+            info = new TsavoriteAofRecoveryInfo();
             info.Initialize(commitInfo);
 
             if (info.CommitNum == -1)
@@ -2463,10 +2463,10 @@ namespace Tsavorite.core
         private void RestoreLatest(out byte[] cookie)
         {
             cookie = null;
-            TsavoriteLogRecoveryInfo info = new();
+            TsavoriteAofRecoveryInfo info = new();
 
             long scanStart = 0;
-            foreach (var metadataCommit in logCommitManager.ListCommits())
+            foreach (var metadataCommit in aofCommitManager.ListCommits())
             {
                 try
                 {
@@ -2537,17 +2537,17 @@ namespace Tsavorite.core
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
+            if (scanStart > 0) aofCommitManager.OnRecovery(scanStart);
         }
 
         private void RestoreSpecificCommit(long requestedCommitNum, out byte[] cookie)
         {
             cookie = null;
-            TsavoriteLogRecoveryInfo info = new();
+            TsavoriteAofRecoveryInfo info = new();
 
             // Find the closest commit metadata with commit num smaller than requested
             long scanStart = 0;
-            foreach (var metadataCommit in logCommitManager.ListCommits())
+            foreach (var metadataCommit in aofCommitManager.ListCommits())
             {
                 if (metadataCommit > requestedCommitNum) continue;
                 try
@@ -2610,18 +2610,18 @@ namespace Tsavorite.core
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
+            if (scanStart > 0) aofCommitManager.OnRecovery(scanStart);
         }
 
         /// <summary>
-        /// Restore log asynchronously
+        /// Restore aof asynchronously
         /// </summary>
         private async ValueTask<byte[]> RestoreLatestAsync(CancellationToken cancellationToken)
         {
-            TsavoriteLogRecoveryInfo info = new();
+            TsavoriteAofRecoveryInfo info = new();
 
             long scanStart = 0;
-            foreach (var metadataCommit in logCommitManager.ListCommits())
+            foreach (var metadataCommit in aofCommitManager.ListCommits())
             {
                 try
                 {
@@ -2681,12 +2681,12 @@ namespace Tsavorite.core
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
+            if (scanStart > 0) aofCommitManager.OnRecovery(scanStart);
 
             return cookie;
         }
 
-        private void CompleteRestoreFromCommit(TsavoriteLogRecoveryInfo info)
+        private void CompleteRestoreFromCommit(TsavoriteAofRecoveryInfo info)
         {
             CommittedUntilAddress = info.UntilAddress;
             CommittedBeginAddress = info.BeginAddress;
@@ -2889,7 +2889,7 @@ namespace Tsavorite.core
                 throw new TsavoriteException(
                     "Fast forwarding a commit is only allowed when no cookie, commit num, or callback is specified");
 
-            var info = new TsavoriteLogRecoveryInfo
+            var info = new TsavoriteAofRecoveryInfo
             {
                 FastForwardAllowed = fastForwardAllowed,
                 Cookie = cookie,
@@ -2910,8 +2910,8 @@ namespace Tsavorite.core
                     return false;
                 if (commitNum == long.MaxValue)
                 {
-                    // log has been closed, throw an exception
-                    throw new TsavoriteException("log has already been closed");
+                    // aof has been closed, throw an exception
+                    throw new TsavoriteException("aof has already been closed");
                 }
 
                 // Make sure we will not be allowed to back out of a commit if AdmitCommit returns true, as the commit policy
@@ -2979,9 +2979,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe int GetLength(byte* ptr)
         {
-            if (logChecksum == LogChecksumType.None)
+            if (aofChecksum == AofChecksumType.None)
                 return *(int*)ptr;
-            else if (logChecksum == LogChecksumType.PerEntry)
+            else if (aofChecksum == AofChecksumType.PerEntry)
                 return *(int*)(ptr + 8);
             return 0;
         }
@@ -3005,7 +3005,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe bool VerifyChecksum(byte* ptr, int length)
         {
-            if (logChecksum == LogChecksumType.PerEntry)
+            if (aofChecksum == AofChecksumType.PerEntry)
             {
                 var cs = Utility.XorBytes(ptr + 8, length + 4);
                 if (cs != *(ulong*)ptr)
@@ -3019,7 +3019,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe ulong GetChecksum(byte* ptr)
         {
-            if (logChecksum == LogChecksumType.PerEntry)
+            if (aofChecksum == AofChecksumType.PerEntry)
             {
                 return *(ulong*)ptr;
             }
@@ -3029,12 +3029,12 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe void SetHeader(int length, byte* dest)
         {
-            if (logChecksum == LogChecksumType.None)
+            if (aofChecksum == AofChecksumType.None)
             {
                 *(int*)dest = length;
                 return;
             }
-            else if (logChecksum == LogChecksumType.PerEntry)
+            else if (aofChecksum == AofChecksumType.PerEntry)
             {
                 *(int*)(dest + 8) = length;
                 *(ulong*)dest = Utility.XorBytes(dest + 8, length + 4);
@@ -3045,12 +3045,12 @@ namespace Tsavorite.core
         private unsafe void SetCommitRecordHeader(int length, byte* dest)
         {
             // commit record has negative length field to differentiate from normal records
-            if (logChecksum == LogChecksumType.None)
+            if (aofChecksum == AofChecksumType.None)
             {
                 *(int*)dest = -length;
                 return;
             }
-            else if (logChecksum == LogChecksumType.PerEntry)
+            else if (aofChecksum == AofChecksumType.PerEntry)
             {
                 *(int*)(dest + 8) = -length;
                 *(ulong*)dest = Utility.XorBytes(dest + 8, length + 4);

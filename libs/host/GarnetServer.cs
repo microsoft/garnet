@@ -43,7 +43,7 @@ namespace Garnet
         private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
         private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
         private IDevice aofDevice;
-        private TsavoriteLog appendOnlyFile;
+        private TsavoriteAof appendOnlyFile;
         private SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
         private KVSettings<SpanByte, SpanByte> kvSettings;
         private KVSettings<byte[], IGarnetObject> objKvSettings;
@@ -327,7 +327,7 @@ namespace Garnet
 
                 opts.GetAofSettings(out var aofSettings);
                 aofDevice = aofSettings.LogDevice;
-                appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
+                appendOnlyFile = new TsavoriteAof(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteAof"));
 
                 if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)
                     throw new Exception("Cannot use CommitWait with manual commits");

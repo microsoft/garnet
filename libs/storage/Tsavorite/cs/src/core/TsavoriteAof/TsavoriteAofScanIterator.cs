@@ -13,11 +13,11 @@ using Microsoft.Extensions.Logging;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Scan iterator for hybrid log
+    /// Scan iterator for TsavoriteAof's hybrid log
     /// </summary>
-    public class TsavoriteLogScanIterator : ScanIteratorBase, IDisposable
+    public class TsavoriteAofScanIterator : ScanIteratorBase, IDisposable
     {
-        protected readonly TsavoriteLog tsavoriteLog;
+        protected readonly TsavoriteAof tsavoriteAof;
         private readonly AofAllocatorImpl allocator;
         private readonly BlittableFrame frame;
         private readonly GetMemory getMemory;
@@ -29,14 +29,14 @@ namespace Tsavorite.core
         /// Whether iteration has ended, either because we reached the end address of iteration, or because
         /// we reached the end of a completed log.
         /// </summary>
-        public bool Ended => (nextAddress >= endAddress) || (tsavoriteLog.LogCompleted && nextAddress == tsavoriteLog.TailAddress);
+        public bool Ended => (nextAddress >= endAddress) || (tsavoriteAof.AofCompleted && nextAddress == tsavoriteAof.TailAddress);
 
         /// <summary>Constructor</summary>
-        internal unsafe TsavoriteLogScanIterator(TsavoriteLog tsavoriteLog, AofAllocatorImpl hlog, long beginAddress, long endAddress,
+        internal unsafe TsavoriteAofScanIterator(TsavoriteAof tsavoriteAof, AofAllocatorImpl hlog, long beginAddress, long endAddress,
                 GetMemory getMemory, DiskScanBufferingMode diskScanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, diskScanBufferingMode, InMemoryScanBufferingMode.NoBuffering, includeSealedRecords: false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
-            this.tsavoriteLog = tsavoriteLog;
+            this.tsavoriteAof = tsavoriteAof;
             allocator = hlog;
             this.getMemory = getMemory;
             this.headerSize = headerSize;
@@ -93,7 +93,7 @@ namespace Tsavorite.core
         /// <param name="consumer"> consumer </param>
         /// <param name="token"> cancellation token </param>
         /// <typeparam name="T"> consumer type </typeparam>
-        public async Task ConsumeAllAsync<T>(T consumer, CancellationToken token = default) where T : ILogEntryConsumer
+        public async Task ConsumeAllAsync<T>(T consumer, CancellationToken token = default) where T : IAofEntryConsumer
         {
             while (!disposed)
             {
@@ -114,7 +114,7 @@ namespace Tsavorite.core
         /// <param name="maxChunkSize">max size of returned chunk</param>
         /// <param name="token"> cancellation token </param>
         /// <typeparam name="T"> consumer type </typeparam>
-        public async Task BulkConsumeAllAsync<T>(T consumer, int throttleMs = 0, int maxChunkSize = 0, CancellationToken token = default) where T : IBulkLogEntryConsumer
+        public async Task BulkConsumeAllAsync<T>(T consumer, int throttleMs = 0, int maxChunkSize = 0, CancellationToken token = default) where T : IBulkAofEntryConsumer
         {
             while (!disposed)
             {
@@ -138,24 +138,24 @@ namespace Tsavorite.core
             {
                 if (NextAddress >= endAddress)
                     return new ValueTask<bool>(false);
-                if (NextAddress < tsavoriteLog.CommittedUntilAddress)
+                if (NextAddress < tsavoriteAof.CommittedUntilAddress)
                     return new ValueTask<bool>(true);
                 return SlowWaitAsync(this, token);
             }
 
-            if (NextAddress < tsavoriteLog.SafeTailAddress)
+            if (NextAddress < tsavoriteAof.SafeTailAddress)
                 return new ValueTask<bool>(true);
             return SlowWaitUncommittedAsync(token);
         }
 
-        private static async ValueTask<bool> SlowWaitAsync(TsavoriteLogScanIterator @this, CancellationToken token)
+        private static async ValueTask<bool> SlowWaitAsync(TsavoriteAofScanIterator @this, CancellationToken token)
         {
             while (true)
             {
                 if (@this.disposed || @this.Ended)
                     return false;
-                var commitTask = @this.tsavoriteLog.CommitTask;
-                if (@this.NextAddress < @this.tsavoriteLog.CommittedUntilAddress)
+                var commitTask = @this.tsavoriteAof.CommitTask;
+                if (@this.NextAddress < @this.tsavoriteAof.CommittedUntilAddress)
                     return true;
 
                 // Ignore commit exceptions, except when the token is signaled
@@ -176,15 +176,15 @@ namespace Tsavorite.core
                     return false;
                 if (this.Ended) return false;
 
-                var tcs = this.tsavoriteLog.refreshUncommittedTcs;
+                var tcs = this.tsavoriteAof.refreshUncommittedTcs;
                 if (tcs == null)
                 {
                     var newTcs = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    tcs = Interlocked.CompareExchange(ref this.tsavoriteLog.refreshUncommittedTcs, newTcs, null);
+                    tcs = Interlocked.CompareExchange(ref this.tsavoriteAof.refreshUncommittedTcs, newTcs, null);
                     tcs ??= newTcs; // successful CAS so update the local var
                 }
 
-                if (this.NextAddress < this.tsavoriteLog.SafeTailAddress)
+                if (this.NextAddress < this.tsavoriteAof.SafeTailAddress)
                     return true;
 
                 // Ignore refresh-uncommitted exceptions, except when the token is signaled
@@ -254,7 +254,7 @@ namespace Tsavorite.core
 
                 if (isCommitRecord)
                 {
-                    TsavoriteLogRecoveryInfo info = new();
+                    TsavoriteAofRecoveryInfo info = new();
                     info.Initialize(new ReadOnlySpan<byte>((byte*)(headerSize + physicalAddress), entryLength));
                     if (info.CommitNum != long.MaxValue) continue;
 
@@ -351,7 +351,7 @@ namespace Tsavorite.core
 
                 if (isCommitRecord)
                 {
-                    TsavoriteLogRecoveryInfo info = new();
+                    TsavoriteAofRecoveryInfo info = new();
                     info.Initialize(new ReadOnlySpan<byte>((byte*)(headerSize + physicalAddress), entryLength));
                     if (info.CommitNum != long.MaxValue) continue;
 
@@ -378,7 +378,7 @@ namespace Tsavorite.core
         /// <param name="consumer">consumer</param>
         /// <typeparam name="T">concrete type of consumer</typeparam>
         /// <returns>whether a next entry is present</returns>
-        public unsafe bool TryConsumeNext<T>(T consumer) where T : ILogEntryConsumer
+        public unsafe bool TryConsumeNext<T>(T consumer) where T : IAofEntryConsumer
         {
             if (disposed)
             {
@@ -414,7 +414,7 @@ namespace Tsavorite.core
 
                 if (isCommitRecord)
                 {
-                    TsavoriteLogRecoveryInfo info = new();
+                    TsavoriteAofRecoveryInfo info = new();
                     info.Initialize(new ReadOnlySpan<byte>((byte*)(headerSize + physicalAddress), entryLength));
                     if (info.CommitNum != long.MaxValue) continue;
 
@@ -435,7 +435,7 @@ namespace Tsavorite.core
         /// <param name="maxChunkSize"></param>
         /// <typeparam name="T">concrete type of consumer</typeparam>
         /// <returns>whether a next entry is present</returns>
-        public unsafe bool TryBulkConsumeNext<T>(T consumer, int maxChunkSize = 0) where T : IBulkLogEntryConsumer
+        public unsafe bool TryBulkConsumeNext<T>(T consumer, int maxChunkSize = 0) where T : IBulkAofEntryConsumer
         {
             if (maxChunkSize == 0) maxChunkSize = allocator.PageSize;
 
@@ -456,7 +456,7 @@ namespace Tsavorite.core
                 while (true)
                 {
                     // If initializing wait for completion
-                    while (tsavoriteLog.Initializing)
+                    while (tsavoriteAof.Initializing)
                     {
                         Thread.Yield();
                         epoch.ProtectAndDrain();
@@ -569,7 +569,7 @@ namespace Tsavorite.core
 
                 if (isCommitRecord)
                 {
-                    TsavoriteLogRecoveryInfo info = new();
+                    TsavoriteAofRecoveryInfo info = new();
                     info.Initialize(new ReadOnlySpan<byte>(entry, entryLength));
                     if (info.CommitNum != long.MaxValue) continue;
 
@@ -602,8 +602,8 @@ namespace Tsavorite.core
                 // Dispose/unpin the frame from memory
                 frame?.Dispose();
 
-                if (Interlocked.Decrement(ref tsavoriteLog.logRefCount) == 0)
-                    tsavoriteLog.TrueDispose();
+                if (Interlocked.Decrement(ref tsavoriteAof.logRefCount) == 0)
+                    tsavoriteAof.TrueDispose();
 
                 disposed = true;
             }
@@ -646,7 +646,7 @@ namespace Tsavorite.core
             return (length + 3) & ~3;
         }
 
-        internal unsafe bool ScanForwardForCommit(ref TsavoriteLogRecoveryInfo info, long commitNum = -1)
+        internal unsafe bool ScanForwardForCommit(ref TsavoriteAofRecoveryInfo info, long commitNum = -1)
         {
             epoch.Resume();
             var foundCommit = false;
@@ -733,16 +733,16 @@ namespace Tsavorite.core
                 if (disposed)
                     return false;
 
-                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteLog.SafeTailAddress : tsavoriteLog.CommittedUntilAddress)))
+                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteAof.SafeTailAddress : tsavoriteAof.CommittedUntilAddress)))
                     return false;
 
                 if (currentAddress < _headAddress)
                 {
                     var _endAddress = endAddress;
-                    if (tsavoriteLog.readOnlyMode)
+                    if (tsavoriteAof.readOnlyMode)
                     {
                         // Support partial page reads of committed data
-                        var _flush = tsavoriteLog.CommittedUntilAddress;
+                        var _flush = tsavoriteAof.CommittedUntilAddress;
                         if (_flush < endAddress)
                             _endAddress = _flush;
                     }
@@ -758,7 +758,7 @@ namespace Tsavorite.core
                 }
 
                 // Get and check entry length
-                entryLength = tsavoriteLog.GetLength((byte*)physicalAddress);
+                entryLength = tsavoriteAof.GetLength((byte*)physicalAddress);
 
                 // We may encounter zeroed out bits at the end of page in a normal log, therefore, we need to check whether that is the case
                 if (entryLength == 0)
@@ -795,7 +795,7 @@ namespace Tsavorite.core
                 // Verify checksum if needed
                 if (currentAddress < _headAddress)
                 {
-                    if (!tsavoriteLog.VerifyChecksum((byte*)physicalAddress, entryLength))
+                    if (!tsavoriteAof.VerifyChecksum((byte*)physicalAddress, entryLength))
                     {
                         currentAddress += headerSize;
                         if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
@@ -851,16 +851,16 @@ namespace Tsavorite.core
                 if (disposed)
                     return false;
 
-                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteLog.SafeTailAddress : tsavoriteLog.CommittedUntilAddress)))
+                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteAof.SafeTailAddress : tsavoriteAof.CommittedUntilAddress)))
                     return false;
 
                 if (currentAddress < _headAddress)
                 {
                     var _endAddress = endAddress;
-                    if (tsavoriteLog.readOnlyMode)
+                    if (tsavoriteAof.readOnlyMode)
                     {
                         // Support partial page reads of committed data
-                        var _flush = tsavoriteLog.CommittedUntilAddress;
+                        var _flush = tsavoriteAof.CommittedUntilAddress;
                         if (_flush < endAddress)
                             _endAddress = _flush;
                     }
@@ -879,7 +879,7 @@ namespace Tsavorite.core
                     return false;
 
                 // Get and check entry length
-                entryLength = tsavoriteLog.GetLength((byte*)physicalAddress);
+                entryLength = tsavoriteAof.GetLength((byte*)physicalAddress);
 
                 // We may encounter zeroed out bits at the end of page in a normal log, therefore, we need to check whether that is the case
                 if (entryLength == 0)
@@ -903,7 +903,7 @@ namespace Tsavorite.core
                 // Verify checksum if needed
                 if (currentAddress < _headAddress)
                 {
-                    if (!tsavoriteLog.VerifyChecksum((byte*)physicalAddress, entryLength))
+                    if (!tsavoriteAof.VerifyChecksum((byte*)physicalAddress, entryLength))
                     {
                         return false;
                     }

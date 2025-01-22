@@ -62,7 +62,7 @@ namespace Garnet.server
         /// <summary>
         /// AOF
         /// </summary>
-        public readonly TsavoriteLog appendOnlyFile;
+        public readonly TsavoriteAof appendOnlyFile;
 
         /// <summary>
         /// Last save time
@@ -120,7 +120,7 @@ namespace Garnet.server
             TsavoriteKV<IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
             CacheSizeTracker objectStoreSizeTracker,
             CustomCommandManager customCommandManager,
-            TsavoriteLog appendOnlyFile,
+            TsavoriteAof appendOnlyFile,
             GarnetServerOptions serverOptions,
             AccessControlList accessControlList = null,
             IClusterFactory clusterFactory = null,

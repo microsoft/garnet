@@ -1,10 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
-using System.Reflection;
 using Garnet.common;
-using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server

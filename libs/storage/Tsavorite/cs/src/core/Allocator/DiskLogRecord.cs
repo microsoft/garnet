@@ -9,6 +9,16 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    /// <summary>A non-Generic form of the in-memory <see cref="DiskLogRecord{TValue}"/> that provides access to <see cref="RecordInfo"/>.
+    /// Useful in quick recordInfo-testing operations</summary>
+    public unsafe struct DiskLogRecord
+    {
+        /// <inheritdoc/>
+        public readonly ref RecordInfo GetInfoRef(long physicalAddress) => ref Unsafe.AsRef<RecordInfo>((byte*)physicalAddress);
+        /// <inheritdoc/>
+        public readonly RecordInfo GetInfo(long physicalAddress) => *(RecordInfo*)physicalAddress;
+    }
+
     /// <summary>The record on the disk: header, optional fields, key, value</summary>
     /// <remarks>The space is laid out as:
     ///     <list>

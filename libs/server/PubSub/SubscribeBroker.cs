@@ -28,7 +28,7 @@ namespace Garnet.server
         private ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)> prefixSubscriptions;
         private AsyncQueue<(byte[], byte[])> publishQueue;
         readonly IKeySerializer keySerializer;
-        readonly TsavoriteLog log;
+        readonly TsavoriteAof log;
         readonly IDevice device;
         readonly CancellationTokenSource cts = new();
         readonly ManualResetEvent done = new(true);
@@ -47,7 +47,7 @@ namespace Garnet.server
             this.keySerializer = keySerializer;
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs });
+            log = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs });
             if (startFresh)
                 log.TruncateUntil(log.CommittedUntilAddress);
         }

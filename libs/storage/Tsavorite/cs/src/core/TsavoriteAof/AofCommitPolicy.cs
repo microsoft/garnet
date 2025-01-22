@@ -9,16 +9,16 @@ using System.Threading.Tasks;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// LogCommitPolicy defines the way TsavoriteLog behaves on Commit(). In addition
+    /// AofCommitPolicy defines the way TsavoriteAof behaves on Commit(). In addition
     /// to choosing from a set of pre-defined ones, users can implement their own for custom behavior
     /// </summary>
-    public abstract class LogCommitPolicy
+    public abstract class AofCommitPolicy
     {
         /// <summary>
-        /// Invoked when policy object is attached to a TsavoriteLog instance.
+        /// Invoked when policy object is attached to a TsavoriteAof instance.
         /// </summary>
-        /// <param name="log">The log this log commit policy is attached to</param>
-        public abstract void OnAttached(TsavoriteLog log);
+        /// <param name="aof">The aof this aof commit policy is attached to</param>
+        public abstract void OnAttached(TsavoriteAof aof);
 
         /// <summary>
         /// Admission control to decide whether a call to Commit() should successfully start or not.
@@ -36,34 +36,34 @@ namespace Tsavorite.core
         /// Invoked when a commit is successfully created
         /// </summary>
         /// <param name="info"> commit content </param>
-        public abstract void OnCommitCreated(TsavoriteLogRecoveryInfo info);
+        public abstract void OnCommitCreated(TsavoriteAofRecoveryInfo info);
 
         /// <summary>
         /// Invoked after a commit is complete
         /// </summary>
         /// <param name="info"> commit content </param>
-        public abstract void OnCommitFinished(TsavoriteLogRecoveryInfo info);
+        public abstract void OnCommitFinished(TsavoriteAofRecoveryInfo info);
 
         /// <summary>
-        /// The default log commit policy ensures that each record is covered by at most one commit request (except when
+        /// The default aof commit policy ensures that each record is covered by at most one commit request (except when
         /// the metadata has changed). Redundant commit calls are dropped and corresponding commit invocation will
         /// return false.
         /// </summary>
         /// <returns> policy object </returns>
-        public static LogCommitPolicy Default() => new DefaultLogCommitPolicy();
+        public static AofCommitPolicy Default() => new DefaultAofCommitPolicy();
 
         /// <summary>
-        /// MaxParallel log commit policy allows k (non-strong) commit requests to be in progress at any giving time. The k commits are guaranteed
+        /// MaxParallel aof commit policy allows k (non-strong) commit requests to be in progress at any giving time. The k commits are guaranteed
         /// to be non-overlapping unless there are metadata changes. Additional commit requests will fail and
         /// automatically retried.
         /// </summary>
         /// <param name="k"> maximum number of commits that can be outstanding at a time </param>
         /// <returns> policy object </returns>
-        public static LogCommitPolicy MaxParallel(int k) => new MaxParallelLogCommitPolicy(k);
+        public static AofCommitPolicy MaxParallel(int k) => new MaxParallelAofCommitPolicy(k);
 
 
         /// <summary>
-        /// RateLimit log commit policy will only issue a request if it covers at least m bytes or if there has not been a
+        /// RateLimit aof commit policy will only issue a request if it covers at least m bytes or if there has not been a
         /// commit request in n milliseconds. Additional commit requests will fail and automatically retried
         /// </summary>
         /// <param name="thresholdMilli">
@@ -73,39 +73,39 @@ namespace Tsavorite.core
         /// minimum range, in bytes, to be allowed between two commits, unless it has been thresholdMilli milliseconds
         /// </param>
         /// <returns> policy object </returns>
-        public static LogCommitPolicy RateLimit(long thresholdMilli, long thresholdBytes) => new RateLimitLogCommitPolicy(thresholdMilli, thresholdBytes);
+        public static AofCommitPolicy RateLimit(long thresholdMilli, long thresholdBytes) => new RateLimitAofCommitPolicy(thresholdMilli, thresholdBytes);
     }
 
-    internal sealed class DefaultLogCommitPolicy : LogCommitPolicy
+    internal sealed class DefaultAofCommitPolicy : AofCommitPolicy
     {
         /// <inheritdoc/>
-        public override void OnAttached(TsavoriteLog log) { }
+        public override void OnAttached(TsavoriteAof aof) { }
 
         /// <inheritdoc/>
         public override bool AdmitCommit(long currentTail, bool commitRequired) => commitRequired;
 
         /// <inheritdoc/>
-        public override void OnCommitCreated(TsavoriteLogRecoveryInfo info) { }
+        public override void OnCommitCreated(TsavoriteAofRecoveryInfo info) { }
 
         /// <inheritdoc/>
-        public override void OnCommitFinished(TsavoriteLogRecoveryInfo info) { }
+        public override void OnCommitFinished(TsavoriteAofRecoveryInfo info) { }
     }
 
-    internal sealed class MaxParallelLogCommitPolicy : LogCommitPolicy
+    internal sealed class MaxParallelAofCommitPolicy : AofCommitPolicy
     {
         readonly int maxCommitInProgress;
-        TsavoriteLog log;
+        TsavoriteAof aof;
         int commitInProgress;
         // If we filtered out some commit, make sure to remember to retry later 
         bool shouldRetry;
 
-        internal MaxParallelLogCommitPolicy(int maxCommitInProgress)
+        internal MaxParallelAofCommitPolicy(int maxCommitInProgress)
         {
             this.maxCommitInProgress = maxCommitInProgress;
         }
 
         /// <inheritdoc/>
-        public override void OnAttached(TsavoriteLog log) => this.log = log;
+        public override void OnAttached(TsavoriteAof aof) => this.aof = aof;
 
         /// <inheritdoc/>
         public override bool AdmitCommit(long currentTail, bool commitRequired)
@@ -124,31 +124,31 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override void OnCommitCreated(TsavoriteLogRecoveryInfo info) { }
+        public override void OnCommitCreated(TsavoriteAofRecoveryInfo info) { }
 
         /// <inheritdoc/>
-        public override void OnCommitFinished(TsavoriteLogRecoveryInfo info)
+        public override void OnCommitFinished(TsavoriteAofRecoveryInfo info)
         {
             Interlocked.Decrement(ref commitInProgress);
             if (shouldRetry)
             {
                 shouldRetry = false;
-                log.Commit();
+                aof.Commit();
             }
         }
     }
 
-    internal sealed class RateLimitLogCommitPolicy : LogCommitPolicy
+    internal sealed class RateLimitAofCommitPolicy : AofCommitPolicy
     {
         readonly Stopwatch stopwatch;
         readonly long thresholdMilli;
         readonly long thresholdRange;
-        TsavoriteLog log;
+        TsavoriteAof aof;
         long lastAdmittedMilli;
         long lastAdmittedAddress;
         int shouldRetry = 0;
 
-        internal RateLimitLogCommitPolicy(long thresholdMilli, long thresholdRange)
+        internal RateLimitAofCommitPolicy(long thresholdMilli, long thresholdRange)
         {
             this.thresholdMilli = thresholdMilli;
             this.thresholdRange = thresholdRange;
@@ -158,7 +158,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override void OnAttached(TsavoriteLog log) => this.log = log;
+        public override void OnAttached(TsavoriteAof aof) => this.aof = aof;
 
         /// <inheritdoc/>
         public override bool AdmitCommit(long currentTail, bool commitRequired)
@@ -177,7 +177,7 @@ namespace Tsavorite.core
                         {
                             await Task.Delay(TimeSpan.FromMilliseconds(thresholdMilli));
                             shouldRetry = 0;
-                            log.Commit();
+                            aof.Commit();
                         });
                     }
                     return false;
@@ -190,9 +190,9 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override void OnCommitCreated(TsavoriteLogRecoveryInfo info) { }
+        public override void OnCommitCreated(TsavoriteAofRecoveryInfo info) { }
 
         /// <inheritdoc/>
-        public override void OnCommitFinished(TsavoriteLogRecoveryInfo info) { }
+        public override void OnCommitFinished(TsavoriteAofRecoveryInfo info) { }
     }
 }

@@ -42,7 +42,7 @@ namespace Tsavorite.devices
         /// <inheritdoc />
         public FileDescriptor HashTable(Guid token) => new(string.Join('/', IndexCheckpointBasePath, token.ToString()), "ht.dat");
         /// <inheritdoc />
-        public FileDescriptor TsavoriteLogCommitMetadata(long commitNumber) => new(TsavoriteLogCommitBasePath, $"commit.{commitNumber}");
+        public FileDescriptor TsavoriteAofCommitMetadata(long commitNumber) => new(TsavoriteAofCommitBasePath, $"commit.{commitNumber}");
 
         /// <inheritdoc />
         public Guid Token(FileDescriptor fileDescriptor) => Guid.Parse(new DirectoryInfo(fileDescriptor.directoryName).Name);
@@ -54,6 +54,6 @@ namespace Tsavorite.devices
         /// <inheritdoc />
         public string LogCheckpointBasePath => "cpr-checkpoints";
         /// <inheritdoc />
-        public string TsavoriteLogCommitBasePath => "log-commits";
+        public string TsavoriteAofCommitBasePath => "log-commits";
     }
 }

@@ -118,14 +118,14 @@ namespace Tsavorite.core
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
 
         /// <inheritdoc/>
-        public readonly void ClearValueObject(Action<TValue> disposer)
+        public void ClearValueObject(Action<TValue> disposer)
         {
             Debug.Assert(IsObjectRecord, "ClearValueObject() is not valid for String log records");
             if (IsObjectRecord)
             {
-                ref var valueObject = ref objectIdMap.GetRef(ValueObjectId);
-                disposer(valueObject);
-                valueObject = default;
+                ref var valueObjectRef = ref objectIdMap.GetRef(ValueObjectId);
+                disposer(valueObjectRef);
+                valueObjectRef = default;
             }
         }
 
@@ -198,7 +198,7 @@ namespace Tsavorite.core
         public readonly int ActualRecordSize => RecordInfo.GetLength() + Key.TotalInlineSize + InlineValueLength + OptionalLength;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetValueSpanLength(int newValueLen)
+        public bool TrySetValueSpanLength(int newValueLen)
         {
             Debug.Assert(!IsObjectRecord, "ValueSpan cannot be used with Object log records");
 
@@ -265,7 +265,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetValueSpan(SpanByte value)
+        public bool TrySetValueSpan(SpanByte value)
         {
             Debug.Assert(!IsObjectRecord, "ValueSpan cannot be used with Object log records");
 
@@ -276,7 +276,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetValueObject(TValue value)
+        public bool TrySetValueObject(TValue value)
         {
             if (*ValueObjectIdAddress == ObjectIdMap.InvalidObjectId)
             {
@@ -326,7 +326,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetETag(long eTag)
+        public bool TrySetETag(long eTag)
         {
             if (Info.HasETag)
             {
@@ -376,7 +376,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void RemoveETag()
+        public void RemoveETag()
         {
             if (!Info.HasETag)
                 return;
@@ -416,7 +416,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetExpiration(long expiration)
+        public bool TrySetExpiration(long expiration)
         {
             if (Info.HasExpiration)
             {
@@ -455,7 +455,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void RemoveExpiration()
+        public void RemoveExpiration()
         {
             if (!Info.HasExpiration)
                 return;
@@ -501,7 +501,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetValueSpan(SpanByte valueSpan, long? eTag, long? expiration)
+        public bool TrySetValueSpan(SpanByte valueSpan, long? eTag, long? expiration)
         {
             if (!HasEnoughSpace(valueSpan.TotalSize, eTag.HasValue, expiration.HasValue))
                 return false;
@@ -510,7 +510,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetValueObject(TValue valueObject, long? eTag, long? expiration)
+        public bool TrySetValueObject(TValue valueObject, long? eTag, long? expiration)
         {
             if (!HasEnoughSpace(ObjectIdMap.ObjectIdSize, eTag.HasValue, expiration.HasValue))
                 return false;
@@ -519,7 +519,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private readonly bool SetOptionals(long? eTag, long? expiration)
+        private bool SetOptionals(long? eTag, long? expiration)
         {
             if (eTag.HasValue)
                 _ = TrySetETag(eTag.Value);

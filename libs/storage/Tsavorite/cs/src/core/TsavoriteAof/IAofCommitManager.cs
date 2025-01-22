@@ -7,9 +7,9 @@ using System.Collections.Generic;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Log commit manager
+    /// Aof commit manager
     /// </summary>
-    public interface ILogCommitManager : IDisposable
+    public interface IAofCommitManager : IDisposable
     {
         /// <summary>
         /// Perform (synchronous) commit with specified metadata
@@ -41,7 +41,7 @@ namespace Tsavorite.core
         public void RemoveCommit(long commitNum);
 
         /// <summary>
-        /// Remove all log commits from this manager
+        /// Remove all aof commits from this manager
         /// </summary>
         public void RemoveAllCommits();
 

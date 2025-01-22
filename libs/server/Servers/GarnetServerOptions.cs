@@ -259,7 +259,7 @@ namespace Garnet.server
         public int CheckpointThrottleFlushDelayMs = 0;
 
         /// <summary>
-        /// Enable FastCommit mode for TsavoriteLog
+        /// Enable FastCommit mode for TsavoriteAof
         /// </summary>
         public bool EnableFastCommit = true;
 
@@ -674,9 +674,9 @@ namespace Garnet.server
         /// Get AOF settings
         /// </summary>
         /// <param name="tsavoriteLogSettings"></param>
-        public void GetAofSettings(out TsavoriteLogSettings tsavoriteLogSettings)
+        public void GetAofSettings(out TsavoriteAofLogSettings tsavoriteLogSettings)
         {
-            tsavoriteLogSettings = new TsavoriteLogSettings
+            tsavoriteLogSettings = new TsavoriteAofLogSettings
             {
                 MemorySizeBits = AofMemorySizeBits(),
                 PageSizeBits = AofPageSizeBits(),

@@ -33,7 +33,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Read completion
         /// </summary>
-        /// <param name="logRecord">The log record being read</param>
+        /// <param name="diskLogRecord">The log record that was read from disk</param>
         /// <param name="input">The user input that was used in the read operation</param>
         /// <param name="output">The result of the read operation; if this is a struct, then it will be a temporary and should be copied to <paramref name="ctx"/></param>
         /// <param name="ctx">The application context passed through the pending operation</param>
@@ -175,7 +175,7 @@ namespace Tsavorite.core
         /// <summary>
         /// RMW completion
         /// </summary>
-        /// <param name="logRecord">The log record that was created</param>
+        /// <param name="diskLogRecord">The log record that was read from disk</param>
         /// <param name="input">The user input to be used to create the destination record's value</param>
         /// <param name="output">The location where the output of the operation, if any, is to be copied</param>
         /// <param name="ctx">The application context passed through the pending operation</param>
