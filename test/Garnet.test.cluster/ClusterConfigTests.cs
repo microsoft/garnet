@@ -64,23 +64,24 @@ namespace Garnet.test.cluster
         [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
         public void ClusterForgetAfterNodeRestartTest()
         {
-            var endpoints = TestUtils.GetEndPoints(4, 7000);
-            var instances = context.CreateInstances(4);
-
+            int nbInstances = 4;
+            context.CreateInstances(4);
             context.CreateConnection();
             var (shards, slots) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
-            var firstNode = instances.First();
-            firstNode.Dispose();
-            firstNode = context.CreateInstance(endpoints[0].ToIPEndPoint().Port, cleanClusterConfig: false, tryRecover: true);
-            firstNode.Start();
+            // Restart node with new ACL file
+            context.nodes[0].Dispose(false);
+            context.nodes[0] = context.CreateInstance(context.clusterTestUtils.GetEndPoint(0).Port, useAcl: true, cleanClusterConfig: false);
+            context.nodes[0].Start();
+            context.CreateConnection();
 
+            var firstNode = context.nodes[0];
             var nodesResult = context.clusterTestUtils.ClusterNodes(0);
             Assert.That(nodesResult.Nodes.Count == 4);
 
             try
             {
-                var server = context.clusterTestUtils.GetServer(endpoints[0].ToIPEndPoint());
+                var server = context.clusterTestUtils.GetServer(context.endpoints[0].ToIPEndPoint());
                 var args = new List<object>() {
                     "forget",
                     Encoding.ASCII.GetBytes("1ip23j89123no"),
