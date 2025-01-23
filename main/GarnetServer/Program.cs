@@ -12,6 +12,7 @@ var app = builder.Build();
 
 app.Run();
 
+/*
 try
 {
     using var server = new GarnetServer(args);
@@ -28,6 +29,7 @@ catch (Exception ex)
 {
     Console.WriteLine($"Unable to initialize server due to exception: {ex.Message}");
 }
+*/
       
 /// <summary>
 /// Register new commands with the server. You can access these commands from clients using

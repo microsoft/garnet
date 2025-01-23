@@ -182,6 +182,182 @@ namespace Garnet.test
         /// <summary>
         /// Create GarnetServer
         /// </summary>
+        public static GarnetApplication CreateGarnetApplication(
+            string logCheckpointDir,
+            bool disablePubSub = false,
+            bool tryRecover = false,
+            bool lowMemory = false,
+            string MemorySize = default,
+            string PageSize = default,
+            bool enableAOF = false,
+            bool EnableTLS = false,
+            bool DisableObjects = false,
+            int metricsSamplingFreq = -1,
+            bool latencyMonitor = false,
+            int commitFrequencyMs = 0,
+            bool commitWait = false,
+            bool UseAzureStorage = false,
+            string defaultPassword = null,
+            bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
+            string aclFile = null,
+            string objectStoreHeapMemorySize = default,
+            string objectStoreIndexSize = "16k",
+            string objectStoreIndexMaxSize = default,
+            string objectStoreReadCacheHeapMemorySize = default,
+            string indexSize = "1m",
+            string indexMaxSize = default,
+            string[] extensionBinPaths = null,
+            bool extensionAllowUnsignedAssemblies = true,
+            bool getSG = false,
+            int indexResizeFrequencySecs = 60,
+            IAuthenticationSettings authenticationSettings = null,
+            bool enableLua = false,
+            bool enableReadCache = false,
+            bool enableObjectStoreReadCache = false,
+            ILogger logger = null,
+            IEnumerable<string> loadModulePaths = null,
+            string pubSubPageSize = null,
+            bool asyncReplay = false,
+            LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
+            string luaMemoryLimit = "")
+        {
+            if (UseAzureStorage)
+                IgnoreIfNotRunningAzureTests();
+            var _LogDir = logCheckpointDir;
+            if (UseAzureStorage)
+                _LogDir = $"{AzureTestContainer}/{AzureTestDirectory}";
+
+            if (logCheckpointDir != null && !UseAzureStorage) _LogDir = new DirectoryInfo(string.IsNullOrEmpty(_LogDir) ? "." : _LogDir).FullName;
+
+            var _CheckpointDir = logCheckpointDir;
+            if (UseAzureStorage)
+                _CheckpointDir = $"{AzureTestContainer}/{AzureTestDirectory}";
+
+            if (logCheckpointDir != null && !UseAzureStorage) _CheckpointDir = new DirectoryInfo(string.IsNullOrEmpty(_CheckpointDir) ? "." : _CheckpointDir).FullName;
+
+            if (useAcl)
+            {
+                if (authenticationSettings != null)
+                {
+                    throw new ArgumentException($"Cannot set both {nameof(useAcl)} and {nameof(authenticationSettings)}");
+                }
+
+                authenticationSettings = new AclAuthenticationPasswordSettings(aclFile, defaultPassword);
+            }
+            else if (defaultPassword != null)
+            {
+                if (authenticationSettings != null)
+                {
+                    throw new ArgumentException($"Cannot set both {nameof(defaultPassword)} and {nameof(authenticationSettings)}");
+                }
+
+                authenticationSettings = new PasswordAuthenticationSettings(defaultPassword);
+            }
+
+            // Increase minimum thread pool size to 16 if needed
+            int threadPoolMinThreads = 0;
+            ThreadPool.GetMinThreads(out int workerThreads, out int completionPortThreads);
+            if (workerThreads < 16 || completionPortThreads < 16) threadPoolMinThreads = 16;
+
+            GarnetServerOptions opts = new(logger)
+            {
+                EnableStorageTier = logCheckpointDir != null,
+                LogDir = _LogDir,
+                CheckpointDir = _CheckpointDir,
+                Address = Address,
+                Port = Port,
+                DisablePubSub = disablePubSub,
+                Recover = tryRecover,
+                IndexSize = indexSize,
+                ObjectStoreIndexSize = objectStoreIndexSize,
+                EnableAOF = enableAOF,
+                EnableLua = enableLua,
+                CommitFrequencyMs = commitFrequencyMs,
+                WaitForCommit = commitWait,
+                TlsOptions = EnableTLS ? new GarnetTlsOptions(
+                    certFileName: certFile,
+                    certPassword: certPassword,
+                    clientCertificateRequired: true,
+                    certificateRevocationCheckMode: X509RevocationMode.NoCheck,
+                    issuerCertificatePath: null,
+                    null, 0, false, null, logger: logger)
+                : null,
+                DisableObjects = DisableObjects,
+                QuietMode = true,
+                MetricsSamplingFrequency = metricsSamplingFreq,
+                LatencyMonitor = latencyMonitor,
+                DeviceFactoryCreator = UseAzureStorage ?
+                      () => new AzureStorageNamedDeviceFactory(AzureEmulatedStorageString, logger)
+                    : () => new LocalStorageNamedDeviceFactory(logger: logger),
+                AuthSettings = authenticationSettings,
+                ExtensionBinPaths = extensionBinPaths,
+                ExtensionAllowUnsignedAssemblies = extensionAllowUnsignedAssemblies,
+                EnableScatterGatherGet = getSG,
+                IndexResizeFrequencySecs = indexResizeFrequencySecs,
+                ThreadPoolMinThreads = threadPoolMinThreads,
+                LoadModuleCS = loadModulePaths,
+                EnableReadCache = enableReadCache,
+                EnableObjectStoreReadCache = enableObjectStoreReadCache,
+                ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, logger) : null,
+            };
+
+            if (!string.IsNullOrEmpty(pubSubPageSize))
+                opts.PubSubPageSize = pubSubPageSize;
+
+            if (!string.IsNullOrEmpty(objectStoreHeapMemorySize))
+                opts.ObjectStoreHeapMemorySize = objectStoreHeapMemorySize;
+
+            if (!string.IsNullOrEmpty(objectStoreReadCacheHeapMemorySize))
+                opts.ObjectStoreReadCacheHeapMemorySize = objectStoreReadCacheHeapMemorySize;
+
+            if (indexMaxSize != default) opts.IndexMaxSize = indexMaxSize;
+            if (objectStoreIndexMaxSize != default) opts.ObjectStoreIndexMaxSize = objectStoreIndexMaxSize;
+
+            if (lowMemory)
+            {
+                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "1024" : MemorySize;
+                opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
+                if (enableReadCache)
+                {
+                    opts.ReadCacheMemorySize = opts.MemorySize;
+                    opts.ReadCachePageSize = opts.PageSize;
+                }
+
+                if (enableObjectStoreReadCache)
+                {
+                    opts.ObjectStoreReadCacheLogMemorySize = opts.MemorySize;
+                    opts.ObjectStoreReadCachePageSize = opts.PageSize;
+                }
+            }
+
+            if (useTestLogger)
+            {
+                var builder = GarnetApplication.CreateHostBuilder([], opts);
+
+                builder.Logging.ClearProviders();
+                builder.Logging.AddProvider(new NUnitLoggerProvider(TestContext.Progress,
+                    TestContext.CurrentContext.Test.MethodName, null, false, false, LogLevel.Trace));
+                builder.Logging.SetMinimumLevel(LogLevel.Trace);
+                
+                var app = builder.Build();
+
+                return app;
+            }
+            else
+            {
+                
+                var builder = GarnetApplication.CreateHostBuilder([], opts);
+                
+                var app = builder.Build();
+
+                return app;
+            }
+        }
+        
+        /// <summary>
+        /// Create GarnetServer
+        /// </summary>
         public static GarnetServer CreateGarnetServer(
             string logCheckpointDir,
             bool disablePubSub = false,
