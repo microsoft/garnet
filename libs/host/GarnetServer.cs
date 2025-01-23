@@ -122,7 +122,7 @@ namespace Garnet
                 var magenta = "\u001b[35m";
                 var normal = "\u001b[0m";
 
-                Console.WriteLine($@"{red}    _________
+                Console.WriteLine($@"{red}            _________
            /_||___||_\      {normal}Garnet {version} {(IntPtr.Size == 8 ? "64" : "32")} bit; {(opts.EnableCluster ? "cluster" : "standalone")} mode{red}
            '. \   / .'      {normal}Port: {opts.Port}{red}
              '.\ /.'        {magenta}https://aka.ms/GetGarnet{red}
