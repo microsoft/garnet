@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
+using System.Threading.Tasks;
 using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
@@ -39,7 +40,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(1)]
         [Category("CLUSTER-AUTH"), CancelAfter(60000)]
-        public void ValidateClusterAuthWithObjectId()
+        public async Task ValidateClusterAuthWithObjectId()
         {
             var nodes = 2;
             var audience = Guid.NewGuid().ToString();
@@ -56,12 +57,12 @@ namespace Garnet.test.cluster
             var authSettings = new AadAuthenticationSettings([appId], [audience], [issuer], new MockIssuerSigningTokenProvider(new List<SecurityKey> { tokenGenerator.SecurityKey }, context.logger), true);
 
             var token = tokenGenerator.CreateToken(tokenClaims, DateTime.Now.AddMinutes(10));
-            ValidateConnectionsWithToken(objId, token, nodes, authSettings);
+            await ValidateConnectionsWithToken(objId, token, nodes, authSettings);
         }
 
         [Test, Order(2)]
         [Category("CLUSTER-AUTH"), CancelAfter(60000)]
-        public void ValidateClusterAuthWithGroupOid()
+        public async Task ValidateClusterAuthWithGroupOid()
         {
             var nodes = 2;
             var audience = Guid.NewGuid().ToString();
@@ -79,16 +80,15 @@ namespace Garnet.test.cluster
             };
             var authSettings = new AadAuthenticationSettings([appId], [audience], [issuer], new MockIssuerSigningTokenProvider(new List<SecurityKey> { tokenGenerator.SecurityKey }, context.logger), true);
             var token = tokenGenerator.CreateToken(tokenClaims, DateTime.Now.AddMinutes(10));
-            ValidateConnectionsWithToken(groupIds.First(), token, nodes, authSettings);
+            await ValidateConnectionsWithToken(groupIds.First(), token, nodes, authSettings);
         }
 
-        private void ValidateConnectionsWithToken(string aclUsername, string token, int nodeCount, AadAuthenticationSettings authenticationSettings)
+        private async Task ValidateConnectionsWithToken(string aclUsername, string token, int nodeCount, AadAuthenticationSettings authenticationSettings)
         {
             var userCredential = new ServerCredential { user = aclUsername, IsAdmin = true, IsClearText = true };
             var clientCredentials = new ServerCredential { user = aclUsername, password = token };
             context.GenerateCredentials([userCredential]);
-            context.CreateInstances(nodeCount, useAcl: true, clusterCreds: clientCredentials, authenticationSettings: authenticationSettings);
-
+            await context.CreateInstances(nodeCount, useAcl: true, clusterCreds: clientCredentials, authenticationSettings: authenticationSettings);
 
             context.CreateConnection(useTLS: false, clientCreds: clientCredentials);
 
@@ -99,7 +99,6 @@ namespace Garnet.test.cluster
                 var ex = Assert.Throws<AssertionException>(() => context.clusterTestUtils.Authenticate(i, "randomUserId", clientCredentials.password, context.logger));
                 ClassicAssert.AreEqual("WRONGPASS Invalid username/password combination", ex.Message);
             }
-
         }
     }
 }

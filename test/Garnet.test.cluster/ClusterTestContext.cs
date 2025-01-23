@@ -64,7 +64,7 @@ namespace Garnet.test.cluster
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
             loggerFactory?.Dispose();
-            if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(15)))
+            if (!Task.Run(async () => await DisposeCluster()).Wait(TimeSpan.FromSeconds(15)))
                 logger?.LogError("Timed out waiting for DisposeCluster");
             if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(15)))
                 logger?.LogError("Timed out waiting for DisposeCluster");
@@ -263,7 +263,7 @@ namespace Garnet.test.cluster
         /// <summary>
         /// Dispose created instances
         /// </summary>
-        public void DisposeCluster()
+        public async Task DisposeCluster()
         {
             if (nodes != null)
             {
@@ -272,6 +272,7 @@ namespace Garnet.test.cluster
                     if (nodes[i] != null)
                     {
                         logger.LogDebug("\t a. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
+                        await nodes[i].StopAsync();
                         nodes[i].Dispose();
                         nodes[i] = null;
                         logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);

@@ -19,61 +19,61 @@ namespace Garnet.test.cluster
     [TestFixture(false, false), NonParallelizable]
     public class ClusterReplicationTests(bool UseTLS = false, bool asyncReplay = false)
     {
-        public (Action, string)[] GetUnitTests()
+        public (Task, string)[] GetUnitTests()
         {
-            var x = new (Action, string)[39];
+            var x = new (Task, string)[39];
             //1
-            x[0] = new(() => ClusterSRTest(true), "ClusterSRTest(true)");
-            x[1] = new(() => ClusterSRTest(false), "ClusterSRTest(false)");
+            x[0] = new(ClusterSRTest(true), "ClusterSRTest(true)");
+            x[1] = new(ClusterSRTest(false), "ClusterSRTest(false)");
 
             //2
-            x[2] = new(() => ClusterSRNoCheckpointRestartSecondary(false, false), "ClusterSRNoCheckpointRestartSecondary(false, false)");
-            x[3] = new(() => ClusterSRNoCheckpointRestartSecondary(false, true), "ClusterSRNoCheckpointRestartSecondary(false, true)");
-            x[4] = new(() => ClusterSRNoCheckpointRestartSecondary(true, false), "ClusterSRNoCheckpointRestartSecondary(true, false)");
-            x[5] = new(() => ClusterSRNoCheckpointRestartSecondary(true, true), "ClusterSRNoCheckpointRestartSecondary(true, true)");
+            x[2] = new(ClusterSRNoCheckpointRestartSecondary(false, false), "ClusterSRNoCheckpointRestartSecondary(false, false)");
+            x[3] = new(ClusterSRNoCheckpointRestartSecondary(false, true), "ClusterSRNoCheckpointRestartSecondary(false, true)");
+            x[4] = new(ClusterSRNoCheckpointRestartSecondary(true, false), "ClusterSRNoCheckpointRestartSecondary(true, false)");
+            x[5] = new(ClusterSRNoCheckpointRestartSecondary(true, true), "ClusterSRNoCheckpointRestartSecondary(true, true)");
 
             //3
-            x[6] = new(() => ClusterSRPrimaryCheckpoint(false, false), "ClusterSRPrimaryCheckpoint(false, false)");
-            x[7] = new(() => ClusterSRPrimaryCheckpoint(false, true), "ClusterSRPrimaryCheckpoint(false, true)");
-            x[8] = new(() => ClusterSRPrimaryCheckpoint(true, false), "ClusterSRPrimaryCheckpoint(true, false)");
-            x[9] = new(() => ClusterSRPrimaryCheckpoint(true, true), "ClusterSRPrimaryCheckpoint(true, true)");
+            x[6] = new(ClusterSRPrimaryCheckpoint(false, false), "ClusterSRPrimaryCheckpoint(false, false)");
+            x[7] = new(ClusterSRPrimaryCheckpoint(false, true), "ClusterSRPrimaryCheckpoint(false, true)");
+            x[8] = new(ClusterSRPrimaryCheckpoint(true, false), "ClusterSRPrimaryCheckpoint(true, false)");
+            x[9] = new(ClusterSRPrimaryCheckpoint(true, true), "ClusterSRPrimaryCheckpoint(true, true)");
 
             //4
-            x[10] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, false, false, false)");
-            x[11] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, false, true), "ClusterSRPrimaryCheckpointRetrieve(false, false, false, true)");
-            x[12] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, true, false, false)");
-            x[13] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, false, true), "ClusterSRPrimaryCheckpointRetrieve(false, true, false, true)");
-            x[14] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, false, false), "ClusterSRPrimaryCheckpointRetrieve(true, false, false, false)");
-            x[15] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, false, true), "ClusterSRPrimaryCheckpointRetrieve(true, false, false, true)");
-            x[16] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, false, false), "ClusterSRPrimaryCheckpointRetrieve(true, true, false, false)");
-            x[17] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, false, true), "ClusterSRPrimaryCheckpointRetrieve(true, true, false, true)");
-            x[18] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, true, false), "ClusterSRPrimaryCheckpointRetrieve(false, false, false)");
-            x[19] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, true, true), "ClusterSRPrimaryCheckpointRetrieve(false, false, true)");
-            x[20] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, true, false), "ClusterSRPrimaryCheckpointRetrieve(false, true, true, false)");
-            x[21] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, true, true), "ClusterSRPrimaryCheckpointRetrieve(false, true, true, true)");
-            x[22] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, true, false), "ClusterSRPrimaryCheckpointRetrieve(true, false, true, false)");
-            x[23] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, true, true), "ClusterSRPrimaryCheckpointRetrieve(true, false, true, true)");
-            x[24] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, true, false), "ClusterSRPrimaryCheckpointRetrieve(true, true, true, false)");
-            x[25] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, true, true), "ClusterSRPrimaryCheckpointRetrieve(true, true, true, true)");
+            x[10] = new(ClusterSRPrimaryCheckpointRetrieve(false, false, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, false, false, false)");
+            x[11] = new(ClusterSRPrimaryCheckpointRetrieve(false, false, false, true), "ClusterSRPrimaryCheckpointRetrieve(false, false, false, true)");
+            x[12] = new(ClusterSRPrimaryCheckpointRetrieve(false, true, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, true, false, false)");
+            x[13] = new(ClusterSRPrimaryCheckpointRetrieve(false, true, false, true), "ClusterSRPrimaryCheckpointRetrieve(false, true, false, true)");
+            x[14] = new(ClusterSRPrimaryCheckpointRetrieve(true, false, false, false), "ClusterSRPrimaryCheckpointRetrieve(true, false, false, false)");
+            x[15] = new(ClusterSRPrimaryCheckpointRetrieve(true, false, false, true), "ClusterSRPrimaryCheckpointRetrieve(true, false, false, true)");
+            x[16] = new(ClusterSRPrimaryCheckpointRetrieve(true, true, false, false), "ClusterSRPrimaryCheckpointRetrieve(true, true, false, false)");
+            x[17] = new(ClusterSRPrimaryCheckpointRetrieve(true, true, false, true), "ClusterSRPrimaryCheckpointRetrieve(true, true, false, true)");
+            x[18] = new(ClusterSRPrimaryCheckpointRetrieve(false, false, true, false), "ClusterSRPrimaryCheckpointRetrieve(false, false, false)");
+            x[19] = new(ClusterSRPrimaryCheckpointRetrieve(false, false, true, true), "ClusterSRPrimaryCheckpointRetrieve(false, false, true)");
+            x[20] = new(ClusterSRPrimaryCheckpointRetrieve(false, true, true, false), "ClusterSRPrimaryCheckpointRetrieve(false, true, true, false)");
+            x[21] = new(ClusterSRPrimaryCheckpointRetrieve(false, true, true, true), "ClusterSRPrimaryCheckpointRetrieve(false, true, true, true)");
+            x[22] = new(ClusterSRPrimaryCheckpointRetrieve(true, false, true, false), "ClusterSRPrimaryCheckpointRetrieve(true, false, true, false)");
+            x[23] = new(ClusterSRPrimaryCheckpointRetrieve(true, false, true, true), "ClusterSRPrimaryCheckpointRetrieve(true, false, true, true)");
+            x[24] = new(ClusterSRPrimaryCheckpointRetrieve(true, true, true, false), "ClusterSRPrimaryCheckpointRetrieve(true, true, true, false)");
+            x[25] = new(ClusterSRPrimaryCheckpointRetrieve(true, true, true, true), "ClusterSRPrimaryCheckpointRetrieve(true, true, true, true)");
 
             //5
-            x[26] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, false)");
-            x[27] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, true)");
-            x[28] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, false)");
-            x[29] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, true)");
-            x[30] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, false)");
-            x[31] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, true)");
-            x[32] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, false)");
-            x[33] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, true)");
+            x[26] = new(ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, false)");
+            x[27] = new(ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, true)");
+            x[28] = new(ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, false)");
+            x[29] = new(ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, true)");
+            x[30] = new(ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, false)");
+            x[31] = new(ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, true)");
+            x[32] = new(ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, false)");
+            x[33] = new(ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, true)");
 
             //6
-            x[34] = new(() => ClusterSRPrimaryRestart(false, false), "ClusterSRPrimaryRestart(false, false)");
-            x[35] = new(() => ClusterSRPrimaryRestart(false, true), "ClusterSRPrimaryRestart(false, true)");
-            x[36] = new(() => ClusterSRPrimaryRestart(true, false), "ClusterSRPrimaryRestart(true, false)");
-            x[37] = new(() => ClusterSRPrimaryRestart(true, true), "ClusterSRPrimaryRestart(true, true)");
+            x[34] = new(ClusterSRPrimaryRestart(false, false), "ClusterSRPrimaryRestart(false, false)");
+            x[35] = new(ClusterSRPrimaryRestart(false, true), "ClusterSRPrimaryRestart(false, true)");
+            x[36] = new(ClusterSRPrimaryRestart(true, false), "ClusterSRPrimaryRestart(true, false)");
+            x[37] = new(ClusterSRPrimaryRestart(true, true), "ClusterSRPrimaryRestart(true, true)");
 
             //7
-            x[38] = new(ClusterSRRedirectWrites, "ClusterSRRedirectWrites()");
+            x[38] = new(ClusterSRRedirectWrites(), "ClusterSRRedirectWrites()");
 
             return x;
         }
@@ -105,13 +105,13 @@ namespace Garnet.test.cluster
 
         [Test, Order(1)]
         [Category("REPLICATION")]
-        public void ClusterSRTest([Values] bool disableObjects)
+        public async Task ClusterSRTest([Values] bool disableObjects)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + primary_count * replica_count;
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
+            await context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -148,7 +148,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            await context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -214,7 +214,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            await context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -285,22 +285,22 @@ namespace Garnet.test.cluster
 
         [Test, Order(4)]
         [Category("REPLICATION")]
-        public void ClusterCheckpointRetrieveDisableStorageTier([Values] bool performRMW, [Values] bool disableObjects)
+        public async Task ClusterCheckpointRetrieveDisableStorageTier([Values] bool performRMW, [Values] bool disableObjects)
         {
-            ClusterSRPrimaryCheckpointRetrieve(performRMW, disableObjects, false, false, true, false);
+            await ClusterSRPrimaryCheckpointRetrieve(performRMW, disableObjects, false, false, true, false);
         }
 
         [Test, Order(5)]
         [Category("REPLICATION")]
-        public void ClusterCheckpointRetrieveDelta([Values] bool performRMW)
+        public async Task ClusterCheckpointRetrieveDelta([Values] bool performRMW)
         {
-            ClusterSRPrimaryCheckpointRetrieve(performRMW, true, false, false, false, true);
+            await ClusterSRPrimaryCheckpointRetrieve(performRMW, true, false, false, false, true);
         }
 
         [Test, Order(6)]
         [Category("REPLICATION")]
-        public void ClusterSRPrimaryCheckpointRetrieve([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory, [Values] bool manySegments)
-            => ClusterSRPrimaryCheckpointRetrieve(performRMW: performRMW, disableObjects: disableObjects, lowMemory: lowMemory, manySegments: manySegments, false, false);
+        public async Task ClusterSRPrimaryCheckpointRetrieve([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory, [Values] bool manySegments)
+            => await ClusterSRPrimaryCheckpointRetrieve(performRMW: performRMW, disableObjects: disableObjects, lowMemory: lowMemory, manySegments: manySegments, false, false);
 
         async Task ClusterSRPrimaryCheckpointRetrieve(bool performRMW, bool disableObjects, bool lowMemory, bool manySegments, bool disableStorageTier, bool incrementalSnapshots)
         {
@@ -313,7 +313,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + primary_count * replica_count;
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, lowMemory: lowMemory, SegmentSize: manySegments ? "4k" : "1g", DisableStorageTier: disableStorageTier, EnableIncrementalSnapshots: incrementalSnapshots, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            await context.CreateInstances(nodes_count, disableObjects: disableObjects, lowMemory: lowMemory, SegmentSize: manySegments ? "4k" : "1g", DisableStorageTier: disableStorageTier, EnableIncrementalSnapshots: incrementalSnapshots, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -383,13 +383,13 @@ namespace Garnet.test.cluster
 
         [Test, Order(7)]
         [Category("REPLICATION")]
-        public void ClusterSRAddReplicaAfterPrimaryCheckpoint([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory)
+        public async Task ClusterSRAddReplicaAfterPrimaryCheckpoint([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, lowMemory: lowMemory, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            await context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, lowMemory: lowMemory, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
 
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
@@ -448,7 +448,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            await context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
 
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
@@ -509,13 +509,13 @@ namespace Garnet.test.cluster
 
         [Test, Order(9)]
         [Category("REPLICATION")]
-        public void ClusterSRRedirectWrites()
+        public async Task ClusterSRRedirectWrites()
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            await context.CreateInstances(nodes_count, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
 
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
@@ -537,10 +537,10 @@ namespace Garnet.test.cluster
 
         [Test, Order(10)]
         [Category("REPLICATION")]
-        public void ClusterSRReplicaOfTest([Values] bool performRMW)
+        public async Task ClusterSRReplicaOfTest([Values] bool performRMW)
         {
             var nodes_count = 2;
-            context.CreateInstances(nodes_count, tryRecover: true, disableObjects: true, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            await context.CreateInstances(nodes_count, tryRecover: true, disableObjects: true, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
 
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger));
@@ -573,13 +573,13 @@ namespace Garnet.test.cluster
 
         [Test, Order(11)]
         [Category("REPLICATION")]
-        public void ClusterReplicationSimpleFailover([Values] bool performRMW, [Values] bool checkpoint)
+        public async Task ClusterReplicationSimpleFailover([Values] bool performRMW, [Values] bool checkpoint)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            await context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -643,13 +643,13 @@ namespace Garnet.test.cluster
 
         [Test, Order(12)]
         [Category("REPLICATION")]
-        public void ClusterFailoverAttachReplicas([Values] bool performRMW, [Values] bool takePrimaryCheckpoint, [Values] bool takeNewPrimaryCheckpoint, [Values] bool enableIncrementalSnapshots)
+        public async Task ClusterFailoverAttachReplicas([Values] bool performRMW, [Values] bool takePrimaryCheckpoint, [Values] bool takeNewPrimaryCheckpoint, [Values] bool enableIncrementalSnapshots)
         {
             var replica_count = 2; // Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: true, EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            await context.CreateInstances(nodes_count, disableObjects: true, EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -693,7 +693,7 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
 
             // Simulate primary crash
-            context.nodes[0].Dispose();
+            context.nodes[0].StopAsync();
             context.nodes[0] = null;
 
             // Takeover as new primary
@@ -724,13 +724,13 @@ namespace Garnet.test.cluster
 
         [Test, Order(13)]
         [Category("REPLICATION")]
-        public void ClusterReplicationCheckpointCleanupTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool enableIncrementalSnapshots)
+        public async Task ClusterReplicationCheckpointCleanupTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool enableIncrementalSnapshots)
         {
             var replica_count = 1;//Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, lowMemory: true, SegmentSize: "4k", EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            await context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, lowMemory: true, SegmentSize: "4k", EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger));
             context.clusterTestUtils.BumpEpoch(0, logger: context.logger);
@@ -757,13 +757,13 @@ namespace Garnet.test.cluster
 
         [Test, Order(14)]
         [Category("REPLICATION")]
-        public void ClusterMainMemoryReplicationAttachReplicas()
+        public async Task ClusterMainMemoryReplicationAttachReplicas()
         {
             var replica_count = 2; // Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: true, MainMemoryReplication: true, OnDemandCheckpoint: true, CommitFrequencyMs: -1, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            await context.CreateInstances(nodes_count, disableObjects: true, MainMemoryReplication: true, OnDemandCheckpoint: true, CommitFrequencyMs: -1, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
 
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true));
@@ -801,13 +801,13 @@ namespace Garnet.test.cluster
 
         [Test, Order(15)]
         [Category("REPLICATION")]
-        public void ClusterDontKnowReplicaFailTest([Values] bool performRMW, [Values] bool MainMemoryReplication, [Values] bool onDemandCheckpoint, [Values] bool useReplicaOf)
+        public async Task ClusterDontKnowReplicaFailTest([Values] bool performRMW, [Values] bool MainMemoryReplication, [Values] bool onDemandCheckpoint, [Values] bool useReplicaOf)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: true, MainMemoryReplication: MainMemoryReplication, OnDemandCheckpoint: onDemandCheckpoint, CommitFrequencyMs: -1, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            await context.CreateInstances(nodes_count, disableObjects: true, MainMemoryReplication: MainMemoryReplication, OnDemandCheckpoint: onDemandCheckpoint, CommitFrequencyMs: -1, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
 
             var primaryNodeIndex = 0;
@@ -854,13 +854,13 @@ namespace Garnet.test.cluster
 
         [Test, Order(16)]
         [Category("REPLICATION")]
-        public void ClusterDivergentReplicasTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool ckptBeforeDivergence)
-            => ClusterDivergentReplicasTest(performRMW, disableObjects, ckptBeforeDivergence, false, false, fastCommit: false);
+        public async Task ClusterDivergentReplicasTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool ckptBeforeDivergence)
+            => await ClusterDivergentReplicasTest(performRMW, disableObjects, ckptBeforeDivergence, false, false, fastCommit: false);
 
         [Test, Order(17)]
         [Category("REPLICATION")]
-        public void ClusterDivergentCheckpointTest([Values] bool performRMW, [Values] bool disableObjects)
-            => ClusterDivergentReplicasTest(
+        public async Task ClusterDivergentCheckpointTest([Values] bool performRMW, [Values] bool disableObjects)
+            => await ClusterDivergentReplicasTest(
                 performRMW,
                 disableObjects,
                 ckptBeforeDivergence: true,
@@ -870,8 +870,8 @@ namespace Garnet.test.cluster
 
         [Test, Order(18)]
         [Category("REPLICATION")]
-        public void ClusterDivergentReplicasMMTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool ckptBeforeDivergence)
-            => ClusterDivergentReplicasTest(
+        public async Task ClusterDivergentReplicasMMTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool ckptBeforeDivergence)
+            => await ClusterDivergentReplicasTest(
                 performRMW,
                 disableObjects,
                 ckptBeforeDivergence,
@@ -881,8 +881,8 @@ namespace Garnet.test.cluster
 
         [Test, Order(19)]
         [Category("REPLICATION")]
-        public void ClusterDivergentCheckpointMMTest([Values] bool performRMW, [Values] bool disableObjects)
-            => ClusterDivergentReplicasTest(
+        public async Task ClusterDivergentCheckpointMMTest([Values] bool performRMW, [Values] bool disableObjects)
+            => await ClusterDivergentReplicasTest(
                 performRMW,
                 disableObjects,
                 ckptBeforeDivergence: true,
@@ -892,8 +892,8 @@ namespace Garnet.test.cluster
 
         [Test, Order(20)]
         [Category("REPLICATION")]
-        public void ClusterDivergentCheckpointMMFastCommitTest([Values] bool disableObjects, [Values] bool mainMemoryReplication)
-            => ClusterDivergentReplicasTest(
+        public async Task ClusterDivergentCheckpointMMFastCommitTest([Values] bool disableObjects, [Values] bool mainMemoryReplication)
+            => await ClusterDivergentReplicasTest(
                 performRMW: false,
                 disableObjects: disableObjects,
                 ckptBeforeDivergence: true,
@@ -908,7 +908,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, MainMemoryReplication: mainMemoryReplication, CommitFrequencyMs: mainMemoryReplication ? -1 : 0, OnDemandCheckpoint: mainMemoryReplication, FastCommit: fastCommit, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            await context.CreateInstances(nodes_count, disableObjects: disableObjects, MainMemoryReplication: mainMemoryReplication, CommitFrequencyMs: mainMemoryReplication ? -1 : 0, OnDemandCheckpoint: mainMemoryReplication, FastCommit: fastCommit, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -1029,7 +1029,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(21)]
         [Category("REPLICATION")]
-        public void ClusterReplicateFails()
+        public async Task ClusterReplicateFails()
         {
             const string UserName = "temp-user";
             const string Password = "temp-password";
@@ -1042,7 +1042,7 @@ namespace Garnet.test.cluster
             ServerCredential userCreds = new(UserName, Password, IsAdmin: true, UsedForClusterAuth: false, IsClearText: true);
 
             context.GenerateCredentials([userCreds, clusterCreds]);
-            context.CreateInstances(2, disableObjects: true, disablePubSub: true, enableAOF: true, clusterCreds: clusterCreds, useAcl: true, MainMemoryReplication: true, CommitFrequencyMs: -1, asyncReplay: asyncReplay);
+            await context.CreateInstances(2, disableObjects: true, disablePubSub: true, enableAOF: true, clusterCreds: clusterCreds, useAcl: true, MainMemoryReplication: true, CommitFrequencyMs: -1, asyncReplay: asyncReplay);
             var primaryEndpoint = (IPEndPoint)context.endpoints.First();
             var replicaEndpoint = (IPEndPoint)context.endpoints.Last();
 
@@ -1071,7 +1071,7 @@ namespace Garnet.test.cluster
             var primaryNodeIndex = 0;
             var replicaNodeIndex = 1;
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: false, MainMemoryReplication: true, CommitFrequencyMs: -1, OnDemandCheckpoint: true, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            await context.CreateInstances(nodes_count, disableObjects: false, MainMemoryReplication: true, CommitFrequencyMs: -1, OnDemandCheckpoint: true, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
             context.CreateConnection(useTLS: useTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 

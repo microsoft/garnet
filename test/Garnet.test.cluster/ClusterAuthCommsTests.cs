@@ -34,7 +34,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(1)]
         [Category("CLUSTER-AUTH"), CancelAfter(60000)]
-        public void ClusterBasicACLTest([Values] bool useDefaultUserForInterNodeComms)
+        public async Task ClusterBasicACLTest([Values] bool useDefaultUserForInterNodeComms)
         {
             var nodes = 6;
 
@@ -44,12 +44,12 @@ namespace Garnet.test.cluster
             if (useDefaultUserForInterNodeComms)
             {
                 // Create instances, feed generated acl file and use default user for cluster auth
-                context.CreateInstances(nodes, useAcl: true, clusterCreds: context.credManager.GetUserCredentials("default"));
+                await context.CreateInstances(nodes, useAcl: true, clusterCreds: context.credManager.GetUserCredentials("default"));
             }
             else
             {
                 // Create instances, feed generated acl file and use admin user for cluster auth
-                context.CreateInstances(nodes, useAcl: true, clusterCreds: context.credManager.GetUserCredentials("admin"));
+                await context.CreateInstances(nodes, useAcl: true, clusterCreds: context.credManager.GetUserCredentials("admin"));
             }
 
             context.CreateConnection(useTLS: false, clientCreds: context.credManager.GetUserCredentials("admin"));
@@ -66,7 +66,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(2)]
         [Category("CLUSTER-AUTH"), CancelAfter(60000)]
-        public void ClusterStartupWithoutAuthCreds([Values] bool useDefaultUserForInterNodeComms)
+        public async Task ClusterStartupWithoutAuthCreds([Values] bool useDefaultUserForInterNodeComms)
         {
             var shards = 3;
 
@@ -74,7 +74,7 @@ namespace Garnet.test.cluster
             context.GenerateCredentials();
 
             // Create instances but do not provide credentials through server options
-            context.CreateInstances(shards, useAcl: true);
+            await context.CreateInstances(shards, useAcl: true);
 
             // Connect as admin
             context.CreateConnection(clientCreds: context.credManager.GetUserCredentials("admin"));
@@ -112,14 +112,14 @@ namespace Garnet.test.cluster
 
         [Test, Order(3)]
         [Category("CLUSTER-AUTH"), CancelAfter(60000)]
-        public void ClusterReplicationAuth()
+        public async Task ClusterReplicationAuth()
         {
             var shards = 3;
             // Generate default ACL file
             context.GenerateCredentials();
 
             // Create instances but do not provide credentials through server options
-            context.CreateInstances(shards, useAcl: true, enableAOF: true);
+            await context.CreateInstances(shards, useAcl: true, enableAOF: true);
 
             // Connect as admin
             context.CreateConnection(clientCreds: context.credManager.GetUserCredentials("admin"));
@@ -179,10 +179,10 @@ namespace Garnet.test.cluster
 
         [Test, Order(4)]
         [Category("CLUSTER-AUTH"), CancelAfter(60000)]
-        public void ClusterSimpleFailoverAuth()
+        public async Task ClusterSimpleFailoverAuth()
         {
             // Setup single primary populate and then attach replicas
-            ClusterReplicationAuth();
+            await ClusterReplicationAuth();
 
             context.ClusterFailoveSpinWait(replicaNodeIndex: 1, logger: context.logger);
 

@@ -180,7 +180,7 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Create GarnetServer
+        /// Create GarnetApplication
         /// </summary>
         public static GarnetApplication CreateGarnetApplication(
             string logCheckpointDir,

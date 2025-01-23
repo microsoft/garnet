@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -195,12 +196,12 @@ namespace Garnet.test.cluster
         }
 
         [OneTimeSetUp]
-        public void OneTimeSetUp()
+        public async Task OneTimeSetUp()
         {
             context = new ClusterTestContext();
             context.Setup([]);
 
-            context.CreateInstances(3, enableLua: true);
+            await context.CreateInstances(3, enableLua: true);
 
             context.RegisterCustomTxn(
                 "CLUSTERGETPROC",
