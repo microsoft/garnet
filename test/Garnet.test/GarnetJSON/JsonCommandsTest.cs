@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.server;
 using GarnetJSON;
 using NUnit.Framework;
@@ -16,22 +17,22 @@ namespace Garnet.test
     [TestFixture]
     class JsonCommandsTest
     {
-        GarnetServer server;
+        GarnetApplication server;
         string binPath;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, extensionAllowUnsignedAssemblies: true, extensionBinPaths: [binPath]);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, extensionAllowUnsignedAssemblies: true, extensionBinPaths: [binPath]);
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server.Dispose();
+            await server.StopAsync();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
@@ -84,7 +85,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SaveRecoverTest()
+        public async Task SaveRecoverTest()
         {
             string key = "key";
             RegisterCustomCommand();
@@ -102,10 +103,11 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
+            //server.Dispose(false);
+            await server.StopAsync();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true);
             RegisterCustomCommand();
-            server.Start();
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -116,12 +118,13 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofUpsertRecoverTest()
+        public async Task AofUpsertRecoverTest()
         {
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
+            //server.Dispose(false);
+            await server.StopAsync();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableAOF: true);
             RegisterCustomCommand();
-            server.Start();
+            await server.RunAsync();
 
             var key = "aofkey";
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -133,10 +136,11 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            //server.Dispose(false);
+            await server.StopAsync();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             RegisterCustomCommand();
-            server.Start();
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
