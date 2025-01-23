@@ -26,7 +26,7 @@ namespace Garnet.test
         }
 
         [TearDown]
-        public async void TearDown()
+        public async Task TearDown()
         {
             await server.StopAsync();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);

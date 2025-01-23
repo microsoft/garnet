@@ -100,49 +100,6 @@ public class StoreWrapperFactory
             loggerFactory: loggerFactory);
     }
 
-    public StoreWrapper Create(
-        string version,
-        IGarnetServer server,
-        TsavoriteLog appendOnlyFile,
-        out TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,
-        out TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
-        out KVSettings<SpanByte, SpanByte> kvSettings,
-        out KVSettings<byte[], IGarnetObject> objKvSettings)
-    {
-
-        store = storeFactory.CreateMainStore(out var checkpointDir, out kvSettings);
-        objectStore = storeFactory.CreateObjectStore(checkpointDir, out var objectStoreSizeTracker, out objKvSettings);
-
-        var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes +
-                                (store.ReadCache?.MaxMemorySizeBytes ?? 0) +
-                                (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
-        if (objectStore != null)
-        {
-
-            configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes +
-                                 (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) +
-                                 (objectStoreSizeTracker?.TargetSize ?? 0) +
-                                 (objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
-        }
-
-        logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
-
-        LoadModules();
-
-        return new StoreWrapper(
-            version,
-            redisProtocolVersion,
-            server,
-            store,
-            objectStore,
-            objectStoreSizeTracker,
-            customCommandManager,
-            appendOnlyFile,
-            options,
-            clusterFactory: clusterFactory,
-            loggerFactory: loggerFactory);
-    }
-
     private void LoadModules()
     {
         if (options.LoadModuleCS == null)
