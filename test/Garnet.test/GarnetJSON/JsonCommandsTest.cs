@@ -103,7 +103,6 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true);
             RegisterCustomCommand();
@@ -120,7 +119,6 @@ namespace Garnet.test
         [Test]
         public async Task AofUpsertRecoverTest()
         {
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableAOF: true);
             RegisterCustomCommand();
@@ -136,7 +134,6 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             RegisterCustomCommand();

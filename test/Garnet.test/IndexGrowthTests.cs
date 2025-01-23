@@ -171,7 +171,6 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, indexSize: "512", indexMaxSize: "1k");
             await server.RunAsync();
@@ -236,7 +235,6 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, objectStoreIndexSize: "512", objectStoreIndexMaxSize: "1k");
             await server.RunAsync();

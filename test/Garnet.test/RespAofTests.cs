@@ -62,7 +62,6 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -88,7 +87,6 @@ namespace Garnet.test
             }
 
             server.Store.WaitForCommit();
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -107,7 +105,6 @@ namespace Garnet.test
         [CancelAfter(10_000)]
         public async Task AofUpsertStoreCommitTaskRecoverTest()
         {
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: false, enableAOF: true, commitFrequencyMs: 100);
             await server.RunAsync();
@@ -120,7 +117,6 @@ namespace Garnet.test
             }
 
             server.Store.WaitForCommit();
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -138,7 +134,6 @@ namespace Garnet.test
         [Test]
         public async Task AofUpsertStoreAutoCommitCommitWaitRecoverTest()
         {
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: false, enableAOF: true, commitWait: true);
             await server.RunAsync();
@@ -149,7 +144,6 @@ namespace Garnet.test
                 db.StringSet("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1");
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
             }
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -167,7 +161,6 @@ namespace Garnet.test
         [Test]
         public async Task AofTransactionStoreAutoCommitCommitWaitRecoverTest()
         {
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: false, enableAOF: true, commitWait: true);
             await server.RunAsync();
@@ -181,7 +174,6 @@ namespace Garnet.test
 
                 ClassicAssert.IsTrue(transaction.Execute());
             }
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -215,7 +207,6 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -247,7 +238,6 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -286,7 +276,6 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -322,7 +311,6 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -357,7 +345,6 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -404,7 +391,6 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -441,7 +427,6 @@ namespace Garnet.test
                 db.SortedSetAdd("AofRMWObjectStoreRecoverTestKey" + 1, newEntries);
             }
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -485,7 +470,6 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -509,7 +493,6 @@ namespace Garnet.test
                 gServer.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), respCustomCommandsInfo["MYDICTGET"]);
             }
 
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableAOF: true);
             RegisterCustomCommand(server);
@@ -537,7 +520,6 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             RegisterCustomCommand(server);
@@ -564,7 +546,6 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(listValue, (string)retList[0]);
             }
 
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableAOF: true);
             server.Register.NewProcedure("SETMAINANDOBJECT", () => new SetStringAndList());
@@ -583,7 +564,6 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Register.NewProcedure("SETMAINANDOBJECT", () => new SetStringAndList());
@@ -633,7 +613,6 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -665,7 +644,6 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             await server.RunAsync();
@@ -700,7 +678,6 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            //server.Dispose(false);
             await server.StopAsync();
 
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);

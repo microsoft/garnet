@@ -1361,7 +1361,7 @@ namespace Garnet.test
         [Test]
         public async Task SingleDeleteWithObjectStoreDisabled()
         {
-            TearDown();
+            await TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: true);
@@ -1393,7 +1393,7 @@ namespace Garnet.test
         [Test]
         public async Task SingleDeleteWithObjectStoreDisable_LTM()
         {
-            TearDown();
+            await TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
@@ -1435,7 +1435,7 @@ namespace Garnet.test
         {
             if (withoutObjectStore)
             {
-                TearDown();
+                await TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
                 server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: true);
                 await server.RunAsync();
@@ -1503,7 +1503,7 @@ namespace Garnet.test
         {
             if (withoutObjectStore)
             {
-                TearDown();
+                await TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
                 server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: true);
                 await server.RunAsync();
@@ -1569,7 +1569,7 @@ namespace Garnet.test
         {
             if (withoutObjectStore)
             {
-                TearDown();
+                await TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
                 server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: true);
                 await server.RunAsync();
@@ -1834,7 +1834,7 @@ namespace Garnet.test
         {
             if (withoutObjectStore)
             {
-                TearDown();
+                await TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
                 server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: true);
                 await server.RunAsync();
@@ -3733,7 +3733,7 @@ namespace Garnet.test
         public async Task AsyncTest1()
         {
             // Set up low-memory database
-            TearDown();
+            await TearDown();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
             await server.RunAsync();

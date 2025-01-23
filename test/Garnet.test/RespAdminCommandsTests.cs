@@ -177,7 +177,6 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, UseAzureStorage: useAzure);
             await server.RunAsync();
@@ -210,7 +209,6 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true);
             await server.RunAsync();
@@ -250,7 +248,6 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true);
             server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
@@ -297,7 +294,6 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true);
             server.Register.NewProcedure("SETMAINANDOBJECT", () => new SetStringAndList());
@@ -318,7 +314,6 @@ namespace Garnet.test
         {
             string sizeToString(int size) => size + "k";
 
-            //server.Dispose();
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, MemorySize: sizeToString(memorySize), PageSize: sizeToString(pageSize));
             await server.RunAsync();
@@ -340,7 +335,6 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, MemorySize: sizeToString(recoveryMemorySize), PageSize: sizeToString(pageSize), objectStoreHeapMemorySize: "64k");
             await server.RunAsync();
@@ -369,7 +363,6 @@ namespace Garnet.test
         {
             bool disableObj = true;
 
-            //server.Dispose();
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: disableObj, lowMemory: true, MemorySize: memorySize, PageSize: "512", enableAOF: true);
             await server.RunAsync();
@@ -409,7 +402,6 @@ namespace Garnet.test
                 db.Execute("COMMITAOF");
             }
 
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: disableObj, tryRecover: true, lowMemory: true, MemorySize: recoveryMemorySize, PageSize: "512", enableAOF: true);
             await server.RunAsync();
@@ -428,7 +420,6 @@ namespace Garnet.test
         [Test]
         public async Task SeAofRecoverTest()
         {
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableAOF: true);
             await server.RunAsync();
@@ -441,7 +432,6 @@ namespace Garnet.test
                 db.Execute("COMMITAOF");
             }
 
-            //server.Dispose(false);
             await server.StopAsync();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableAOF: true, tryRecover: true);
             await server.RunAsync();

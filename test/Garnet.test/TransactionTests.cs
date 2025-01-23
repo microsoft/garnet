@@ -32,7 +32,7 @@ namespace Garnet.test
 
         public async Task SetUpWithLowMemory()
         {
-            TearDown();
+            await TearDown();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true);
             await server.RunAsync();
