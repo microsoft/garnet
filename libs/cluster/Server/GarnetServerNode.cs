@@ -293,7 +293,7 @@ namespace Garnet.cluster
             var locked = false;
             try
             {
-                // Try to acquire dispose lock to avoid a dipose happening during publish
+                // Try to acquire dispose lock to avoid a dispose during publish forwarding
                 if (!dispose.TryReadLock())
                 {
                     logger?.LogWarning("Could not acquire readLock for publish forwarding");
