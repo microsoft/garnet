@@ -962,10 +962,10 @@ namespace Garnet.server
             var resultSb = new StringBuilder();
             var cmdCount = 0;
 
-            foreach (var customCmd in storeWrapper.customCommandManager.customCommandsInfo.Values)
+            foreach (var customCmd in customCommandManagerSession.GetAllCustomCommandsInfos())
             {
                 cmdCount++;
-                resultSb.Append(customCmd.RespFormat);
+                resultSb.Append(customCmd.Value.RespFormat);
             }
 
             if (RespCommandsInfo.TryGetRespCommandsInfo(out var respCommandsInfo, true, logger))
@@ -1025,7 +1025,7 @@ namespace Garnet.server
                     respCommandCount = 0;
                 }
 
-                var commandCount = storeWrapper.customCommandManager.CustomCommandsInfoCount + respCommandCount;
+                var commandCount = customCommandManagerSession.GetCustomCommandInfoCount() + respCommandCount;
 
                 while (!RespWriteUtils.WriteInteger(commandCount, ref dcurr, dend))
                     SendAndReset();
@@ -1056,10 +1056,10 @@ namespace Garnet.server
                     resultSb.Append(cmdDocs.RespFormat);
                 }
 
-                foreach (var customCmd in storeWrapper.customCommandManager.customCommandsDocs.Values)
+                foreach (var customCmd in customCommandManagerSession.GetAllCustomCommandsDocs())
                 {
                     docsCount++;
-                    resultSb.Append(customCmd.RespFormat);
+                    resultSb.Append(customCmd.Value.RespFormat);
                 }
             }
             else
@@ -1068,7 +1068,7 @@ namespace Garnet.server
                 {
                     var cmdName = parseState.GetString(i);
                     if (RespCommandDocs.TryGetRespCommandDocs(cmdName, out var cmdDocs, true, true, logger) ||
-                        storeWrapper.customCommandManager.TryGetCustomCommandDocs(cmdName, out cmdDocs))
+                        customCommandManagerSession.TryGetCustomCommandDocs(cmdName, out cmdDocs))
                     {
                         docsCount++;
                         resultSb.Append(cmdDocs.RespFormat);
@@ -1107,7 +1107,7 @@ namespace Garnet.server
                     var cmdName = parseState.GetString(i);
 
                     if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
-                        storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo))
+                        customCommandManagerSession.TryGetCustomCommandInfo(cmdName, out cmdInfo))
                     {
                         while (!RespWriteUtils.WriteAsciiDirect(cmdInfo.RespFormat, ref dcurr, dend))
                             SendAndReset();

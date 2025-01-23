@@ -2130,19 +2130,19 @@ namespace Garnet.server
                 Debug.Assert(currentCustomObjectCommand == null);
                 Debug.Assert(currentCustomProcedure == null);
 
-                if (storeWrapper.customCommandManager.Match(command, out currentCustomTransaction))
+                if (customCommandManagerSession.Match(command, out currentCustomTransaction))
                 {
                     return RespCommand.CustomTxn;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomRawStringCommand))
+                else if (customCommandManagerSession.Match(command, out currentCustomRawStringCommand))
                 {
                     return RespCommand.CustomRawStringCmd;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomObjectCommand))
+                else if (customCommandManagerSession.Match(command, out currentCustomObjectCommand))
                 {
                     return RespCommand.CustomObjCmd;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomProcedure))
+                else if (customCommandManagerSession.Match(command, out currentCustomProcedure))
                 {
                     return RespCommand.CustomProcedure;
                 }
