@@ -21,7 +21,7 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
 {
     readonly HostApplicationBuilder hostApplicationBuilder;
 
-    internal GarnetApplicationBuilder(GarnetApplicationOptions options, GarnetServerOptions garnetServerOptions)
+    public GarnetApplicationBuilder(GarnetApplicationOptions options, GarnetServerOptions garnetServerOptions)
     {
         var configuration = new ConfigurationManager();
 

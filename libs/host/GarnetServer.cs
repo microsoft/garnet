@@ -175,7 +175,7 @@ namespace Garnet
 
             server.Register(WireFormat.ASCII, Provider);
         }
-        
+
         /// <summary>
         /// Start server instance
         /// </summary>
