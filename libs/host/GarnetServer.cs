@@ -86,6 +86,7 @@ namespace Garnet
         
         readonly IClusterFactory clusterFactory;
         readonly CustomCommandManager customCommandManager;
+        readonly StoreFactory storeFactory;
 
         /// <summary>
         /// Create Garnet Server instance using GarnetServerOptions instance; use Start to start the server.
@@ -96,13 +97,15 @@ namespace Garnet
         /// <param name="server">The IGarnetServer to use. If none is provided, will use a GarnetServerTcp.</param>
         /// <param name="clusterFactory"></param>
         /// <param name="customCommandManager"></param>
+        /// <param name="storeFactory"></param>
         public GarnetServer(
             IOptions<GarnetServerOptions> options, 
             ILogger<GarnetServer> logger,
             ILoggerFactory loggerFactory, 
             IGarnetServer server, 
             IClusterFactory clusterFactory,
-            CustomCommandManager customCommandManager)
+            CustomCommandManager customCommandManager,
+            StoreFactory storeFactory)
         {
             this.server = server;
             this.opts = options.Value;
@@ -110,6 +113,7 @@ namespace Garnet
             this.loggerFactory = loggerFactory;
             this.clusterFactory = clusterFactory;
             this.customCommandManager = customCommandManager;
+            this.storeFactory = storeFactory;
             
             this.cleanupDir = false;
             this.InitializeServerUpdated();
@@ -180,8 +184,8 @@ namespace Garnet
             if (!setMax && !ThreadPool.SetMaxThreads(maxThreads, maxCPThreads))
                 throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {maxThreads}, {maxCPThreads}");
 
-            CreateMainStore(clusterFactory, out var checkpointDir);
-            CreateObjectStore(clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker);
+            this.store = storeFactory.CreateMainStore(out var checkpointDir, out this.kvSettings);
+            this.objectStore = storeFactory.CreateObjectStore(checkpointDir, out var objectStoreSizeTracker, out this.objKvSettings);
 
             if (!opts.DisablePubSub)
                 subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(

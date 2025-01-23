@@ -10,7 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.Metrics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Garnet;
 
@@ -47,6 +46,7 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
         
         hostApplicationBuilder.Services.AddTransient<IClusterFactory, ClusterFactory>();
         hostApplicationBuilder.Services.AddTransient<CustomCommandManager>();
+        hostApplicationBuilder.Services.AddTransient<StoreFactory>();
 
         hostApplicationBuilder.Services.AddTransient<IGarnetServer, GarnetServerTcp>();
 

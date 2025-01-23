@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Garnet;
