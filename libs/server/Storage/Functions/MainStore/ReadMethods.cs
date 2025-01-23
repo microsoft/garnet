@@ -35,7 +35,7 @@ namespace Garnet.server
             if (cmd == RespCommand.NONE)
                 CopyRespTo(value, ref output);
             else
-                CopyRespToWithInput(ref input, value, ref output, readInfo.IsFromPending);
+                CopyRespToWithInput(ref srcLogRecord, ref input, ref output, readInfo.IsFromPending);
 
             return true;
         }
@@ -66,7 +66,7 @@ namespace Garnet.server
             if (cmd == RespCommand.NONE)
                 CopyRespTo(value, ref output);
             else
-                CopyRespToWithInput(ref input, value, ref output, readInfo.IsFromPending);
+                CopyRespToWithInput(ref srcLogRecord, ref input, ref output, readInfo.IsFromPending);
 
             return true;
         }

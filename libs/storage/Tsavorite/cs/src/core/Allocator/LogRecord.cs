@@ -254,7 +254,7 @@ namespace Tsavorite.core
             if (Info.HasFiller)
                 *(int*)fillerLenAddress = 0;
             Unsafe.InitBlockUnaligned((byte*)optStartAddress, 0, (uint)optLen);
-            //  - Shrinking the value and zeroing unused space
+            //  - Shrinking the value and zeroing unused space (TODO: handle overflow allocation)
             ValueSpanRef.ShrinkSerializedLength(newValueLen);
             //  - Set the new (increased) FillerLength first, then the optionals
             if (fillerLen >= LogRecord.FillerLenSize)

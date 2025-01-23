@@ -111,8 +111,8 @@ namespace Garnet.server
                             byte* subPrefixPtr = subscribedPrefixPtr;
                             byte* reqKeyPtr = ptr;
 
-                            bool match = keySerializer.Match(ref keySerializer.ReadKeyByRef(ref reqKeyPtr), ascii,
-                                ref keySerializer.ReadKeyByRef(ref subPrefixPtr), kvp.Value.Item1);
+                            bool match = keySerializer.Match(keySerializer.ReadKeyByRef(ref reqKeyPtr), ascii,
+                                keySerializer.ReadKeyByRef(ref subPrefixPtr), kvp.Value.Item1);
                             if (match)
                             {
                                 foreach (var sub in kvp.Value.Item2)
@@ -461,7 +461,7 @@ namespace Garnet.server
                     {
                         var endKeyPtr = keyPtr;
                         var _patternPtr = patternPtr;
-                        if (keySerializer.Match(ref keySerializer.ReadKeyByRef(ref endKeyPtr), true, ref keySerializer.ReadKeyByRef(ref _patternPtr), true))
+                        if (keySerializer.Match(keySerializer.ReadKeyByRef(ref endKeyPtr), true, keySerializer.ReadKeyByRef(ref _patternPtr), true))
                         {
                             while (!RespWriteUtils.WriteSimpleString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);

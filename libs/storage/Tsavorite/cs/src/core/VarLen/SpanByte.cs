@@ -73,11 +73,6 @@ namespace Tsavorite.core
         public readonly int TotalInlineSize => Serialized ? TotalSize : Constants.kUnserializedSpanByteSize;
 
         /// <summary>
-        /// Size of metadata header, if any (returns 0 or 8)
-        /// </summary>
-        public readonly int MetadataSize => 0;  // TODO remove
-
-        /// <summary>
         /// Create a nonserialized <see cref="SpanByte"/> around a given <paramref name="payload"/> pointer and given <paramref name="length"/>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -86,15 +81,6 @@ namespace Tsavorite.core
             Debug.Assert(length <= ~HeaderMask);
             this.length = length | UnserializedBitMask;
             this.payload = payload;
-        }
-
-        /// <summary>
-        /// Extra metadata header
-        /// </summary>
-        public long ExtraMetadata   // TODO remove
-        {
-            get => 0;
-            set { }
         }
 
         /// <summary>
@@ -136,18 +122,6 @@ namespace Tsavorite.core
                 : new ReadOnlySpan<byte>((byte*)payload, Length);
 
         /// <summary>
-        /// If <see cref="SpanByte"/> is in a serialized form, return a non-serialized <see cref="SpanByte"/> wrapper that points to the same payload.
-        /// </summary>
-        /// <remarks>
-        /// SAFETY: The resulting <see cref="SpanByte"/> is safe to heap-copy, as long as the underlying payload remains pinned.
-        /// </remarks>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public SpanByte Deserialize() 
-            => !Serialized 
-                ? this 
-                : new SpanByte(Length, (IntPtr)(byte*)Unsafe.AsPointer(ref payload));
-
-        /// <summary>
         /// Reinterpret a fixed ReadOnlySpan&lt;byte&gt; as a serialized <see cref="SpanByte"/>, without adding length header
         /// </summary>
         public static ref SpanByte ReinterpretWithoutLength(ReadOnlySpan<byte> span)    // TODO: verify correctness at callsite (that span is length-prefixed)
@@ -172,15 +146,6 @@ namespace Tsavorite.core
         public static SpanByte FromPinnedPointer(byte* pointer, int length) => new(length, (nint)pointer);
 
         /// <summary>
-        /// Create a SpanByte around a pinned unmanaged struct.
-        /// </summary>
-        /// <remarks>
-        /// SAFETY: The provided unmanaged struct MUST be on the stack or point to pinned memory.
-        /// </remarks>
-        public static SpanByte FromPinnedStruct<T>(T* ptr) where T : unmanaged
-            => new(Unsafe.SizeOf<T>(), (nint)ptr);
-
-        /// <summary>
         /// Create a <see cref="SpanByte"/> from the given <paramref name="span"/>.
         /// </summary>
         /// <remarks>
@@ -191,14 +156,6 @@ namespace Tsavorite.core
         {
             return new SpanByte(span.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(span)));
         }
-
-        /// <summary>
-        /// Create SpanByte around a pinned <paramref name="memory"/>.
-        /// </summary>
-        /// <remarks>
-        /// SAFETY: The <paramref name="memory"/> MUST be pinned.
-        /// </remarks>
-        public static SpanByte FromPinnedMemory(Memory<byte> memory) => FromPinnedSpan(memory.Span);
 
         /// <summary>
         /// Convert payload to new byte array
@@ -240,43 +197,13 @@ namespace Tsavorite.core
         public void CopyTo(ref SpanByte dst) => AsReadOnlySpan().CopyTo(dst.AsSpan());
 
         /// <summary>
-        /// Try to copy to given pre-allocated <see cref="SpanByte"/>, checking if space permits at destination <see cref="SpanByte"/>
-        /// </summary>
-        /// <param name="dst">The target of the copy</param>
-        /// <param name="fullDestSize">The size available at the destination (e.g. dst.TotalSize or the log-space Value allocation size)</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySafeCopyTo(ref SpanByte dst, int fullDestSize)    // TODO still needed?
-        {
-            var newTotalSize = TotalSize;
-            if (fullDestSize < newTotalSize)
-                return false;
-
-            var newLength = Length;
-            if (dst.Length < newLength)
-            {
-                // dst is shorter than src, but we have already verified there is enough extra value space to grow dst to store src.
-                dst.Length = newLength;
-                CopyTo(ref dst);
-            }
-            else
-            {
-                // dst length is equal or longer than src. We can adjust the length header on the serialized log, if we wish (here, we do).
-                // This method will also zero out the extra space to retain log scan correctness.
-                dst.ShrinkSerializedLength(newLength);
-                CopyTo(ref dst);
-                dst.Length = newLength;
-            }
-            return true;
-        }
-
-        /// <summary>
         /// Shrink the length header of the in-place allocated buffer on
         /// Tsavorite hybrid log, pointed to by the given <see cref="SpanByte"/>.
         /// Zeroes out the extra space to retain log scan correctness.
         /// </summary>
         /// <param name="newLength">New length of payload</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ShrinkSerializedLength(int newLength)   // TODO remove? (in favor of LogRecord methods, and just setting the length elsewhere)
+        public void ShrinkSerializedLength(int newLength)
         {
             // Zero-fill extra space - needed so log scan does not see spurious data - *before* setting length to 0.
             if (newLength < Length)
@@ -313,33 +240,6 @@ namespace Tsavorite.core
             dst.Memory = memoryPool.Rent(Length);
             dst.Length = Length;
             AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span);
-        }
-
-        /// <summary>
-        /// Copy to given <see cref="SpanByteAndMemory"/> (header and payload copied to actual span/memory) // TODO remove? Is this needed for other than Expiration?
-        /// </summary>
-        public void CopyWithHeaderTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
-        {
-            if (dst.IsSpanByte)
-            {
-                if (dst.Length >= TotalSize)
-                {
-                    dst.Length = TotalSize;
-                    var span = dst.SpanByte.AsSpan();
-                    fixed (byte* ptr = span)
-                        *(int*)ptr = Length;
-
-                    AsReadOnlySpan().CopyTo(span.Slice(sizeof(int)));
-                    return;
-                }
-                dst.ConvertToHeap();
-            }
-
-            dst.Memory = memoryPool.Rent(TotalSize);
-            dst.Length = TotalSize;
-            fixed (byte* ptr = dst.Memory.Memory.Span)
-                *(int*)ptr = Length;
-            AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span.Slice(sizeof(int)));
         }
 
         /// <summary>

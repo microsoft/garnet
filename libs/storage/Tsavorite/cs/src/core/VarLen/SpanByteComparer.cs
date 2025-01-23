@@ -47,8 +47,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe bool StaticEquals(SpanByte k1, SpanByte k2)
         {
-            return k1.AsReadOnlySpan().SequenceEqual(k2.AsReadOnlySpan())
-                && (k1.MetadataSize == k2.MetadataSize);
+            return k1.AsReadOnlySpan().SequenceEqual(k2.AsReadOnlySpan());
         }
     }
 }

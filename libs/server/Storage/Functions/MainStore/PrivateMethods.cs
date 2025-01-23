@@ -83,8 +83,11 @@ namespace Garnet.server
             }
         }
 
-        void CopyRespToWithInput(ref RawStringInput input, SpanByte value, ref SpanByteAndMemory dst, bool isFromPending)
+        void CopyRespToWithInput<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory dst, bool isFromPending)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
+            var value = srcLogRecord.ValueSpan;
+
             switch (input.header.cmd)
             {
                 case RespCommand.ASYNC:
@@ -227,12 +230,12 @@ namespace Garnet.server
                     throw new GarnetException($"Not enough space in {input.header.cmd} buffer");
 
                 case RespCommand.TTL:
-                    var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
                     functionsState.CopyRespNumber(ttlValue, ref dst);
                     return;
 
                 case RespCommand.PTTL:
-                    var pttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    var pttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
                     functionsState.CopyRespNumber(pttlValue, ref dst);
                     return;
 
@@ -246,12 +249,12 @@ namespace Garnet.server
                     return;
 
                 case RespCommand.EXPIRETIME:
-                    var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
                     functionsState.CopyRespNumber(expireTime, ref dst);
                     return;
 
                 case RespCommand.PEXPIRETIME:
-                    var pexpireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    var pexpireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
                     functionsState.CopyRespNumber(pexpireTime, ref dst);
                     return;
 
