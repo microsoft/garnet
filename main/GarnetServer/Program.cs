@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Threading;
 using Garnet;
 using Garnet.server;
 
@@ -12,25 +10,6 @@ var app = builder.Build();
 
 app.Run();
 
-/*
-try
-{
-    using var server = new GarnetServer(args);
-
-    // Optional: register custom extensions
-    RegisterExtensions(server);
-
-    // Start the server
-    server.Start();
-
-    Thread.Sleep(Timeout.Infinite);
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"Unable to initialize server due to exception: {ex.Message}");
-}
-*/
-      
 /// <summary>
 /// Register new commands with the server. You can access these commands from clients using
 /// commands such as db.Execute in StackExchange.Redis. Example:

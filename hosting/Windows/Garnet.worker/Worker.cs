@@ -22,19 +22,11 @@ namespace Garnet
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            try
-            {
-                server = new GarnetServer(args);
+            var builder = GarnetApplication.CreateHostBuilder(args);
+            
+            var app = builder.Build();
 
-                // Start the server
-                server.Start();
-
-                await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Unable to initialize server due to exception: {ex.Message}");
-            }
+            await app.RunAsync(stoppingToken);
         }
 
         /// <summary>
