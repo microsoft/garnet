@@ -43,6 +43,7 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
             simpleConsoleFormatterOptions.SingleLine = true;
             simpleConsoleFormatterOptions.TimestampFormat = "hh::mm::ss ";
         });
+        hostApplicationBuilder.Logging.SetMinimumLevel(garnetServerOptions.LogLevel);
         
         hostApplicationBuilder.Services.AddTransient<IClusterFactory, ClusterFactory>();
         hostApplicationBuilder.Services.AddTransient<CustomCommandManager>();

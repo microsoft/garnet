@@ -91,12 +91,14 @@ namespace Garnet
         /// Create Garnet Server instance using GarnetServerOptions instance; use Start to start the server.
         /// </summary>
         /// <param name="options">Server options</param>
+        /// <param name="logger">Logger</param>
         /// <param name="loggerFactory">Logger factory</param>
         /// <param name="server">The IGarnetServer to use. If none is provided, will use a GarnetServerTcp.</param>
         /// <param name="clusterFactory"></param>
         /// <param name="customCommandManager"></param>
         public GarnetServer(
             IOptions<GarnetServerOptions> options, 
+            ILogger<GarnetServer> logger,
             ILoggerFactory loggerFactory, 
             IGarnetServer server, 
             IClusterFactory clusterFactory,
@@ -104,6 +106,7 @@ namespace Garnet
         {
             this.server = server;
             this.opts = options.Value;
+            this.logger = logger;
             this.loggerFactory = loggerFactory;
             this.clusterFactory = clusterFactory;
             this.customCommandManager = customCommandManager;
@@ -132,7 +135,6 @@ namespace Garnet
 
             var clusterFactory = opts.EnableCluster ? this.clusterFactory : null;
 
-            this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
             logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Port: {port}", version,
                 IntPtr.Size == 8 ? "64" : "32", opts.EnableCluster ? "cluster" : "standalone", opts.Port);
 
