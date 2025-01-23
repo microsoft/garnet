@@ -1143,6 +1143,66 @@ _Array reply:_ a list of string **member** scores as double-precision floating p
 
 ---
 
+### BZMPOP
+
+#### Syntax
+
+```bash
+    BZMPOP timeout numkeys key [key ...] <MIN | MAX> [COUNT count]
+```
+
+BZMPOP is the blocking variant of [ZMPOP](#zmpop). When any of the sorted sets contains elements, this command behaves exactly like ZMPOP. When used inside a MULTI/EXEC block, this command behaves exactly like ZMPOP. When all sorted sets are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+
+- **MIN**: Remove elements starting with the lowest scores
+- **MAX**: Remove elements starting with the highest scores
+- **COUNT**: Specifies how many elements to pop (default is 1)
+
+#### Resp Reply
+
+One of the following:
+
+* Null reply: when no element could be popped.
+* Array reply: a two-element array with the first element being the name of the key from which elements were popped, and the second element is an array of the popped elements. Every entry in the elements array is also an array that contains the member and its score.
+---
+
+### BZPOPMAX
+
+#### Syntax
+
+```bash
+    BZPOPMAX key [key ...] timeout
+```
+
+BZPOPMAX is the blocking variant of [ZPOPMAX](#zpopmax). When any of the sorted sets contains elements, this command behaves exactly like ZPOPMAX. When used inside a MULTI/EXEC block, this command behaves exactly like ZPOPMAX. When all sorted sets are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+
+#### Resp Reply
+
+One of the following:
+
+* Null reply: when no element could be popped and the timeout expired.
+* Array reply: the keyname, popped member, and its score.
+
+---
+
+### BZPOPMIN
+
+#### Syntax
+
+```bash
+    BZPOPMIN key [key ...] timeout
+```
+
+BZPOPMIN is the blocking variant of [ZPOPMIN](#zpopmin). When any of the sorted sets contains elements, this command behaves exactly like ZPOPMIN. When used inside a MULTI/EXEC block, this command behaves exactly like ZPOPMIN. When all sorted sets are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+
+#### Resp Reply
+
+One of the following:
+
+* Null reply: when no element could be popped and the timeout expired.
+* Array reply: the keyname, popped member, and its score.
+
+---
+
 ### ZMPOP
 
 #### Syntax
