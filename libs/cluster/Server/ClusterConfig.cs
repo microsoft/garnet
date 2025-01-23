@@ -54,14 +54,7 @@ namespace Garnet.cluster
                 slotMap[i]._workerId = 0;
             }
             workers = new Worker[2];
-            workers[0].Address = "unassigned";
-            workers[0].Port = 0;
-            workers[0].Nodeid = null;
-            workers[0].ConfigEpoch = 0;
-            workers[0].Role = NodeRole.UNASSIGNED;
-            workers[0].ReplicaOfNodeId = null;
-            workers[0].ReplicationOffset = 0;
-            workers[0].hostname = null;
+            InitializeUnassignedWorker();
         }
 
         /// <summary>
@@ -73,6 +66,7 @@ namespace Garnet.cluster
         {
             this.slotMap = slotMap;
             this.workers = workers;
+            InitializeUnassignedWorker();
         }
 
         public ClusterConfig Copy()
@@ -82,6 +76,21 @@ namespace Garnet.cluster
             Array.Copy(workers, newWorkers, workers.Length);
             Array.Copy(slotMap, newSlotMap, slotMap.Length);
             return new ClusterConfig(newSlotMap, newWorkers);
+        }
+
+        /// <summary>
+        /// Initialize the worker at index 0 as unassigned.
+        /// </summary>
+        private void InitializeUnassignedWorker()
+        {
+            workers[0].Address = "unassigned";
+            workers[0].Port = 0;
+            workers[0].Nodeid = null;
+            workers[0].ConfigEpoch = 0;
+            workers[0].Role = NodeRole.UNASSIGNED;
+            workers[0].ReplicaOfNodeId = null;
+            workers[0].ReplicationOffset = 0;
+            workers[0].hostname = null;
         }
 
         /// <summary>
