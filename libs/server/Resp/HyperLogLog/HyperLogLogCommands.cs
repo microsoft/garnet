@@ -34,7 +34,7 @@ namespace Garnet.server
             {
                 input.parseState = parseState.Slice(i, 1);
                 var o = new SpanByteAndMemory(output, 1);
-                storageApi.HyperLogLogAdd(ref key, ref input, ref o);
+                storageApi.HyperLogLogAdd(key, ref input, ref o);
 
                 // Invalid HLL Type
                 if (*output == 0xFF)

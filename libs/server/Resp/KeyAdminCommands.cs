@@ -87,7 +87,7 @@ namespace Garnet.server
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = garnetApi.GETDEL(ref sbKey, ref o);
+            var status = garnetApi.GETDEL(sbKey, ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -354,11 +354,11 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST));
             }
 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = command == RespCommand.TTL ?
-                        storageApi.TTL(ref sbKey, StoreType.All, ref o) :
-                        storageApi.PTTL(ref sbKey, StoreType.All, ref o);
+                        storageApi.TTL(key, StoreType.All, ref o) :
+                        storageApi.PTTL(key, StoreType.All, ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -390,11 +390,11 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIRETIME));
             }
 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = command == RespCommand.EXPIRETIME ?
-                        storageApi.EXPIRETIME(ref sbKey, StoreType.All, ref o) :
-                        storageApi.PEXPIRETIME(ref sbKey, StoreType.All, ref o);
+                        storageApi.EXPIRETIME(key, StoreType.All, ref o) :
+                        storageApi.PEXPIRETIME(key, StoreType.All, ref o);
 
             if (status == GarnetStatus.OK)
             {

@@ -26,8 +26,7 @@ namespace Garnet.server
             }
 
             // Get the key for SortedSet
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
@@ -35,7 +34,7 @@ namespace Garnet.server
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.GeoAdd(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.GeoAdd(key, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -44,7 +43,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
             }
 
@@ -89,8 +88,7 @@ namespace Garnet.server
             }
 
             // Get the key for the Sorted Set
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
 
             var op =
                 command switch
@@ -109,12 +107,12 @@ namespace Garnet.server
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.GeoCommands(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.GeoCommands(key, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     switch (op)

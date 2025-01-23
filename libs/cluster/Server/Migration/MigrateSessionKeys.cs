@@ -67,7 +67,7 @@ namespace Garnet.cluster
                     }
 
                     // Write key to network buffer. If it had expired, we would have received GarnetStatus.NOTFOUND
-                    Debug.Assert(!ClusterSession.Expired(ref value), "Expired record should have received GarnetStatus.NOTFOUND");
+                    Debug.Assert(!ClusterSession.Expired(ref value), "Expired record should have returned GarnetStatus.NOTFOUND");
                     if (!WriteOrSendMainStoreKeyValuePair(ref key, ref value))
                         return false;
 
@@ -123,7 +123,7 @@ namespace Garnet.cluster
                     }
 
                     // Serialize the object.
-                    Debug.Assert(!ClusterSession.Expired(ref value.garnetObject), "Expired record should have received GarnetStatus.NOTFOUND");
+                    Debug.Assert(!ClusterSession.Expired(ref value.garnetObject), "Expired record should have returned GarnetStatus.NOTFOUND");
                     // If it had expired, we would have received GarnetStatus.NOTFOUND.
                     var objectData = GarnetObjectSerializer.Serialize(value.garnetObject);
 

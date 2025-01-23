@@ -32,7 +32,7 @@ namespace Garnet.server
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.GET(ref key, ref input, ref o);
+                var status = storageApi.GET(key, ref input, ref o);
 
                 switch (status)
                 {
@@ -75,7 +75,7 @@ namespace Garnet.server
                 // Store index in context, since completions are not in order
                 long ctx = c;
 
-                var status = storageApi.GET_WithPending(ref key, ref input, ref o, ctx, out var isPending);
+                var status = storageApi.GET_WithPending(key, ref input, ref o, ctx, out var isPending);
 
                 if (isPending)
                 {
@@ -127,7 +127,7 @@ namespace Garnet.server
             if (firstPending != -1)
             {
                 // First complete all pending ops
-                storageApi.GET_CompletePending(outputArr, true);
+                _ = storageApi.GET_CompletePending(outputArr, true);
 
                 // Write the outputs to network buffer
                 for (var i = firstPending; i < parseState.Count; i++)
@@ -163,7 +163,7 @@ namespace Garnet.server
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var val = parseState.GetArgSliceByRef(c + 1).SpanByte;
-                _ = storageApi.SET(ref key, ref val);
+                _ = storageApi.SET(key, val);
             }
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -184,7 +184,7 @@ namespace Garnet.server
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
 
                 input.parseState = parseState.Slice(c + 1, 1);
-                var status = storageApi.SET_Conditional(ref key, ref input);
+                var status = storageApi.SET_Conditional(key, ref input);
 
                 // Status tells us whether an old image was found during RMW or not
                 // For a "set if not exists", NOTFOUND means that the operation succeeded
@@ -204,7 +204,7 @@ namespace Garnet.server
             for (int c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var status = storageApi.DELETE(ref key, StoreType.All);
+                var status = storageApi.DELETE(key, StoreType.All);
 
                 // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
                 if (status == GarnetStatus.OK)

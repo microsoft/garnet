@@ -153,10 +153,7 @@ namespace Garnet.server
             var input = new RawStringInput(RespCommand.SETBIT, ref parseState, startIdx: 1);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.StringSetBit(
-                ref sbKey,
-                ref input,
-                ref o);
+            var status = storageApi.StringSetBit(sbKey, ref input, ref o);
 
             if (status == GarnetStatus.OK)
                 dcurr += o.Length;
@@ -189,7 +186,7 @@ namespace Garnet.server
             var input = new RawStringInput(RespCommand.GETBIT, ref parseState, startIdx: 1);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.StringGetBit(ref sbKey, ref input, ref o);
+            var status = storageApi.StringGetBit(sbKey, ref input, ref o);
 
             if (status == GarnetStatus.NOTFOUND)
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -209,9 +206,7 @@ namespace Garnet.server
         {
             var count = parseState.Count;
             if (count < 1 || count > 4)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITCOUNT));
-            }
 
             // <[Get Key]>
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -232,7 +227,7 @@ namespace Garnet.server
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.StringBitCount(ref sbKey, ref input, ref o);
+            var status = storageApi.StringBitCount(sbKey, ref input, ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -258,9 +253,7 @@ namespace Garnet.server
         {
             var count = parseState.Count;
             if (count < 2 || count > 5)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS));
-            }
 
             // <[Get Key]>
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -306,7 +299,7 @@ namespace Garnet.server
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.StringBitPosition(ref sbKey, ref input, ref o);
+            var status = storageApi.StringBitPosition(sbKey, ref input, ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -507,7 +500,7 @@ namespace Garnet.server
                 input.parseState = parseState;
 
                 var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.StringBitField(ref sbKey, ref input, opCode,
+                var status = storageApi.StringBitField(sbKey, ref input, opCode,
                     ref output);
 
                 if (status == GarnetStatus.NOTFOUND && opCode == RespCommand.GET)
