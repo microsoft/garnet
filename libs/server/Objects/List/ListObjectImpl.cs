@@ -92,7 +92,7 @@ namespace Garnet.server
                 // get the string to INSERT into the list
                 var item = input.parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
 
-                var insertBefore = position.SequenceEqual(CmdStrings.BEFORE);
+                var insertBefore = position.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BEFORE);
 
                 _output->result1 = -1;
 
