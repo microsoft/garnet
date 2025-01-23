@@ -558,7 +558,7 @@ return redis.status_reply("OK")
             // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
             // Once the issue is resolved this test will fail and the #if can be removed permanently.
 #if NET9_0_OR_GREATER
-            expectedError = "ERR Method Debug.Fail failed with 'Expected error message on the stack";
+            expectedError = "ERR External component has thrown an exception.";
 #endif
 
             var exc = Assert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return redis.call({string.Join(',', args)})"));
