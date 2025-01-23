@@ -39,10 +39,10 @@ namespace Garnet.common
         protected INetworkSender networkSender;
 
         /// <summary>
-        /// Create
+        /// Create client
         /// </summary>
-        /// <param name="address"></param>   
-        /// <param name="bufferSize"></param>        
+        /// <param name="endpoint">The host endpoint to connect to</param>   
+        /// <param name="bufferSize">The buffer size</param>        
         public ClientBase(EndPoint endpoint, int bufferSize)
         {
             this.endpoint = endpoint;

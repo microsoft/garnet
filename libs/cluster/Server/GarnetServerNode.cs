@@ -59,8 +59,7 @@ namespace Garnet.cluster
         /// GarnetServerNode constructor
         /// </summary>
         /// <param name="clusterProvider"></param>
-        /// <param name="address"></param>
-        /// <param name="port"></param>
+        /// <param name="endpoint">The endpoint of the remote node</param>
         /// <param name="tlsOptions"></param>
         /// <param name="logger"></param>
         public GarnetServerNode(ClusterProvider clusterProvider, EndPoint endpoint, SslClientAuthenticationOptions tlsOptions, ILogger logger = null)
