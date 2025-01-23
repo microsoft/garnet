@@ -15,11 +15,11 @@ namespace Garnet;
 public class GarnetApplicationBuilder : IHostApplicationBuilder
 {
     readonly HostApplicationBuilder hostApplicationBuilder;
-    
+
     internal GarnetApplicationBuilder(GarnetApplicationOptions options, GarnetServerOptions garnetServerOptions)
     {
         var configuration = new ConfigurationManager();
-        
+
         configuration.AddEnvironmentVariables(prefix: "GARNET_");
 
         hostApplicationBuilder = new HostApplicationBuilder(new HostApplicationBuilderSettings
@@ -29,7 +29,7 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
             EnvironmentName = options.EnvironmentName,
             Configuration = configuration
         });
-        
+
         hostApplicationBuilder.Logging.ClearProviders();
         hostApplicationBuilder.Logging.AddSimpleConsole(simpleConsoleFormatterOptions =>
         {
@@ -37,26 +37,28 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
             simpleConsoleFormatterOptions.TimestampFormat = "hh::mm::ss ";
         });
 
-        /*
-        hostApplicationBuilder.Services.AddSingleton<GarnetServer>(sp =>
+        hostApplicationBuilder.Services.AddTransient<GarnetServer>(sp =>
         {
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-            
+
             return new GarnetServer(garnetServerOptions, loggerFactory);
         });
-        */
-        
+
+        hostApplicationBuilder.Services.AddHostedService<GarnetServerHostedService>();
+
+        /*
         hostApplicationBuilder.Services.AddHostedService<GarnetServerHostedService>(sp =>
         {
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
             var logger = loggerFactory.CreateLogger<GarnetServerHostedService>();
-            
+
             var server =  new GarnetServer(garnetServerOptions, loggerFactory);
 
             return new GarnetServerHostedService(server, logger);
         });
+        */
     }
-    
+
     public GarnetApplication Build()
     {
         var host = hostApplicationBuilder.Build();
@@ -71,19 +73,19 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
     }
 
     public IDictionary<object, object> Properties { get; }
-    
+
     public IConfigurationManager Configuration
         => hostApplicationBuilder.Configuration;
-    
+
     public IHostEnvironment Environment
         => hostApplicationBuilder.Environment;
-    
+
     public ILoggingBuilder Logging
         => hostApplicationBuilder.Logging;
-    
+
     public IMetricsBuilder Metrics
         => hostApplicationBuilder.Metrics;
-    
+
     public IServiceCollection Services
         => hostApplicationBuilder.Services;
 }

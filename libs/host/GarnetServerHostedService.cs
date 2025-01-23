@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet;
 
-public class GarnetServerHostedService : BackgroundService, IDisposable
+public class GarnetServerHostedService : BackgroundService 
 {
     readonly GarnetServer server;
     readonly ILogger<GarnetServerHostedService> logger;
@@ -28,11 +28,5 @@ public class GarnetServerHostedService : BackgroundService, IDisposable
         logger.LogInformation("Garnet server running at: {time}", DateTimeOffset.Now);
         
         await Task.CompletedTask;
-    }
-
-    public override void Dispose()
-    {
-        server.Dispose();
-        base.Dispose();
     }
 }
