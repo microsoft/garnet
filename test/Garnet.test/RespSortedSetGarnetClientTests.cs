@@ -21,7 +21,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespSortedSetGarnetClientTests
     {
-        protected GarnetServer server;
+        protected GarnetApplication server;
         ManualResetEventSlim waiter;
         const int maxIterations = 3;
 
@@ -41,19 +41,19 @@ namespace Garnet.test
 
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableAOF: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, enableAOF: true);
+            await server.RunAsync();
             waiter = new ManualResetEventSlim();
         }
 
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server.Dispose();
+            await server.StopAsync();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 

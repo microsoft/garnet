@@ -27,7 +27,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespSortedSetTests
     {
-        protected GarnetServer server;
+        protected GarnetApplication server;
 
         static readonly SortedSetEntry[] entries =
               [
@@ -73,18 +73,18 @@ namespace Garnet.test
 
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true);
+            await server.RunAsync();
         }
 
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server.Dispose();
+            await server.StopAsync();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 

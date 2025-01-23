@@ -225,28 +225,28 @@ namespace Garnet.test
     [TestFixture]
     public class RespCustomCommandTests
     {
-        GarnetServer server;
+        GarnetApplication server;
         private string _extTestDir1;
         private string _extTestDir2;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             _extTestDir1 = Path.Combine(TestUtils.MethodTestDir, "test1");
             _extTestDir2 = Path.Combine(TestUtils.MethodTestDir, "test2");
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 disablePubSub: true,
                 extensionBinPaths: [_extTestDir1, _extTestDir2],
                 extensionAllowUnsignedAssemblies: true);
-            server.Start();
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server.Dispose();
+            await server.StopAsync();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             TestUtils.DeleteDirectory(Directory.GetParent(_extTestDir1)?.FullName);
         }

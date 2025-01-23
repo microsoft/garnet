@@ -4,6 +4,7 @@
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -13,27 +14,27 @@ namespace Garnet.test
     [TestFixture]
     public class RespModuleTests
     {
-        GarnetServer server;
+        GarnetApplication server;
         private string testModuleDir;
         string binPath;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             testModuleDir = Path.Combine(TestUtils.MethodTestDir, "testModules");
             binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 disablePubSub: true,
                 extensionBinPaths: [testModuleDir, binPath],
                 extensionAllowUnsignedAssemblies: true);
-            server.Start();
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server.Dispose();
+            await server.StopAsync();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             TestUtils.DeleteDirectory(Directory.GetParent(testModuleDir)?.FullName);
         }
@@ -176,7 +177,7 @@ namespace Garnet.test
 
 
         [Test]
-        public void TestModuleLoadUsingGarnetOptions()
+        public async Task TestModuleLoadUsingGarnetOptions()
         {
             var onLoad =
                     @"context.Initialize(""TestModule1"", 1);
@@ -192,11 +193,11 @@ namespace Garnet.test
 
             var module1Path = CreateTestModule(onLoad, "TestModule1.dll");
             var module2Path = CreateTestModule(onLoad2, "TestModule2.dll");
-            server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+            await server.StopAsync();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 disablePubSub: true,
                 loadModulePaths: [module1Path, module2Path]);
-            server.Start();
+            await server.RunAsync();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
