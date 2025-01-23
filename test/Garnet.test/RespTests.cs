@@ -20,22 +20,22 @@ namespace Garnet.test
     [TestFixture]
     public class RespTests
     {
-        GarnetServer server;
+        GarnetApplication server;
         Random r;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             r = new Random(674386);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: false);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, disablePubSub: false);
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server.Dispose();
+            await server.StopAsync();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
@@ -1359,13 +1359,13 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SingleDeleteWithObjectStoreDisabled()
+        public async Task SingleDeleteWithObjectStoreDisabled()
         {
             TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: true);
+            await server.RunAsync();
 
             var key = "delKey";
             var value = "1234";
@@ -1391,13 +1391,13 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SingleDeleteWithObjectStoreDisable_LTM()
+        public async Task SingleDeleteWithObjectStoreDisable_LTM()
         {
             TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
+            await server.RunAsync();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -1431,14 +1431,14 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiKeyDelete([Values] bool withoutObjectStore)
+        public async Task MultiKeyDelete([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
-                server.Start();
+                server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: true);
+                await server.RunAsync();
             }
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1499,14 +1499,14 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiKeyUnlink([Values] bool withoutObjectStore)
+        public async Task MultiKeyUnlink([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
-                server.Start();
+                server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: true);
+                await server.RunAsync();
             }
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1565,14 +1565,14 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SingleExists([Values] bool withoutObjectStore)
+        public async Task SingleExists([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
-                server.Start();
+                server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: true);
+                await server.RunAsync();
             }
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1830,14 +1830,14 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SingleRenameKeyEdgeCase([Values] bool withoutObjectStore)
+        public async Task SingleRenameKeyEdgeCase([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
-                server.Start();
+                server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: true);
+                await server.RunAsync();
             }
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -3730,13 +3730,13 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AsyncTest1()
+        public async Task AsyncTest1()
         {
             // Set up low-memory database
             TearDown();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
+            await server.RunAsync();
 
             string firstKey = null, firstValue = null, lastKey = null, lastValue = null;
 
