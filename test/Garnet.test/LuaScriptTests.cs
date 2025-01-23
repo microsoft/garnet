@@ -563,12 +563,6 @@ return redis.status_reply("OK")
         [Test]
         public void RedisCallErrors()
         {
-            // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
-            // Once the issue is resolved the #if can be removed permanently.
-#if NET9_0_OR_GREATER
-            Assert.Ignore("Ignoring this test on .NET 9");
-#endif
-
             // Testing that our error replies for redis.call match Redis behavior
             //
             // TODO: exact matching of the hash and line number would also be nice, but that is trickier
