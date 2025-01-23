@@ -47,6 +47,7 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
         hostApplicationBuilder.Services.AddTransient<IClusterFactory, ClusterFactory>();
         hostApplicationBuilder.Services.AddTransient<CustomCommandManager>();
         hostApplicationBuilder.Services.AddTransient<StoreFactory>();
+        hostApplicationBuilder.Services.AddTransient<StoreWrapperFactory>();
 
         hostApplicationBuilder.Services.AddTransient<IGarnetServer, GarnetServerTcp>();
 

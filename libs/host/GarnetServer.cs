@@ -87,6 +87,7 @@ namespace Garnet
         readonly IClusterFactory clusterFactory;
         readonly CustomCommandManager customCommandManager;
         readonly StoreFactory storeFactory;
+        readonly StoreWrapperFactory storeWrapperFactory;
 
         /// <summary>
         /// Create Garnet Server instance using GarnetServerOptions instance; use Start to start the server.
@@ -98,6 +99,7 @@ namespace Garnet
         /// <param name="clusterFactory"></param>
         /// <param name="customCommandManager"></param>
         /// <param name="storeFactory"></param>
+        /// <param name="storeWrapperFactory"></param>
         public GarnetServer(
             IOptions<GarnetServerOptions> options, 
             ILogger<GarnetServer> logger,
@@ -105,7 +107,8 @@ namespace Garnet
             IGarnetServer server, 
             IClusterFactory clusterFactory,
             CustomCommandManager customCommandManager,
-            StoreFactory storeFactory)
+            StoreFactory storeFactory,
+            StoreWrapperFactory storeWrapperFactory)
         {
             this.server = server;
             this.opts = options.Value;
@@ -114,6 +117,7 @@ namespace Garnet
             this.clusterFactory = clusterFactory;
             this.customCommandManager = customCommandManager;
             this.storeFactory = storeFactory;
+            this.storeWrapperFactory = storeWrapperFactory;
             
             this.cleanupDir = false;
             this.InitializeServerUpdated();
@@ -209,10 +213,15 @@ namespace Garnet
                 logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
             }
 
-            storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore,
+            storeWrapper = storeWrapperFactory.Create(version, 
+                server, 
+                store, 
+                objectStore, 
                 objectStoreSizeTracker,
-                customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory,
-                loggerFactory: loggerFactory);
+                customCommandManager,
+                appendOnlyFile,
+                clusterFactory,
+                loggerFactory);
 
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, subscribeBroker);
