@@ -887,6 +887,24 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Removes and returns the element with the highest or lowest score from the sorted set.
+        /// </summary>
+        /// <param name="popMaxScoreElement">If true, pops the element with the highest score; otherwise, pops the element with the lowest score.</param>
+        /// <returns>A tuple containing the score and the element as a byte array.</returns>
+        public (double Score, byte[] Element) PopMinOrMax(bool popMaxScoreElement = false)
+        {
+            if (sortedSet.Count == 0)
+                return default;
+
+            var element = popMaxScoreElement ? sortedSet.Max : sortedSet.Min;
+            sortedSet.Remove(element);
+            sortedSetDict.Remove(element.Element);
+            this.UpdateSize(element.Element, false);
+
+            return element;
+        }
+
+        /// <summary>
         /// Removes and returns up to COUNT members with the low or high score
         /// </summary>
         /// <param name="input"></param>

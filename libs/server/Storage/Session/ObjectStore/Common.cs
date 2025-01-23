@@ -26,7 +26,7 @@ namespace Garnet.server
             output = new();
             var objStoreOutput = new GarnetObjectStoreOutput
             {
-                spanByteAndMemory =
+                SpanByteAndMemory =
                     new(SpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size))
             };
 
@@ -198,7 +198,7 @@ namespace Garnet.server
                     break;
             }
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
             scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
@@ -227,8 +227,8 @@ namespace Garnet.server
             byte* element = null;
             int len = 0;
 
-            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
-                             outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+            var outputSpan = outputFooter.SpanByteAndMemory.IsSpanByte ?
+                             outputFooter.SpanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.SpanByteAndMemory.AsMemoryReadOnlySpan();
 
             try
             {
@@ -289,8 +289,8 @@ namespace Garnet.server
             }
             finally
             {
-                if (!outputFooter.spanByteAndMemory.IsSpanByte)
-                    outputFooter.spanByteAndMemory.Memory.Dispose();
+                if (!outputFooter.SpanByteAndMemory.IsSpanByte)
+                    outputFooter.SpanByteAndMemory.Memory.Dispose();
             }
 
             return elements;
@@ -310,8 +310,8 @@ namespace Garnet.server
             // For reading the elements in the outputFooter
             byte* element = null;
 
-            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
-                             outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+            var outputSpan = outputFooter.SpanByteAndMemory.IsSpanByte ?
+                             outputFooter.SpanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.SpanByteAndMemory.AsMemoryReadOnlySpan();
 
             try
             {
@@ -345,8 +345,8 @@ namespace Garnet.server
             }
             finally
             {
-                if (!outputFooter.spanByteAndMemory.IsSpanByte)
-                    outputFooter.spanByteAndMemory.Memory.Dispose();
+                if (!outputFooter.SpanByteAndMemory.IsSpanByte)
+                    outputFooter.SpanByteAndMemory.Memory.Dispose();
             }
 
             return elements;
@@ -361,8 +361,8 @@ namespace Garnet.server
             error = default;
             byte* element = null;
             var len = 0;
-            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
-                             outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+            var outputSpan = outputFooter.SpanByteAndMemory.IsSpanByte ?
+                             outputFooter.SpanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.SpanByteAndMemory.AsMemoryReadOnlySpan();
 
             try
             {
@@ -402,8 +402,8 @@ namespace Garnet.server
             }
             finally
             {
-                if (!outputFooter.spanByteAndMemory.IsSpanByte)
-                    outputFooter.spanByteAndMemory.Memory.Dispose();
+                if (!outputFooter.SpanByteAndMemory.IsSpanByte)
+                    outputFooter.SpanByteAndMemory.Memory.Dispose();
             }
 
             return result;
@@ -420,8 +420,8 @@ namespace Garnet.server
             var len = 0;
             ArgSlice result;
 
-            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
-                             outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+            var outputSpan = outputFooter.SpanByteAndMemory.IsSpanByte ?
+                             outputFooter.SpanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.SpanByteAndMemory.AsMemoryReadOnlySpan();
             try
             {
                 fixed (byte* outputPtr = outputSpan)
@@ -436,8 +436,8 @@ namespace Garnet.server
             }
             finally
             {
-                if (!outputFooter.spanByteAndMemory.IsSpanByte)
-                    outputFooter.spanByteAndMemory.Memory.Dispose();
+                if (!outputFooter.SpanByteAndMemory.IsSpanByte)
+                    outputFooter.SpanByteAndMemory.Memory.Dispose();
             }
 
             return result;
@@ -451,8 +451,8 @@ namespace Garnet.server
         /// <returns>integer</returns>
         unsafe bool TryProcessRespSimple64IntOutput(GarnetObjectStoreOutput outputFooter, out long value)
         {
-            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
-                outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+            var outputSpan = outputFooter.SpanByteAndMemory.IsSpanByte ?
+                outputFooter.SpanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.SpanByteAndMemory.AsMemoryReadOnlySpan();
             try
             {
                 fixed (byte* outputPtr = outputSpan)
@@ -465,8 +465,8 @@ namespace Garnet.server
             }
             finally
             {
-                if (!outputFooter.spanByteAndMemory.IsSpanByte)
-                    outputFooter.spanByteAndMemory.Memory.Dispose();
+                if (!outputFooter.SpanByteAndMemory.IsSpanByte)
+                    outputFooter.SpanByteAndMemory.Memory.Dispose();
             }
 
             return true;
@@ -490,7 +490,7 @@ namespace Garnet.server
             ref var _input = ref Unsafe.AsRef<ObjectInput>(input.ptr);
 
             output = new();
-            var _output = new GarnetObjectStoreOutput { spanByteAndMemory = new(SpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size)) };
+            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(SpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size)) };
 
             // Perform Read on object store
             var status = objectStoreContext.Read(ref key, ref _input, ref _output);
@@ -498,9 +498,10 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref _output, ref objectStoreContext);
 
-            if (_output.spanByteAndMemory.Length == 0)
+            if (_output.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
                 return GarnetStatus.WRONGTYPE;
-            Debug.Assert(_output.spanByteAndMemory.IsSpanByte);
+
+            Debug.Assert(_output.SpanByteAndMemory.IsSpanByte);
 
             if (status.Found && (!status.Record.Created && !status.Record.CopyUpdated && !status.Record.InPlaceUpdated))
                 return GarnetStatus.OK;
@@ -524,7 +525,7 @@ namespace Garnet.server
                 ThrowObjectStoreUninitializedException();
 
             output = new();
-            var _output = new GarnetObjectStoreOutput { spanByteAndMemory = new(SpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size)) };
+            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(SpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size)) };
 
             // Perform Read on object store
             var status = objectStoreContext.Read(ref key, ref input, ref _output);
@@ -532,9 +533,10 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref _output, ref objectStoreContext);
 
-            if (_output.spanByteAndMemory.Length == 0)
+            if (_output.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
                 return GarnetStatus.WRONGTYPE;
-            Debug.Assert(_output.spanByteAndMemory.IsSpanByte);
+
+            Debug.Assert(_output.SpanByteAndMemory.IsSpanByte);
 
             if (status.Found && (!status.Record.Created && !status.Record.CopyUpdated && !status.Record.InPlaceUpdated))
                 return GarnetStatus.OK;
@@ -577,7 +579,7 @@ namespace Garnet.server
             if (status.NotFound && !status.Record.Created)
                 return GarnetStatus.NOTFOUND;
 
-            if (status.Found && outputFooter.spanByteAndMemory.Length == 0)
+            if (status.Found && outputFooter.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
                 return GarnetStatus.WRONGTYPE;
 
             return GarnetStatus.OK;
