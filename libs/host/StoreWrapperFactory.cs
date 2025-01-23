@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
+using System.Text;
 using Garnet.cluster;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -19,33 +21,61 @@ using ObjectStoreAllocator =
 using ObjectStoreFunctions =
     StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
-public class StoreWrapperFactory : IDisposable
+public class StoreWrapperFactory 
 {
     /// <summary>
     /// Resp protocol version
     /// </summary>
     readonly string redisProtocolVersion = "7.2.5";
     
+    readonly ILogger<StoreWrapperFactory> logger;
     readonly StoreFactory storeFactory;
     readonly GarnetServerOptions options;
+    readonly CustomCommandManager customCommandManager;
     
-    public StoreWrapperFactory(StoreFactory storeFactory, IOptions<GarnetServerOptions> options)
+    public StoreWrapperFactory(
+        ILogger<StoreWrapperFactory> logger,
+        StoreFactory storeFactory, 
+        IOptions<GarnetServerOptions> options,
+        CustomCommandManager customCommandManager)
     {
+        this.logger = logger;
         this.storeFactory = storeFactory;
         this.options = options.Value;
+        this.customCommandManager = customCommandManager;
     }
 
     public StoreWrapper Create(
         string version,
         IGarnetServer server,
-        TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,
-        TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
-        CacheSizeTracker objectStoreSizeTracker,
-        CustomCommandManager customCommandManager,
         TsavoriteLog appendOnlyFile,
         IClusterFactory clusterFactory,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        out TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,
+        out TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
+        out KVSettings<SpanByte, SpanByte> kvSettings,
+        out KVSettings<byte[], IGarnetObject> objKvSettings)
     {
+        
+        store = storeFactory.CreateMainStore(out var checkpointDir, out kvSettings);
+        objectStore = storeFactory.CreateObjectStore(checkpointDir, out var objectStoreSizeTracker, out objKvSettings);
+        
+        var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes +
+                                (store.ReadCache?.MaxMemorySizeBytes ?? 0) +
+                                (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
+        if (objectStore != null)
+        {
+            
+            configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes +
+                                 (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) +
+                                 (objectStoreSizeTracker?.TargetSize ?? 0) +
+                                 (objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
+        }
+        
+        logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
+        
+        LoadModules();
+        
         return new StoreWrapper(
             version, 
             redisProtocolVersion,
@@ -59,9 +89,31 @@ public class StoreWrapperFactory : IDisposable
             clusterFactory: clusterFactory, 
             loggerFactory: loggerFactory);
     }
-
-    public void Dispose()
+    
+    
+    private void LoadModules()
     {
-        // TODO release managed resources here
+        if (options.LoadModuleCS == null)
+            return;
+
+        foreach (var moduleCS in options.LoadModuleCS)
+        {
+            var moduleCSData = moduleCS.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (moduleCSData.Length < 1)
+                continue;
+
+            var modulePath = moduleCSData[0];
+            var moduleArgs = moduleCSData.Length > 1 ? moduleCSData.Skip(1).ToArray() : [];
+            if (ModuleUtils.LoadAssemblies([modulePath], null, true, out var loadedAssemblies, out var errorMsg))
+            {
+                ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs,
+                    logger, out errorMsg);
+            }
+            else
+            {
+                logger?.LogError("Module {0} failed to load with error {1}", modulePath,
+                    Encoding.UTF8.GetString(errorMsg));
+            }
+        }
     }
 }

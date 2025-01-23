@@ -85,7 +85,6 @@ namespace Garnet
         public StoreApi Store;
         
         readonly IClusterFactory clusterFactory;
-        readonly CustomCommandManager customCommandManager;
         readonly StoreFactory storeFactory;
         readonly StoreWrapperFactory storeWrapperFactory;
 
@@ -97,7 +96,6 @@ namespace Garnet
         /// <param name="loggerFactory">Logger factory</param>
         /// <param name="server">The IGarnetServer to use. If none is provided, will use a GarnetServerTcp.</param>
         /// <param name="clusterFactory"></param>
-        /// <param name="customCommandManager"></param>
         /// <param name="storeFactory"></param>
         /// <param name="storeWrapperFactory"></param>
         public GarnetServer(
@@ -106,7 +104,6 @@ namespace Garnet
             ILoggerFactory loggerFactory, 
             IGarnetServer server, 
             IClusterFactory clusterFactory,
-            CustomCommandManager customCommandManager,
             StoreFactory storeFactory,
             StoreWrapperFactory storeWrapperFactory)
         {
@@ -115,7 +112,6 @@ namespace Garnet
             this.logger = logger;
             this.loggerFactory = loggerFactory;
             this.clusterFactory = clusterFactory;
-            this.customCommandManager = customCommandManager;
             this.storeFactory = storeFactory;
             this.storeWrapperFactory = storeWrapperFactory;
             
@@ -188,9 +184,6 @@ namespace Garnet
             if (!setMax && !ThreadPool.SetMaxThreads(maxThreads, maxCPThreads))
                 throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {maxThreads}, {maxCPThreads}");
 
-            this.store = storeFactory.CreateMainStore(out var checkpointDir, out this.kvSettings);
-            this.objectStore = storeFactory.CreateObjectStore(checkpointDir, out var objectStoreSizeTracker, out this.objKvSettings);
-
             if (!opts.DisablePubSub)
                 subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(
                     new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs,
@@ -200,28 +193,15 @@ namespace Garnet
 
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
 
-            if (logger != null)
-            {
-                var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes +
-                                        (store.ReadCache?.MaxMemorySizeBytes ?? 0) +
-                                        (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
-                if (objectStore != null)
-                    configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes +
-                                         (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) +
-                                         (objectStoreSizeTracker?.TargetSize ?? 0) +
-                                         (objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
-                logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
-            }
-
             storeWrapper = storeWrapperFactory.Create(version, 
                 server, 
-                store, 
-                objectStore, 
-                objectStoreSizeTracker,
-                customCommandManager,
                 appendOnlyFile,
                 clusterFactory,
-                loggerFactory);
+                loggerFactory,
+                out store,
+                out objectStore,
+                out kvSettings,
+                out objKvSettings);
 
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, subscribeBroker);
@@ -232,8 +212,6 @@ namespace Garnet
             Store = new StoreApi(storeWrapper);
 
             server.Register(WireFormat.ASCII, Provider);
-
-            LoadModules(customCommandManager);
         }
 
         /// <summary>
