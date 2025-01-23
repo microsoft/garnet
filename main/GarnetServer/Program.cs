@@ -8,6 +8,8 @@ var builder = GarnetApplication.CreateHostBuilder(args);
 
 var app = builder.Build();
 
+RegisterExtensions(app);
+
 app.Run();
 
 /// <summary>
@@ -15,7 +17,7 @@ app.Run();
 /// commands such as db.Execute in StackExchange.Redis. Example:
 ///   db.Execute("SETIFPM", key, value, prefix);
 /// </summary>
-static void RegisterExtensions(GarnetServer server)
+static void RegisterExtensions(GarnetApplication server)
 {
     // Register custom command on raw strings (SETIFPM = "set if prefix match")
     // Add RESP command info to registration for command to appear when client runs COMMAND / COMMAND INFO

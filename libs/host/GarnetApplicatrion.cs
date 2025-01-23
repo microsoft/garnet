@@ -6,17 +6,34 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Garnet;
 
 public class GarnetApplication : IHost
 {
+    public MetricsApi Metrics
+    {
+        get
+        {
+            return host.Services.GetRequiredService<MetricsApi>();
+        }
+    }
+    
     public RegisterApi Register
     {
         get
         {
-            throw new NotImplementedException();
+            return host.Services.GetRequiredService<RegisterApi>();
+        }
+    }
+    
+    public StoreApi Store 
+    {
+        get
+        {
+            return host.Services.GetRequiredService<StoreApi>();
         }
     }
 
