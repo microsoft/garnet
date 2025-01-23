@@ -3974,6 +3974,51 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task BZMPopACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "BZMPOP",
+                [DoBZMPopAsync]
+            );
+
+            static async Task DoBZMPopAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("BZMPOP", ["1", "1", "foo", "MIN"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task BZPopMaxACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "BZPOPMAX",
+                [DoBZPopMaxAsync]
+            );
+
+            static async Task DoBZPopMaxAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("BZPOPMAX", ["foo", "1"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task BZPopMinACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "BZPOPMIN",
+                [DoBZPopMinAsync]
+            );
+
+            static async Task DoBZPopMinAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("BZPOPMIN", ["foo", "1"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
         public async Task LPopACLsAsync()
         {
             await CheckCommandsAsync(

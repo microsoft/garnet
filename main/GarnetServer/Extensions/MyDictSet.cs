@@ -22,7 +22,6 @@ namespace Garnet
             var valueArg = GetNextArg(ref input, ref offset).ToArray();
 
             _ = ((MyDict)value).Set(keyArg, valueArg);
-            WriteSimpleString(ref output, "OK");
             return true;
         }
     }

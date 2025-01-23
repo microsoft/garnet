@@ -343,7 +343,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("OK", (string)retValue);
 
             retValue = db.Execute("NoOpModule.NOOPOBJREAD", objKey);
-            ClassicAssert.IsNull((string)retValue);
+            ClassicAssert.AreEqual("OK", (string)retValue);
 
             // Test transaction in no-op module
             retValue = db.Execute("NoOpModule.NOOPTXN");

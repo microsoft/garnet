@@ -142,14 +142,14 @@ namespace Garnet.server
             var header = new RespInputHeader(objType) { SubId = subid };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             GarnetStatus status;
 
             if (type == CommandType.ReadModifyWrite)
             {
                 status = storageApi.RMW_ObjectStore(ref keyBytes, ref input, ref output);
-                Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
+                Debug.Assert(!output.SpanByteAndMemory.IsSpanByte);
 
                 switch (status)
                 {
@@ -158,8 +158,8 @@ namespace Garnet.server
                             SendAndReset();
                         break;
                     default:
-                        if (output.spanByteAndMemory.Memory != null)
-                            SendAndReset(output.spanByteAndMemory.Memory, output.spanByteAndMemory.Length);
+                        if (output.SpanByteAndMemory.Memory != null)
+                            SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                         else
                             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                                 SendAndReset();
@@ -169,19 +169,19 @@ namespace Garnet.server
             else
             {
                 status = storageApi.Read_ObjectStore(ref keyBytes, ref input, ref output);
-                Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
+                Debug.Assert(!output.SpanByteAndMemory.IsSpanByte);
 
                 switch (status)
                 {
                     case GarnetStatus.OK:
-                        if (output.spanByteAndMemory.Memory != null)
-                            SendAndReset(output.spanByteAndMemory.Memory, output.spanByteAndMemory.Length);
+                        if (output.SpanByteAndMemory.Memory != null)
+                            SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                         else
                             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                                 SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
-                        Debug.Assert(output.spanByteAndMemory.Memory == null);
+                        Debug.Assert(output.SpanByteAndMemory.Memory == null);
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                             SendAndReset();
                         break;
@@ -295,12 +295,12 @@ namespace Garnet.server
             customCommandParseState.InitializeWithArguments(args);
             var input = new ObjectInput(header, ref customCommandParseState);
 
-            var _output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             GarnetStatus status;
             if (customObjCommand.type == CommandType.ReadModifyWrite)
             {
                 status = storageApi.RMW_ObjectStore(ref keyBytes, ref input, ref _output);
-                Debug.Assert(!_output.spanByteAndMemory.IsSpanByte);
+                Debug.Assert(!_output.SpanByteAndMemory.IsSpanByte);
 
                 switch (status)
                 {
@@ -308,8 +308,8 @@ namespace Garnet.server
                         output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_ERR_WRONG_TYPE);
                         break;
                     default:
-                        if (_output.spanByteAndMemory.Memory != null)
-                            output = scratchBufferManager.FormatScratch(0, _output.spanByteAndMemory.AsReadOnlySpan());
+                        if (_output.SpanByteAndMemory.Memory != null)
+                            output = scratchBufferManager.FormatScratch(0, _output.SpanByteAndMemory.AsReadOnlySpan());
                         else
                             output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_OK);
                         break;
@@ -318,18 +318,18 @@ namespace Garnet.server
             else
             {
                 status = storageApi.Read_ObjectStore(ref keyBytes, ref input, ref _output);
-                Debug.Assert(!_output.spanByteAndMemory.IsSpanByte);
+                Debug.Assert(!_output.SpanByteAndMemory.IsSpanByte);
 
                 switch (status)
                 {
                     case GarnetStatus.OK:
-                        if (_output.spanByteAndMemory.Memory != null)
-                            output = scratchBufferManager.FormatScratch(0, _output.spanByteAndMemory.AsReadOnlySpan());
+                        if (_output.SpanByteAndMemory.Memory != null)
+                            output = scratchBufferManager.FormatScratch(0, _output.SpanByteAndMemory.AsReadOnlySpan());
                         else
                             output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_OK);
                         break;
                     case GarnetStatus.NOTFOUND:
-                        Debug.Assert(_output.spanByteAndMemory.Memory == null);
+                        Debug.Assert(_output.SpanByteAndMemory.Memory == null);
                         output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_ERRNOTFOUND);
                         break;
                     case GarnetStatus.WRONGTYPE:
