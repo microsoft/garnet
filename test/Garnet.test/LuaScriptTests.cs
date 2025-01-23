@@ -920,6 +920,10 @@ return retArray";
                     }
                 }
             }
+
+            // Finally, check that nil is an illegal argument
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('GET', nil)"));
+            ClassicAssert.True(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
         }
 
         [Test]
