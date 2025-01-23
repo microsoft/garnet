@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -10,14 +11,14 @@ namespace Garnet.test
     [TestFixture]
     public class ReadCacheTests
     {
-        GarnetServer server;
+        GarnetApplication server;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, lowMemory: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, lowMemory: true);
+            await server.RunAsync();
         }
 
         [TearDown]

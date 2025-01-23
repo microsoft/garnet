@@ -22,7 +22,7 @@ namespace Garnet.test.cluster
     {
         public CredentialManager credManager;
         public string TestFolder;
-        public GarnetServer[] nodes = null;
+        public GarnetApplication[] nodes = null;
         public EndPointCollection endpoints;
         public TextWriter logTextWriter = TestContext.Progress;
         public ILoggerFactory loggerFactory;
@@ -100,7 +100,7 @@ namespace Garnet.test.cluster
         /// <param name="timeout"></param>
         /// <param name="useTLS"></param>
         /// <param name="certificates"></param>
-        public void CreateInstances(
+        public async Task CreateInstances(
             int shards,
             bool cleanClusterConfig = true,
             bool tryRecover = false,
@@ -166,7 +166,7 @@ namespace Garnet.test.cluster
                 luaMemoryLimit: luaMemoryLimit);
 
             foreach (var node in nodes)
-                node.Start();
+                await node.RunAsync();
         }
 
         /// <summary>
@@ -195,7 +195,7 @@ namespace Garnet.test.cluster
         /// <param name="clusterCreds"></param>
         /// <param name="certificates"></param>
         /// <returns></returns>
-        public GarnetServer CreateInstance(
+        public GarnetApplication CreateInstance(
             int Port,
             bool cleanClusterConfig = true,
             bool disableEpochCollision = false,
@@ -252,7 +252,11 @@ namespace Garnet.test.cluster
                 authPassword: clusterCreds.password,
                 certificates: certificates);
 
-            return new GarnetServer(opts, loggerFactory);
+            var builder = GarnetApplication.CreateHostBuilder([], opts);
+
+            var app = builder.Build();
+
+            return app;
         }
 
 

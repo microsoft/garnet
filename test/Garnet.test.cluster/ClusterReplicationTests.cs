@@ -142,7 +142,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(2)]
         [Category("REPLICATION")]
-        public void ClusterSRNoCheckpointRestartSecondary([Values] bool performRMW, [Values] bool disableObjects)
+        public async Task ClusterSRNoCheckpointRestartSecondary([Values] bool performRMW, [Values] bool disableObjects)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -179,7 +179,7 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
 
             // Shutdown secondary
-            context.nodes[1].Dispose(false);
+            await context.nodes[1].StopAsync();
 
             Thread.Sleep(TimeSpan.FromSeconds(2));
 
@@ -198,7 +198,7 @@ namespace Garnet.test.cluster
                 timeout: timeout,
                 useTLS: useTLS,
                 cleanClusterConfig: false);
-            context.nodes[1].Start();
+            await context.nodes[1].RunAsync();
             context.CreateConnection(useTLS: useTLS);
 
             // Validate synchronization was success
@@ -208,7 +208,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(3)]
         [Category("REPLICATION")]
-        public void ClusterSRPrimaryCheckpoint([Values] bool performRMW, [Values] bool disableObjects)
+        public async Task ClusterSRPrimaryCheckpoint([Values] bool performRMW, [Values] bool disableObjects)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -253,7 +253,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitCheckpoint(1, replicaLastSaveTime, logger: context.logger);
 
             // Shutdown secondary
-            context.nodes[1].Dispose(false);
+            await context.nodes[1].StopAsync();
             Thread.Sleep(TimeSpan.FromSeconds(2));
 
             // New insert
@@ -272,7 +272,7 @@ namespace Garnet.test.cluster
                 useTLS: useTLS,
                 cleanClusterConfig: false,
                 asyncReplay: asyncReplay);
-            context.nodes[1].Start();
+            await context.nodes[1].RunAsync();
             context.CreateConnection(useTLS: useTLS);
 
             for (int i = 1; i < replica_count; i++) context.clusterTestUtils.WaitForReplicaRecovery(i, context.logger);
@@ -302,7 +302,7 @@ namespace Garnet.test.cluster
         public void ClusterSRPrimaryCheckpointRetrieve([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory, [Values] bool manySegments)
             => ClusterSRPrimaryCheckpointRetrieve(performRMW: performRMW, disableObjects: disableObjects, lowMemory: lowMemory, manySegments: manySegments, false, false);
 
-        void ClusterSRPrimaryCheckpointRetrieve(bool performRMW, bool disableObjects, bool lowMemory, bool manySegments, bool disableStorageTier, bool incrementalSnapshots)
+        async Task ClusterSRPrimaryCheckpointRetrieve(bool performRMW, bool disableObjects, bool lowMemory, bool manySegments, bool disableStorageTier, bool incrementalSnapshots)
         {
             // Test many segments on or off with lowMemory
             manySegments = lowMemory && manySegments;
@@ -335,7 +335,7 @@ namespace Garnet.test.cluster
             context.kvPairsObj = [];
 
             context.logger?.LogTrace("Test disposing node 1");
-            context.nodes[1].Dispose(false);
+            await context.nodes[1].StopAsync();
             Thread.Sleep(TimeSpan.FromSeconds(1));
 
             // Populate Primary
@@ -371,7 +371,7 @@ namespace Garnet.test.cluster
                 SegmentSize: manySegments ? "4k" : "1g",
                 DisableStorageTier: disableStorageTier,
                 asyncReplay: asyncReplay);
-            context.nodes[replicaIndex].Start();
+            await context.nodes[replicaIndex].RunAsync();
             context.CreateConnection(useTLS: useTLS);
 
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
@@ -442,7 +442,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(8)]
         [Category("REPLICATION")]
-        public void ClusterSRPrimaryRestart([Values] bool performRMW, [Values] bool disableObjects)
+        public async Task ClusterSRPrimaryRestart([Values] bool performRMW, [Values] bool disableObjects)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -481,7 +481,7 @@ namespace Garnet.test.cluster
             if (!disableObjects)
                 objectStoreCurrentAofAddress = context.clusterTestUtils.GetObjectStoreCurrentAofAddress(0, context.logger);
 
-            context.nodes[0].Dispose(false);
+            await context.nodes[0].RunAsync();
             Thread.Sleep(TimeSpan.FromSeconds(1));
 
             // Restart Primary
@@ -494,7 +494,7 @@ namespace Garnet.test.cluster
                 useTLS: useTLS,
                 cleanClusterConfig: false,
                 asyncReplay: asyncReplay);
-            context.nodes[0].Start();
+            await context.nodes[0].RunAsync();
             context.CreateConnection(useTLS: useTLS);
 
             var storeRecoveredAofAddress = context.clusterTestUtils.GetStoreRecoveredAofAddress(0, context.logger);
@@ -901,7 +901,7 @@ namespace Garnet.test.cluster
                 mainMemoryReplication: mainMemoryReplication,
                 fastCommit: true);
 
-        void ClusterDivergentReplicasTest(bool performRMW, bool disableObjects, bool ckptBeforeDivergence, bool multiCheckpointAfterDivergence, bool mainMemoryReplication, bool fastCommit)
+        async Task ClusterDivergentReplicasTest(bool performRMW, bool disableObjects, bool ckptBeforeDivergence, bool multiCheckpointAfterDivergence, bool mainMemoryReplication, bool fastCommit)
         {
             var set = false;
             var replica_count = 2;// Per primary
@@ -979,7 +979,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicaAofSync(oldPrimaryIndex, replicaIndex, context.logger);
 
             // Dispose primary
-            context.nodes[oldPrimaryIndex].Dispose(false);
+            await context.nodes[oldPrimaryIndex].StopAsync();
             context.nodes[oldPrimaryIndex] = null;
 
             // Re-assign slots to replica manually since failover option was not            
@@ -1063,7 +1063,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(22)]
-        public void ClusterReplicationCheckpointAlignmentTest([Values] bool performRMW)
+        public async Task ClusterReplicationCheckpointAlignmentTest([Values] bool performRMW)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -1105,9 +1105,9 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaNodeIndex);
 
             // Dispose primary and delete data
-            context.nodes[primaryNodeIndex].Dispose(true);
+            await context.nodes[primaryNodeIndex].StopAsync();
             // Dispose primary but do not delete data
-            context.nodes[replicaNodeIndex].Dispose(false);
+            await context.nodes[primaryNodeIndex].StopAsync();
 
             // Restart primary and do not recover
             context.nodes[primaryNodeIndex] = context.CreateInstance(
@@ -1122,7 +1122,7 @@ namespace Garnet.test.cluster
                 useTLS: useTLS,
                 cleanClusterConfig: true,
                 asyncReplay: asyncReplay);
-            context.nodes[primaryNodeIndex].Start();
+            await context.nodes[primaryNodeIndex].RunAsync();
 
             // Restart secondary and recover
             context.nodes[replicaNodeIndex] = context.CreateInstance(
@@ -1137,7 +1137,7 @@ namespace Garnet.test.cluster
                 useTLS: useTLS,
                 cleanClusterConfig: true,
                 asyncReplay: asyncReplay);
-            context.nodes[replicaNodeIndex].Start();
+            await context.nodes[replicaNodeIndex].RunAsync();
             context.CreateConnection(useTLS: useTLS);
 
             // Assert primary version is 1 and replica has recovered to previous checkpoint

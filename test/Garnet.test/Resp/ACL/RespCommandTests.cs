@@ -24,14 +24,14 @@ namespace Garnet.test.Resp.ACL
 
         private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
 
-        private GarnetServer server;
+        private GarnetApplication server;
 
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, defaultPassword: DefaultPassword, useAcl: true, enableLua: true);
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, defaultPassword: DefaultPassword, useAcl: true, enableLua: true);
 
             // Register custom commands so we can test ACL'ing them
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
@@ -42,13 +42,13 @@ namespace Garnet.test.Resp.ACL
             server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = 4 });
             server.Register.NewProcedure("SUM", () => new Sum());
 
-            server.Start();
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server.Dispose();
+            await server.StopAsync();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 

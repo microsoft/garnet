@@ -376,7 +376,7 @@ namespace Garnet.test.cluster
 
         //[Test, Order(5)]
         //[Category("CLUSTER")]
-        public void ClusterRestartNodeDropGossip()
+        public async Task ClusterRestartNodeDropGossip()
         {
             var logger = context.loggerFactory.CreateLogger("ClusterRestartNodeDropGossip");
             context.CreateInstances(defaultShards);
@@ -385,7 +385,7 @@ namespace Garnet.test.cluster
 
             var restartingNode = 2;
             // Dispose node and delete data
-            context.nodes[restartingNode].Dispose(deleteDir: true);
+            await context.nodes[restartingNode].RunAsync();
 
             context.nodes[restartingNode] = context.CreateInstance(
                 context.clusterTestUtils.GetEndPoint(restartingNode).Port,
@@ -395,7 +395,7 @@ namespace Garnet.test.cluster
                 timeout: 60,
                 gossipDelay: 1,
                 cleanClusterConfig: false);
-            context.nodes[restartingNode].Start();
+            await context.nodes[restartingNode].RunAsync();
             context.CreateConnection();
 
             Thread.Sleep(5000);

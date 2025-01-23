@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -195,7 +196,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(4)]
         [Category("CLUSTER-AUTH"), CancelAfter(60000)]
-        public void ClusterSimpleACLReload()
+        public async Task ClusterSimpleACLReload()
         {
             ClusterStartupWithoutAuthCreds(useDefaultUserForInterNodeComms: true);
 
@@ -214,9 +215,9 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.AclLoad(1, logger: context.logger);
 
             // Restart node with new ACL file
-            context.nodes[0].Dispose(false);
+            await context.nodes[0].StopAsync();
             context.nodes[0] = context.CreateInstance(context.clusterTestUtils.GetEndPoint(0).Port, useAcl: true, cleanClusterConfig: false);
-            context.nodes[0].Start();
+            await context.nodes[0].RunAsync();
 
             context.CreateConnection(clientCreds: cc[0]);
 
