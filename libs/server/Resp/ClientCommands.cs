@@ -7,7 +7,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Garnet.common;
-using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
