@@ -105,16 +105,17 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new SetObject(set, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
+        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
         {
-            fixed (byte* _output = output.SpanByte.AsSpan())
+            sizeChange = 0;
+
+            fixed (byte* outputSpan = output.SpanByteAndMemory.SpanByte.AsSpan())
             {
                 if (input.header.type != GarnetObjectType.Set)
                 {
                     // Indicates an incorrect type of key
-                    output.Length = 0;
-                    sizeChange = 0;
-                    removeKey = false;
+                    output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                    output.SpanByteAndMemory.Length = 0;
                     return true;
                 }
 
@@ -122,49 +123,52 @@ namespace Garnet.server
                 switch (input.header.SetOp)
                 {
                     case SetOperation.SADD:
-                        SetAdd(ref input, _output);
+                        SetAdd(ref input, outputSpan);
                         break;
                     case SetOperation.SMEMBERS:
-                        SetMembers(ref output);
+                        SetMembers(ref output.SpanByteAndMemory);
                         break;
                     case SetOperation.SISMEMBER:
-                        SetIsMember(ref input, ref output);
+                        SetIsMember(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SetOperation.SMISMEMBER:
-                        SetMultiIsMember(ref input, ref output);
+                        SetMultiIsMember(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SetOperation.SREM:
-                        SetRemove(ref input, _output);
+                        SetRemove(ref input, outputSpan);
                         break;
                     case SetOperation.SCARD:
-                        SetLength(_output);
+                        SetLength(outputSpan);
                         break;
                     case SetOperation.SPOP:
-                        SetPop(ref input, ref output);
+                        SetPop(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SetOperation.SRANDMEMBER:
-                        SetRandomMember(ref input, ref output);
+                        SetRandomMember(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SetOperation.SSCAN:
-                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
-                                out var patternLength, out var limitCount, out bool _, out var error))
+                        if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
+                                out var patternLength, out var limitCount, out _, out var error))
                         {
                             Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                                 patternLength: patternLength);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output);
+                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory);
                         }
                         else
                         {
-                            ObjectUtils.WriteScanError(error, ref output);
+                            ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory);
                         }
                         break;
                     default:
                         throw new GarnetException($"Unsupported operation {input.header.SetOp} in SetObject.Operate");
                 }
+
                 sizeChange = this.Size - prevSize;
             }
 
-            removeKey = set.Count == 0;
+            if (set.Count == 0)
+                output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;
+
             return true;
         }
 

@@ -116,7 +116,7 @@ namespace Garnet.server
         public abstract GarnetObjectBase Clone();
 
         /// <inheritdoc />
-        public abstract bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey);
+        public abstract bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange);
 
         /// <inheritdoc />
         public abstract void Dispose();

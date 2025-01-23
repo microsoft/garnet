@@ -95,14 +95,14 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.HashGet(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
@@ -139,14 +139,14 @@ namespace Garnet.server
             var input = new ObjectInput(header, respProtocolVersion);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.HashGetAll(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
@@ -183,14 +183,14 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.HashGetMultiple(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     // Write an empty array of count - 1 elements with null values.
@@ -263,7 +263,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, countWithMetadata, seed);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = GarnetStatus.NOTFOUND;
 
@@ -271,14 +271,14 @@ namespace Garnet.server
             if (paramCount != 0)
             {
                 // Prepare GarnetObjectStore output
-                outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+                outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
                 status = storageApi.HashRandomField(keyBytes, ref input, ref outputFooter);
             }
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     var respBytes = includedCount ? CmdStrings.RESP_EMPTYLIST : CmdStrings.RESP_ERRNOTFOUND;
@@ -496,7 +496,7 @@ namespace Garnet.server
             var input = new ObjectInput(header);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = command == RespCommand.HKEYS
                 ? storageApi.HashKeys(keyBytes, ref input, ref outputFooter)
@@ -505,7 +505,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
@@ -554,7 +554,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.HashIncrement(keyBytes, ref input, ref outputFooter);
 
@@ -565,7 +565,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
             }
             return true;
@@ -648,7 +648,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXPIRE };
             var input = new ObjectInput(header, ref fieldsParseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.HashExpire(key, expireAt, isMilliseconds, expireOption, ref input, ref outputFooter);
 
@@ -668,7 +668,7 @@ namespace Garnet.server
                     }
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
             }
 
@@ -738,7 +738,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HTTL };
             var input = new ObjectInput(header, ref fieldsParseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter);
 
@@ -758,7 +758,7 @@ namespace Garnet.server
                     }
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
             }
 
@@ -800,7 +800,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HPERSIST };
             var input = new ObjectInput(header, ref fieldsParseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.HashPersist(key, ref input, ref outputFooter);
 
@@ -820,7 +820,7 @@ namespace Garnet.server
                     }
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
             }
 
