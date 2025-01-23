@@ -258,6 +258,7 @@ namespace Garnet.server
                     var garnetServer = ((GarnetServerBase)server);
                     globalMetrics.total_connections_received = garnetServer.get_conn_recv();
                     globalMetrics.total_connections_disposed = garnetServer.get_conn_disp();
+                    globalMetrics.total_connections_active = garnetServer.get_conn_active();
 
                     UpdateInstantaneousMetrics();
                     UpdateAllMetricsHistory();
