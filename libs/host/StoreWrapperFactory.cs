@@ -27,6 +27,7 @@ public class StoreWrapperFactory
     /// </summary>
     readonly string redisProtocolVersion = "7.2.5";
     
+    readonly ILoggerFactory loggerFactory;
     readonly ILogger<StoreWrapperFactory> logger;
     readonly StoreFactory storeFactory;
     readonly GarnetServerOptions options;
@@ -34,16 +35,20 @@ public class StoreWrapperFactory
     readonly IClusterFactory clusterFactory;
     readonly MainStoreWrapper mainStoreWrapper;
     readonly ObjectStoreWrapper objectStoreWrapper;
+    readonly AppendOnlyFileWrapper appendOnlyFileWrapper;
     
     public StoreWrapperFactory(
+        ILoggerFactory loggerFactory,
         ILogger<StoreWrapperFactory> logger,
         StoreFactory storeFactory, 
         IOptions<GarnetServerOptions> options,
         CustomCommandManager customCommandManager,
         IClusterFactory clusterFactory,
         MainStoreWrapper mainStoreWrapper,
-        ObjectStoreWrapper objectStoreWrapper)
+        ObjectStoreWrapper objectStoreWrapper,
+        AppendOnlyFileWrapper appendOnlyFileWrapper)
     {
+        this.loggerFactory = loggerFactory;
         this.logger = logger;
         this.storeFactory = storeFactory;
         this.options = options.Value;
@@ -51,16 +56,16 @@ public class StoreWrapperFactory
         this.clusterFactory = this.options.EnableCluster ? clusterFactory : null;
         this.mainStoreWrapper = mainStoreWrapper;
         this.objectStoreWrapper = objectStoreWrapper;
+        this.appendOnlyFileWrapper = appendOnlyFileWrapper;
     }
     
     public StoreWrapper Create(
         string version,
-        IGarnetServer server,
-        TsavoriteLog appendOnlyFile,
-        ILoggerFactory loggerFactory)
+        IGarnetServer server)
     {
         var store = mainStoreWrapper.store;
         var objectStore = objectStoreWrapper.objectStore;
+        var appendOnlyFile = appendOnlyFileWrapper.appendOnlyFile;
         
         var objectStoreSizeTracker = objectStoreWrapper.objectStoreSizeTracker;
         
@@ -98,7 +103,6 @@ public class StoreWrapperFactory
         string version,
         IGarnetServer server,
         TsavoriteLog appendOnlyFile,
-        ILoggerFactory loggerFactory,
         out TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,
         out TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
         out KVSettings<SpanByte, SpanByte> kvSettings,

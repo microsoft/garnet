@@ -85,7 +85,6 @@ namespace Garnet
         public StoreApi Store;
         
         readonly StoreWrapperFactory storeWrapperFactory;
-        readonly AppendOnlyFileWrapper appendOnlyFileWrapper;
 
         /// <summary>
         /// Create Garnet Server instance using GarnetServerOptions instance; use Start to start the server.
@@ -95,21 +94,18 @@ namespace Garnet
         /// <param name="loggerFactory">Logger factory</param>
         /// <param name="server">The IGarnetServer to use. If none is provided, will use a GarnetServerTcp.</param>
         /// <param name="storeWrapperFactory"></param>
-        /// <param name="appendOnlyFileWrapper"></param>
         public GarnetServer(
             IOptions<GarnetServerOptions> options, 
             ILogger<GarnetServer> logger,
             ILoggerFactory loggerFactory, 
             IGarnetServer server, 
-            StoreWrapperFactory storeWrapperFactory,
-            AppendOnlyFileWrapper appendOnlyFileWrapper)
+            StoreWrapperFactory storeWrapperFactory)
         {
             this.server = server;
             this.opts = options.Value;
             this.logger = logger;
             this.loggerFactory = loggerFactory;
             this.storeWrapperFactory = storeWrapperFactory;
-            this.appendOnlyFileWrapper = appendOnlyFileWrapper;
             
             this.cleanupDir = false;
             this.InitializeServerUpdated();
@@ -185,10 +181,7 @@ namespace Garnet
 
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
 
-            storeWrapper = storeWrapperFactory.Create(version,
-                server,
-                appendOnlyFileWrapper.appendOnlyFile,
-                loggerFactory);
+            storeWrapper = storeWrapperFactory.Create(version, server);
                 
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, subscribeBroker);
