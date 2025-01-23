@@ -196,7 +196,7 @@ namespace Garnet.server
                         .GroupBy(static t => t.Acl)
                         .ToDictionary(
                             static grp => grp.Key,
-                            static grp => (IReadOnlyList<RespCommandsInfo>)ImmutableArray.CreateRange(grp.Select(static t => t.CommandInfo))
+                            static grp => (IReadOnlyList<RespCommandsInfo>)[.. grp.Select(static t => t.CommandInfo)]
                         )
                 );
 

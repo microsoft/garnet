@@ -79,9 +79,9 @@ namespace Garnet.server
             {
                 var sourceKey = key.ToArray();
                 SpanByteAndMemory searchOutMem = default;
-                var searchOut = new GarnetObjectStoreOutput { spanByteAndMemory = searchOutMem };
+                var searchOut = new GarnetObjectStoreOutput { SpanByteAndMemory = searchOutMem };
                 var status = GeoCommands(sourceKey, ref input, ref searchOut, ref objectStoreLockableContext);
-                searchOutMem = searchOut.spanByteAndMemory;
+                searchOutMem = searchOut.SpanByteAndMemory;
 
                 if (status == GarnetStatus.WRONGTYPE)
                 {
@@ -139,7 +139,7 @@ namespace Garnet.server
                         SortedSetOp = SortedSetOperation.ZADD,
                     }, ref parseState);
 
-                    var zAddOutput = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+                    var zAddOutput = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
                     RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
 
                     while (!RespWriteUtils.WriteInteger(foundItems, ref curr, end))
