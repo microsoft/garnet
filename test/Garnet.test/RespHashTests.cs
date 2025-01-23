@@ -1243,10 +1243,10 @@ namespace Garnet.test
 
             (var expireTimeField1, var expireTimeField3, var newExpireTimeField) = command switch
             {
-                "HEXPIRE" => ("2", "4", "3"),
-                "HPEXPIRE" => ("2000", "4000", "3000"),
-                "HEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds().ToString()),
-                "HPEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds().ToString()),
+                "HEXPIRE" => ("2", "6", "4"),
+                "HPEXPIRE" => ("2000", "6000", "4000"),
+                "HEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(6).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeSeconds().ToString()),
+                "HPEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(6).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeMilliseconds().ToString()),
                 _ => throw new ArgumentException("Invalid command")
             };
 
