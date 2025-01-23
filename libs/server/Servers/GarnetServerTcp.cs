@@ -10,6 +10,7 @@ using Garnet.common;
 using Garnet.networking;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Garnet.server
 {
@@ -59,6 +60,25 @@ namespace Garnet.server
                 if (consumer != null)
                     yield return ((RespServerSession)consumer).clusterSession;
             }
+        }
+        
+        /// <summary>
+        /// Constructor for server
+        /// </summary>
+        /// <param name="options"></param>
+        /// <param name="logger"></param>
+        public GarnetServerTcp(IOptions<GarnetServerOptions> options, ILogger<GarnetServerTcp> logger)
+            : base(options.Value.Address, options.Value.Port, 0, logger)
+        {
+            this.networkConnectionLimit = options.Value.NetworkConnectionLimit;
+            this.tlsOptions = options.Value.TlsOptions;
+            this.networkSendThrottleMax = options.Value.NetworkSendThrottleMax;
+            var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
+            this.networkBufferSettings = new NetworkBufferSettings(serverBufferSize, serverBufferSize);
+            this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
+            servSocket = new Socket(GetEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            acceptEventArg = new SocketAsyncEventArgs();
+            acceptEventArg.Completed += AcceptEventArg_Completed;
         }
 
         /// <summary>

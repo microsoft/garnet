@@ -30,6 +30,11 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
             Configuration = configuration
         });
 
+        hostApplicationBuilder.Services.AddOptions();
+        
+        var garnetServerOptionsWrapped = Microsoft.Extensions.Options.Options.Create(garnetServerOptions);
+        hostApplicationBuilder.Services.AddSingleton(garnetServerOptionsWrapped);
+
         hostApplicationBuilder.Logging.ClearProviders();
         hostApplicationBuilder.Logging.AddSimpleConsole(simpleConsoleFormatterOptions =>
         {
@@ -37,11 +42,14 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
             simpleConsoleFormatterOptions.TimestampFormat = "hh::mm::ss ";
         });
 
+        hostApplicationBuilder.Services.AddTransient<IGarnetServer, GarnetServerTcp>();
+
         hostApplicationBuilder.Services.AddTransient<GarnetServer>(sp =>
         {
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+            var server = sp.GetRequiredService<IGarnetServer>();
 
-            return new GarnetServer(garnetServerOptions, loggerFactory);
+            return new GarnetServer(garnetServerOptions, loggerFactory, server);
         });
 
         hostApplicationBuilder.Services.AddHostedService<GarnetServerHostedService>();
