@@ -17,6 +17,16 @@ namespace Garnet.client
         static readonly Memory<byte> FAILOVER = "FAILOVER"u8.ToArray();
 
         /// <summary>
+        /// PUBLISH resp formatted
+        /// </summary>
+        public static ReadOnlySpan<byte> PUBLISH => "PUBLISH"u8;
+
+        /// <summary>
+        /// PUBLISH resp formatted
+        /// </summary>
+        public static ReadOnlySpan<byte> SPUBLISH => "SPUBLISH"u8;
+
+        /// <summary>
         /// Issue cluster failover command to replica node
         /// </summary>
         /// <param name="failoverOption"></param>

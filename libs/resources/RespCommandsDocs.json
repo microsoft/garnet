@@ -6553,6 +6553,27 @@
     ]
   },
   {
+    "Command": "SPUBLISH",
+    "Name": "SPUBLISH",
+    "Summary": "Posts a message to a shard channel.",
+    "Group": "PubSub",
+    "Complexity": "O(N) where N is the number of clients subscribed to the receiving shard channel.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SHARDCHANNEL",
+        "DisplayText": "shardchannel",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MESSAGE",
+        "DisplayText": "message",
+        "Type": "String"
+      }
+    ]
+  },
+  {
     "Command": "STRLEN",
     "Name": "STRLEN",
     "Summary": "Returns the length of a string value.",
@@ -6578,6 +6599,22 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "CHANNEL",
+        "DisplayText": "channel",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "SSUBSCRIBE",
+    "Name": "SSUBSCRIBE",
+    "Summary": "Listens for messages published to shard channels.",
+    "Group": "PubSub",
+    "Complexity": "O(N) where N is the number of shard channels to subscribe to.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "shardchannel",
         "DisplayText": "channel",
         "Type": "String",
         "ArgumentFlags": "Multiple"

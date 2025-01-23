@@ -70,8 +70,10 @@ namespace Garnet.server
         SISMEMBER,
         SMEMBERS,
         SMISMEMBER,
+        SPUBLISH,
         SRANDMEMBER,
         SSCAN,
+        SSUBSCRIBE,
         STRLEN,
         SUBSTR,
         SUNION,
@@ -331,6 +333,8 @@ namespace Garnet.server
         CLUSTER_MYID,
         CLUSTER_MYPARENTID,
         CLUSTER_NODES,
+        CLUSTER_PUBLISH,
+        CLUSTER_SPUBLISH,
         CLUSTER_REPLICAS,
         CLUSTER_REPLICATE,
         CLUSTER_RESET,
@@ -704,6 +708,7 @@ namespace Garnet.server
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETSET\r\n"u8) => RespCommand.GETSET,
                         (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && ptr[8] == 'P' => RespCommand.PUBLISH,
                         (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("FMERGE\r\n"u8) && ptr[8] == 'P' => RespCommand.PFMERGE,
+                        (2 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("SP"u8) => RespCommand.SPUBLISH,
                         (2 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nSETNX\r\n"u8) => RespCommand.SETNX,
                         (3 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nSETEX\r\n"u8) => RespCommand.SETEX,
                         (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("PSETEX\r\n"u8) => RespCommand.PSETEX,
@@ -725,7 +730,6 @@ namespace Garnet.server
                             >= ((6 << 4) | 2) and <= ((6 << 4) | 5) when lastWord == MemoryMarshal.Read<ulong>("BITPOS\r\n"u8) => RespCommand.BITPOS,
                             >= ((7 << 4) | 2) and <= ((7 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) && ptr[8] == 'P' => RespCommand.PEXPIRE,
                             >= ((8 << 4) | 1) and <= ((8 << 4) | 4) when lastWord == MemoryMarshal.Read<ulong>("TCOUNT\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("BI"u8) => RespCommand.BITCOUNT,
-
                             _ => MatchedNone(this, oldReadHead)
                         }
                     };
@@ -1447,6 +1451,12 @@ namespace Garnet.server
                                     return RespCommand.HEXPIREAT;
                                 }
                                 break;
+                            case 10:
+                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SSUBSCRI"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("BE\r\n"u8))
+                                {
+                                    return RespCommand.SSUBSCRIBE;
+                                }
+                                break;
                         }
 
                         // Reset optimistically changed state, if no matching command was found
@@ -1664,6 +1674,10 @@ namespace Garnet.server
             if (command.SequenceEqual(CmdStrings.SUBSCRIBE))
             {
                 return RespCommand.SUBSCRIBE;
+            }
+            else if (command.SequenceEqual(CmdStrings.SSUBSCRIBE))
+            {
+                return RespCommand.SSUBSCRIBE;
             }
             else if (command.SequenceEqual(CmdStrings.RUNTXP))
             {
@@ -1944,6 +1958,14 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.slotstate))
                 {
                     return RespCommand.CLUSTER_SLOTSTATE;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.publish))
+                {
+                    return RespCommand.CLUSTER_PUBLISH;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.spublish))
+                {
+                    return RespCommand.CLUSTER_SPUBLISH;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.MIGRATE))
                 {

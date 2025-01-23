@@ -293,7 +293,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 2)
+            if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 1)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CONFIG_EPOCH_ASSIGNMENT, ref dcurr, dend))
                     SendAndReset();
@@ -447,6 +447,46 @@ namespace Garnet.cluster
 
             while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                 SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Implement CLUSTER PUBLISH command
+        /// </summary>
+        /// <param name="invalidParameters"></param>
+        /// <returns></returns>
+        private bool NetworkClusterPublish(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            //  CLUSTER PUBLISH|SPUBLISH channel message
+            // Expecting exactly 2 arguments
+            if (parseState.Count != 2)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            if (clusterProvider.storeWrapper.subscribeBroker == null)
+            {
+                while (!RespWriteUtils.WriteError("ERR PUBLISH is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var val = parseState.GetArgSliceByRef(1).SpanByte;
+
+            var keyPtr = key.ToPointer() - sizeof(int);
+            var valPtr = val.ToPointer() - sizeof(int);
+            var kSize = key.Length;
+            var vSize = val.Length;
+
+            *(int*)keyPtr = kSize;
+            *(int*)valPtr = vSize;
+
+            clusterProvider.storeWrapper.subscribeBroker.Publish(keyPtr, valPtr, vSize + sizeof(int), true);
 
             return true;
         }
