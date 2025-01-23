@@ -1512,7 +1512,7 @@ end
 
             var start = (int)noScript[0];
             var end = (int)noScript[^1];
-            var size = end - start;
+            var size = (end - start) + 1;
             var numULongs = size / sizeof(ulong);
             if ((size % numULongs) != 0)
             {
