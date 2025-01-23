@@ -518,7 +518,7 @@ namespace Garnet.test
 
                 logDir = Path.Join(logDir, socketFileName);
                 checkpointDir = Path.Join(checkpointDir, socketFileName);
-            } 
+            }
             else throw new NotSupportedException("Unsupported endpoint type.");
 
             if (!useAzureStorage)
