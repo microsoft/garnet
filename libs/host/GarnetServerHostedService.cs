@@ -15,15 +15,6 @@ public class GarnetServerHostedService : BackgroundService, IDisposable
     readonly GarnetServer server;
     readonly ILogger<GarnetServerHostedService> logger;
     
-    public GarnetServerHostedService(
-        GarnetServerOptions garnetServerOptions, 
-        ILogger<GarnetServerHostedService> logger,
-        ILoggerFactory loggerFactory)
-    {
-        this.server = new GarnetServer(garnetServerOptions, loggerFactory);
-        this.logger = logger;
-    }
-
     public GarnetServerHostedService(GarnetServer server, ILogger<GarnetServerHostedService> logger)
     {
         this.server = server;
@@ -39,7 +30,7 @@ public class GarnetServerHostedService : BackgroundService, IDisposable
         await Task.CompletedTask;
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         server.Dispose();
         base.Dispose();

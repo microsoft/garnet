@@ -22,8 +22,7 @@ namespace Garnet.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir);
-            //await server.RunAsync();
-            server.RunAsync();
+            await server.RunAsync();
             r = new Random(674386);
         }
 

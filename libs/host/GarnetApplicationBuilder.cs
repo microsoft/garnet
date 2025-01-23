@@ -51,9 +51,9 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
             var logger = loggerFactory.CreateLogger<GarnetServerHostedService>();
             
-            //var server =  new GarnetServer(garnetServerOptions, loggerFactory);
+            var server =  new GarnetServer(garnetServerOptions, loggerFactory);
 
-            return new GarnetServerHostedService(garnetServerOptions, logger, loggerFactory);
+            return new GarnetServerHostedService(server, logger);
         });
     }
     
