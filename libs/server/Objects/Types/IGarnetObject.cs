@@ -33,7 +33,7 @@ namespace Garnet.server
         void Serialize(BinaryWriter writer);
 
         /// <summary>
-        /// Copy update
+        /// Create a cloned CopyUpdate of this object
         /// </summary>
         IGarnetObject CopyUpdate(bool isInNewVersion, ref RMWInfo rmwInfo);
 

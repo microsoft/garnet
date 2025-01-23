@@ -15,6 +15,12 @@ namespace Tsavorite.core
         /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
         private readonly ObjectAllocatorImpl<TValue, TStoreFunctions> _this;
 
+        public ObjectAllocator(AllocatorSettings settings, TStoreFunctions storeFunctions)
+        {
+            // Called by TsavoriteKV via allocatorCreator; must pass a wrapperCreator to AllocatorBase
+            _this = new(settings, storeFunctions, @this => new ObjectAllocator<TValue, TStoreFunctions>(@this));
+        }
+
         internal ObjectAllocator(object @this)
         {
             // Called by AllocatorBase via primary ctor wrapperCreator

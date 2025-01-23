@@ -12,6 +12,12 @@ namespace Tsavorite.core
         /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
         private readonly SpanByteAllocatorImpl<TStoreFunctions> _this;
 
+        public SpanByteAllocator(AllocatorSettings settings, TStoreFunctions storeFunctions)
+        {
+            // Called by TsavoriteKV via allocatorCreator; must pass a wrapperCreator to AllocatorBase
+            _this = new(settings, storeFunctions, @this => new SpanByteAllocator<TStoreFunctions>(@this));
+        }
+
         internal SpanByteAllocator(object @this)
         {
             // Called by AllocatorBase via primary ctor wrapperCreator

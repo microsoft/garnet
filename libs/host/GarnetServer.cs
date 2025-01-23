@@ -18,11 +18,11 @@ using Tsavorite.core;
 
 namespace Garnet
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>;
 
     /// <summary>
     /// Implementation Garnet server
@@ -40,13 +40,13 @@ namespace Garnet
 
         private readonly GarnetServerOptions opts;
         private IGarnetServer server;
-        private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
-        private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
+        private TsavoriteKV<SpanByte, MainStoreFunctions, MainStoreAllocator> store;
+        private TsavoriteKV<IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
         private IDevice aofDevice;
         private TsavoriteAof appendOnlyFile;
-        private SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
-        private KVSettings<SpanByte, SpanByte> kvSettings;
-        private KVSettings<byte[], IGarnetObject> objKvSettings;
+        private SubscribeBroker<SpanByte, IKeySerializer> subscribeBroker;
+        private KVSettings kvSettings;
+        private KVSettings objKvSettings;
         private INamedDeviceFactory logFactory;
         private MemoryLogger initLogger;
         private ILogger logger;
@@ -201,7 +201,7 @@ namespace Garnet
             CreateObjectStore(clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker);
 
             if (!opts.DisablePubSub)
-                subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true);
+                subscribeBroker = new SubscribeBroker<SpanByte, IKeySerializer>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true);
 
             CreateAOF();
 
@@ -281,7 +281,7 @@ namespace Garnet
             }
 
             store = new(kvSettings
-                , StoreFunctions<SpanByte, SpanByte>.Create()
+                , StoreFunctions<SpanByte>.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
 
@@ -308,7 +308,7 @@ namespace Garnet
                         removeOutdated: true);
 
                 objectStore = new(objKvSettings
-                    , StoreFunctions<byte[], IGarnetObject>.Create(new SpanByteComparer(),
+                    , StoreFunctions<IGarnetObject>.Create(new SpanByteComparer(),
                         () => new GarnetObjectSerializer(customCommandManager))
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 

@@ -9,13 +9,13 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>;
 
     [TestFixture]
     public class GarnetObjectTests
     {
-        TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
+        TsavoriteKV<IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
         IDevice logDevice, objectLogDevice;
 
         [SetUp]
@@ -38,16 +38,16 @@ namespace Garnet.test
         [Test]
         public void WriteRead()
         {
-            using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(new SimpleSessionFunctions<byte[], IGarnetObject, Empty>());
+            using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<IGarnetObject, Empty>>(new SimpleSessionFunctions<IGarnetObject, Empty>());
             var bContext = session.BasicContext;
 
-            var key = new byte[] { 0 };
+            var key = SpanByte.FromPinnedSpan([0]);
             var obj = new SortedSetObject();
 
-            bContext.Upsert(key, obj);
+            _ = bContext.Upsert(key, obj);
 
             IGarnetObject output = null;
-            var status = bContext.Read(ref key, ref output);
+            var status = bContext.Read(key, ref output);
 
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.AreEqual(obj, output);
@@ -59,26 +59,26 @@ namespace Garnet.test
             var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
             var bContext = session.BasicContext;
 
-            var key = new byte[] { 0 };
+            var key = SpanByte.FromPinnedSpan([0]);
             var obj = new SortedSetObject();
             obj.Add([15], 10);
 
-            bContext.Upsert(key, obj);
+            _ = bContext.Upsert(key, obj);
 
             session.Dispose();
 
-            await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
+            _ = await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
 
             store.Dispose();
             CreateStore();
 
-            store.Recover();
+            _ = store.Recover();
 
             session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
             bContext = session.BasicContext;
 
             IGarnetObject output = null;
-            var status = bContext.Read(ref key, ref output);
+            var status = bContext.Read(key, ref output);
 
             session.Dispose();
 
@@ -92,30 +92,30 @@ namespace Garnet.test
             var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
             var bContext = session.BasicContext;
 
-            var key = new byte[] { 0 };
+            var key = SpanByte.FromPinnedSpan([0]);
             IGarnetObject obj = new SortedSetObject();
             ((SortedSetObject)obj).Add([15], 10);
 
-            bContext.Upsert(key, obj);
+            _ = bContext.Upsert(key, obj);
 
             store.Log.Flush(true);
 
-            bContext.RMW(ref key, ref obj);
+            _ = bContext.RMW(key, ref obj);
 
             session.Dispose();
 
-            await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
+            _ = await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
 
             store.Dispose();
             CreateStore();
 
-            store.Recover();
+            _ = store.Recover();
 
             session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
             bContext = session.BasicContext;
 
             IGarnetObject output = null;
-            var status = bContext.Read(ref key, ref output);
+            var status = bContext.Read(key, ref output);
 
             session.Dispose();
 
@@ -123,26 +123,26 @@ namespace Garnet.test
             ClassicAssert.IsTrue(((SortedSetObject)obj).Equals((SortedSetObject)output));
         }
 
-        private class MyFunctions : SessionFunctionsBase<byte[], IGarnetObject, IGarnetObject, IGarnetObject, Empty>
+        private class MyFunctions : SessionFunctionsBase<IGarnetObject, IGarnetObject, IGarnetObject, Empty>
         {
             public MyFunctions()
             { }
 
-            public override bool SingleReader(ref byte[] key, ref IGarnetObject input, ref IGarnetObject value, ref IGarnetObject dst, ref ReadInfo updateInfo)
+            public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref IGarnetObject input, ref IGarnetObject output, ref ReadInfo readInfo)
             {
-                dst = value;
+                output = srcLogRecord.ValueObject;
                 return true;
             }
 
-            public override bool ConcurrentReader(ref byte[] key, ref IGarnetObject input, ref IGarnetObject value, ref IGarnetObject dst, ref ReadInfo updateInfo, ref RecordInfo recordInfo)
+            public override bool ConcurrentReader(ref LogRecord<IGarnetObject> logRecord, ref IGarnetObject input, ref IGarnetObject output, ref ReadInfo readInfo)
             {
-                dst = value;
+                output = logRecord.ValueObject;
                 return true;
             }
 
-            public override bool CopyUpdater(ref byte[] key, ref IGarnetObject input, ref IGarnetObject oldValue, ref IGarnetObject newValue, ref IGarnetObject output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<IGarnetObject> dstLogRecord, ref IGarnetObject input, ref IGarnetObject output, ref RMWInfo rmwInfo)
             {
-                oldValue.CopyUpdate(ref oldValue, ref newValue, false); // TODO note: Params on this CU were updated per LogRecord
+                _ = srcLogRecord.ValueObject.CopyUpdate(srcLogRecord.Info.IsInNewVersion, ref rmwInfo);
                 return true;
             }
         }
@@ -152,7 +152,7 @@ namespace Garnet.test
             logDevice ??= Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.log");
             objectLogDevice ??= Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.obj.log");
 
-            var kvSettings = new KVSettings<byte[], IGarnetObject>
+            var kvSettings = new KVSettings
             {
                 IndexSize = 1L << 13,
                 LogDevice = logDevice,
@@ -161,7 +161,7 @@ namespace Garnet.test
             };
 
             store = new(kvSettings
-                , StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(), () => new Tsavorite.core.ByteArrayBinaryObjectSerializer(), () => new MyGarnetObjectSerializer())
+                , StoreFunctions<IGarnetObject>.Create(new SpanByteComparer(), () => new MyGarnetObjectSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
     }
