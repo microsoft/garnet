@@ -108,6 +108,7 @@ jobs:
         run: dotnet restore
       - name: Set environment variables
         if: ${{ matrix.framework == 'net9.0' }}
+        shell: bash
         run: echo "DOTNET_LegacyExceptionHandling=1" >> $GITHUB_ENV
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }}
