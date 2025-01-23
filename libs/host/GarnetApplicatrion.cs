@@ -6,14 +6,21 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Garnet;
 
 public class GarnetApplication : IHost
 {
-    public RegisterApi Register { get; set; }
-    
+    public RegisterApi Register
+    {
+        get
+        {
+            throw new NotImplementedException();
+        }
+    }
+
     readonly IHost host;
     
     public GarnetApplication(IHost host)

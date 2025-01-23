@@ -3,12 +3,14 @@
 
 using System;
 using System.Collections.Generic;
+using Garnet.cluster;
 using Garnet.server;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.Metrics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Garnet;
 
@@ -41,16 +43,26 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
             simpleConsoleFormatterOptions.SingleLine = true;
             simpleConsoleFormatterOptions.TimestampFormat = "hh::mm::ss ";
         });
+        
+        hostApplicationBuilder.Services.AddTransient<IClusterFactory, ClusterFactory>();
+        hostApplicationBuilder.Services.AddTransient<CustomCommandManager>();
 
         hostApplicationBuilder.Services.AddTransient<IGarnetServer, GarnetServerTcp>();
 
+        hostApplicationBuilder.Services.AddTransient<GarnetServer>();
+        
+        /*
         hostApplicationBuilder.Services.AddTransient<GarnetServer>(sp =>
         {
+            var options = sp.GetRequiredService<IOptions<GarnetServerOptions>>();
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
             var server = sp.GetRequiredService<IGarnetServer>();
+            var clusterFactory = sp.GetRequiredService<IClusterFactory>();
+            var customCommandManager = sp.GetRequiredService<CustomCommandManager>();
 
-            return new GarnetServer(garnetServerOptions, loggerFactory, server);
+            return new GarnetServer(options, loggerFactory, server, clusterFactory, customCommandManager);
         });
+        */
 
         hostApplicationBuilder.Services.AddHostedService<GarnetServerHostedService>();
 
