@@ -84,8 +84,6 @@ namespace Garnet
         /// </summary>
         public StoreApi Store;
         
-        readonly IClusterFactory clusterFactory;
-        readonly StoreFactory storeFactory;
         readonly StoreWrapperFactory storeWrapperFactory;
 
         /// <summary>
@@ -103,16 +101,12 @@ namespace Garnet
             ILogger<GarnetServer> logger,
             ILoggerFactory loggerFactory, 
             IGarnetServer server, 
-            IClusterFactory clusterFactory,
-            StoreFactory storeFactory,
             StoreWrapperFactory storeWrapperFactory)
         {
             this.server = server;
             this.opts = options.Value;
             this.logger = logger;
             this.loggerFactory = loggerFactory;
-            this.clusterFactory = clusterFactory;
-            this.storeFactory = storeFactory;
             this.storeWrapperFactory = storeWrapperFactory;
             
             this.cleanupDir = false;
@@ -136,8 +130,6 @@ namespace Garnet
                '.'
         {normal}");
             }
-
-            var clusterFactory = opts.EnableCluster ? this.clusterFactory : null;
 
             logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Port: {port}", version,
                 IntPtr.Size == 8 ? "64" : "32", opts.EnableCluster ? "cluster" : "standalone", opts.Port);
@@ -193,16 +185,11 @@ namespace Garnet
 
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
 
-            storeWrapper = storeWrapperFactory.Create(version, 
-                server, 
+            storeWrapper = storeWrapperFactory.Create(version,
+                server,
                 appendOnlyFile,
-                clusterFactory,
-                loggerFactory,
-                out store,
-                out objectStore,
-                out kvSettings,
-                out objKvSettings);
-
+                loggerFactory);
+                
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, subscribeBroker);
 
@@ -501,15 +488,15 @@ namespace Garnet
             Provider?.Dispose();
             server.Dispose();
             subscribeBroker?.Dispose();
-            store.Dispose();
+            store?.Dispose();
             appendOnlyFile?.Dispose();
             aofDevice?.Dispose();
-            kvSettings.LogDevice?.Dispose();
+            kvSettings?.LogDevice?.Dispose();
             if (!opts.DisableObjects)
             {
-                objectStore.Dispose();
-                objKvSettings.LogDevice?.Dispose();
-                objKvSettings.ObjectLogDevice?.Dispose();
+                objectStore?.Dispose();
+                objKvSettings?.LogDevice?.Dispose();
+                objKvSettings?.ObjectLogDevice?.Dispose();
             }
 
             opts.AuthSettings?.Dispose();

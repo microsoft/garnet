@@ -4,7 +4,6 @@
 using System;
 using System.Linq;
 using System.Text;
-using Garnet.cluster;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -32,24 +31,73 @@ public class StoreWrapperFactory
     readonly StoreFactory storeFactory;
     readonly GarnetServerOptions options;
     readonly CustomCommandManager customCommandManager;
+    readonly IClusterFactory clusterFactory;
+    readonly MainStoreWrapper mainStoreWrapper;
+    readonly ObjectStoreWrapper objectStoreWrapper;
     
     public StoreWrapperFactory(
         ILogger<StoreWrapperFactory> logger,
         StoreFactory storeFactory, 
         IOptions<GarnetServerOptions> options,
-        CustomCommandManager customCommandManager)
+        CustomCommandManager customCommandManager,
+        IClusterFactory clusterFactory,
+        MainStoreWrapper mainStoreWrapper,
+        ObjectStoreWrapper objectStoreWrapper)
     {
         this.logger = logger;
         this.storeFactory = storeFactory;
         this.options = options.Value;
-        this.customCommandManager = customCommandManager;
+        this.customCommandManager = customCommandManager; 
+        this.clusterFactory = this.options.EnableCluster ? clusterFactory : null;
+        this.mainStoreWrapper = mainStoreWrapper;
+        this.objectStoreWrapper = objectStoreWrapper;
+    }
+    
+    public StoreWrapper Create(
+        string version,
+        IGarnetServer server,
+        TsavoriteLog appendOnlyFile,
+        ILoggerFactory loggerFactory)
+    {
+        var store = mainStoreWrapper.store;
+        var objectStore = objectStoreWrapper.objectStore;
+        
+        var objectStoreSizeTracker = objectStoreWrapper.objectStoreSizeTracker;
+        
+        var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes +
+                                (store.ReadCache?.MaxMemorySizeBytes ?? 0) +
+                                (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
+        if (objectStore != null)
+        {
+            
+            configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes +
+                                 (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) +
+                                 (objectStoreSizeTracker?.TargetSize ?? 0) +
+                                 (objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
+        }
+        
+        logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
+        
+        LoadModules();
+        
+        return new StoreWrapper(
+            version, 
+            redisProtocolVersion,
+            server, 
+            store,
+            objectStore,
+            objectStoreSizeTracker,
+            customCommandManager, 
+            appendOnlyFile,
+            options,
+            clusterFactory: clusterFactory, 
+            loggerFactory: loggerFactory);
     }
 
     public StoreWrapper Create(
         string version,
         IGarnetServer server,
         TsavoriteLog appendOnlyFile,
-        IClusterFactory clusterFactory,
         ILoggerFactory loggerFactory,
         out TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,
         out TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
@@ -89,7 +137,6 @@ public class StoreWrapperFactory
             clusterFactory: clusterFactory, 
             loggerFactory: loggerFactory);
     }
-    
     
     private void LoadModules()
     {

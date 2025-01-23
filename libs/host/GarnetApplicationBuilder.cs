@@ -44,10 +44,34 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
         });
         hostApplicationBuilder.Logging.SetMinimumLevel(garnetServerOptions.LogLevel);
         
-        hostApplicationBuilder.Services.AddSingleton<IClusterFactory, ClusterFactory>();
+        hostApplicationBuilder.Services.AddTransient<IClusterFactory, ClusterFactory>();
+        hostApplicationBuilder.Services.AddTransient<StoreFactory>();
+        hostApplicationBuilder.Services.AddTransient<StoreWrapperFactory>();
+
         hostApplicationBuilder.Services.AddSingleton<CustomCommandManager>();
-        hostApplicationBuilder.Services.AddSingleton<StoreFactory>();
-        hostApplicationBuilder.Services.AddSingleton<StoreWrapperFactory>();
+        
+        hostApplicationBuilder.Services.AddSingleton<MainStoreWrapper>(sp =>
+        {
+            var storeFactory = sp.GetRequiredService<StoreFactory>();
+
+            return storeFactory.CreateMainStore();
+        });
+        
+        hostApplicationBuilder.Services.AddSingleton<ObjectStoreWrapper>(sp =>
+        {
+            var storeFactory = sp.GetRequiredService<StoreFactory>();
+
+            return storeFactory.CreateObjectStore();
+        });
+        
+        /*
+        hostApplicationBuilder.Services.AddSingleton<StoreWrapper>(sp =>
+        {
+            var storeWrapperFactory = sp.GetRequiredService<StoreWrapperFactory>();
+
+            return storeWrapperFactory.Create();
+        });
+        */
 
         hostApplicationBuilder.Services.AddTransient<IGarnetServer, GarnetServerTcp>();
 
