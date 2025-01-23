@@ -37,14 +37,24 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
             simpleConsoleFormatterOptions.TimestampFormat = "hh::mm::ss ";
         });
 
+        /*
         hostApplicationBuilder.Services.AddSingleton<GarnetServer>(sp =>
         {
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
             
             return new GarnetServer(garnetServerOptions, loggerFactory);
         });
+        */
         
-        hostApplicationBuilder.Services.AddHostedService<GarnetServerHostedService>();
+        hostApplicationBuilder.Services.AddHostedService<GarnetServerHostedService>(sp =>
+        {
+            var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+            var logger = loggerFactory.CreateLogger<GarnetServerHostedService>();
+            
+            //var server =  new GarnetServer(garnetServerOptions, loggerFactory);
+
+            return new GarnetServerHostedService(garnetServerOptions, logger, loggerFactory);
+        });
     }
     
     public GarnetApplication Build()

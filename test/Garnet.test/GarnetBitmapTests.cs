@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -13,22 +14,23 @@ namespace Garnet.test
 {
     public class GarnetBitmapTests
     {
-        GarnetServer server;
+        GarnetApplication server;
         Random r;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir);
+            //await server.RunAsync();
+            server.RunAsync();
             r = new Random(674386);
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server.Dispose();
+            await server.StopAsync();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
@@ -438,15 +440,15 @@ namespace Garnet.test
 
         [Test, Order(10)]
         [Category("BITCOUNT")]
-        public void BitmapBitCountTest_LTM()
+        public async Task BitmapBitCountTest_LTM()
         {
             int bitmapBytes = 512;
-            server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+            await server.StopAsync();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 lowMemory: true,
                 MemorySize: (bitmapBytes << 2).ToString(),
                 PageSize: (bitmapBytes << 1).ToString());
-            server.Start();
+            await server.RunAsync();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -635,15 +637,15 @@ namespace Garnet.test
 
         [Test, Order(14)]
         [Category("BITPOS")]
-        public void BitmapBitPosTest_LTM()
+        public async Task BitmapBitPosTest_LTM()
         {
             int bitmapBytes = 512;
-            server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+            await server.StopAsync();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 lowMemory: true,
                 MemorySize: (bitmapBytes << 2).ToString(),
                 PageSize: (bitmapBytes << 1).ToString());
-            server.Start();
+            await server.RunAsync();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -1280,17 +1282,17 @@ namespace Garnet.test
 
         [Test, Order(23)]
         [Category("BITFIELD")]
-        public void BitmapBitfieldGetTest_LTM([Values(RespCommand.BITFIELD, RespCommand.BITFIELD_RO)] RespCommand testCmd)
+        public async Task BitmapBitfieldGetTest_LTM([Values(RespCommand.BITFIELD, RespCommand.BITFIELD_RO)] RespCommand testCmd)
         {
             int bitmapBytes = 512;
-            server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+            await server.StopAsync();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 lowMemory: true,
                 MemorySize: (bitmapBytes << 2).ToString(),
                 PageSize: (bitmapBytes << 1).ToString());
             //MemorySize: "16g",
             //PageSize: "32m");
-            server.Start();
+            await server.RunAsync();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -1481,17 +1483,17 @@ namespace Garnet.test
 
         [Test, Order(26)]
         [Category("BITFIELD")]
-        public void BitmapBitfieldSetTest_LTM()
+        public async Task BitmapBitfieldSetTest_LTM()
         {
             int bitmapBytes = 512;
-            server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+            await server.StopAsync();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 lowMemory: true,
                 MemorySize: (bitmapBytes << 2).ToString(),
                 PageSize: (bitmapBytes << 1).ToString());
             //MemorySize: "16g",
             //PageSize: "32m");
-            server.Start();
+            await server.RunAsync();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -1947,17 +1949,17 @@ namespace Garnet.test
 
         [Test, Order(29)]
         [Category("BITFIELD")]
-        public void BitmapBitfieldIncrTest_LTM()
+        public async Task BitmapBitfieldIncrTest_LTM()
         {
             int bitmapBytes = 512;
-            server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+            await server.StopAsync();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 lowMemory: true,
                 MemorySize: (bitmapBytes << 2).ToString(),
                 PageSize: (bitmapBytes << 1).ToString());
             //MemorySize: "16g",
             //PageSize: "32m");
-            server.Start();
+            await server.RunAsync();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 

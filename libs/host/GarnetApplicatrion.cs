@@ -12,6 +12,8 @@ namespace Garnet;
 
 public class GarnetApplication : IHost
 {
+    public RegisterApi Register { get; set; }
+    
     readonly IHost host;
     
     public GarnetApplication(IHost host)
