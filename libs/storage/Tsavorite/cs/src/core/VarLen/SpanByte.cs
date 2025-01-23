@@ -70,7 +70,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Total serialized size in bytes if serialized (including header if any), else the combined sizes of the Length field and payload pointer.
         /// </summary>
-        public readonly int TotalInlineSize => Serialized ? TotalSize : sizeof(int) + sizeof(IntPtr);
+        public readonly int TotalInlineSize => Serialized ? TotalSize : Constants.kUnserializedSpanByteSize;
 
         /// <summary>
         /// Size of metadata header, if any (returns 0 or 8)

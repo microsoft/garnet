@@ -128,7 +128,7 @@ namespace Tsavorite.core
         }
 
         // Do not try to inline this; it causes TryAllocateRecord to bloat and slow
-        bool TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, int requiredSize, ref int allocatedSize, int newKeySize, long minRevivAddress,
+        bool TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref RecordSizeInfo recordSizeInfo, long minRevivAddress,
                     out long logicalAddress, out long physicalAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {

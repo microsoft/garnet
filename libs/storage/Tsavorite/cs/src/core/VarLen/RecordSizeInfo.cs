@@ -15,7 +15,7 @@ namespace Tsavorite.core
         internal bool KeyIsOverflow;
 
         /// <summary>Whether the value was long enough to overflow the inline max length.</summary>
-        internal bool ValueIsOverflow;
+        internal bool ValueSpanIsOverflow;
 
         /// <summary>The inline size of the record (in the main log). If Key and/or Value are overflow,
         /// then their contribution to inline length is just the size of the <see cref="SpanByte"/> struct.</summary>
