@@ -29,6 +29,7 @@ public class StoreWrapperFactory
     
     readonly ILoggerFactory loggerFactory;
     readonly ILogger<StoreWrapperFactory> logger;
+    readonly IGarnetServer garnetServer;
     readonly StoreFactory storeFactory;
     readonly GarnetServerOptions options;
     readonly CustomCommandManager customCommandManager;
@@ -40,6 +41,7 @@ public class StoreWrapperFactory
     public StoreWrapperFactory(
         ILoggerFactory loggerFactory,
         ILogger<StoreWrapperFactory> logger,
+        IGarnetServer garnetServer,
         StoreFactory storeFactory, 
         IOptions<GarnetServerOptions> options,
         CustomCommandManager customCommandManager,
@@ -50,6 +52,7 @@ public class StoreWrapperFactory
     {
         this.loggerFactory = loggerFactory;
         this.logger = logger;
+        this.garnetServer = garnetServer;
         this.storeFactory = storeFactory;
         this.options = options.Value;
         this.customCommandManager = customCommandManager; 
@@ -59,9 +62,7 @@ public class StoreWrapperFactory
         this.appendOnlyFileWrapper = appendOnlyFileWrapper;
     }
     
-    public StoreWrapper Create(
-        string version,
-        IGarnetServer server)
+    public StoreWrapper Create(string version)
     {
         var store = mainStoreWrapper.store;
         var objectStore = objectStoreWrapper.objectStore;
@@ -88,7 +89,7 @@ public class StoreWrapperFactory
         return new StoreWrapper(
             version, 
             redisProtocolVersion,
-            server, 
+            garnetServer, 
             store,
             objectStore,
             objectStoreSizeTracker,

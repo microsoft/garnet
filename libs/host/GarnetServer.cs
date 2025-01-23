@@ -84,8 +84,6 @@ namespace Garnet
         /// </summary>
         public StoreApi Store;
         
-        readonly StoreWrapperFactory storeWrapperFactory;
-
         /// <summary>
         /// Create Garnet Server instance using GarnetServerOptions instance; use Start to start the server.
         /// </summary>
@@ -93,19 +91,28 @@ namespace Garnet
         /// <param name="logger">Logger</param>
         /// <param name="loggerFactory">Logger factory</param>
         /// <param name="server">The IGarnetServer to use. If none is provided, will use a GarnetServerTcp.</param>
-        /// <param name="storeWrapperFactory"></param>
+        /// <param name="garnetProvider"></param>
+        /// <param name="metricsApi"></param>
+        /// <param name="registerApi"></param>
+        /// <param name="storeApi"></param>
         public GarnetServer(
             IOptions<GarnetServerOptions> options, 
             ILogger<GarnetServer> logger,
             ILoggerFactory loggerFactory, 
-            IGarnetServer server, 
-            StoreWrapperFactory storeWrapperFactory)
+            IGarnetServer server,
+            GarnetProvider garnetProvider,
+            MetricsApi metricsApi,
+            RegisterApi registerApi,
+            StoreApi storeApi)
         {
             this.server = server;
             this.opts = options.Value;
             this.logger = logger;
             this.loggerFactory = loggerFactory;
-            this.storeWrapperFactory = storeWrapperFactory;
+            this.Provider = garnetProvider;
+            this.Metrics = metricsApi;
+            this.Register = registerApi;
+            this.Store = storeApi;
             
             this.cleanupDir = false;
             this.InitializeServerUpdated();
@@ -174,22 +181,7 @@ namespace Garnet
             if (!setMax && !ThreadPool.SetMaxThreads(maxThreads, maxCPThreads))
                 throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {maxThreads}, {maxCPThreads}");
 
-            if (!opts.DisablePubSub)
-                subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(
-                    new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs,
-                    true);
-
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
-
-            storeWrapper = storeWrapperFactory.Create(version, server);
-                
-            // Create session provider for Garnet
-            Provider = new GarnetProvider(storeWrapper, subscribeBroker);
-
-            // Create user facing API endpoints
-            Metrics = new MetricsApi(Provider);
-            Register = new RegisterApi(Provider);
-            Store = new StoreApi(storeWrapper);
 
             server.Register(WireFormat.ASCII, Provider);
         }

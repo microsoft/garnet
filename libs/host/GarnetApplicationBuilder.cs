@@ -3,7 +3,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Garnet.cluster;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -101,16 +103,38 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
             return storeFactory.CreateObjectStore();
         });
         
-        /*
+        hostApplicationBuilder.Services.AddSingleton<IGarnetServer, GarnetServerTcp>();
+
+        hostApplicationBuilder.Services.AddSingleton(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<GarnetServerOptions>>();
+            var opts = options.Value;
+
+            return new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(
+                new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true);
+        });
+
         hostApplicationBuilder.Services.AddSingleton<StoreWrapper>(sp =>
         {
             var storeWrapperFactory = sp.GetRequiredService<StoreWrapperFactory>();
 
-            return storeWrapperFactory.Create();
-        });
-        */
+            var version = GetVersion();
 
-        hostApplicationBuilder.Services.AddTransient<IGarnetServer, GarnetServerTcp>();
+            return storeWrapperFactory.Create(version);
+        });
+
+        hostApplicationBuilder.Services.AddSingleton<GarnetProviderFactory>();
+
+        hostApplicationBuilder.Services.AddSingleton<GarnetProvider>(sp =>
+        {
+            var garnetProviderFactory = sp.GetRequiredService<GarnetProviderFactory>();
+
+            return garnetProviderFactory.Create();
+        });
+        
+        hostApplicationBuilder.Services.AddSingleton<MetricsApi>();
+        hostApplicationBuilder.Services.AddSingleton<RegisterApi>();
+        hostApplicationBuilder.Services.AddSingleton<StoreApi>();
 
         hostApplicationBuilder.Services.AddTransient<GarnetServer>();
         
@@ -171,4 +195,11 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
 
     public IServiceCollection Services
         => hostApplicationBuilder.Services;
+    
+    
+    static string GetVersion()
+    {
+        var Version = Assembly.GetExecutingAssembly().GetName().Version;
+        return $"{Version.Major}.{Version.Minor}.{Version.Build}";
+    }
 }
