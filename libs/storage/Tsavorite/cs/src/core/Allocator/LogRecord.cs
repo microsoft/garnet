@@ -518,16 +518,61 @@ namespace Tsavorite.core
             return SetOptionals(eTag, expiration);
         }
 
+        public bool TryCopyRecord<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord)
+            where TSourceLogRecord : ISourceLogRecord<TValue>
+        {
+            var recordInfo = srcLogRecord.Info;
+            if (!srcLogRecord.IsObjectRecord)
+            {
+                var valueSpan = srcLogRecord.ValueSpan;
+                if (!HasEnoughSpace(valueSpan.TotalSize, recordInfo.HasETag, recordInfo.HasExpiration))
+                    return false;
+                if (!TrySetValueSpan(valueSpan))
+                    return false;
+            }
+            else
+            {
+                if (!HasEnoughSpace(ObjectIdMap.ObjectIdSize, recordInfo.HasETag, recordInfo.HasExpiration))
+                    return false;
+                if (!TrySetValueObject(srcLogRecord.ValueObject))
+                    return false;
+            }
+
+            // Copy optionals
+            if (recordInfo.HasETag)
+            {
+                if (!TrySetETag(srcLogRecord.ETag))
+                    return false;
+            }
+            else
+                RemoveETag();
+
+            if (recordInfo.HasExpiration)
+            {
+                if (!TrySetExpiration(srcLogRecord.Expiration))
+                    return false;
+            }
+            else
+                RemoveExpiration();
+            return true;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool SetOptionals(long? eTag, long? expiration)
         {
             if (eTag.HasValue)
-                _ = TrySetETag(eTag.Value);
+            { 
+                if (!TrySetETag(eTag.Value))
+                    return false;
+            }
             else
                 RemoveETag();
 
             if (expiration.HasValue)
-                _ = TrySetExpiration(expiration.Value);
+            {
+                if (!TrySetExpiration(expiration.Value))
+                    return false;
+            }
             else
                 RemoveExpiration();
             return true;

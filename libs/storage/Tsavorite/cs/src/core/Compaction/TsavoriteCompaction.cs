@@ -54,7 +54,8 @@ namespace Tsavorite.core
 
                     if (!iter1.Info.Tombstone && !cf.IsDeleted(key, value))
                     {
-                        var status = storebContext.CompactionCopyToTail(ref iter1, ref input, ref output, iter1.CurrentAddress, iter1.NextAddress);
+                        var iter1AsLogSource = iter1 as ISourceLogRecord<TValue>;   // Can't use 'ref' on a 'using' variable
+                        var status = storebContext.CompactionCopyToTail(ref iter1AsLogSource, ref input, ref output, iter1.CurrentAddress, iter1.NextAddress);
                         if (status.IsPending && ++numPending > 256)
                         {
                             _ = storebContext.CompletePending(wait: true);
@@ -135,7 +136,8 @@ namespace Tsavorite.core
 
                     // As long as there's no record of the same key whose address is >= untilAddress (scan boundary), we are safe to copy the old record
                     // to the tail. We don't know the actualAddress of the key in the main kv, but we it will not be below untilAddress.
-                    var status = storebContext.CompactionCopyToTail(ref iter3, ref input, ref output, iter3.CurrentAddress, untilAddress - 1);  // TODO: Make sure ETag and Expiration are copied
+                    var iter3AsLogSource = iter3 as ISourceLogRecord<TValue>;   // Can't use 'ref' on a 'using' variable
+                    var status = storebContext.CompactionCopyToTail(ref iter3AsLogSource, ref input, ref output, iter3.CurrentAddress, untilAddress - 1);  // TODO: Make sure ETag and Expiration are copied
                     if (status.IsPending && ++numPending > 256)
                     {
                         _ = storebContext.CompletePending(wait: true);
