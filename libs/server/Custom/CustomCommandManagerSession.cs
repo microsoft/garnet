@@ -27,7 +27,7 @@ namespace Garnet.server
         readonly Dictionary<string, RespCommandsInfo> sessionCustomCommandsInfo;
         // Cache of custom command docs by command name
         readonly Dictionary<string, RespCommandDocs> sessionCustomCommandsDocs;
-        
+
         public CustomCommandManagerSession(CustomCommandManager customCommandManager)
         {
             this.customCommandManager = customCommandManager;
@@ -88,7 +88,7 @@ namespace Garnet.server
 
             if (!customCommandManager.TryGetCustomTransactionProcedure(id, out var entry))
                 throw new GarnetException($"Transaction procedure {id} not found");
-            
+
             // Create the session-specific instance and add it to the cache
             var customTranProc = entry.proc();
             customTranProc.txnManager = txnManager;

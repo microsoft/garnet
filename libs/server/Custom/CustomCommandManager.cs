@@ -89,7 +89,7 @@ namespace Garnet.server
 
             if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
             if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
-            
+
             return extId;
         }
 
@@ -116,7 +116,7 @@ namespace Garnet.server
 
             if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
             if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
-            
+
             return cmdId;
         }
 
@@ -248,7 +248,7 @@ namespace Garnet.server
         /// <param name="id">Procedure ID</param>
         /// <param name="value">Retrieved custom procedure</param>
         /// <returns>True if custom procedure found</returns>
-        internal bool TryGetCustomProcedure(int id, out CustomProcedureWrapper value)  
+        internal bool TryGetCustomProcedure(int id, out CustomProcedureWrapper value)
             => customProcedureMap.eMapUnsafe.TryGetValue(id, out value);
 
         /// <summary>
