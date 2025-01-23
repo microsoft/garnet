@@ -30,7 +30,7 @@ namespace Garnet.test
             {
                 await server.StopAsync();
             }
-            
+
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 

@@ -36,7 +36,7 @@ public class GarnetApplication : IHost
             return host.Services.GetRequiredService<StoreApi>();
         }
     }
-    
+
     internal GarnetProvider Provider => host.Services.GetRequiredService<GarnetProvider>();
 
     readonly IHost host;

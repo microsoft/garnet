@@ -143,7 +143,7 @@ namespace Garnet.test
                 e.Set();
             });
             e.Wait();
-            
+
             await server.StopAsync();
         }
 
@@ -177,7 +177,7 @@ namespace Garnet.test
             db.Dispose();
             metrics = db.GetLatencyMetrics();
             ClassicAssert.AreEqual(0, metrics.Length); // Should be 0 after dispose
-            
+
             await server.StopAsync();
         }
 
@@ -195,7 +195,7 @@ namespace Garnet.test
                 int.Parse(await db.ExecuteForStringResultAsync(Encoding.ASCII.GetBytes("$6\r\nINCRBY\r\n"), [Encoding.ASCII.GetBytes("myKey"), Encoding.ASCII.GetBytes("10")]));
 
             ClassicAssert.AreEqual(10, n);
-            
+
             await server.StopAsync();
         }
 
@@ -213,7 +213,7 @@ namespace Garnet.test
 
             result = await db.ExecuteForStringResultAsync("ASKING");
             ClassicAssert.AreEqual("OK", result);
-            
+
             await server.StopAsync();
         }
 
@@ -277,7 +277,7 @@ namespace Garnet.test
                 });
             }
             WaitAndReset(e);
-            
+
             await server.StopAsync();
         }
 
@@ -431,7 +431,7 @@ namespace Garnet.test
             }
 
             tokenSource.Dispose();
-            
+
             await server.StopAsync();
         }
 
