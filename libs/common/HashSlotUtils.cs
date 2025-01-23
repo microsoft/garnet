@@ -77,7 +77,7 @@ namespace Garnet.common
         /// <param name="key"></param>
         /// <returns></returns>
         public static unsafe ushort HashSlot(SpanByte key)
-            => HashSlot(key.ToPointer(), key.LengthWithoutMetadata);
+            => HashSlot(key.ToPointer(), key.Length);
 
         /// <summary>
         /// Compute hash slot of given data

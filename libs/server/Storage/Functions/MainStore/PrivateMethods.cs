@@ -17,7 +17,7 @@ namespace Garnet.server
     {
         static void CopyTo(SpanByte src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
-            int srcLength = src.LengthWithoutMetadata;
+            int srcLength = src.Length;
 
             if (dst.IsSpanByte)
             {
@@ -37,7 +37,7 @@ namespace Garnet.server
 
         void CopyRespTo(SpanByte src, ref SpanByteAndMemory dst, int start = 0, int end = -1)
         {
-            int srcLength = end == -1 ? src.LengthWithoutMetadata : ((start < end) ? (end - start) : 0);
+            int srcLength = end == -1 ? src.Length : ((start < end) ? (end - start) : 0);
             if (srcLength == 0)
             {
                 functionsState.CopyDefaultResp(CmdStrings.RESP_EMPTY, ref dst);
@@ -121,16 +121,16 @@ namespace Garnet.server
 
                 case RespCommand.GET:
                     // Get value without RESP header; exclude expiration
-                    if (value.LengthWithoutMetadata <= dst.Length)
+                    if (value.Length <= dst.Length)
                     {
-                        dst.Length = value.LengthWithoutMetadata;
+                        dst.Length = value.Length;
                         value.AsReadOnlySpan().CopyTo(dst.SpanByte.AsSpan());
                         return;
                     }
 
                     dst.ConvertToHeap();
-                    dst.Length = value.LengthWithoutMetadata;
-                    dst.Memory = functionsState.memoryPool.Rent(value.LengthWithoutMetadata);
+                    dst.Length = value.Length;
+                    dst.Memory = functionsState.memoryPool.Rent(value.Length);
                     value.AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span);
                     break;
 
@@ -237,7 +237,7 @@ namespace Garnet.server
                     return;
 
                 case RespCommand.GETRANGE:
-                    var len = value.LengthWithoutMetadata;
+                    var len = value.Length;
                     var start = input.parseState.GetInt(0);
                     var end = input.parseState.GetInt(1);
 
@@ -442,7 +442,7 @@ namespace Garnet.server
 
             Debug.Assert(output.IsSpanByte, "This code assumes it is called in-place and did not go pending");
             valueRef.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
-            output.SpanByte.Length = valueRef.LengthWithoutMetadata;
+            output.SpanByte.Length = valueRef.Length;
             return true;
         }
 
@@ -471,7 +471,7 @@ namespace Garnet.server
             var value = logRecord.ValueSpan;  // To reduce redundant length calculations getting to Value
 
             // Check if value contains a valid number
-            if (!IsValidDouble(value.LengthWithoutMetadata, value.ToPointer(), output.SpanByte.AsSpan(), out var val))
+            if (!IsValidDouble(value.Length, value.ToPointer(), output.SpanByte.AsSpan(), out var val))
                 return true;
 
             val += input;
@@ -519,7 +519,7 @@ namespace Garnet.server
             var srcValue = srcLogRecord.ValueSpan;  // To reduce redundant length calculations getting to ValueSpan
 
             // Check if value contains a valid number
-            if (!IsValidNumber(srcValue.LengthWithoutMetadata, srcValue.ToPointer(), output.SpanByte.AsSpan(), out var val))
+            if (!IsValidNumber(srcValue.Length, srcValue.ToPointer(), output.SpanByte.AsSpan(), out var val))
             {
                 // Move to tail of the log even when oldValue is alphanumeric
                 // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
@@ -557,7 +557,7 @@ namespace Garnet.server
             var srcValue = srcLogRecord.ValueSpan;  // To reduce redundant length calculations getting to ValueSpan
 
             // Check if value contains a valid number
-            if (!IsValidDouble(srcValue.LengthWithoutMetadata, srcValue.ToPointer(), output.SpanByte.AsSpan(), out var val))
+            if (!IsValidDouble(srcValue.Length, srcValue.ToPointer(), output.SpanByte.AsSpan(), out var val))
             {
                 // Move to tail of the log even when oldValue is alphanumeric
                 // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory

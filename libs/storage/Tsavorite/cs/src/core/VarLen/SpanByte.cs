@@ -58,11 +58,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Length of payload, not including metadata if any
-        /// </summary>
-        public readonly int LengthWithoutMetadata => (length & ~HeaderMask); // TODO remove
-
-        /// <summary>
         /// Format of structure
         /// </summary>
         public readonly bool Serialized => (length & UnserializedBitMask) == 0;

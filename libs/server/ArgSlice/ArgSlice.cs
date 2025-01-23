@@ -41,7 +41,7 @@ namespace Garnet.server
         internal ArgSlice(SpanByte input)
         {
             this.ptr = input.ToPointer();
-            this.length = input.LengthWithoutMetadata;
+            this.length = input.Length;
         }
 
         /// <summary>

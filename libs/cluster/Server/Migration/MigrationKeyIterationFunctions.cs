@@ -14,7 +14,7 @@ namespace Garnet.cluster
     {
         internal sealed class MigrationKeyIterationFunctions
         {
-            internal sealed unsafe class MainStoreGetKeysInSlots : IScanIteratorFunctions<SpanByte, SpanByte>
+            internal sealed unsafe class MainStoreGetKeysInSlots : IScanIteratorFunctions<SpanByte>
             {
                 MigrationScanIterator iterator;
 
@@ -30,34 +30,32 @@ namespace Garnet.cluster
 
                 public void AdvanceIterator() => iterator.AdvanceIterator();
 
-                public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord<SpanByte>
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
 
                     // Do not send key if it is expired
-                    if (ClusterSession.Expired(ref value))
+                    if (ClusterSession.Expired<SpanByte, TSourceLogRecord>(ref srcLogRecord))
                         return true;
 
-                    var s = HashSlotUtils.HashSlot(ref key);
-                    // Transfer key if it belongs to slot that is currently being migrated
-                    if (iterator.Contains(s))
-                    {
-                        var keySpan = key.AsSpan();
-                        if (!iterator.Consume(ref keySpan))
-                            return false;
-                    }
+                    var key = srcLogRecord.Key.AsSpan();
+                    var slot = HashSlotUtils.HashSlot(key);
 
-                    return true;
+                    // Transfer key if it belongs to slot that is currently being migrated
+                    return !iterator.Contains(slot) || iterator.Consume(key);
                 }
 
-                public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
+                public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord<SpanByte>
+                    => SingleReader(ref logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
+
                 public bool OnStart(long beginAddress, long endAddress) => true;
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-            internal struct ObjectStoreGetKeysInSlots : IScanIteratorFunctions<byte[], IGarnetObject>
+            internal struct ObjectStoreGetKeysInSlots : IScanIteratorFunctions<IGarnetObject>
             {
                 MigrationScanIterator iterator;
 
@@ -73,28 +71,26 @@ namespace Garnet.cluster
 
                 public void AdvanceIterator() => iterator.AdvanceIterator();
 
-                public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
 
                     // Do not send key if it is expired
-                    if (ClusterSession.Expired(ref value))
+                    if (ClusterSession.Expired<IGarnetObject, TSourceLogRecord>(ref srcLogRecord))
                         return true;
 
-                    var s = HashSlotUtils.HashSlot(key);
-                    // Transfer key if it belongs to slot that is currently being migrated
-                    if (iterator.Contains(s))
-                    {
-                        var keySpan = key.AsSpan();
-                        if (!iterator.Consume(ref keySpan))
-                            return false;
-                    }
+                    var key = srcLogRecord.Key.AsSpan();
+                    var slot = HashSlotUtils.HashSlot(key);
 
-                    return true;
+                    // Transfer key if it belongs to slot that is currently being migrated
+                    return !iterator.Contains(slot) || iterator.Consume(key);
                 }
 
-                public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
+                public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
+                    => SingleReader(ref logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
+
                 public bool OnStart(long beginAddress, long endAddress) => true;
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }
@@ -154,7 +150,7 @@ namespace Garnet.cluster
                 /// </summary>
                 /// <param name="key"></param>
                 /// <returns></returns>
-                public bool Consume(ref Span<byte> key)
+                public bool Consume(Span<byte> key)
                 {
                     // Check if key is within the current processing window only if _copyOption is set
                     // in order to skip keys that have been send over to target node but not deleted locally

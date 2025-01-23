@@ -27,12 +27,12 @@ namespace Garnet.server
         {
             if (asciiKey && asciiPattern)
             {
-                return GlobUtils.Match(pattern.ToPointer(), pattern.LengthWithoutMetadata, k.ToPointer(), k.LengthWithoutMetadata);
+                return GlobUtils.Match(pattern.ToPointer(), pattern.Length, k.ToPointer(), k.Length);
             }
 
-            if (pattern.LengthWithoutMetadata > k.LengthWithoutMetadata)
+            if (pattern.Length > k.Length)
                 return false;
-            return pattern.AsReadOnlySpan().SequenceEqual(k.AsReadOnlySpan().Slice(0, pattern.LengthWithoutMetadata));
+            return pattern.AsReadOnlySpan().SequenceEqual(k.AsReadOnlySpan().Slice(0, pattern.Length));
         }
     }
 }

@@ -814,7 +814,7 @@ namespace Garnet.server
                     var appendValue = input.parseState.GetArgSliceByRef(0);
 
                     // Append the new value with the client input at the end of the old data
-                    appendValue.ReadOnlySpan.CopyTo(newValueRef.AsSpan().Slice(oldValue.LengthWithoutMetadata));
+                    appendValue.ReadOnlySpan.CopyTo(newValueRef.AsSpan().Slice(oldValue.Length));
 
                     _ = CopyValueLengthToOutput(newValueRef, ref output);
                     break;

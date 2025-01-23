@@ -86,7 +86,7 @@ namespace Tsavorite.core
                         srcLogRecord = stackCtx.recSrc.CreateLogRecord();
                         if (sessionFunctions.SingleReader(ref srcLogRecord, ref input, ref output, ref readInfo))
                             return OperationStatus.SUCCESS;
-                        return readInfo.Action == ReadAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.NOTFOUND;
+                        return CheckFalseActionStatus(ref readInfo);
                     }
 
                     // FindInReadCache updated recSrc so update the readInfo accordingly.
@@ -116,7 +116,7 @@ namespace Tsavorite.core
 
                     return sessionFunctions.ConcurrentReader(ref srcLogRecord, ref input, ref output, ref readInfo)
                         ? OperationStatus.SUCCESS
-                        : CheckFalseActionStatus(readInfo);
+                        : CheckFalseActionStatus(ref readInfo);
                 }
 
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
@@ -132,7 +132,7 @@ namespace Tsavorite.core
                             ? OperationStatus.SUCCESS
                             : CopyFromImmutable(ref srcLogRecord, ref input, ref output, userContext, ref pendingContext, sessionFunctions, ref stackCtx, ref status);
                     }
-                    return CheckFalseActionStatus(readInfo);
+                    return CheckFalseActionStatus(ref readInfo);
                 }
 
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.BeginAddress)
@@ -182,7 +182,7 @@ namespace Tsavorite.core
         }
 
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalRead to have this be a virtcall.
-        private static OperationStatus CheckFalseActionStatus(ReadInfo readInfo)
+        private static OperationStatus CheckFalseActionStatus(ref ReadInfo readInfo)
         {
             if (readInfo.Action == ReadAction.CancelOperation)
                 return OperationStatus.CANCELED;

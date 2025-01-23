@@ -23,11 +23,11 @@ namespace Garnet.server
             var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
             if ((ushort)cmd >= CustomCommandManager.StartOffset)
             {
-                var valueLength = value.LengthWithoutMetadata;
+                var valueLength = value.Length;
                 (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.Memory, 0);
                 var ret = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions
                     .Reader(srcLogRecord.Key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref memoryAndLength, ref readInfo);
-                Debug.Assert(valueLength <= value.LengthWithoutMetadata);
+                Debug.Assert(valueLength <= value.Length);
                 (output.Memory, output.Length) = memoryAndLength;
                 return ret;
             }
@@ -54,11 +54,11 @@ namespace Garnet.server
             var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
             if ((ushort)cmd >= CustomCommandManager.StartOffset)
             {
-                var valueLength = value.LengthWithoutMetadata;
+                var valueLength = value.Length;
                 (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.Memory, 0);
                 var ret = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions
                     .Reader(srcLogRecord.Key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref memoryAndLength, ref readInfo);
-                Debug.Assert(valueLength <= value.LengthWithoutMetadata);
+                Debug.Assert(valueLength <= value.Length);
                 (output.Memory, output.Length) = memoryAndLength;
                 return ret;
             }

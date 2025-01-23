@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -25,7 +26,7 @@ namespace Garnet.cluster
             SectorAlignedMemory buffer = new(bufferSize, 1);
             var bufPtr = buffer.GetValidPointer();
             var bufPtrEnd = bufPtr + bufferSize;
-            var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
+            var output = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
 
             try
             {
@@ -47,7 +48,7 @@ namespace Garnet.cluster
                     var key = pair.Key.SpanByte;
 
                     // Read value for key
-                    var status = localServerSession.BasicGarnetApi.Read_MainStore(ref key, ref input, ref o);
+                    var status = localServerSession.BasicGarnetApi.Read_MainStore(key, ref input, ref output);
 
                     // Check if found in main store
                     if (status == GarnetStatus.NOTFOUND)
@@ -58,19 +59,20 @@ namespace Garnet.cluster
                     }
 
                     // Get SpanByte from stack if any
-                    ref var value = ref o.SpanByte;
-                    if (!o.IsSpanByte)
+                    ref var value = ref output.SpanByte;
+                    if (!output.IsSpanByte)
                     {
                         // Reinterpret heap memory to SpanByte
-                        value = ref SpanByte.ReinterpretWithoutLength(o.Memory.Memory.Span);
+                        value = ref SpanByte.ReinterpretWithoutLength(output.Memory.Memory.Span);
                     }
 
-                    // Write key to network buffer if it has not expired
-                    if (!ClusterSession.Expired(ref value) && !WriteOrSendMainStoreKeyValuePair(ref key, ref value))
+                    // Write key to network buffer. If it had expired, we would have received GarnetStatus.NOTFOUND
+                    Debug.Assert(!ClusterSession.Expired(ref value), "Expired record should have received GarnetStatus.NOTFOUND");
+                    if (!WriteOrSendMainStoreKeyValuePair(ref key, ref value))
                         return false;
 
                     // Reset SpanByte for next read if any but don't dispose heap buffer as we might re-use it
-                    o.SpanByte = new SpanByte((int)(bufPtrEnd - bufPtr), (IntPtr)bufPtr);
+                    output.SpanByte = new SpanByte((int)(bufPtrEnd - bufPtr), (IntPtr)bufPtr);
                 }
 
                 // Flush data in client buffer
@@ -82,8 +84,8 @@ namespace Garnet.cluster
             finally
             {
                 // If allocated memory in heap dispose it here.
-                if (o.Memory != default)
-                    o.Memory.Dispose();
+                if (output.Memory != default)
+                    output.Memory.Dispose();
                 buffer.Dispose();
             }
             return true;
@@ -108,11 +110,11 @@ namespace Garnet.cluster
                     // Process only keys in MIGRATING status
                     if (mKey.Value != KeyMigrationStatus.MIGRATING)
                         continue;
-                    var key = mKey.Key.ToArray();
+                    var key = mKey.Key.SpanByte;
 
                     ObjectInput input = default;
                     GarnetObjectStoreOutput value = default;
-                    var status = localServerSession.BasicGarnetApi.Read_ObjectStore(ref key, ref input, ref value);
+                    var status = localServerSession.BasicGarnetApi.Read_ObjectStore(key, ref input, ref value);
                     if (status == GarnetStatus.NOTFOUND)
                     {
                         // Transition key status back to QUEUED to unblock any writers
@@ -120,13 +122,13 @@ namespace Garnet.cluster
                         continue;
                     }
 
-                    if (!ClusterSession.Expired(ref value.garnetObject))
-                    {
-                        var objectData = GarnetObjectSerializer.Serialize(value.garnetObject);
+                    // Serialize the object.
+                    Debug.Assert(!ClusterSession.Expired(ref value.garnetObject), "Expired record should have received GarnetStatus.NOTFOUND");
+                    // If it had expired, we would have received GarnetStatus.NOTFOUND.
+                    var objectData = GarnetObjectSerializer.Serialize(value.garnetObject);
 
-                        if (!WriteOrSendObjectStoreKeyValuePair(key, objectData, value.garnetObject.Expiration))
-                            return false;
-                    }
+                    if (!WriteOrSendObjectStoreKeyValuePair(key, objectData, value.garnetObject.Expiration))
+                        return false;
                 }
 
                 // Flush data in client buffer
@@ -164,7 +166,7 @@ namespace Garnet.cluster
                     continue;
 
                 var key = mKey.Key.SpanByte;
-                _ = localServerSession.BasicGarnetApi.DELETE(ref key);
+                _ = localServerSession.BasicGarnetApi.DELETE(key);
 
                 // Set key as MIGRATED to allow allow all operations
                 _keys.UpdateStatus(mKey.Key, KeyMigrationStatus.MIGRATED);
