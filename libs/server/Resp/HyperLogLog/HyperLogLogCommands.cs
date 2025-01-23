@@ -39,7 +39,7 @@ namespace Garnet.server
                 // Invalid HLL Type
                 if (*output == 0xFF)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -49,12 +49,12 @@ namespace Garnet.server
 
             if (pfaddUpdated > 0)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -81,12 +81,12 @@ namespace Garnet.server
             storageApi.HyperLogLogLength(ref input, out var cardinality, out var error);
             if (error)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteInteger(cardinality, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteInt64(cardinality, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -112,14 +112,14 @@ namespace Garnet.server
             // Invalid Type
             if (error)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
             if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             return true;

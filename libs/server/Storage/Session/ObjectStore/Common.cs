@@ -140,7 +140,7 @@ namespace Garnet.server
             // Prepare the parse state 
             var matchPattern = match.Trim();
 
-            var countLength = NumUtils.NumDigits(count);
+            var countLength = NumUtils.CountDigits(count);
 
             // Calculate # of bytes to store parameters
             var sliceBytes = CmdStrings.MATCH.Length +
@@ -175,7 +175,7 @@ namespace Garnet.server
 
             // Value
             var countValueSpan = paramsSpan.Slice(paramsSpanOffset, countLength);
-            NumUtils.LongToSpanByte(count, countValueSpan);
+            NumUtils.WriteInt64(count, countValueSpan);
             var countValueSlice = ArgSlice.FromPinnedSpan(countValueSpan);
 
             parseState.InitializeWithArguments(matchSlice, matchPatternSlice,
@@ -238,7 +238,7 @@ namespace Garnet.server
 
                     if (*refPtr == '-')
                     {
-                        if (!RespReadUtils.ReadErrorAsString(out error, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.TryReadErrorAsString(out error, ref refPtr, outputPtr + outputSpan.Length))
                             return default;
                     }
                     else if (*refPtr == '*')
@@ -246,18 +246,18 @@ namespace Garnet.server
                         if (isScanOutput)
                         {
                             // Read the first two elements
-                            if (!RespReadUtils.ReadUnsignedArrayLength(out var outerArraySize, ref refPtr, outputPtr + outputSpan.Length))
+                            if (!RespReadUtils.TryReadUnsignedArrayLength(out var outerArraySize, ref refPtr, outputPtr + outputSpan.Length))
                                 return default;
 
                             element = null;
                             len = 0;
                             // Read cursor value
-                            if (!RespReadUtils.ReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                            if (!RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
                                 return default;
                         }
 
                         // Get the number of elements
-                        if (!RespReadUtils.ReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.TryReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
                             return default;
 
                         // Create the argslice[]
@@ -271,7 +271,7 @@ namespace Garnet.server
                         {
                             element = null;
                             len = 0;
-                            if (RespReadUtils.ReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                            if (RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
                             {
                                 elements[i] = new ArgSlice(element, len);
                             }
@@ -281,7 +281,7 @@ namespace Garnet.server
                     {
                         byte* result = null;
                         len = 0;
-                        if (!RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.TryReadPtrWithLengthHeader(ref result, ref len, ref refPtr, outputPtr + outputSpan.Length))
                             return default;
                         elements = [new ArgSlice(result, len)];
                     }
@@ -321,13 +321,13 @@ namespace Garnet.server
 
                     if (*refPtr == '-')
                     {
-                        if (!RespReadUtils.ReadErrorAsString(out error, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.TryReadErrorAsString(out error, ref refPtr, outputPtr + outputSpan.Length))
                             return default;
                     }
                     else if (*refPtr == '*')
                     {
                         // Get the number of elements
-                        if (!RespReadUtils.ReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.TryReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
                             return default;
 
                         // Create the argslice[]
@@ -335,7 +335,7 @@ namespace Garnet.server
                         for (int i = 0; i < elements.Length; i++)
                         {
                             element = null;
-                            if (RespReadUtils.TryReadInt(ref refPtr, outputPtr + outputSpan.Length, out var number, out var _))
+                            if (RespReadUtils.TryReadInt32(ref refPtr, outputPtr + outputSpan.Length, out var number, out var _))
                             {
                                 elements[i] = number;
                             }
@@ -372,13 +372,13 @@ namespace Garnet.server
 
                     if (*refPtr == '-')
                     {
-                        if (!RespReadUtils.ReadErrorAsString(out error, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.TryReadErrorAsString(out error, ref refPtr, outputPtr + outputSpan.Length))
                             return default;
                     }
                     else if (*refPtr == '*')
                     {
                         // Get the number of result elements
-                        if (!RespReadUtils.ReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.TryReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
                             return default;
 
                         Debug.Assert(arraySize % 2 == 0, "Array elements are expected to be in pairs");
@@ -387,12 +387,12 @@ namespace Garnet.server
 
                         for (var i = 0; i < result.Length; i++)
                         {
-                            if (!RespReadUtils.ReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                            if (!RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
                                 return default;
 
                             result[i].member = new ArgSlice(element, len);
 
-                            if (!RespReadUtils.ReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                            if (!RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
                                 return default;
 
                             result[i].score = new ArgSlice(element, len);
@@ -428,7 +428,7 @@ namespace Garnet.server
                 {
                     var refPtr = outputPtr;
 
-                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref element, ref len, ref refPtr,
+                    if (!RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr,
                             outputPtr + outputSpan.Length))
                         return default;
                     result = new ArgSlice(element, len);
@@ -459,7 +459,7 @@ namespace Garnet.server
                 {
                     var refPtr = outputPtr;
 
-                    if (!RespReadUtils.TryRead64Int(out value, ref refPtr, outputPtr + outputSpan.Length, out _))
+                    if (!RespReadUtils.TryReadInt64(out value, ref refPtr, outputPtr + outputSpan.Length, out _))
                         return false;
                 }
             }

@@ -43,7 +43,7 @@ namespace Garnet.server
             {
                 var curr = ptr;
                 // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                var success = RespWriteUtils.WriteSimpleString(simpleString, ref curr, ptr + len);
+                var success = RespWriteUtils.TryWriteSimpleString(simpleString, ref curr, ptr + len);
                 Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
             output.Item2 = len;
@@ -65,7 +65,7 @@ namespace Garnet.server
         /// </summary>
         protected static unsafe void WriteBulkStringArray(ref MemoryResult<byte> output, params ArgSlice[] values)
         {
-            var totalLen = 1 + NumUtils.NumDigits(values.Length) + 2;
+            var totalLen = 1 + NumUtils.CountDigits(values.Length) + 2;
             for (var i = 0; i < values.Length; i++)
                 totalLen += RespWriteUtils.GetBulkStringLength(values[i].Length);
 
@@ -77,12 +77,12 @@ namespace Garnet.server
             {
                 var curr = ptr;
                 // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                var success = RespWriteUtils.WriteArrayLength(values.Length, ref curr, ptr + totalLen);
+                var success = RespWriteUtils.TryWriteArrayLength(values.Length, ref curr, ptr + totalLen);
                 Debug.Assert(success, "Insufficient space in pre-allocated buffer");
                 for (var i = 0; i < values.Length; i++)
                 {
                     // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                    success = RespWriteUtils.WriteBulkString(values[i].Span, ref curr, ptr + totalLen);
+                    success = RespWriteUtils.TryWriteBulkString(values[i].Span, ref curr, ptr + totalLen);
                     Debug.Assert(success, "Insufficient space in pre-allocated buffer");
                 }
             }
@@ -93,7 +93,7 @@ namespace Garnet.server
         /// </summary>
         protected static unsafe void WriteBulkStringArray(ref MemoryResult<byte> output, List<ArgSlice> values)
         {
-            var totalLen = 1 + NumUtils.NumDigits(values.Count) + 2;
+            var totalLen = 1 + NumUtils.CountDigits(values.Count) + 2;
             for (var i = 0; i < values.Count; i++)
                 totalLen += RespWriteUtils.GetBulkStringLength(values[i].Length);
 
@@ -105,12 +105,12 @@ namespace Garnet.server
             {
                 var curr = ptr;
                 // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                var success = RespWriteUtils.WriteArrayLength(values.Count, ref curr, ptr + totalLen);
+                var success = RespWriteUtils.TryWriteArrayLength(values.Count, ref curr, ptr + totalLen);
                 Debug.Assert(success, "Insufficient response buffer space");
                 for (var i = 0; i < values.Count; i++)
                 {
                     // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                    success = RespWriteUtils.WriteBulkString(values[i].Span, ref curr, ptr + totalLen);
+                    success = RespWriteUtils.TryWriteBulkString(values[i].Span, ref curr, ptr + totalLen);
                     Debug.Assert(success, "Insufficient space in pre-allocated buffer");
                 }
             }
@@ -141,7 +141,7 @@ namespace Garnet.server
             {
                 var curr = ptr;
                 // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                var success = RespWriteUtils.WriteBulkString(bulkString, ref curr, ptr + len);
+                var success = RespWriteUtils.TryWriteBulkString(bulkString, ref curr, ptr + len);
                 Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
         }
@@ -160,7 +160,7 @@ namespace Garnet.server
             {
                 var curr = ptr;
                 // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                var success = RespWriteUtils.WriteNull(ref curr, ptr + len);
+                var success = RespWriteUtils.TryWriteNull(ref curr, ptr + len);
                 Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
         }
@@ -178,7 +178,7 @@ namespace Garnet.server
             {
                 var curr = ptr;
                 // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                var success = RespWriteUtils.WriteError(errorMessage, ref curr, ptr + len);
+                var success = RespWriteUtils.TryWriteError(errorMessage, ref curr, ptr + len);
                 Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
             output.Item2 = len;
