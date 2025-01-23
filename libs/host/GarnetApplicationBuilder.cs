@@ -10,6 +10,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.Metrics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Tsavorite.core;
 
 namespace Garnet;
 
@@ -49,6 +51,41 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
         hostApplicationBuilder.Services.AddTransient<StoreWrapperFactory>();
 
         hostApplicationBuilder.Services.AddSingleton<CustomCommandManager>();
+
+        hostApplicationBuilder.Services.AddSingleton<AppendOnlyFileWrapper>(sp =>
+        {
+            var loggerFactory = sp.GetService<ILoggerFactory>();
+
+            var options = sp.GetRequiredService<IOptions<GarnetServerOptions>>();
+            var opts = options.Value;
+
+            var appendOnlyFileWrapper = new AppendOnlyFileWrapper(null, null);
+
+            if (opts.EnableAOF)
+            {
+                if (opts.MainMemoryReplication && opts.CommitFrequencyMs != -1)
+                    throw new Exception(
+                        "Need to set CommitFrequencyMs to -1 (manual commits) with MainMemoryReplication");
+
+                opts.GetAofSettings(out var aofSettings);
+
+                var aofDevice = aofSettings.LogDevice;
+                var appendOnlyFile = new TsavoriteLog(aofSettings,
+                    logger: loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
+
+                appendOnlyFileWrapper = new AppendOnlyFileWrapper(aofDevice, appendOnlyFile);
+
+                if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)
+                    throw new Exception("Cannot use CommitWait with manual commits");
+
+                return appendOnlyFileWrapper;
+            }
+
+            if (opts.CommitFrequencyMs != 0 || opts.WaitForCommit)
+                throw new Exception("Cannot use CommitFrequencyMs or CommitWait without EnableAOF");
+
+            return appendOnlyFileWrapper;
+        });
         
         hostApplicationBuilder.Services.AddSingleton<MainStoreWrapper>(sp =>
         {
