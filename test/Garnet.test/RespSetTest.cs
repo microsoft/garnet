@@ -234,7 +234,7 @@ namespace Garnet.test
             }
             catch (RedisServerException e)
             {
-                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(Garnet.server.SetOperation.SSCAN));
+                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(GarnetApplication.server.SetOperation.SSCAN));
                 ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
             }
 
