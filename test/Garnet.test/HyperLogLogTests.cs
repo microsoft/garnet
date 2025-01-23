@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -12,24 +13,24 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    public unsafe class HyperLogLogTests
+    public class HyperLogLogTests
     {
-        GarnetServer server;
+        GarnetApplication server;
         Random r;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir);
+            await server.RunAsync();
             r = new Random(674386);
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server.Dispose();
+            await server.StopAsync();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
@@ -329,7 +330,7 @@ namespace Garnet.test
 
         [Test]
         [Repeat(1)]
-        public void HyperLogLogUpdateReturnTest()
+        public unsafe void HyperLogLogUpdateReturnTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -387,7 +388,7 @@ namespace Garnet.test
 
         [Test]
         [Repeat(1)]
-        public void HyperLogLogMultiValueUpdateReturnTest()
+        public unsafe void HyperLogLogMultiValueUpdateReturnTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -573,21 +574,21 @@ namespace Garnet.test
         [TestCase(32)]
         [TestCase(4096)]
         [Repeat(1)]
-        public void HyperLogLogPFADD_LTM(int seqSize)
+        public async Task HyperLogLogPFADD_LTM(int seqSize)
         {
             bool sparse = seqSize < 128 ? true : false;
-            server.Dispose();
+            await server.StopAsync();
             if (seqSize < 128)
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                     lowMemory: true,
                     MemorySize: "1024",
                     PageSize: "512");
             else
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                     lowMemory: true,
                     MemorySize: "32k",
                     PageSize: "16k");
-            server.Start();
+            await server.RunAsync();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -693,14 +694,14 @@ namespace Garnet.test
 
         [Test]
         [Repeat(10)]
-        public void HyperLogLogTestPFMERGE_LTM_SparseToSparse()
+        public async Task HyperLogLogTestPFMERGE_LTM_SparseToSparse()
         {
-            server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+            await server.StopAsync();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 lowMemory: true,
                 MemorySize: "1024",
                 PageSize: "512");
-            server.Start();
+            await server.RunAsync();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -803,13 +804,13 @@ namespace Garnet.test
         [TestCase(false)]
         [TestCase(true)]
         [Repeat(1)]
-        public void HyperLogLogTestPFMERGE_LTM_SparseToDense(bool reverse)
+        public async Task HyperLogLogTestPFMERGE_LTM_SparseToDense(bool reverse)
         {
-            server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+            await server.StopAsync();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 MemorySize: "32k",
                 PageSize: "16k");
-            server.Start();
+            await server.RunAsync();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -912,14 +913,14 @@ namespace Garnet.test
 
         [Test]
         [Repeat(1)]
-        public void HyperLogLogTestPFMERGE_LTM_DenseToDense()
+        public async Task HyperLogLogTestPFMERGE_LTM_DenseToDense()
         {
-            server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+            await server.StopAsync();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 lowMemory: true,
                 MemorySize: "32k",
                 PageSize: "16k");
-            server.Start();
+            await server.RunAsync();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
