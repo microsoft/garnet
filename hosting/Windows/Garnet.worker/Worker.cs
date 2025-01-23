@@ -23,7 +23,7 @@ namespace Garnet
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             var builder = GarnetApplication.CreateHostBuilder(args);
-            
+
             var app = builder.Build();
 
             await app.RunAsync(stoppingToken);

@@ -83,7 +83,7 @@ namespace Garnet
         /// Store API
         /// </summary>
         public StoreApi Store;
-        
+
         /// <summary>
         /// Create Garnet Server instance using GarnetServerOptions instance; use Start to start the server.
         /// </summary>
@@ -96,9 +96,9 @@ namespace Garnet
         /// <param name="registerApi"></param>
         /// <param name="storeApi"></param>
         public GarnetServer(
-            IOptions<GarnetServerOptions> options, 
+            IOptions<GarnetServerOptions> options,
             ILogger<GarnetServer> logger,
-            ILoggerFactory loggerFactory, 
+            ILoggerFactory loggerFactory,
             IGarnetServer server,
             GarnetProvider garnetProvider,
             MetricsApi metricsApi,
@@ -113,7 +113,7 @@ namespace Garnet
             this.Metrics = metricsApi;
             this.Register = registerApi;
             this.Store = storeApi;
-            
+
             this.cleanupDir = false;
             this.InitializeServerUpdated();
         }
@@ -458,12 +458,12 @@ namespace Garnet
             InternalDispose();
             if (deleteDir)
             {
-                logFactory?.Delete(new FileDescriptor {directoryName = ""});
+                logFactory?.Delete(new FileDescriptor { directoryName = "" });
                 if (opts.CheckpointDir != opts.LogDir && !string.IsNullOrEmpty(opts.CheckpointDir))
                 {
                     var ckptdir = opts.DeviceFactoryCreator();
                     ckptdir.Initialize(opts.CheckpointDir);
-                    ckptdir.Delete(new FileDescriptor {directoryName = ""});
+                    ckptdir.Delete(new FileDescriptor { directoryName = "" });
                 }
             }
         }

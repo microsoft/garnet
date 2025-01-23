@@ -61,7 +61,7 @@ namespace Garnet.server
                     yield return ((RespServerSession)consumer).clusterSession;
             }
         }
-        
+
         /// <summary>
         /// Constructor for server
         /// </summary>

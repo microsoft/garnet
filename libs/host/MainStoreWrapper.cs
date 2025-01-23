@@ -12,8 +12,8 @@ using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, 
 
 public class MainStoreWrapper : IDisposable
 {
-    public readonly TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store; 
-    
+    public readonly TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
+
     readonly KVSettings<SpanByte, SpanByte> kvSettings;
 
     public MainStoreWrapper(TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,

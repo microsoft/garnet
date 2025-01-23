@@ -36,7 +36,7 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
         });
 
         hostApplicationBuilder.Services.AddOptions();
-        
+
         var garnetServerOptionsWrapped = Microsoft.Extensions.Options.Options.Create(garnetServerOptions);
         hostApplicationBuilder.Services.AddSingleton(garnetServerOptionsWrapped);
 
@@ -47,7 +47,7 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
             simpleConsoleFormatterOptions.TimestampFormat = "hh::mm::ss ";
         });
         hostApplicationBuilder.Logging.SetMinimumLevel(garnetServerOptions.LogLevel);
-        
+
         hostApplicationBuilder.Services.AddTransient<IClusterFactory, ClusterFactory>();
         hostApplicationBuilder.Services.AddTransient<StoreFactory>();
         hostApplicationBuilder.Services.AddTransient<StoreWrapperFactory>();
@@ -88,21 +88,21 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
 
             return appendOnlyFileWrapper;
         });
-        
+
         hostApplicationBuilder.Services.AddSingleton<MainStoreWrapper>(sp =>
         {
             var storeFactory = sp.GetRequiredService<StoreFactory>();
 
             return storeFactory.CreateMainStore();
         });
-        
+
         hostApplicationBuilder.Services.AddSingleton<ObjectStoreWrapper>(sp =>
         {
             var storeFactory = sp.GetRequiredService<StoreFactory>();
 
             return storeFactory.CreateObjectStore();
         });
-        
+
         hostApplicationBuilder.Services.AddSingleton<IGarnetServer, GarnetServerTcp>();
 
         hostApplicationBuilder.Services.AddSingleton(sp =>
@@ -131,39 +131,14 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
 
             return garnetProviderFactory.Create();
         });
-        
+
         hostApplicationBuilder.Services.AddSingleton<MetricsApi>();
         hostApplicationBuilder.Services.AddSingleton<RegisterApi>();
         hostApplicationBuilder.Services.AddSingleton<StoreApi>();
 
         hostApplicationBuilder.Services.AddTransient<GarnetServer>();
-        
-        /*
-        hostApplicationBuilder.Services.AddTransient<GarnetServer>(sp =>
-        {
-            var options = sp.GetRequiredService<IOptions<GarnetServerOptions>>();
-            var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-            var server = sp.GetRequiredService<IGarnetServer>();
-            var clusterFactory = sp.GetRequiredService<IClusterFactory>();
-            var customCommandManager = sp.GetRequiredService<CustomCommandManager>();
-
-            return new GarnetServer(options, loggerFactory, server, clusterFactory, customCommandManager);
-        });
-        */
 
         hostApplicationBuilder.Services.AddHostedService<GarnetServerHostedService>();
-
-        /*
-        hostApplicationBuilder.Services.AddHostedService<GarnetServerHostedService>(sp =>
-        {
-            var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-            var logger = loggerFactory.CreateLogger<GarnetServerHostedService>();
-
-            var server =  new GarnetServer(garnetServerOptions, loggerFactory);
-
-            return new GarnetServerHostedService(server, logger);
-        });
-        */
     }
 
     public GarnetApplication Build()
@@ -195,8 +170,8 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
 
     public IServiceCollection Services
         => hostApplicationBuilder.Services;
-    
-    
+
+
     static string GetVersion()
     {
         var Version = Assembly.GetExecutingAssembly().GetName().Version;

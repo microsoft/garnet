@@ -20,13 +20,13 @@ using ObjectStoreAllocator =
 using ObjectStoreFunctions =
     StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
-public class StoreWrapperFactory 
+public class StoreWrapperFactory
 {
     /// <summary>
     /// Resp protocol version
     /// </summary>
     readonly string redisProtocolVersion = "7.2.5";
-    
+
     readonly ILoggerFactory loggerFactory;
     readonly ILogger<StoreWrapperFactory> logger;
     readonly IGarnetServer garnetServer;
@@ -37,12 +37,12 @@ public class StoreWrapperFactory
     readonly MainStoreWrapper mainStoreWrapper;
     readonly ObjectStoreWrapper objectStoreWrapper;
     readonly AppendOnlyFileWrapper appendOnlyFileWrapper;
-    
+
     public StoreWrapperFactory(
         ILoggerFactory loggerFactory,
         ILogger<StoreWrapperFactory> logger,
         IGarnetServer garnetServer,
-        StoreFactory storeFactory, 
+        StoreFactory storeFactory,
         IOptions<GarnetServerOptions> options,
         CustomCommandManager customCommandManager,
         IClusterFactory clusterFactory,
@@ -55,48 +55,48 @@ public class StoreWrapperFactory
         this.garnetServer = garnetServer;
         this.storeFactory = storeFactory;
         this.options = options.Value;
-        this.customCommandManager = customCommandManager; 
+        this.customCommandManager = customCommandManager;
         this.clusterFactory = this.options.EnableCluster ? clusterFactory : null;
         this.mainStoreWrapper = mainStoreWrapper;
         this.objectStoreWrapper = objectStoreWrapper;
         this.appendOnlyFileWrapper = appendOnlyFileWrapper;
     }
-    
+
     public StoreWrapper Create(string version)
     {
         var store = mainStoreWrapper.store;
         var objectStore = objectStoreWrapper.objectStore;
         var appendOnlyFile = appendOnlyFileWrapper.appendOnlyFile;
-        
+
         var objectStoreSizeTracker = objectStoreWrapper.objectStoreSizeTracker;
-        
+
         var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes +
                                 (store.ReadCache?.MaxMemorySizeBytes ?? 0) +
                                 (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
         if (objectStore != null)
         {
-            
+
             configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes +
                                  (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) +
                                  (objectStoreSizeTracker?.TargetSize ?? 0) +
                                  (objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
         }
-        
+
         logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
-        
+
         LoadModules();
-        
+
         return new StoreWrapper(
-            version, 
+            version,
             redisProtocolVersion,
-            garnetServer, 
+            garnetServer,
             store,
             objectStore,
             objectStoreSizeTracker,
-            customCommandManager, 
+            customCommandManager,
             appendOnlyFile,
             options,
-            clusterFactory: clusterFactory, 
+            clusterFactory: clusterFactory,
             loggerFactory: loggerFactory);
     }
 
@@ -109,40 +109,40 @@ public class StoreWrapperFactory
         out KVSettings<SpanByte, SpanByte> kvSettings,
         out KVSettings<byte[], IGarnetObject> objKvSettings)
     {
-        
+
         store = storeFactory.CreateMainStore(out var checkpointDir, out kvSettings);
         objectStore = storeFactory.CreateObjectStore(checkpointDir, out var objectStoreSizeTracker, out objKvSettings);
-        
+
         var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes +
                                 (store.ReadCache?.MaxMemorySizeBytes ?? 0) +
                                 (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
         if (objectStore != null)
         {
-            
+
             configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes +
                                  (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) +
                                  (objectStoreSizeTracker?.TargetSize ?? 0) +
                                  (objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
         }
-        
+
         logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
-        
+
         LoadModules();
-        
+
         return new StoreWrapper(
-            version, 
+            version,
             redisProtocolVersion,
-            server, 
+            server,
             store,
             objectStore,
             objectStoreSizeTracker,
-            customCommandManager, 
+            customCommandManager,
             appendOnlyFile,
             options,
-            clusterFactory: clusterFactory, 
+            clusterFactory: clusterFactory,
             loggerFactory: loggerFactory);
     }
-    
+
     private void LoadModules()
     {
         if (options.LoadModuleCS == null)

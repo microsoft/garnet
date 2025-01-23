@@ -18,7 +18,7 @@ using ObjectStoreAllocator =
 using ObjectStoreFunctions =
     StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
-public class StoreFactory 
+public class StoreFactory
 {
     private readonly IClusterFactory clusterFactory;
     private readonly GarnetServerOptions opts;
@@ -26,8 +26,8 @@ public class StoreFactory
     private readonly CustomCommandManager customCommandManager;
 
     public StoreFactory(
-        IClusterFactory clusterFactory, 
-        IOptions<GarnetServerOptions> options, 
+        IClusterFactory clusterFactory,
+        IOptions<GarnetServerOptions> options,
         ILoggerFactory loggerFactory,
         CustomCommandManager customCommandManager)
     {
@@ -42,7 +42,7 @@ public class StoreFactory
     {
         TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore = null;
         objKvSettings = null;
-        
+
         objectStoreSizeTracker = null;
         if (!opts.DisableObjects)
         {
@@ -75,7 +75,7 @@ public class StoreFactory
                     objReadCacheHeapMemorySize,
                     loggerFactory);
         }
-        
+
         return objectStore;
     }
 
@@ -106,7 +106,7 @@ public class StoreFactory
             , StoreFunctions<SpanByte, SpanByte>.Create()
             , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
     }
-    
+
     public MainStoreWrapper CreateMainStore()
     {
         var kvSettings = opts.GetSettings(loggerFactory, out var logFactory);
@@ -129,21 +129,21 @@ public class StoreFactory
                 new DefaultCheckpointNamingScheme(checkpointDir + "/Store/checkpoints"), removeOutdated: true);
         }
 
-        return new (new(kvSettings
+        return new(new(kvSettings
             , StoreFunctions<SpanByte, SpanByte>.Create()
             , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)), kvSettings);
     }
-    
+
     public ObjectStoreWrapper CreateObjectStore()
     {
         TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore = null;
         KVSettings<byte[], IGarnetObject> objKvSettings = null;
         CacheSizeTracker objectStoreSizeTracker = null;
-        
+
         if (!opts.DisableObjects)
         {
             var checkpointDir = opts.CheckpointDir ?? opts.LogDir;
-            
+
             objKvSettings = opts.GetObjectStoreSettings(loggerFactory?.CreateLogger("TsavoriteKV  [obj]"),
                 out var objHeapMemorySize, out var objReadCacheHeapMemorySize);
 
@@ -173,7 +173,7 @@ public class StoreFactory
                     objReadCacheHeapMemorySize,
                     loggerFactory);
         }
-        
+
         return new(objectStore, objKvSettings, objectStoreSizeTracker);
     }
 }

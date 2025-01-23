@@ -18,7 +18,7 @@ public class ObjectStoreWrapper : IDisposable
     public readonly TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
     readonly KVSettings<byte[], IGarnetObject> objKvSettings;
     public readonly CacheSizeTracker objectStoreSizeTracker;
-    
+
     public ObjectStoreWrapper(
         TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
         KVSettings<byte[], IGarnetObject> objKvSettings,

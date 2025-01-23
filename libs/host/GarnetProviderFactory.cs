@@ -13,7 +13,7 @@ public class GarnetProviderFactory
     readonly GarnetServerOptions options;
     readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
     readonly StoreWrapper storeWrapper;
-    
+
     public GarnetProviderFactory(
         IOptions<GarnetServerOptions> options,
         SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
@@ -30,7 +30,7 @@ public class GarnetProviderFactory
         {
             return new GarnetProvider(storeWrapper, null);
         }
-        
+
         return new GarnetProvider(storeWrapper, subscribeBroker);
     }
 }

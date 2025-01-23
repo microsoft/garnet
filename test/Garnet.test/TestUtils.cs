@@ -339,22 +339,22 @@ namespace Garnet.test
                 builder.Logging.AddProvider(new NUnitLoggerProvider(TestContext.Progress,
                     TestContext.CurrentContext.Test.MethodName, null, false, false, LogLevel.Trace));
                 builder.Logging.SetMinimumLevel(LogLevel.Trace);
-                
+
                 var app = builder.Build();
 
                 return app;
             }
             else
             {
-                
+
                 var builder = GarnetApplication.CreateHostBuilder([], opts);
-                
+
                 var app = builder.Build();
 
                 return app;
             }
         }
-        
+
         /// <summary>
         /// Create GarnetServer
         /// </summary>

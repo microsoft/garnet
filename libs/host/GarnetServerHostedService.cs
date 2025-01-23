@@ -10,11 +10,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet;
 
-public class GarnetServerHostedService : BackgroundService 
+public class GarnetServerHostedService : BackgroundService
 {
     readonly GarnetServer server;
     readonly ILogger<GarnetServerHostedService> logger;
-    
+
     public GarnetServerHostedService(GarnetServer server, ILogger<GarnetServerHostedService> logger)
     {
         this.server = server;
@@ -24,9 +24,9 @@ public class GarnetServerHostedService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         server.Start();
-        
+
         logger.LogInformation("Garnet server running at: {time}", DateTimeOffset.Now);
-        
+
         await Task.CompletedTask;
     }
 }

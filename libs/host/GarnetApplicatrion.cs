@@ -20,7 +20,7 @@ public class GarnetApplication : IHost
             return host.Services.GetRequiredService<MetricsApi>();
         }
     }
-    
+
     public RegisterApi Register
     {
         get
@@ -28,8 +28,8 @@ public class GarnetApplication : IHost
             return host.Services.GetRequiredService<RegisterApi>();
         }
     }
-    
-    public StoreApi Store 
+
+    public StoreApi Store
     {
         get
         {
@@ -38,16 +38,16 @@ public class GarnetApplication : IHost
     }
 
     readonly IHost host;
-    
+
     public GarnetApplication(IHost host)
     {
         this.host = host;
     }
 
-    public Task StartAsync(CancellationToken cancellationToken = default) 
+    public Task StartAsync(CancellationToken cancellationToken = default)
         => host.StartAsync(cancellationToken);
 
-    public Task StopAsync(CancellationToken cancellationToken = default) 
+    public Task StopAsync(CancellationToken cancellationToken = default)
         => host.StopAsync(cancellationToken);
 
     public IServiceProvider Services { get => host.Services; }
@@ -56,7 +56,7 @@ public class GarnetApplication : IHost
     {
         host.Dispose();
     }
-    
+
     public void Run()
     {
         HostingAbstractionsHostExtensions.Run(this);
@@ -93,7 +93,7 @@ public class GarnetApplication : IHost
 
         var garnetServerOptions = serverSettings.GetServerOptions(null);
 
-        return new (new GarnetApplicationOptions {Args = args}, garnetServerOptions);
+        return new(new GarnetApplicationOptions { Args = args }, garnetServerOptions);
     }
 
     public static GarnetApplicationBuilder CreateHostBuilder(string[] args, GarnetServerOptions options)

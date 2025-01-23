@@ -27,7 +27,7 @@ namespace Garnet.server
     /// <summary>
     /// Wrapper for store and store-specific information
     /// </summary>   
-    public sealed class StoreWrapper 
+    public sealed class StoreWrapper
     {
         internal readonly string version;
         internal readonly string redisProtocolVersion;
@@ -111,7 +111,7 @@ namespace Garnet.server
         /// NOTE: For now we support only a single database
         /// </summary>
         public readonly int databaseNum = 1;
-        
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -190,7 +190,7 @@ namespace Garnet.server
             ctsCommit = new();
             run_id = Generator.CreateHexId();
         }
-        
+
         /// <summary>
         /// Constructor
         /// </summary>

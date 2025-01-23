@@ -16,7 +16,7 @@ public class AppendOnlyFileWrapper : IDisposable
         this.device = device;
         this.appendOnlyFile = appendOnlyFile;
     }
-    
+
     public void Dispose()
     {
         device?.Dispose();
