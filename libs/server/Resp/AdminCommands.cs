@@ -586,11 +586,11 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                     break;
                 default:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS, ref dcurr, dend))
                         SendAndReset();
                     break;
             }

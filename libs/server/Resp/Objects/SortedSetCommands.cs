@@ -1553,18 +1553,18 @@ namespace Garnet.server
 
             if (!result.Found)
             {
-                while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.WriteBulkString(result.Key, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(result.Key, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.WriteBulkString(result.Item, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(result.Item, ref dcurr, dend))
                     SendAndReset();
 
                 while (!RespWriteUtils.TryWriteDoubleBulkString(result.Score, ref dcurr, dend))
@@ -1655,26 +1655,26 @@ namespace Garnet.server
 
             if (!result.Found)
             {
-                while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
             // Write array with 2 elements: key and array of member-score pairs
-            while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                 SendAndReset();
 
-            while (!RespWriteUtils.WriteBulkString(result.Key, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteBulkString(result.Key, ref dcurr, dend))
                 SendAndReset();
 
-            while (!RespWriteUtils.WriteArrayLength(result.Items.Length, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteArrayLength(result.Items.Length, ref dcurr, dend))
                 SendAndReset();
 
             for (var i = 0; i < result.Items.Length; i += 2)
             {
-                while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.WriteBulkString(result.Items[i], ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(result.Items[i], ref dcurr, dend))
                     SendAndReset();
                 while (!RespWriteUtils.TryWriteDoubleBulkString(result.Scores[i], ref dcurr, dend))
                     SendAndReset();

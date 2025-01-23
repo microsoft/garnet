@@ -1166,12 +1166,12 @@ namespace Garnet.server
             parseState.TryExtractKeysFromSpecs(cmdInfo.KeySpecifications, out var keys);
 
 
-            while (!RespWriteUtils.WriteArrayLength(keys.Count, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteArrayLength(keys.Count, ref dcurr, dend))
                 SendAndReset();
 
             foreach (var key in keys)
             {
-                while (!RespWriteUtils.WriteBulkString(key.Span, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(key.Span, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -1204,23 +1204,23 @@ namespace Garnet.server
 
             parseState.TryExtractKeysAndFlagsFromSpecs(cmdInfo.KeySpecifications, out var keys, out var flags);
 
-            while (!RespWriteUtils.WriteArrayLength(keys.Count, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteArrayLength(keys.Count, ref dcurr, dend))
                 SendAndReset();
 
             for (int i = 0; i < keys.Count; i++)
             {
-                while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.WriteBulkString(keys[i].Span, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(keys[i].Span, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.WriteArrayLength(flags[i].Length, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteArrayLength(flags[i].Length, ref dcurr, dend))
                     SendAndReset();
 
                 foreach (var flag in flags[i])
                 {
-                    while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(flag), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString(Encoding.ASCII.GetBytes(flag), ref dcurr, dend))
                         SendAndReset();
                 }
             }

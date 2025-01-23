@@ -214,7 +214,7 @@ namespace Garnet.server
 
                     if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
                     {
-                        while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
+                        while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         _output.result1 = 0;
                         return;
@@ -493,20 +493,20 @@ namespace Garnet.server
                 var expireOption = (ExpireOption)input.arg1;
                 var expiration = input.parseState.GetLong(0);
                 var numFields = input.parseState.Count - 1;
-                while (!RespWriteUtils.WriteArrayLength(numFields, ref curr, end))
+                while (!RespWriteUtils.TryWriteArrayLength(numFields, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 foreach (var item in input.parseState.Parameters.Slice(1))
                 {
                     var result = SetExpiration(item.ToArray(), expiration, expireOption);
-                    while (!RespWriteUtils.WriteInteger(result, ref curr, end))
+                    while (!RespWriteUtils.TryWriteInt32(result, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     _output.result1++;
                 }
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -531,7 +531,7 @@ namespace Garnet.server
                 var isMilliseconds = input.arg1 == 1;
                 var isTimestamp = input.arg2 == 1;
                 var numFields = input.parseState.Count;
-                while (!RespWriteUtils.WriteArrayLength(numFields, ref curr, end))
+                while (!RespWriteUtils.TryWriteArrayLength(numFields, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 foreach (var item in input.parseState.Parameters)
@@ -558,14 +558,14 @@ namespace Garnet.server
                         }
                     }
 
-                    while (!RespWriteUtils.WriteInteger(result, ref curr, end))
+                    while (!RespWriteUtils.TryWriteInt64(result, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     _output.result1++;
                 }
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -588,20 +588,20 @@ namespace Garnet.server
                 DeleteExpiredItems();
 
                 var numFields = input.parseState.Count;
-                while (!RespWriteUtils.WriteArrayLength(numFields, ref curr, end))
+                while (!RespWriteUtils.TryWriteArrayLength(numFields, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 foreach (var item in input.parseState.Parameters)
                 {
                     var result = Persist(item.ToArray());
-                    while (!RespWriteUtils.WriteInteger(result, ref curr, end))
+                    while (!RespWriteUtils.TryWriteInt32(result, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     _output.result1++;
                 }
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
