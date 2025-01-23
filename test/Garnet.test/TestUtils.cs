@@ -9,6 +9,7 @@ using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Security;
+using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -407,7 +408,7 @@ namespace Garnet.test
                 var opts = GetGarnetServerOptions(
                     checkpointDir,
                     checkpointDir,
-                    endpoint.Port,
+                    endpoint,
                     disablePubSub,
                     disableObjects,
                     tryRecover,
@@ -462,7 +463,7 @@ namespace Garnet.test
         public static GarnetServerOptions GetGarnetServerOptions(
             string checkpointDir,
             string logDir,
-            int port,
+            EndPoint endpoint,
             bool disablePubSub = false,
             bool disableObjects = false,
             bool tryRecover = false,
@@ -494,19 +495,37 @@ namespace Garnet.test
             bool asyncReplay = false,
             ILogger logger = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
-            string luaMemoryLimit = "")
+            string luaMemoryLimit = "",
+            string unixSocketPath = null)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
-            logDir += $"/{port}";
-            if (useAzureStorage)
-                logDir = $"{AzureTestContainer}/{AzureTestDirectory}/{port}";
-            if (logDir != null && !useAzureStorage) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
 
-            checkpointDir += $"/{port}";
             if (useAzureStorage)
-                checkpointDir = $"{AzureTestContainer}/{AzureTestDirectory}/{port}";
-            if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? "." : checkpointDir).FullName;
+            {
+                logDir = Path.Join(AzureTestContainer, AzureTestDirectory);
+                checkpointDir = Path.Join(AzureTestContainer, AzureTestDirectory);
+            }
+
+            if (endpoint is IPEndPoint ipEndpoint)
+            {
+                logDir = Path.Join(logDir, ipEndpoint.Port.ToString());
+                checkpointDir = Path.Join(checkpointDir, ipEndpoint.Port.ToString());
+            }
+            else if (endpoint is UnixDomainSocketEndPoint && !string.IsNullOrEmpty(unixSocketPath))
+            {
+                var socketFileName = Path.GetFileName(unixSocketPath);
+
+                logDir = Path.Join(logDir, socketFileName);
+                checkpointDir = Path.Join(checkpointDir, socketFileName);
+            } 
+            else throw new NotSupportedException("Unsupported endpoint type.");
+
+            if (!useAzureStorage)
+            {
+                logDir = Path.GetFullPath(logDir);
+                checkpointDir = Path.GetFullPath(checkpointDir);
+            }
 
             IAuthenticationSettings authenticationSettings = null;
             if (useAcl && aadAuthenticationSettings != null)
@@ -527,10 +546,10 @@ namespace Garnet.test
                 ThreadPoolMinThreads = 100,
                 SegmentSize = segmentSize,
                 ObjectStoreSegmentSize = segmentSize,
-                EnableStorageTier = useAzureStorage ? true : disableStorageTier ? false : logDir != null,
+                EnableStorageTier = useAzureStorage || (!disableStorageTier && logDir != null),
                 LogDir = disableStorageTier ? null : logDir,
                 CheckpointDir = checkpointDir,
-                EndPoint = EndPoint,
+                EndPoint = endpoint,
                 DisablePubSub = disablePubSub,
                 DisableObjects = disableObjects,
                 Recover = tryRecover,
@@ -580,6 +599,7 @@ namespace Garnet.test
                 EnableLua = enableLua,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit) : null,
+                UnixSocketPath = unixSocketPath
             };
 
             if (lowMemory)
@@ -723,10 +743,8 @@ namespace Garnet.test
             return new LightClientRequest(EndPoint, 0, onReceive, sslOptions, countResponseType);
         }
 
-        public static EndPointCollection GetEndPoints(int shards, IPAddress address, int port)
+        public static EndPointCollection GetShardEndPoints(int shards, IPAddress address, int port)
         {
-            EndPoint = new IPEndPoint(address, port);
-
             EndPointCollection endPoints = [];
             for (int i = 0; i < shards; i++)
                 endPoints.Add(address, port + i);

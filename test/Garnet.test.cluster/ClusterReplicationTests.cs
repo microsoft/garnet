@@ -191,7 +191,7 @@ namespace Garnet.test.cluster
 
             // Restart secondary
             context.nodes[1] = context.CreateInstance(
-                context.clusterTestUtils.GetEndPoint(1).Port,
+                context.clusterTestUtils.GetEndPoint(1),
                 disableObjects: disableObjects,
                 tryRecover: true,
                 enableAOF: true,
@@ -264,7 +264,7 @@ namespace Garnet.test.cluster
 
             // Restart secondary
             context.nodes[1] = context.CreateInstance(
-                context.clusterTestUtils.GetEndPoint(1).Port,
+                context.clusterTestUtils.GetEndPoint(1),
                 disableObjects: disableObjects,
                 tryRecover: true,
                 enableAOF: true,
@@ -360,7 +360,7 @@ namespace Garnet.test.cluster
 
             // Restart secondary
             context.nodes[replicaIndex] = context.CreateInstance(
-                context.clusterTestUtils.GetEndPoint(replicaIndex).Port,
+                context.clusterTestUtils.GetEndPoint(replicaIndex),
                 disableObjects: disableObjects,
                 tryRecover: true,
                 enableAOF: true,
@@ -486,7 +486,7 @@ namespace Garnet.test.cluster
 
             // Restart Primary
             context.nodes[0] = context.CreateInstance(
-                context.clusterTestUtils.GetEndPoint(0).Port,
+                context.clusterTestUtils.GetEndPoint(0),
                 disableObjects: disableObjects,
                 tryRecover: true,
                 enableAOF: true,
@@ -1111,7 +1111,7 @@ namespace Garnet.test.cluster
 
             // Restart primary and do not recover
             context.nodes[primaryNodeIndex] = context.CreateInstance(
-                context.clusterTestUtils.GetEndPoint(primaryNodeIndex).Port,
+                context.clusterTestUtils.GetEndPoint(primaryNodeIndex),
                 disableObjects: true,
                 tryRecover: false,
                 enableAOF: true,
@@ -1126,7 +1126,7 @@ namespace Garnet.test.cluster
 
             // Restart secondary and recover
             context.nodes[replicaNodeIndex] = context.CreateInstance(
-                context.clusterTestUtils.GetEndPoint(replicaNodeIndex).Port,
+                context.clusterTestUtils.GetEndPoint(replicaNodeIndex),
                 disableObjects: true,
                 tryRecover: true,
                 enableAOF: true,

@@ -388,7 +388,7 @@ namespace Garnet.test.cluster
             context.nodes[restartingNode].Dispose(deleteDir: true);
 
             context.nodes[restartingNode] = context.CreateInstance(
-                context.clusterTestUtils.GetEndPoint(restartingNode).Port,
+                context.clusterTestUtils.GetEndPoint(restartingNode),
                 disableObjects: true,
                 tryRecover: false,
                 enableAOF: true,

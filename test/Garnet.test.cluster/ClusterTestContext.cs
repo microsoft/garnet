@@ -131,7 +131,9 @@ namespace Garnet.test.cluster
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "")
         {
-            endpoints = TestUtils.GetEndPoints(shards, IPAddress.Loopback, 7000);
+            TestUtils.EndPoint = new IPEndPoint(IPAddress.Loopback, 7000);
+            endpoints = TestUtils.GetShardEndPoints(shards, IPAddress.Loopback, 7000);
+
             nodes = TestUtils.CreateGarnetCluster(
                 TestFolder,
                 disablePubSub: disablePubSub,
@@ -173,7 +175,7 @@ namespace Garnet.test.cluster
         /// <summary>
         /// Create single cluster instance with corresponding options
         /// </summary>
-        /// <param name="port"></param>
+        /// <param name="endpoint"></param>
         /// <param name="cleanClusterConfig"></param>
         /// <param name="tryRecover"></param>
         /// <param name="disableObjects"></param>
@@ -197,7 +199,7 @@ namespace Garnet.test.cluster
         /// <param name="certificates"></param>
         /// <returns></returns>
         public GarnetServer CreateInstance(
-            int port,
+            EndPoint endpoint,
             bool cleanClusterConfig = true,
             bool disableEpochCollision = false,
             bool tryRecover = false,
@@ -226,7 +228,7 @@ namespace Garnet.test.cluster
             var opts = TestUtils.GetGarnetServerOptions(
                 TestFolder,
                 TestFolder,
-                port,
+                endpoint,
                 disablePubSub: true,
                 disableObjects: disableObjects,
                 enableAOF: enableAOF,
