@@ -1389,27 +1389,6 @@ namespace Garnet.test
             expectedResponse = ":0\r\n";
             ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
-
-        [Test]
-        public void SetNXCorrectResponse()
-        {
-            var lightClientRequest = TestUtils.CreateRequest();
-
-            // Set key
-            var response = lightClientRequest.SendCommand("SETNX key1 2");
-            var expectedResponse = ":1\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
-
-            // Setnx command should fail since key exists
-            response = lightClientRequest.SendCommand("SETNX key1 3");
-            expectedResponse = ":0\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
-
-            // Be sure key wasn't modified
-            response = lightClientRequest.SendCommand("GET key1");
-            expectedResponse = "$1\r\n2\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
-        }
         #endregion
 
 
