@@ -290,7 +290,7 @@ namespace Garnet.server
             // Try to match the specified sub-command with each command's sub-command maps
             for (var i = 0; i < mapSize; i++)
             {
-                var subCommandEMap = map[i]?.commandMap.eMapUnsafe;
+                var subCommandEMap = map[i]?.commandMap;
                 if (subCommandEMap.HasValue && subCommandEMap.Value.MatchCommand(cmd, out value))
                 {
                     return true;

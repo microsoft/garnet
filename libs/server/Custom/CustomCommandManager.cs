@@ -289,7 +289,7 @@ namespace Garnet.server
         {
             value = null;
             return objectCommandMap.TryGetValue(id, out var wrapper) &&
-                   wrapper.commandMap.eMapUnsafe.TryGetValue(subId, out value);
+                   wrapper.commandMap.TryGetValue(subId, out value);
         }
 
         /// <summary>
