@@ -104,7 +104,7 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
             return storeFactory.CreateObjectStore();
         });
 
-        hostApplicationBuilder.Services.AddTransient<IGarnetServer, GarnetServerTcp>();
+        hostApplicationBuilder.Services.AddSingleton<IGarnetServer, GarnetServerTcp>();
 
         hostApplicationBuilder.Services.AddSingleton(sp =>
         {

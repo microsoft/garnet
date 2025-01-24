@@ -125,8 +125,11 @@ internal class GarnetServerHostedService : BackgroundService
         await Task.CompletedTask;
     }
 
-    public override async Task StopAsync(CancellationToken cancellationToken)
+    public override void Dispose()
     {
+        base.Dispose();
+        server?.Dispose();
+
         if (cleanupDir)
         {
             if (opts.CheckpointDir != opts.LogDir && !string.IsNullOrEmpty(opts.CheckpointDir))
@@ -136,8 +139,6 @@ internal class GarnetServerHostedService : BackgroundService
                 ckptdir.Delete(new FileDescriptor { directoryName = "" });
             }
         }
-
-        await base.StopAsync(cancellationToken);
     }
 
     static readonly string version = GetVersion();

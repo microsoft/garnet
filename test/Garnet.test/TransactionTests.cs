@@ -323,7 +323,7 @@ namespace Garnet.test
         [Test]
         public async Task WatchKeyFromDisk()
         {
-            SetUpWithLowMemory();
+            await SetUpWithLowMemory();
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);

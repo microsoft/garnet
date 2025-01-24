@@ -75,9 +75,9 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MetricsEnabledTest()
+        public async Task MetricsEnabledTest()
         {
-            StartServer(1, true);
+            await StartServer(1, true);
             var logger = loggerFactory.CreateLogger(TestContext.CurrentContext.Test.Name);
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
