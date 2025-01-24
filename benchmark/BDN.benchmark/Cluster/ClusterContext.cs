@@ -26,6 +26,7 @@ namespace BDN.benchmark.Cluster
         {
             session.Dispose();
             await server.StopAsync();
+            server.Dispose();
         }
 
         public void SetupSingleInstance(bool disableSlotVerification = false)
@@ -43,7 +44,7 @@ namespace BDN.benchmark.Cluster
             var builder = GarnetEmbeddedApplication.CreateHostBuilder([], opt);
 
             server = builder.Build();
-
+            
             session = server.GetRespSession();
 
             _ = server.Register.NewTransactionProc(CustomTxnSet.CommandName, () => new CustomTxnSet(), new RespCommandsInfo { Arity = CustomTxnSet.Arity });

@@ -3,6 +3,7 @@
 
 using BenchmarkDotNet.Attributes;
 using Embedded.server;
+using Garnet;
 using Garnet.server;
 
 namespace BDN.benchmark.Lua
@@ -11,7 +12,7 @@ namespace BDN.benchmark.Lua
     /// Benchmark for non-script running operations in LuaRunner
     /// </summary>
     [MemoryDiagnoser]
-    public unsafe class LuaRunnerOperations
+    public class LuaRunnerOperations
     {
         private const string SmallScript = "return nil";
 
@@ -147,7 +148,7 @@ return returnValue
             new(LuaMemoryManagementMode.Managed, true),
         ];
 
-        private EmbeddedRespServer server;
+        private GarnetEmbeddedApplication server;
         private RespServerSession session;
 
         private LuaRunner paramsRunner;
@@ -162,7 +163,14 @@ return returnValue
         {
             opts = Params.CreateOptions();
 
-            server = new EmbeddedRespServer(new GarnetServerOptions() { EnableLua = true, QuietMode = true, LuaOptions = opts });
+            var builder = GarnetEmbeddedApplication.CreateHostBuilder([], new GarnetServerOptions
+            {
+                 EnableLua = true, 
+                 QuietMode = true, 
+                 LuaOptions = opts 
+            });
+            
+            server = builder.Build();
 
             session = server.GetRespSession();
 

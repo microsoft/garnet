@@ -3,18 +3,28 @@
 
 using Garnet;
 using Garnet.server;
+using Microsoft.Extensions.DependencyInjection;
+
 namespace Embedded.server;
 
-public class GarnetEmbeddedApplicationBuilder : GarnetApplicationBuilder
+internal class GarnetEmbeddedApplicationBuilder : GarnetApplicationBuilder
 {
-    public GarnetEmbeddedApplicationBuilder(GarnetApplicationOptions options, GarnetServerOptions garnetServerOptions)
+    internal GarnetEmbeddedApplicationBuilder(GarnetApplicationOptions options, GarnetServerOptions garnetServerOptions)
         : base(options, garnetServerOptions)
     {
     }
 
     public new GarnetEmbeddedApplication Build()
     {
-        throw new NotImplementedException();
-    }
+        var serviceDescriptor = base.Services
+            .FirstOrDefault(descriptor => descriptor.ServiceType == typeof(IGarnetServer));
 
+        base.Services.Remove(serviceDescriptor);
+
+        base.Services.AddSingleton<IGarnetServer, GarnetServerEmbedded>();
+
+        var app = base.Build();
+
+        return new GarnetEmbeddedApplication(app);
+    }
 }

@@ -30,7 +30,7 @@ namespace BDN.benchmark.Lua
             new(LuaMemoryManagementMode.Managed, true),
         ];
 
-        private EmbeddedRespServer server;
+        private GarnetEmbeddedApplication server;
         private StoreWrapper storeWrapper;
         private SessionScriptCache sessionScriptCache;
         private RespServerSession session;
@@ -44,7 +44,11 @@ namespace BDN.benchmark.Lua
         {
             var options = Params.CreateOptions();
 
-            server = new EmbeddedRespServer(new GarnetServerOptions() { EnableLua = true, QuietMode = true, LuaOptions = options });
+            var builder = GarnetEmbeddedApplication.CreateHostBuilder([],
+                new GarnetServerOptions() {EnableLua = true, QuietMode = true, LuaOptions = options});
+            
+            server = builder.Build();
+            
             storeWrapper = server.StoreWrapper;
             sessionScriptCache = new SessionScriptCache(storeWrapper, new GarnetNoAuthAuthenticator());
             session = server.GetRespSession();
