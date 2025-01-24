@@ -47,20 +47,20 @@ namespace Garnet.server
             ReadOnlySpan<byte> optionsError = default;
 
             // XX & NX are mutually exclusive
-            if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX && 
+            if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX &&
                 (options & SortedSetAddOption.NX) == SortedSetAddOption.NX)
                 optionsError = CmdStrings.RESP_ERR_XX_NX_NOT_COMPATIBLE;
 
             // NX, GT & LT are mutually exclusive
-            if (((options & SortedSetAddOption.GT) == SortedSetAddOption.GT && 
+            if (((options & SortedSetAddOption.GT) == SortedSetAddOption.GT &&
                  (options & SortedSetAddOption.LT) == SortedSetAddOption.LT) ||
-               (((options & SortedSetAddOption.GT) == SortedSetAddOption.GT || 
+               (((options & SortedSetAddOption.GT) == SortedSetAddOption.GT ||
                  (options & SortedSetAddOption.LT) == SortedSetAddOption.LT) &&
                 (options & SortedSetAddOption.NX) == SortedSetAddOption.NX))
                 optionsError = CmdStrings.RESP_ERR_GT_LT_NX_NOT_COMPATIBLE;
 
             // INCR supports only one score-element pair
-            if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR && 
+            if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR &&
                 (input.parseState.Count - currTokenIdx > 2))
                 optionsError = CmdStrings.RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR;
 
