@@ -209,6 +209,8 @@ end
 
         private static readonly ReadOnlyMemory<byte> LoaderBlockBytes = Encoding.UTF8.GetBytes(LoaderBlock);
 
+        private static (int Start, ulong[] ByteMask) NoScriptDetails = InitializeNoScriptDetails();
+
         // References into Registry on the Lua side
         //
         // These are mix of objects we regularly update,
@@ -267,6 +269,15 @@ end
             this.logger = logger;
 
             scratchBufferManager = respServerSession?.scratchBufferManager ?? new();
+
+            // Explicitly force to RESP2 for now
+            if (respServerSession != null)
+            {
+                respServerSession.respProtocolVersion = 2;
+
+                // The act of setting these fields causes NoScript checks to be performed
+                (respServerSession.noScriptStart, respServerSession.noScriptBitmap) = NoScriptDetails;
+            }
 
             keysTableRegistryIndex = -1;
             argvTableRegistryIndex = -1;
@@ -623,7 +634,8 @@ end
                     }
                     else
                     {
-                        state.PushNil();
+                        // Redis is weird, but false instead of Nil is correct here
+                        state.PushBoolean(false);
                     }
 
                     return 1;
@@ -713,7 +725,12 @@ end
                     length--;
                     if (RespReadUtils.TryReadAsSpan(out var resultSpan, ref ptr, ptr + length))
                     {
+                        // Construct a table = { 'ok': value }
+                        state.CreateTable(0, 1);
+                        state.PushConstantString(okLowerConstStringRegistryIndex);
                         state.PushBuffer(resultSpan);
+                        state.RawSet(1);
+
                         return 1;
                     }
                     goto default;
@@ -761,42 +778,50 @@ end
                     goto default;
 
                 case (byte)'*':
-                    if (RespReadUtils.TryReadUnsignedArrayLength(out var itemCount, ref ptr, ptr + length))
+                    if (RespReadUtils.TryReadSignedArrayLength(out var itemCount, ref ptr, ptr + length))
                     {
-                        // Create the new table
-                        state.CreateTable(itemCount, 0);
-
-                        for (var itemIx = 0; itemIx < itemCount; itemIx++)
+                        if (itemCount == -1)
                         {
-                            if (*ptr == '$')
+                            // Null multi-bulk -> maps to false
+                            state.PushBoolean(false);
+                        }
+                        else
+                        {
+                            // Create the new table
+                            state.CreateTable(itemCount, 0);
+
+                            for (var itemIx = 0; itemIx < itemCount; itemIx++)
                             {
-                                // Bulk String
-                                if (length >= 4 && new ReadOnlySpan<byte>(ptr + 1, 4).SequenceEqual("-1\r\n"u8))
+                                if (*ptr == '$')
                                 {
-                                    // Null strings are mapped to false
-                                    // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                                    state.PushBoolean(false);
-                                }
-                                else if (RespReadUtils.TryReadSpanWithLengthHeader(out var strSpan, ref ptr, ptr + length))
-                                {
-                                    state.PushBuffer(strSpan);
+                                    // Bulk String
+                                    if (length >= 4 && new ReadOnlySpan<byte>(ptr + 1, 4).SequenceEqual("-1\r\n"u8))
+                                    {
+                                        // Null strings are mapped to false
+                                        // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                                        state.PushBoolean(false);
+                                    }
+                                    else if (RespReadUtils.TryReadSpanWithLengthHeader(out var strSpan, ref ptr, ptr + length))
+                                    {
+                                        state.PushBuffer(strSpan);
+                                    }
+                                    else
+                                    {
+                                        // Error, drop the table we allocated
+                                        state.Pop(1);
+                                        goto default;
+                                    }
                                 }
                                 else
                                 {
-                                    // Error, drop the table we allocated
-                                    state.Pop(1);
-                                    goto default;
+                                    // In practice, we ONLY ever return bulk strings
+                                    // So just... not implementing the rest for now
+                                    throw new NotImplementedException($"Unexpected sigil: {(char)*ptr}");
                                 }
-                            }
-                            else
-                            {
-                                // In practice, we ONLY ever return bulk strings
-                                // So just... not implementing the rest for now
-                                throw new NotImplementedException($"Unexpected sigil: {(char)*ptr}");
-                            }
 
-                            // Stack now has table and value at itemIx on it
-                            state.RawSetInteger(1, itemIx + 1);
+                                // Stack now has table and value at itemIx on it
+                                state.RawSetInteger(1, itemIx + 1);
+                            }
                         }
 
                         return 1;
@@ -1465,6 +1490,47 @@ end
 
                 runner.state.Pop(1);
             }
+        }
+
+        /// <summary>
+        /// Construct a bitmap we can quickly check for NoScript commands in.
+        /// </summary>
+        /// <returns></returns>
+        private static (int Start, ulong[] Bitmap) InitializeNoScriptDetails()
+        {
+            if (!RespCommandsInfo.TryGetRespCommandsInfo(out var allCommands, externalOnly: true))
+            {
+                throw new InvalidOperationException("Could not build NoScript bitmap");
+            }
+
+            var noScript =
+                allCommands
+                    .Where(static kv => kv.Value.Flags.HasFlag(RespCommandFlags.NoScript))
+                    .Select(static kv => kv.Value.Command)
+                    .OrderBy(static x => x)
+                    .ToList();
+
+            var start = (int)noScript[0];
+            var end = (int)noScript[^1];
+            var size = (end - start) + 1;
+            var numULongs = size / sizeof(ulong);
+            if ((size % numULongs) != 0)
+            {
+                numULongs++;
+            }
+
+            var bitmap = new ulong[numULongs];
+            foreach (var member in noScript)
+            {
+                var asInt = (int)member;
+                var stepped = asInt - start;
+                var ulongIndex = stepped / sizeof(ulong);
+                var bitIndex = stepped % sizeof(ulong);
+
+                bitmap[ulongIndex] |= 1UL << bitIndex;
+            }
+
+            return (start, bitmap);
         }
     }
 
