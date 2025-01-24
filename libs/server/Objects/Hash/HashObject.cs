@@ -501,9 +501,9 @@ namespace Garnet.server
 
             if (expirationTimes.TryGetValue(key, out var currentExpiration))
             {
-                if (expireOption.HasFlag(ExpireOption.NX) ||
-                    (expireOption.HasFlag(ExpireOption.GT) && expiration <= currentExpiration) ||
-                    (expireOption.HasFlag(ExpireOption.LT) && expiration >= currentExpiration))
+                if ((expireOption & ExpireOption.NX) == ExpireOption.NX ||
+                    ((expireOption & ExpireOption.GT) == ExpireOption.GT && expiration <= currentExpiration) ||
+                    ((expireOption & ExpireOption.LT) == ExpireOption.LT && expiration >= currentExpiration))
                 {
                     return (int)ExpireResult.ExpireConditionNotMet;
                 }
@@ -515,7 +515,8 @@ namespace Garnet.server
             }
             else
             {
-                if (expireOption.HasFlag(ExpireOption.XX) || expireOption.HasFlag(ExpireOption.GT))
+                if ((expireOption & ExpireOption.XX) == ExpireOption.XX ||
+                    (expireOption & ExpireOption.GT) == ExpireOption.GT)
                 {
                     return (int)ExpireResult.ExpireConditionNotMet;
                 }

@@ -142,10 +142,10 @@ namespace Garnet.server
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
                         var operateSuccessful = value.Operate(ref input, ref output, out sizeChange);
-                        if (output.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
+                        if (output.IsWrongType)
                             return true;
 
-                        if (output.OutputFlags.HasFlag(ObjectStoreOutputFlags.RemoveKey))
+                        if (output.RemoveKey)
                         {
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;
@@ -239,10 +239,10 @@ namespace Garnet.server
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
                         value.Operate(ref input, ref output, out _);
-                        if (output.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
+                        if (output.IsWrongType)
                             return true;
 
-                        if (output.OutputFlags.HasFlag(ObjectStoreOutputFlags.RemoveKey))
+                        if (output.RemoveKey)
                         {
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;

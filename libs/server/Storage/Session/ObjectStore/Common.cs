@@ -498,7 +498,7 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref _output, ref objectStoreContext);
 
-            if (_output.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
+            if (_output.IsWrongType)
                 return GarnetStatus.WRONGTYPE;
 
             Debug.Assert(_output.SpanByteAndMemory.IsSpanByte);
@@ -533,7 +533,7 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref _output, ref objectStoreContext);
 
-            if (_output.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
+            if (_output.IsWrongType)
                 return GarnetStatus.WRONGTYPE;
 
             Debug.Assert(_output.SpanByteAndMemory.IsSpanByte);
@@ -579,7 +579,7 @@ namespace Garnet.server
             if (status.NotFound && !status.Record.Created)
                 return GarnetStatus.NOTFOUND;
 
-            if (status.Found && outputFooter.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
+            if (status.Found && outputFooter.IsWrongType)
                 return GarnetStatus.WRONGTYPE;
 
             return GarnetStatus.OK;

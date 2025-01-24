@@ -49,7 +49,7 @@ namespace Garnet.server
                         if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                         {
                             var opResult = value.Operate(ref input, ref dst, out _);
-                            if (dst.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
+                            if (dst.IsWrongType)
                                 return true;
 
                             return opResult;

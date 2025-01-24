@@ -50,6 +50,16 @@ namespace Garnet.server
         /// </summary>
         public ObjectStoreOutputFlags OutputFlags;
 
+        /// <summary>
+        /// True if output flag WrongType is set
+        /// </summary>
+        public bool IsWrongType => (OutputFlags & ObjectStoreOutputFlags.WrongType) == ObjectStoreOutputFlags.WrongType;
+
+        /// <summary>
+        /// True if output flag RemoveKey is set
+        /// </summary>
+        public bool RemoveKey => (OutputFlags & ObjectStoreOutputFlags.RemoveKey) == ObjectStoreOutputFlags.RemoveKey;
+
         public void ConvertToHeap()
         {
             // Does not convert to heap when going pending, because we immediately complete pending operations for object store.
