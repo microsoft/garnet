@@ -12,7 +12,7 @@ namespace BDN.benchmark.Cluster
 {
     class ClusterContext
     {
-        EmbeddedRespServer server;
+        GarnetEmbeddedApplication server;
         RespServerSession session;
         readonly BenchUtils benchUtils = new();
         readonly int port = 7000;
@@ -22,11 +22,10 @@ namespace BDN.benchmark.Cluster
         public Request[] singleMGetMSet;
         public Request singleCTXNSET;
 
-        public Task Dispose()
+        public async Task Dispose()
         {
             session.Dispose();
-            server.Dispose();
-            return Task.CompletedTask;
+            await server.StopAsync();
         }
 
         public void SetupSingleInstance(bool disableSlotVerification = false)
@@ -41,8 +40,12 @@ namespace BDN.benchmark.Cluster
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 opt.CheckpointDir = "/tmp";
 
-            server = new EmbeddedRespServer(opt);
+            var builder = GarnetEmbeddedApplication.CreateHostBuilder([], opt);
+            
+            server = builder.Build();
+            
             session = server.GetRespSession();
+            
             _ = server.Register.NewTransactionProc(CustomTxnSet.CommandName, () => new CustomTxnSet(), new RespCommandsInfo { Arity = CustomTxnSet.Arity });
         }
 

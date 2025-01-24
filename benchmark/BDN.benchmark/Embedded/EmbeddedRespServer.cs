@@ -5,6 +5,7 @@ using Garnet;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Tsavorite.core;
 
 namespace Embedded.server
@@ -14,27 +15,23 @@ namespace Embedded.server
     /// </summary>
     internal sealed class EmbeddedRespServer : GarnetServer
     {
-        readonly GarnetServerEmbedded garnetServerEmbedded;
-        readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
-
-        /// <summary>
-        /// Creates an EmbeddedRespServer instance
-        /// </summary>
-        /// <param name="opts">Server options to configure the base GarnetServer instance</param>
-        /// <param name="loggerFactory">Logger factory to configure the base GarnetServer instance</param>
-        /// <param name="server">Server network</param>
-        public EmbeddedRespServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, GarnetServerEmbedded server = null)
-            //: base(opts, loggerFactory, server)
-            : base(null, null, loggerFactory, server, null, null, null, null)
+        readonly StoreWrapper store;
+        readonly GarnetServerEmbedded server;
+        readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscriberBroker;
+        
+        public EmbeddedRespServer(
+            IOptions<GarnetServerOptions> options,
+            ILogger<GarnetServer> logger, 
+            ILoggerFactory loggerFactory,
+            GarnetServerEmbedded server,
+            GarnetProvider provider,
+            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscriberBroker,
+            StoreWrapper store)
+            : base(options, logger, loggerFactory, server, provider)
         {
-            this.garnetServerEmbedded = server;
-            this.subscribeBroker = opts.DisablePubSub ? null :
-                new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(
-                    new SpanByteKeySerializer(),
-                    null,
-                    opts.PubSubPageSizeBytes(),
-                    opts.SubscriberRefreshFrequencyMs,
-                    true);
+            this.store = store;
+            this.server = server;
+            this.subscriberBroker = subscriberBroker;
         }
 
         /// <summary>
@@ -42,7 +39,7 @@ namespace Embedded.server
         /// </summary>
         public new void Dispose() => base.Dispose();
 
-        public StoreWrapper StoreWrapper => storeWrapper;
+        public StoreWrapper StoreWrapper => store;
 
         /// <summary>
         /// Return a direct RESP session to this server
@@ -50,12 +47,17 @@ namespace Embedded.server
         /// <returns>A new RESP server session</returns>
         internal RespServerSession GetRespSession()
         {
-            return new RespServerSession(0, new EmbeddedNetworkSender(), storeWrapper, subscribeBroker: subscribeBroker, null, true);
+            return new RespServerSession(0, 
+                new EmbeddedNetworkSender(), 
+                store, 
+                subscribeBroker: this.subscriberBroker, 
+                null, 
+                true);
         }
 
         internal EmbeddedNetworkHandler GetNetworkHandler()
         {
-            return garnetServerEmbedded.CreateNetworkHandler();
+            return server.CreateNetworkHandler();
         }
     }
 }

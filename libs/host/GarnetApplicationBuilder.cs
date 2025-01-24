@@ -136,8 +136,6 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
         hostApplicationBuilder.Services.AddSingleton<RegisterApi>();
         hostApplicationBuilder.Services.AddSingleton<StoreApi>();
 
-        hostApplicationBuilder.Services.AddSingleton<GarnetServer>();
-
         hostApplicationBuilder.Services.AddHostedService<GarnetServerHostedService>();
     }
 
