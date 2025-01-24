@@ -54,7 +54,7 @@ namespace Garnet.test
             infoResult = db.Execute("INFO").ToString();
             infoResultArr = infoResult.Split("\r\n");
             totalFound = infoResultArr.First(x => x.StartsWith("total_found"));
-            ClassicAssert.AreEqual("total_found:1", totalFound, "Expected total_foudn to be incremented to 1 after a successful request.");
+            ClassicAssert.AreEqual("total_found:1", totalFound, "Expected total_found to be incremented to 1 after a successful request.");
 
             var result = db.Execute("INFO", "RESET");
             ClassicAssert.IsNotNull(result);

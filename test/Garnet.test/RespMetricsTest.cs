@@ -46,9 +46,9 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MetricsDisabledTest()
+        public async Task MetricsDisabledTest()
         {
-            StartServer();
+            await StartServer();
             var logger = loggerFactory.CreateLogger(TestContext.CurrentContext.Test.Name);
             var infoMetrics = server.Metrics.GetInfoMetrics().ToArray();
 

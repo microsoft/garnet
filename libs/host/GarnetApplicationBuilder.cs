@@ -51,6 +51,7 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
         hostApplicationBuilder.Services.AddTransient<IClusterFactory, ClusterFactory>();
         hostApplicationBuilder.Services.AddTransient<StoreFactory>();
         hostApplicationBuilder.Services.AddTransient<StoreWrapperFactory>();
+        hostApplicationBuilder.Services.AddTransient<GarnetProviderFactory>();
 
         hostApplicationBuilder.Services.AddSingleton<CustomCommandManager>();
 
@@ -122,8 +123,6 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
 
             return storeWrapperFactory.Create(version);
         });
-
-        hostApplicationBuilder.Services.AddSingleton<GarnetProviderFactory>();
 
         hostApplicationBuilder.Services.AddSingleton<GarnetProvider>(sp =>
         {
