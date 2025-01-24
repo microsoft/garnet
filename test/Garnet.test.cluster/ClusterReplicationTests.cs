@@ -1107,7 +1107,7 @@ namespace Garnet.test.cluster
             // Dispose primary and delete data
             await context.nodes[primaryNodeIndex].StopAsync();
             // Dispose primary but do not delete data
-            await context.nodes[primaryNodeIndex].StopAsync();
+            await context.nodes[replicaNodeIndex].StopAsync();
 
             // Restart primary and do not recover
             context.nodes[primaryNodeIndex] = context.CreateInstance(
