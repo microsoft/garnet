@@ -135,12 +135,13 @@ if ($mode -eq 0 -or $mode -eq 2) {
 	$sourceFramework = @("net8.0", "net9.0")
 	$baseSourcePath = "$basePath/main/GarnetServer/bin/Release"
 	$destinationPath = "$basePath/main/GarnetServer/bin/Release/publish"
+	$zipfiledestinationPath = "$destinationPath/output"
 
-	# Make all the directories needed
-	if (!(Test-Path $destinationPath)) {
-		mkdir "$destinationPath/output"
+	# Make the destination path where the compressed files will be
+	if (!(Test-Path $zipfiledestinationPath)) {
+		mkdir $zipfiledestinationPath
 	}
-	Set-Location "$destinationPath/output"
+	Set-Location $zipfiledestinationPath
 
 	foreach ($dir in $directories) {
 		if (!(Test-Path (Join-Path -Path $destinationPath -ChildPath $dir))) {
