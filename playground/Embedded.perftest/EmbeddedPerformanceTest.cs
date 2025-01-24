@@ -25,7 +25,7 @@ namespace Embedded.perftest
         /// <summary>
         /// Embedded server instance to issue commands to
         /// </summary>
-        readonly EmbeddedRespServer server;
+        readonly GarnetEmbeddedApplication server;
 
         /// <summary>
         /// Logger used to log test progress
@@ -48,7 +48,7 @@ namespace Embedded.perftest
         /// <param name="opts">Test options.</param>
         /// <param name="loggerFactory">Factory to create the status logger for the test</param>
         /// <exception cref="Exception">Thrown if given configuration is invalid.</exception>
-        public EmbeddedPerformanceTest(EmbeddedRespServer server, Options opts, ILoggerFactory loggerFactory)
+        public EmbeddedPerformanceTest(GarnetEmbeddedApplication server, Options opts, ILoggerFactory loggerFactory)
         {
             this.server = server;
             this.opts = opts;

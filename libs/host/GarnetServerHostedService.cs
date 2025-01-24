@@ -23,7 +23,7 @@ internal class GarnetServerHostedService : BackgroundService
     private readonly ILogger<GarnetServerHostedService> logger;
     private readonly ILoggerFactory loggerFactory;
     private readonly bool cleanupDir;
-    
+
     public GarnetServerHostedService(
         IOptions<GarnetServerOptions> options,
         ILogger<GarnetServerHostedService> logger,
@@ -40,7 +40,7 @@ internal class GarnetServerHostedService : BackgroundService
         this.cleanupDir = false;
         this.InitializeServerUpdated();
     }
-    
+
     private void InitializeServerUpdated()
     {
         Debug.Assert(opts != null);
@@ -114,12 +114,12 @@ internal class GarnetServerHostedService : BackgroundService
         provider.Recover();
         server.Start();
         provider.Start();
-        
+
         if (!opts.QuietMode)
         {
             logger.LogInformation("* Ready to accept connections");
         }
-        
+
         logger.LogInformation("Garnet server running at: {time}", DateTimeOffset.Now);
 
         await Task.CompletedTask;
@@ -136,10 +136,10 @@ internal class GarnetServerHostedService : BackgroundService
                 ckptdir.Delete(new FileDescriptor { directoryName = "" });
             }
         }
-        
+
         await base.StopAsync(cancellationToken);
     }
-    
+
     static readonly string version = GetVersion();
 
     static string GetVersion()
@@ -147,7 +147,7 @@ internal class GarnetServerHostedService : BackgroundService
         var Version = Assembly.GetExecutingAssembly().GetName().Version;
         return $"{Version.Major}.{Version.Minor}.{Version.Build}";
     }
-    
+
     /// <summary>
     /// Flushes MemoryLogger entries into a destination logger.
     /// Destination logger is either created from ILoggerFactory parameter or from a default console logger.
