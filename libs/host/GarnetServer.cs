@@ -216,7 +216,6 @@ namespace Garnet
 
         private void InternalDispose()
         {
-            Provider?.Dispose();
             server.Dispose();
         }
 
