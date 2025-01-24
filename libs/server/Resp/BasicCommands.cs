@@ -440,16 +440,9 @@ namespace Garnet.server
             var status = storageApi.SET_Conditional(ref sbKey, ref input);
 
             // The status returned for SETNX as NOTFOUND is the expected status in the happy path
-            if (status == GarnetStatus.NOTFOUND)
-            {
-                while (!RespWriteUtils.TryWriteInt32(1, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
-                    SendAndReset();
-            }
+            var retVal = status == GarnetStatus.NOTFOUND ? 1 : 0;
+            while (!RespWriteUtils.TryWriteInt32(retVal, ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }
