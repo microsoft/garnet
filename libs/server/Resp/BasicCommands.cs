@@ -444,10 +444,8 @@ namespace Garnet.server
             var input = new RawStringInput(RespCommand.SETEXNX, ref parseState, startIdx: 1, arg1: 0);
             var status = storageApi.SET_Conditional(ref sbKey, ref input);
 
-            // the status returned for SETNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
-            bool ok = status == GarnetStatus.NOTFOUND;
-
-            if (ok)
+            // The status returned for SETNX as NOTFOUND is the expected status in the happy path
+            if (status == GarnetStatus.NOTFOUND)
             {
                 while (!RespWriteUtils.TryWriteInt32(1, ref dcurr, dend))
                     SendAndReset();
