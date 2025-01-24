@@ -557,10 +557,10 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             var expireAtUtc = isMilliseconds ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expireAt) : ConvertUtils.UnixTimestampInSecondsToTicks(expireAt);
-            var expiryLength = NumUtils.NumDigitsInLong(expireAtUtc);
+            var expiryLength = NumUtils.CountDigits(expireAtUtc);
             var expirySlice = scratchBufferManager.CreateArgSlice(expiryLength);
             var expirySpan = expirySlice.Span;
-            NumUtils.LongToSpanByte(expireAtUtc, expirySpan);
+            NumUtils.WriteInt64(expireAtUtc, expirySpan);
 
             parseState.Initialize(1 + input.parseState.Count);
             parseState.SetArgument(0, expirySlice);

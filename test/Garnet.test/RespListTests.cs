@@ -1391,6 +1391,22 @@ namespace Garnet.test
             ClassicAssert.AreEqual("ERR syntax error", exception.Message);
         }
 
+        // Issue 945
+        [Test]
+        public void CanHandleLowerCaseBefore()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommands("RPUSH mylist a", "PING", 1, 1);
+            lightClientRequest.SendCommands("RPUSH mylist c", "PING", 1, 1);
+            lightClientRequest.SendCommands("LINSERT mylist before c b", "PING", 1, 1);
+
+            var response = lightClientRequest.SendCommands("LRANGE mylist 0 -1", "PING", 4, 1);
+            var expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n+PONG\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
         [Test]
         public void CheckListOperationsOnWrongTypeObjectSE()
         {

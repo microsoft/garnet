@@ -791,27 +791,27 @@ namespace Garnet.test.cluster
             switch (*buf)
             {
                 case (byte)'+':
-                    if (!RespReadResponseUtils.ReadSimpleString(out result, ref ptr, buf + bytesRead))
+                    if (!RespReadResponseUtils.TryReadSimpleString(out result, ref ptr, buf + bytesRead))
                         return (0, 0);
                     count++;
                     break;
                 case (byte)':':
-                    if (!RespReadResponseUtils.ReadIntegerAsString(out result, ref ptr, buf + bytesRead))
+                    if (!RespReadResponseUtils.TryReadIntegerAsString(out result, ref ptr, buf + bytesRead))
                         return (0, 0);
                     count++;
                     break;
                 case (byte)'-':
-                    if (!RespReadResponseUtils.ReadErrorAsString(out result, ref ptr, buf + bytesRead))
+                    if (!RespReadResponseUtils.TryReadErrorAsString(out result, ref ptr, buf + bytesRead))
                         return (0, 0);
                     count++;
                     break;
                 case (byte)'$':
-                    if (!RespReadResponseUtils.ReadStringWithLengthHeader(out result, ref ptr, buf + bytesRead))
+                    if (!RespReadResponseUtils.TryReadStringWithLengthHeader(out result, ref ptr, buf + bytesRead))
                         return (0, 0);
                     count++;
                     break;
                 case (byte)'*':
-                    if (!RespReadResponseUtils.ReadStringArrayWithLengthHeader(out resultArray, ref ptr, buf + bytesRead))
+                    if (!RespReadResponseUtils.TryReadStringArrayWithLengthHeader(out resultArray, ref ptr, buf + bytesRead))
                         return (0, 0);
                     count++;
                     break;
@@ -834,19 +834,19 @@ namespace Garnet.test.cluster
                 switch (*buf)
                 {
                     case (byte)'+':
-                        RespReadResponseUtils.ReadSimpleString(out result, ref ptr, buf + data.Length);
+                        RespReadResponseUtils.TryReadSimpleString(out result, ref ptr, buf + data.Length);
                         break;
                     case (byte)':':
-                        RespReadResponseUtils.ReadIntegerAsString(out result, ref ptr, buf + data.Length);
+                        RespReadResponseUtils.TryReadIntegerAsString(out result, ref ptr, buf + data.Length);
                         break;
                     case (byte)'-':
-                        RespReadResponseUtils.ReadErrorAsString(out result, ref ptr, buf + data.Length);
+                        RespReadResponseUtils.TryReadErrorAsString(out result, ref ptr, buf + data.Length);
                         break;
                     case (byte)'$':
-                        RespReadResponseUtils.ReadStringWithLengthHeader(out result, ref ptr, buf + data.Length);
+                        RespReadResponseUtils.TryReadStringWithLengthHeader(out result, ref ptr, buf + data.Length);
                         break;
                     case (byte)'*':
-                        RespReadResponseUtils.ReadStringArrayWithLengthHeader(out resultArray, ref ptr, buf + data.Length);
+                        RespReadResponseUtils.TryReadStringArrayWithLengthHeader(out resultArray, ref ptr, buf + data.Length);
                         break;
                     default:
                         throw new Exception("Unexpected response: " + Encoding.ASCII.GetString(new Span<byte>(buf, data.Length)).Replace("\n", "|").Replace("\r", "") + "]");

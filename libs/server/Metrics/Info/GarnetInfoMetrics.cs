@@ -169,9 +169,11 @@ namespace Garnet.server
             var globalMetrics = metricsDisabled ? default : storeWrapper.monitor.GlobalMetrics;
             var tt = metricsDisabled ? 0 : (double)(globalMetrics.globalSessionMetrics.get_total_found() + globalMetrics.globalSessionMetrics.get_total_notfound());
             var garnet_hit_rate = metricsDisabled ? 0 : (tt > 0 ? (double)globalMetrics.globalSessionMetrics.get_total_found() / tt : 0) * 100;
+
             statsInfo =
                 [
-                    new("total_connections_active", metricsDisabled ? "0" : globalMetrics.total_connections_received.ToString()),
+                    new("total_connections_active", metricsDisabled ? "0" : globalMetrics.total_connections_active.ToString()),
+                    new("total_connections_received", metricsDisabled ? "0" : globalMetrics.total_connections_received.ToString()),
                     new("total_connections_disposed", metricsDisabled ? "0" : globalMetrics.total_connections_disposed.ToString()),
                     new("total_commands_processed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_commands_processed().ToString()),
                     new("instantaneous_ops_per_sec", metricsDisabled ? "0" : globalMetrics.instantaneous_cmd_per_sec.ToString()),

@@ -31,7 +31,7 @@ namespace Garnet.server
             {
                 case GarnetStatus.NOTFOUND:
                     Debug.Assert(output.IsSpanByte);
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                     break;
                 default:
@@ -63,7 +63,7 @@ namespace Garnet.server
             {
                 case GarnetStatus.NOTFOUND:
                     Debug.Assert(output.IsSpanByte);
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                     break;
                 default:
@@ -112,7 +112,7 @@ namespace Garnet.server
 
             if (!errorMessage.IsEmpty)
             {
-                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
