@@ -327,7 +327,7 @@ namespace Garnet.server
                 logger?.Log(ex.LogLevel, ex, "Aborting open session due to RESP parsing error");
 
                 // Forward parsing error as RESP error
-                while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
                     SendAndReset();
 
                 // Send message and dispose the network sender to end the session
@@ -345,7 +345,7 @@ namespace Garnet.server
                 // Forward Garnet error as RESP error
                 if (ex.ClientResponse)
                 {
-                    while (!RespWriteUtils.WriteError($"ERR Garnet Exception: {ex.Message}", ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError($"ERR Garnet Exception: {ex.Message}", ref dcurr, dend))
                         SendAndReset();
                 }
 
@@ -463,7 +463,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -577,6 +577,8 @@ namespace Garnet.server
                 RespCommand.READWRITE => NetworkREADWRITE(),
                 RespCommand.EXPIREAT => NetworkEXPIREAT(RespCommand.EXPIREAT, ref storageApi),
                 RespCommand.PEXPIREAT => NetworkEXPIREAT(RespCommand.PEXPIREAT, ref storageApi),
+                RespCommand.DUMP => NetworkDUMP(ref storageApi),
+                RespCommand.RESTORE => NetworkRESTORE(ref storageApi),
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };
@@ -634,6 +636,9 @@ namespace Garnet.server
                 RespCommand.ZRANDMEMBER => SortedSetRandomMember(ref storageApi),
                 RespCommand.ZDIFF => SortedSetDifference(ref storageApi),
                 RespCommand.ZDIFFSTORE => SortedSetDifferenceStore(ref storageApi),
+                RespCommand.BZMPOP => SortedSetBlockingMPop(),
+                RespCommand.BZPOPMAX => SortedSetBlockingPop(cmd),
+                RespCommand.BZPOPMIN => SortedSetBlockingPop(cmd),
                 RespCommand.ZREVRANGE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANGEBYLEX => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
@@ -698,6 +703,15 @@ namespace Garnet.server
                 RespCommand.HVALS => HashKeys(cmd, ref storageApi),
                 RespCommand.HINCRBY => HashIncrement(cmd, ref storageApi),
                 RespCommand.HINCRBYFLOAT => HashIncrement(cmd, ref storageApi),
+                RespCommand.HEXPIRE => HashExpire(cmd, ref storageApi),
+                RespCommand.HPEXPIRE => HashExpire(cmd, ref storageApi),
+                RespCommand.HEXPIREAT => HashExpire(cmd, ref storageApi),
+                RespCommand.HPEXPIREAT => HashExpire(cmd, ref storageApi),
+                RespCommand.HTTL => HashTimeToLive(cmd, ref storageApi),
+                RespCommand.HPTTL => HashTimeToLive(cmd, ref storageApi),
+                RespCommand.HEXPIRETIME => HashTimeToLive(cmd, ref storageApi),
+                RespCommand.HPEXPIRETIME => HashTimeToLive(cmd, ref storageApi),
+                RespCommand.HPERSIST => HashPersist(ref storageApi),
                 RespCommand.HSETNX => HashSet(cmd, ref storageApi),
                 RespCommand.HRANDFIELD => HashRandomField(cmd, ref storageApi),
                 RespCommand.HSCAN => ObjectScan(GarnetObjectType.Hash, ref storageApi),
@@ -746,6 +760,8 @@ namespace Garnet.server
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
                 RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(),
                 RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(),
+                RespCommand.COMMAND_GETKEYS => NetworkCOMMAND_GETKEYS(),
+                RespCommand.COMMAND_GETKEYSANDFLAGS => NetworkCOMMAND_GETKEYSANDFLAGS(),
                 RespCommand.ECHO => NetworkECHO(),
                 RespCommand.HELLO => NetworkHELLO(),
                 RespCommand.TIME => NetworkTIME(),
@@ -780,7 +796,7 @@ namespace Garnet.server
                 RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
                 RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
 
-                _ => Process(command)
+                _ => Process(command, ref storageApi)
             };
 
             bool NetworkCLIENTID()
@@ -790,7 +806,7 @@ namespace Garnet.server
                     return AbortWithWrongNumberOfArguments("client|id");
                 }
 
-                while (!RespWriteUtils.WriteInteger(Id, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteInt64(Id, ref dcurr, dend))
                     SendAndReset();
 
                 return true;
@@ -828,9 +844,9 @@ namespace Garnet.server
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            bool Process(RespCommand command)
+            bool Process(RespCommand command, ref TGarnetApi storageApi)
             {
-                ProcessAdminCommands(command);
+                ProcessAdminCommands(command, ref storageApi);
                 return true;
             }
 
@@ -878,7 +894,7 @@ namespace Garnet.server
             if ((arity > 0 && count != arity - 1) ||
                 (arity < 0 && count < -arity - 1))
             {
-                while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName), ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName), ref dcurr, dend))
                     SendAndReset();
 
                 return false;
@@ -893,7 +909,7 @@ namespace Garnet.server
             var end = recvBufferPtr + bytesRead;
 
             // Try the command length
-            if (!RespReadUtils.ReadUnsignedLengthHeader(out int length, ref ptr, end))
+            if (!RespReadUtils.TryReadUnsignedLengthHeader(out int length, ref ptr, end))
             {
                 success = false;
                 return default;
@@ -1062,12 +1078,12 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteDirectLargeRespString(ReadOnlySpan<byte> message)
         {
-            while (!RespWriteUtils.WriteBulkStringLength(message, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteBulkStringLength(message, ref dcurr, dend))
                 SendAndReset();
 
             WriteDirectLarge(message);
 
-            while (!RespWriteUtils.WriteNewLine(ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
                 SendAndReset();
         }
 

@@ -211,8 +211,8 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Get parameter lengths
-            var startLength = NumUtils.NumDigitsInLong(start);
-            var endLength = NumUtils.NumDigitsInLong(end);
+            var startLength = NumUtils.CountDigits(start);
+            var endLength = NumUtils.CountDigits(end);
 
             // Calculate # of bytes to store parameters
             var sliceBytes = 1 + startLength + endLength;
@@ -232,13 +232,13 @@ namespace Garnet.server
 
             // Start
             var startSpan = paramsSpan.Slice(paramsSpanOffset, startLength);
-            NumUtils.LongToSpanByte(start, startSpan);
+            NumUtils.WriteInt64(start, startSpan);
             var startSlice = ArgSlice.FromPinnedSpan(startSpan);
             paramsSpanOffset += startLength;
 
             // End
             var endSpan = paramsSpan.Slice(paramsSpanOffset, endLength);
-            NumUtils.LongToSpanByte(end, endSpan);
+            NumUtils.WriteInt64(end, endSpan);
             var endSlice = ArgSlice.FromPinnedSpan(endSpan);
 
             SpanByteAndMemory output = new(null);
@@ -260,7 +260,7 @@ namespace Garnet.server
                     fixed (byte* outputPtr = output.Memory.Memory.Span)
                     {
                         var refPtr = outputPtr;
-                        RespReadUtils.Read64Int(out result, ref refPtr, refPtr + sizeof(long));
+                        RespReadUtils.TryReadInt64(out result, ref refPtr, refPtr + sizeof(long));
                     }
                     output.Memory.Dispose();
                 }
@@ -285,9 +285,9 @@ namespace Garnet.server
                 var op = commandArguments[i].secondaryCommand.ToString();
                 var encodingPrefix = (commandArguments[i].typeInfo & (byte)BitFieldSign.SIGNED) > 0 ? "i"u8 : "u"u8;
                 var encodingSuffix = commandArguments[i].typeInfo & 0x7F;
-                var encodingSuffixLength = NumUtils.NumDigits(encodingSuffix);
-                var offsetLength = NumUtils.NumDigitsInLong(commandArguments[i].offset);
-                var valueLength = isGet ? 0 : NumUtils.NumDigitsInLong(commandArguments[i].value);
+                var encodingSuffixLength = NumUtils.CountDigits(encodingSuffix);
+                var offsetLength = NumUtils.CountDigits(commandArguments[i].offset);
+                var valueLength = isGet ? 0 : NumUtils.CountDigits(commandArguments[i].value);
                 var overflowType = ((BitFieldOverflow)commandArguments[i].overflowType).ToString();
 
                 // Calculate # of bytes to store parameters
@@ -314,13 +314,13 @@ namespace Garnet.server
                 var encodingSpan = paramsSpan.Slice(paramsSpanOffset, 1 + encodingSuffixLength);
                 encodingSpan[0] = encodingPrefix[0];
                 var encodingSuffixSpan = encodingSpan.Slice(1);
-                NumUtils.LongToSpanByte(encodingSuffix, encodingSuffixSpan);
+                NumUtils.WriteInt64(encodingSuffix, encodingSuffixSpan);
                 var encodingSlice = ArgSlice.FromPinnedSpan(encodingSpan);
                 paramsSpanOffset += 1 + encodingSuffixLength;
 
                 // Offset
                 var offsetSpan = paramsSpan.Slice(paramsSpanOffset, offsetLength);
-                NumUtils.LongToSpanByte(commandArguments[i].offset, offsetSpan);
+                NumUtils.WriteInt64(commandArguments[i].offset, offsetSpan);
                 var offsetSlice = ArgSlice.FromPinnedSpan(offsetSpan);
                 paramsSpanOffset += offsetLength;
 
@@ -329,7 +329,7 @@ namespace Garnet.server
                 if (!isGet)
                 {
                     var valueSpan = paramsSpan.Slice(paramsSpanOffset, valueLength);
-                    NumUtils.LongToSpanByte(commandArguments[i].value, valueSpan);
+                    NumUtils.WriteInt64(commandArguments[i].value, valueSpan);
                     valueSlice = ArgSlice.FromPinnedSpan(valueSpan);
                     paramsSpanOffset += valueLength;
                 }
@@ -373,7 +373,7 @@ namespace Garnet.server
                             fixed (byte* outputPtr = output.Memory.Memory.Span)
                             {
                                 var refPtr = outputPtr;
-                                if (!RespReadUtils.Read64Int(out resultCmd, ref refPtr, refPtr + output.Length))
+                                if (!RespReadUtils.TryReadInt64(out resultCmd, ref refPtr, refPtr + output.Length))
                                     error = true;
                             }
                             output.Memory.Dispose();
@@ -381,7 +381,7 @@ namespace Garnet.server
                         else
                         {
                             var refPtr = output.SpanByte.ToPointer();
-                            if (!RespReadUtils.Read64Int(out resultCmd, ref refPtr, refPtr + output.SpanByte.Length))
+                            if (!RespReadUtils.TryReadInt64(out resultCmd, ref refPtr, refPtr + output.SpanByte.Length))
                                 error = true;
                         }
                         result.Add(error ? null : resultCmd);
