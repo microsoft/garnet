@@ -13,7 +13,6 @@ using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -111,85 +110,6 @@ namespace Garnet.server
         /// NOTE: For now we support only a single database
         /// </summary>
         public readonly int databaseNum = 1;
-
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        public StoreWrapper(
-            string version,
-            string redisProtocolVersion,
-            IGarnetServer server,
-            TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,
-            TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
-            CacheSizeTracker objectStoreSizeTracker,
-            CustomCommandManager customCommandManager,
-            TsavoriteLog appendOnlyFile,
-            IOptions<GarnetServerOptions> options,
-            AccessControlList accessControlList = null,
-            IClusterFactory clusterFactory = null,
-            ILoggerFactory loggerFactory = null
-            )
-        {
-            this.version = version;
-            this.redisProtocolVersion = redisProtocolVersion;
-            this.server = server;
-            this.startupTime = DateTimeOffset.UtcNow.Ticks;
-            this.store = store;
-            this.objectStore = objectStore;
-            this.appendOnlyFile = appendOnlyFile;
-            this.serverOptions = options.Value;
-            lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
-            this.customCommandManager = customCommandManager;
-            this.monitor = serverOptions.MetricsSamplingFrequency > 0 ? new GarnetServerMonitor(this, serverOptions, server, loggerFactory?.CreateLogger("GarnetServerMonitor")) : null;
-            this.objectStoreSizeTracker = objectStoreSizeTracker;
-            this.loggerFactory = loggerFactory;
-            this.logger = loggerFactory?.CreateLogger("StoreWrapper");
-            this.sessionLogger = loggerFactory?.CreateLogger("Session");
-            // TODO Change map size to a reasonable number
-            this.versionMap = new WatchVersionMap(1 << 16);
-            this.accessControlList = accessControlList;
-            this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
-            this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
-
-            if (!serverOptions.DisableObjects)
-                this.itemBroker = new CollectionItemBroker();
-
-            // Initialize store scripting cache
-            if (serverOptions.EnableLua)
-                this.storeScriptCache = [];
-
-            if (accessControlList == null)
-            {
-                // If ACL authentication is enabled, initiate access control list
-                // NOTE: This is a temporary workflow. ACL should always be initiated and authenticator
-                //       should become a parameter of AccessControlList.
-                if ((this.serverOptions.AuthSettings != null) && (this.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings)))
-                {
-                    // Create a new access control list and register it with the authentication settings
-                    AclAuthenticationSettings aclAuthenticationSettings = (AclAuthenticationSettings)this.serverOptions.AuthSettings;
-
-                    if (!string.IsNullOrEmpty(aclAuthenticationSettings.AclConfigurationFile))
-                    {
-                        logger?.LogInformation("Reading ACL configuration file '{filepath}'", aclAuthenticationSettings.AclConfigurationFile);
-                        this.accessControlList = new AccessControlList(aclAuthenticationSettings.DefaultPassword, aclAuthenticationSettings.AclConfigurationFile);
-                    }
-                    else
-                    {
-                        // If no configuration file is specified, initiate ACL with default settings
-                        this.accessControlList = new AccessControlList(aclAuthenticationSettings.DefaultPassword);
-                    }
-                }
-                else
-                {
-                    this.accessControlList = new AccessControlList();
-                }
-            }
-
-            if (clusterFactory != null)
-                clusterProvider = clusterFactory.CreateClusterProvider(this);
-            ctsCommit = new();
-            run_id = Generator.CreateHexId();
-        }
 
         /// <summary>
         /// Constructor

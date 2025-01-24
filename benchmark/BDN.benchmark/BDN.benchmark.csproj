@@ -29,4 +29,8 @@
     <Compile Include="..\..\main\GarnetServer\Extensions\SetIfPM.cs" Link="Custom\SetIfPM.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="BenchmarkDotNet.Artifacts\" />
+  </ItemGroup>
+
 </Project>
