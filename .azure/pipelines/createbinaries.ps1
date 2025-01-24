@@ -138,6 +138,9 @@ if ($mode -eq 0 -or $mode -eq 2) {
 	$zipfiledestinationPath = "$destinationPath/output"
 
 	# Make the destination path where the compressed files will be
+	if (!(Test-Path $destinationPath)) {
+		mkdir $destinationPath
+	}
 	if (!(Test-Path $zipfiledestinationPath)) {
 		mkdir $zipfiledestinationPath
 	}
@@ -162,8 +165,6 @@ if ($mode -eq 0 -or $mode -eq 2) {
 			Copy-Item -Path "$sourcePath\*" -Destination $destVersionPath -Recurse -Force
 		}
 	}
-
-	Set-Location "$destinationPath/output"
 
 	# Compress the files - both net80 and net90 in the same zip file
 	Write-Host "** Compressing the files ... **"
