@@ -185,10 +185,9 @@ namespace Garnet.server
                     break;
                 case RespCommand.INCRBY:
                     value.UnmarkExtraMetadata();
-                    var fNeg = false;
                     var incrBy = input.arg1;
-                    var ndigits = NumUtils.NumDigitsInLong(incrBy, ref fNeg);
-                    value.ShrinkSerializedLength(ndigits + (fNeg ? 1 : 0));
+                    var ndigits = NumUtils.CountDigits(incrBy, out var isNegative);
+                    value.ShrinkSerializedLength(ndigits + (isNegative ? 1 : 0));
                     CopyUpdateNumber(incrBy, ref value, ref output);
                     break;
                 case RespCommand.DECR:
@@ -198,10 +197,10 @@ namespace Garnet.server
                     break;
                 case RespCommand.DECRBY:
                     value.UnmarkExtraMetadata();
-                    fNeg = false;
+                    isNegative = false;
                     var decrBy = -input.arg1;
-                    ndigits = NumUtils.NumDigitsInLong(decrBy, ref fNeg);
-                    value.ShrinkSerializedLength(ndigits + (fNeg ? 1 : 0));
+                    ndigits = NumUtils.CountDigits(decrBy, out isNegative);
+                    value.ShrinkSerializedLength(ndigits + (isNegative ? 1 : 0));
                     CopyUpdateNumber(decrBy, ref value, ref output);
                     break;
                 case RespCommand.INCRBYFLOAT:
@@ -362,7 +361,7 @@ namespace Garnet.server
                     // write back array of the format [etag, nil]
                     var nilResp = CmdStrings.RESP_ERRNOTFOUND;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
-                    var numDigitsInEtag = NumUtils.NumDigitsInLong(newEtag);
+                    var numDigitsInEtag = NumUtils.CountDigits(newEtag);
                     WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
                     // reset etag state after done using
                     EtagState.ResetState(ref functionsState.etagState);
@@ -956,7 +955,7 @@ namespace Garnet.server
                     // write back array of the format [etag, nil]
                     var nilResp = CmdStrings.RESP_ERRNOTFOUND;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
-                    var numDigitsInEtag = NumUtils.NumDigitsInLong(newEtag);
+                    var numDigitsInEtag = NumUtils.CountDigits(newEtag);
                     WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
                     break;
                 case RespCommand.SET:

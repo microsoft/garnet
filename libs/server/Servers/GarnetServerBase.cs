@@ -86,6 +86,12 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Get total_connections_active
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long get_conn_active() => this.activeHandlers.Count;
+
+        /// <summary>
         /// Get total_connections_received
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
