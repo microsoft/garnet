@@ -438,7 +438,27 @@ namespace Garnet.server
             var getOption = ArgSlice.FromPinnedSpan(CmdStrings.NX);
             parseState.InitializeWithArguments(key, value, getOption);
 
-            return NetworkSETEXNX(ref storageApi);
+            var nkey = parseState.GetArgSliceByRef(0);
+            var sbKey = nkey.SpanByte;
+
+            var input = new RawStringInput(RespCommand.SETEXNX, ref parseState, startIdx: 1, arg1: 0);
+            var status = storageApi.SET_Conditional(ref sbKey, ref input);
+
+            // the status returned for SETNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
+            bool ok = status == GarnetStatus.NOTFOUND;
+
+            if (ok)
+            {
+                while (!RespWriteUtils.TryWriteInt32(1, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
         }
 
         /// <summary>
