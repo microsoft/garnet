@@ -1399,7 +1399,7 @@ namespace Garnet.test
             var response = lightClientRequest.SendCommand("SETNX key1 2");
             var expectedResponse = ":1\r\n";
             ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
-            
+
             // Setnx command should fail since key exists
             response = lightClientRequest.SendCommand("SETNX key1 3");
             expectedResponse = ":0\r\n";
