@@ -7,20 +7,10 @@ using System.Text;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Tsavorite.core;
 
 namespace Garnet;
 
-using MainStoreAllocator =
-    SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-using ObjectStoreAllocator =
-    GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer,
-        DefaultRecordDisposer<byte[], IGarnetObject>>>;
-using ObjectStoreFunctions =
-    StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
-public class StoreWrapperFactory
+internal class StoreWrapperFactory
 {
     /// <summary>
     /// Resp protocol version
@@ -30,7 +20,6 @@ public class StoreWrapperFactory
     readonly ILoggerFactory loggerFactory;
     readonly ILogger<StoreWrapperFactory> logger;
     readonly IGarnetServer garnetServer;
-    readonly StoreFactory storeFactory;
     readonly GarnetServerOptions options;
     readonly CustomCommandManager customCommandManager;
     readonly IClusterFactory clusterFactory;
@@ -42,7 +31,6 @@ public class StoreWrapperFactory
         ILoggerFactory loggerFactory,
         ILogger<StoreWrapperFactory> logger,
         IGarnetServer garnetServer,
-        StoreFactory storeFactory,
         IOptions<GarnetServerOptions> options,
         CustomCommandManager customCommandManager,
         IClusterFactory clusterFactory,
@@ -53,7 +41,6 @@ public class StoreWrapperFactory
         this.loggerFactory = loggerFactory;
         this.logger = logger;
         this.garnetServer = garnetServer;
-        this.storeFactory = storeFactory;
         this.options = options.Value;
         this.customCommandManager = customCommandManager;
         this.clusterFactory = this.options.EnableCluster ? clusterFactory : null;
@@ -75,7 +62,6 @@ public class StoreWrapperFactory
                                 (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
         if (objectStore != null)
         {
-
             configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes +
                                  (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) +
                                  (objectStoreSizeTracker?.TargetSize ?? 0) +

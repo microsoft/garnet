@@ -10,7 +10,7 @@ using MainStoreAllocator =
     SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
 using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
-public class MainStoreWrapper : IDisposable
+internal class MainStoreWrapper : IDisposable
 {
     public readonly TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
 

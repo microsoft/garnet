@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet;
 
-public class GarnetServerHostedService : BackgroundService
+internal class GarnetServerHostedService : BackgroundService
 {
     readonly GarnetServer server;
     readonly ILogger<GarnetServerHostedService> logger;

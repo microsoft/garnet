@@ -103,7 +103,7 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
             return storeFactory.CreateObjectStore();
         });
 
-        hostApplicationBuilder.Services.AddSingleton<IGarnetServer, GarnetServerTcp>();
+        hostApplicationBuilder.Services.AddTransient<IGarnetServer, GarnetServerTcp>();
 
         hostApplicationBuilder.Services.AddSingleton(sp =>
         {
@@ -136,7 +136,7 @@ public class GarnetApplicationBuilder : IHostApplicationBuilder
         hostApplicationBuilder.Services.AddSingleton<RegisterApi>();
         hostApplicationBuilder.Services.AddSingleton<StoreApi>();
 
-        hostApplicationBuilder.Services.AddTransient<GarnetServer>();
+        hostApplicationBuilder.Services.AddSingleton<GarnetServer>();
 
         hostApplicationBuilder.Services.AddHostedService<GarnetServerHostedService>();
     }

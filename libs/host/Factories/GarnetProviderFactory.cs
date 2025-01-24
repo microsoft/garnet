@@ -8,7 +8,7 @@ using Tsavorite.core;
 
 namespace Garnet;
 
-public class GarnetProviderFactory
+internal class GarnetProviderFactory
 {
     readonly GarnetServerOptions options;
     readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;

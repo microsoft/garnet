@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -9,16 +8,13 @@ using Tsavorite.core;
 
 namespace Garnet;
 
-using MainStoreAllocator =
-    SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 using ObjectStoreAllocator =
     GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer,
         DefaultRecordDisposer<byte[], IGarnetObject>>>;
 using ObjectStoreFunctions =
     StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
-public class StoreFactory
+internal class StoreFactory
 {
     private readonly IClusterFactory clusterFactory;
     private readonly GarnetServerOptions opts;

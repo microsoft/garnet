@@ -6,7 +6,7 @@ using Tsavorite.core;
 
 namespace Garnet;
 
-public class AppendOnlyFileWrapper : IDisposable
+internal class AppendOnlyFileWrapper : IDisposable
 {
     readonly IDevice device;
     public readonly TsavoriteLog appendOnlyFile;

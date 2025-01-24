@@ -13,7 +13,7 @@ using ObjectStoreAllocator =
 using ObjectStoreFunctions =
     StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
-public class ObjectStoreWrapper : IDisposable
+internal class ObjectStoreWrapper : IDisposable
 {
     public readonly TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
     readonly KVSettings<byte[], IGarnetObject> objKvSettings;
