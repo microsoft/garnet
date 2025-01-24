@@ -436,7 +436,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
-            var input = new RawStringInput(RespCommand.SETEXNX, ref parseState, startIdx: 1, arg1: 0);
+            var input = new RawStringInput(RespCommand.SETEXNX, ref parseState, startIdx: 1);
             var status = storageApi.SET_Conditional(ref sbKey, ref input);
 
             // The status returned for SETNX as NOTFOUND is the expected status in the happy path
