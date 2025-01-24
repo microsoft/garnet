@@ -4,72 +4,22 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
-using Garnet.common;
 
 namespace Garnet.server
 {
     /// <summary>
-    /// This interface describes an API for a map of items of type T whose keys are a specified range of IDs (can be descending / ascending)
-    /// The size of the underlying array containing the items doubles in size as needed.
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    internal interface IExpandableMap<T>
-    {
-        /// <summary>
-        /// Checks if ID is mapped to a value in underlying array
-        /// </summary>
-        /// <param name="id">Item ID</param>
-        /// <returns>True if ID exists</returns>
-        bool Exists(int id);
-
-        /// <summary>
-        /// Try to get item by ID
-        /// </summary>
-        /// <param name="id">Item ID</param>
-        /// <param name="value">Item value</param>
-        /// <returns>True if item found</returns>
-        bool TryGetValue(int id, out T value);
-
-        /// <summary>
-        /// Try to get item by ref by ID
-        /// </summary>
-        /// <param name="id">Item ID</param>
-        /// <returns>Item value</returns>
-        ref T GetValueByRef(int id);
-
-        /// <summary>
-        /// Try to set item by ID
-        /// </summary>
-        /// <param name="id">Item ID</param>
-        /// <param name="value">Item value</param>
-        /// <param name="updateSize">True if actual size of map should be updated (true by default)</param>
-        /// <returns>True if assignment succeeded</returns>
-        bool TrySetValue(int id, ref T value, bool updateSize = true);
-
-        /// <summary>
-        /// Get next item ID for assignment
-        /// </summary>
-        /// <param name="id">Item ID</param>
-        /// <returns>True if item ID available</returns>
-        bool TryGetNextId(out int id);
-
-        /// <summary>
-        /// Find first ID in map of item that fulfills specified predicate
-        /// </summary>
-        /// <param name="predicate">Predicate</param>
-        /// <param name="id">ID if found, otherwise -1</param>
-        /// <returns>True if ID found</returns>
-        bool TryGetFirstId(Func<T, bool> predicate, out int id);
-    }
-
-    /// <summary>
     /// This struct defines a map of items of type T whose keys are a specified range of IDs (can be descending / ascending)
     /// The size of the underlying array containing the items doubles in size as needed.
-    /// This struct is not thread-safe, for a thread-safe option see ConcurrentExpandableMap.
+    /// This struct is thread-safe.
     /// </summary>
     /// <typeparam name="T">Type of item to store</typeparam>
-    internal struct ExpandableMap<T> : IExpandableMap<T>
+    internal struct ExpandableMap<T>
     {
+        /// <summary>
+        /// Reader-writer lock for the underlying item array pointer
+        /// </summary>
+        internal ReaderWriterLockSlim mapLock = new();
+
         /// <summary>
         /// The underlying array containing the items
         /// </summary>
@@ -79,8 +29,10 @@ namespace Garnet.server
         /// The actual size of the map
         /// i.e. the max index of an inserted item + 1 (not the size of the underlying array)
         /// </summary>
-        internal int ActualSize { get; private set; }
+        internal int ActualSize => actualSize;
 
+        // The actual size of the map
+        int actualSize;
         // The last requested index for assignment
         int currIndex = -1;
         // Initial array size
@@ -106,7 +58,12 @@ namespace Garnet.server
             this.maxSize = maxId - minId + 1;
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Try to get item by ID
+        /// </summary>
+        /// <param name="id">Item ID</param>
+        /// <param name="value">Item value</param>
+        /// <returns>True if item found</returns>
         public bool TryGetValue(int id, out T value)
         {
             value = default;
@@ -118,47 +75,65 @@ namespace Garnet.server
             return true;
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Try to set item by ID
+        /// </summary>
+        /// <param name="id">Item ID</param>
+        /// <param name="value">Item value</param>
+        /// <returns>True if assignment succeeded</returns>
+        public bool TrySetValue(int id, ref T value)
+        {
+            // Try to perform set without taking a write lock first
+            mapLock.EnterUpgradeableReadLock();
+            try
+            {
+                // Try to set value without expanding map
+                if (this.TrySetValueUnsafe(id, ref value, noExpansion: true))
+                    return true;
+
+                mapLock.EnterWriteLock();
+                try
+                {
+                    // Try to set value with expanding the map, if needed
+                    return this.TrySetValueUnsafe(id, ref value, noExpansion: false);
+                }
+                finally
+                {
+                    mapLock.ExitWriteLock();
+                }
+            }
+            finally
+            {
+                mapLock.ExitUpgradeableReadLock();
+            }
+        }
+
+        /// <summary>
+        /// Checks if ID is mapped to a value in underlying array
+        /// </summary>
+        /// <param name="id">Item ID</param>
+        /// <returns>True if ID exists</returns>
         public bool Exists(int id)
         {
             var idx = id - minId;
             return idx >= 0 && idx < ActualSize;
         }
 
-        /// <inheritdoc />
-        public ref T GetValueByRef(int id)
-        {
-            var idx = id - minId;
-            if (idx < 0 || idx >= ActualSize)
-                throw new ArgumentOutOfRangeException(nameof(idx));
-
-            return ref Map[idx];
-        }
-
-        /// <inheritdoc />
-        public bool TrySetValue(int id, ref T value, bool updateSize = true) =>
-            TrySetValue(id, ref value, false, updateSize);
-
-        /// <inheritdoc />
-        public bool TryGetNextId(out int id)
-        {
-            id = -1;
-            var nextIdx = ++currIndex;
-
-            if (nextIdx >= maxSize)
-                return false;
-            id = minId + nextIdx;
-
-            return true;
-        }
-
-        /// <inheritdoc />
+        /// <summary>
+        /// Find first ID in map of item that fulfills specified predicate
+        /// </summary>
+        /// <param name="predicate">Predicate</param>
+        /// <param name="id">ID if found, otherwise -1</param>
+        /// <returns>True if ID found</returns>
         public bool TryGetFirstId(Func<T, bool> predicate, out int id)
         {
             id = -1;
-            for (var i = 0; i < ActualSize; i++)
+            var actualSizeSnapshot = ActualSize;
+            var mapSnapshot = Map;
+
+            for (var i = 0; i < actualSizeSnapshot; i++)
             {
-                if (predicate(Map[i]))
+                if (predicate(mapSnapshot[i]))
                 {
                     id = minId + i;
                     return true;
@@ -173,7 +148,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="id">Item ID</param>
         /// <returns>True if item ID available</returns>
-        public bool TryGetNextIdSafe(out int id)
+        public bool TryGetNextId(out int id)
         {
             id = -1;
             var nextIdx = Interlocked.Increment(ref currIndex);
@@ -189,9 +164,8 @@ namespace Garnet.server
         /// Try to update the actual size of the map based on the inserted item ID
         /// </summary>
         /// <param name="id">The inserted item ID</param>
-        /// <param name="noUpdate">True if should not do actual update</param>
         /// <returns>True if actual size should be updated (or was updated if noUpdate is false)</returns>
-        internal bool TryUpdateSize(int id, bool noUpdate = false)
+        private bool TryUpdateActualSize(int id)
         {
             var idx = id - minId;
 
@@ -199,21 +173,28 @@ namespace Garnet.server
             // or if index is smaller than the current actual size
             if (idx < 0 || idx < ActualSize || idx >= maxSize) return false;
 
-            if (!noUpdate)
-                ActualSize = idx + 1;
+            var oldActualSize = ActualSize;
+            var updatedActualSize = idx + 1;
+            while (oldActualSize < updatedActualSize)
+            {
+                var currActualSize = Interlocked.CompareExchange(ref actualSize, updatedActualSize, oldActualSize);
+                if (currActualSize == oldActualSize)
+                    break;
+                oldActualSize = currActualSize;
+            }
 
             return true;
         }
 
         /// <summary>
         /// Try to set item by ID
+        /// This method should only be called from a thread-safe context
         /// </summary>
         /// <param name="id">Item ID</param>
         /// <param name="value">Item value</param>
         /// <param name="noExpansion">True if should not attempt to expand the underlying array</param>
-        /// <param name="updateSize">True if should update actual size of the map</param>
         /// <returns>True if assignment succeeded</returns>
-        internal bool TrySetValue(int id, ref T value, bool noExpansion, bool updateSize)
+        private bool TrySetValueUnsafe(int id, ref T value, bool noExpansion)
         {
             var idx = id - minId;
             if (idx < 0 || idx >= maxSize) return false;
@@ -222,7 +203,7 @@ namespace Garnet.server
             if (Map != null && idx < Map.Length)
             {
                 Map[idx] = value;
-                if (updateSize) TryUpdateSize(id);
+                TryUpdateActualSize(id);
                 return true;
             }
 
@@ -244,144 +225,8 @@ namespace Garnet.server
 
             Map = newMap;
             Map[idx] = value;
-            if (updateSize) TryUpdateSize(id);
+            TryUpdateActualSize(id);
             return true;
-        }
-    }
-
-    /// <summary>
-    /// This struct defines a map of items of type T whose keys are a specified range of IDs (can be descending / ascending)
-    /// The size of the underlying array containing the items doubles in size as needed
-    /// This struct is thread-safe with regard to the underlying array pointer. 
-    /// </summary>
-    /// <typeparam name="T">Type of item to store</typeparam>
-    internal struct ConcurrentExpandableMap<T> : IExpandableMap<T>
-    {
-        /// <summary>
-        /// Reader-writer lock for the underlying item array
-        /// </summary>
-        internal SingleWriterMultiReaderLock eMapLock = new();
-
-        /// <summary>
-        /// The underlying non-concurrent ExpandableMap (should be accessed using the eMapLock)
-        /// </summary>
-        internal ExpandableMap<T> eMapUnsafe;
-
-        /// <summary>
-        /// Creates a new instance of ConcurrentExpandableMap
-        /// </summary>
-        /// <param name="minSize">Initial size of underlying array</param>
-        /// <param name="minId">The minimal item ID value</param>
-        /// <param name="maxId">The maximal item ID value (can be smaller than minId for descending order of IDs)</param>
-        public ConcurrentExpandableMap(int minSize, int minId, int maxId)
-        {
-            this.eMapUnsafe = new ExpandableMap<T>(minSize, minId, maxId);
-        }
-
-        /// <inheritdoc />
-        public bool TryGetValue(int id, out T value)
-        {
-            value = default;
-            eMapLock.ReadLock();
-            try
-            {
-                return eMapUnsafe.TryGetValue(id, out value);
-            }
-            finally
-            {
-                eMapLock.ReadUnlock();
-            }
-        }
-
-        /// <inheritdoc />
-        public bool Exists(int id)
-        {
-            eMapLock.ReadLock();
-            try
-            {
-                return eMapUnsafe.Exists(id);
-            }
-            finally
-            {
-                eMapLock.ReadUnlock();
-            }
-        }
-
-        /// <inheritdoc />
-        public ref T GetValueByRef(int id)
-        {
-            eMapLock.ReadLock();
-            try
-            {
-                return ref eMapUnsafe.GetValueByRef(id);
-            }
-            finally
-            {
-                eMapLock.ReadUnlock();
-            }
-        }
-
-        /// <inheritdoc />
-        public bool TrySetValue(int id, ref T value, bool updateSize = true)
-        {
-            var shouldUpdateSize = false;
-
-            // Try to perform set without taking a write lock first
-            eMapLock.ReadLock();
-            try
-            {
-                // Try to set value without expanding map
-                if (eMapUnsafe.TrySetValue(id, ref value, true, false))
-                {
-                    // Check if map size should be updated
-                    if (!updateSize || !eMapUnsafe.TryUpdateSize(id, true))
-                        return true;
-                    shouldUpdateSize = true;
-                }
-            }
-            finally
-            {
-                eMapLock.ReadUnlock();
-            }
-
-            eMapLock.WriteLock();
-            try
-            {
-                // Value already set, just update map size
-                if (shouldUpdateSize)
-                {
-                    eMapUnsafe.TryUpdateSize(id);
-                    return true;
-                }
-
-                // Try to set value with expanding the map, if needed
-                return eMapUnsafe.TrySetValue(id, ref value, false, true);
-            }
-            finally
-            {
-                eMapLock.WriteUnlock();
-            }
-        }
-
-        /// <inheritdoc />
-        public bool TryGetNextId(out int id)
-        {
-            return eMapUnsafe.TryGetNextIdSafe(out id);
-        }
-
-        /// <inheritdoc />
-        public bool TryGetFirstId(Func<T, bool> predicate, out int id)
-        {
-            id = -1;
-            eMapLock.ReadLock();
-            try
-            {
-                return eMapUnsafe.TryGetFirstId(predicate, out id);
-            }
-            finally
-            {
-                eMapLock.ReadUnlock();
-            }
         }
     }
 

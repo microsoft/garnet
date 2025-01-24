@@ -27,10 +27,10 @@ namespace Garnet.server
         private static readonly int CustomObjectTypeMaxId = (byte)GarnetObjectTypeExtensions.FirstSpecialObjectType - 1;
 
         // Maps holding different types of custom commands
-        private ConcurrentExpandableMap<CustomRawStringCommand> rawStringCommandMap;
-        private ConcurrentExpandableMap<CustomObjectCommandWrapper> objectCommandMap;
-        private ConcurrentExpandableMap<CustomTransaction> transactionProcMap;
-        private ConcurrentExpandableMap<CustomProcedureWrapper> customProcedureMap;
+        private ExpandableMap<CustomRawStringCommand> rawStringCommandMap;
+        private ExpandableMap<CustomObjectCommandWrapper> objectCommandMap;
+        private ExpandableMap<CustomTransaction> transactionProcMap;
+        private ExpandableMap<CustomProcedureWrapper> customProcedureMap;
 
         // Map holding all registered modules by module name
         private readonly ConcurrentDictionary<string, ModuleLoadContext> modules;
@@ -51,14 +51,14 @@ namespace Garnet.server
         {
             Debug.Assert(CustomRawStringCommandMinId > (ushort)RespCommandExtensions.LastValidCommand);
 
-            rawStringCommandMap = new ConcurrentExpandableMap<CustomRawStringCommand>(MinMapSize,
+            rawStringCommandMap = new ExpandableMap<CustomRawStringCommand>(MinMapSize,
                 CustomRawStringCommandMinId, CustomRawStringCommandMaxId);
 
-            objectCommandMap = new ConcurrentExpandableMap<CustomObjectCommandWrapper>(MinMapSize,
+            objectCommandMap = new ExpandableMap<CustomObjectCommandWrapper>(MinMapSize,
                 CustomObjectTypeMinId, CustomObjectTypeMaxId);
 
-            transactionProcMap = new ConcurrentExpandableMap<CustomTransaction>(MinMapSize, 0, byte.MaxValue);
-            customProcedureMap = new ConcurrentExpandableMap<CustomProcedureWrapper>(MinMapSize, 0, byte.MaxValue);
+            transactionProcMap = new ExpandableMap<CustomTransaction>(MinMapSize, 0, byte.MaxValue);
+            customProcedureMap = new ExpandableMap<CustomProcedureWrapper>(MinMapSize, 0, byte.MaxValue);
 
             modules = new();
         }
@@ -249,7 +249,7 @@ namespace Garnet.server
         /// <param name="value">Retrieved custom procedure</param>
         /// <returns>True if custom procedure found</returns>
         internal bool TryGetCustomProcedure(int id, out CustomProcedureWrapper value)
-            => customProcedureMap.eMapUnsafe.TryGetValue(id, out value);
+            => customProcedureMap.TryGetValue(id, out value);
 
         /// <summary>
         /// Try to retrieve a custom transaction by transaction ID (should only be called by CustomCommandManagerSession)
@@ -258,7 +258,7 @@ namespace Garnet.server
         /// <param name="value">Retrieved custom transaction</param>
         /// <returns>True if custom transaction found</returns>
         internal bool TryGetCustomTransactionProcedure(int id, out CustomTransaction value)
-            => transactionProcMap.eMapUnsafe.TryGetValue(id, out value);
+            => transactionProcMap.TryGetValue(id, out value);
 
         /// <summary>
         /// Try to retrieve a custom raw string command by command ID
@@ -267,7 +267,7 @@ namespace Garnet.server
         /// <param name="value">Retrieved command</param>
         /// <returns>True if command found</returns>
         internal bool TryGetCustomCommand(int id, out CustomRawStringCommand value)
-            => rawStringCommandMap.eMapUnsafe.TryGetValue(id, out value);
+            => rawStringCommandMap.TryGetValue(id, out value);
 
         /// <summary>
         /// Try to retrieve a custom object command by command ID
@@ -276,7 +276,7 @@ namespace Garnet.server
         /// <param name="value">Retrieved command</param>
         /// <returns>True if command found</returns>
         internal bool TryGetCustomObjectCommand(int id, out CustomObjectCommandWrapper value)
-            => objectCommandMap.eMapUnsafe.TryGetValue(id, out value);
+            => objectCommandMap.TryGetValue(id, out value);
 
         /// <summary>
         /// Try to retrieve a custom object sub-command command by command ID and sub-command ID
@@ -288,7 +288,7 @@ namespace Garnet.server
         internal bool TryGetCustomObjectSubCommand(int id, int subId, out CustomObjectCommand value)
         {
             value = null;
-            return objectCommandMap.eMapUnsafe.TryGetValue(id, out var wrapper) &&
+            return objectCommandMap.TryGetValue(id, out var wrapper) &&
                    wrapper.commandMap.eMapUnsafe.TryGetValue(subId, out value);
         }
 
@@ -299,7 +299,7 @@ namespace Garnet.server
         /// <param name="cmd">The matching command</param>
         /// <returns>True if command name matched an existing command</returns>
         internal bool Match(ReadOnlySpan<byte> command, out CustomRawStringCommand cmd)
-            => rawStringCommandMap.eMapUnsafe.MatchCommand(command, out cmd);
+            => rawStringCommandMap.MatchCommand(command, out cmd);
 
         /// <summary>
         /// Get a custom transaction by name
@@ -308,7 +308,7 @@ namespace Garnet.server
         /// <param name="cmd">The matching transaction</param>
         /// <returns>True if transaction name matched an existing transaction</returns>
         internal bool Match(ReadOnlySpan<byte> command, out CustomTransaction cmd)
-            => transactionProcMap.eMapUnsafe.MatchCommand(command, out cmd);
+            => transactionProcMap.MatchCommand(command, out cmd);
 
         /// <summary>
         /// Get a custom object command by name
@@ -317,7 +317,7 @@ namespace Garnet.server
         /// <param name="cmd">The matching command</param>
         /// <returns>True if command name matched an existing command</returns>
         internal bool Match(ReadOnlySpan<byte> command, out CustomObjectCommand cmd)
-            => objectCommandMap.eMapUnsafe.MatchSubCommand(command, out cmd);
+            => objectCommandMap.MatchSubCommand(command, out cmd);
 
         /// <summary>
         /// Get a custom procedure by name
@@ -326,7 +326,7 @@ namespace Garnet.server
         /// <param name="cmd">The matching procedure</param>
         /// <returns>True if procedure name matched an existing procedure</returns>
         internal bool Match(ReadOnlySpan<byte> command, out CustomProcedureWrapper cmd)
-            => customProcedureMap.eMapUnsafe.MatchCommand(command, out cmd);
+            => customProcedureMap.MatchCommand(command, out cmd);
 
         /// <summary>
         /// Get custom command info by name
