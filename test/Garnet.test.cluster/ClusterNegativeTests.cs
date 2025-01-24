@@ -112,9 +112,9 @@ namespace Garnet.test.cluster
         [Category("CLUSTER")]
         [TestCase(1024)]
         [TestCase(10240)]
-        public async Task ClusterAddSlotsPartialPackage(int chunkSize)
+        public void ClusterAddSlotsPartialPackage(int chunkSize)
         {
-            await context.CreateInstances(1);
+            context.CreateInstances(1).GetAwaiter().GetResult();
             using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
             socket.NoDelay = true;
             socket.Connect(IPAddress.Loopback, 7000);
