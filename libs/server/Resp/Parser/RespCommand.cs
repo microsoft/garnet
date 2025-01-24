@@ -2361,7 +2361,7 @@ namespace Garnet.server
             }
 
             // Read the array length
-            if (!RespReadUtils.ReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.TryReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
             {
                 success = false;
                 return RespCommand.INVALID;
@@ -2383,13 +2383,13 @@ namespace Garnet.server
             {
                 if (!specificErrorMessage.IsEmpty)
                 {
-                    while (!RespWriteUtils.WriteError(specificErrorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(specificErrorMessage, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
                     // Return "Unknown RESP Command" message
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                         SendAndReset();
                 }
             }

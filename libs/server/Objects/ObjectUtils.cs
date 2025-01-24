@@ -120,30 +120,30 @@ namespace Garnet.server
 
             try
             {
-                while (!RespWriteUtils.WriteScanOutputHeader(cursor, ref curr, end))
+                while (!RespWriteUtils.TryWriteScanOutputHeader(cursor, ref curr, end))
                     ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (items.Count == 0)
                 {
                     // Empty array
-                    while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
+                    while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
                         ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 else
                 {
                     // Write size of the array
-                    while (!RespWriteUtils.WriteArrayLength(items.Count, ref curr, end))
+                    while (!RespWriteUtils.TryWriteArrayLength(items.Count, ref curr, end))
                         ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     foreach (var item in items)
                     {
                         if (item != null)
                         {
-                            while (!RespWriteUtils.WriteBulkString(item, ref curr, end))
+                            while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
                                 ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
                         else
-                            while (!RespWriteUtils.WriteNull(ref curr, end))
+                            while (!RespWriteUtils.TryWriteNull(ref curr, end))
                                 ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
@@ -151,7 +151,7 @@ namespace Garnet.server
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -177,12 +177,12 @@ namespace Garnet.server
 
             try
             {
-                while (!RespWriteUtils.WriteError(errorMessage, ref curr, end))
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref curr, end))
                     ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();

@@ -69,19 +69,19 @@ namespace BDN.benchmark.Cluster
         private void SetSlot(int slot, string state, string nodeId)
         {
             var reqBytes = "*5\r\n"u8.Length + 4 + "CLUSTER\r\n"u8.Length + 4 + "SETSLOT\r\n"u8.Length +
-                1 + NumUtils.NumDigits(slot.ToString().Length) + 2 + slot.ToString().Length + 2 +
-                1 + NumUtils.NumDigits(state.Length) + 2 + state.Length + 2 +
-                1 + NumUtils.NumDigits(nodeId.Length) + 2 + nodeId.Length + 2;
+                1 + NumUtils.CountDigits(slot.ToString().Length) + 2 + slot.ToString().Length + 2 +
+                1 + NumUtils.CountDigits(state.Length) + 2 + state.Length + 2 +
+                1 + NumUtils.CountDigits(nodeId.Length) + 2 + nodeId.Length + 2;
 
             var setSlotReq = new Request(reqBytes);
             var curr = setSlotReq.ptr;
             var end = curr + setSlotReq.buffer.Length;
-            _ = RespWriteUtils.WriteArrayLength(5, ref curr, end);
-            _ = RespWriteUtils.WriteBulkString("CLUSTER"u8, ref curr, end);
-            _ = RespWriteUtils.WriteBulkString("SETSLOT"u8, ref curr, end);
-            _ = RespWriteUtils.WriteIntegerAsBulkString(slot, ref curr, end);
-            _ = RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(state), ref curr, end);
-            _ = RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(nodeId), ref curr, end);
+            _ = RespWriteUtils.TryWriteArrayLength(5, ref curr, end);
+            _ = RespWriteUtils.TryWriteBulkString("CLUSTER"u8, ref curr, end);
+            _ = RespWriteUtils.TryWriteBulkString("SETSLOT"u8, ref curr, end);
+            _ = RespWriteUtils.TryWriteInt32AsBulkString(slot, ref curr, end);
+            _ = RespWriteUtils.TryWriteBulkString(Encoding.ASCII.GetBytes(state), ref curr, end);
+            _ = RespWriteUtils.TryWriteBulkString(Encoding.ASCII.GetBytes(nodeId), ref curr, end);
             cc.Consume(setSlotReq.ptr, setSlotReq.buffer.Length);
         }
 
