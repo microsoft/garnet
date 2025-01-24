@@ -434,12 +434,7 @@ namespace Garnet.server
         {
             Debug.Assert(parseState.Count == 2);
             var key = parseState.GetArgSliceByRef(0);
-            var value = parseState.GetArgSliceByRef(1);
-            var getOption = ArgSlice.FromPinnedSpan(CmdStrings.NX);
-            parseState.InitializeWithArguments(key, value, getOption);
-
-            var nkey = parseState.GetArgSliceByRef(0);
-            var sbKey = nkey.SpanByte;
+            var sbKey = key.SpanByte;
 
             var input = new RawStringInput(RespCommand.SETEXNX, ref parseState, startIdx: 1, arg1: 0);
             var status = storageApi.SET_Conditional(ref sbKey, ref input);
