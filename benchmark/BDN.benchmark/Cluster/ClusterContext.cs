@@ -44,7 +44,7 @@ namespace BDN.benchmark.Cluster
             var builder = GarnetEmbeddedApplication.CreateHostBuilder([], opt);
 
             server = builder.Build();
-            
+
             session = server.GetRespSession();
 
             _ = server.Register.NewTransactionProc(CustomTxnSet.CommandName, () => new CustomTxnSet(), new RespCommandsInfo { Arity = CustomTxnSet.Arity });

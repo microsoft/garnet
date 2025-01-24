@@ -13,11 +13,11 @@ namespace Embedded.server;
 internal sealed class GarnetEmbeddedApplication
 {
     public RegisterApi Register => app.Register;
-    
+
     readonly StoreWrapper store;
     readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscriberBroker;
     readonly GarnetApplication app;
-    
+
     public GarnetEmbeddedApplication(GarnetApplication app)
     {
         this.app = app;
@@ -26,7 +26,7 @@ internal sealed class GarnetEmbeddedApplication
             app.Services.GetRequiredService<SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>>();
     }
 
-    public static new GarnetEmbeddedApplicationBuilder CreateHostBuilder(string[] args, GarnetServerOptions options)
+    public static GarnetEmbeddedApplicationBuilder CreateHostBuilder(string[] args, GarnetServerOptions options)
     {
         return new(new GarnetApplicationOptions
         {
@@ -42,7 +42,7 @@ internal sealed class GarnetEmbeddedApplication
     /// <summary>
     /// Dispose server
     /// </summary>
-    public new void Dispose() => app.Dispose();
+    public void Dispose() => app.Dispose();
 
     public StoreWrapper StoreWrapper => store;
 
@@ -66,6 +66,8 @@ internal sealed class GarnetEmbeddedApplication
             .GetServices<IGarnetServer>()
             .OfType<GarnetServerEmbedded>()
             .FirstOrDefault();
+
+        Console.WriteLine(server);
 
         return server?.CreateNetworkHandler();
     }

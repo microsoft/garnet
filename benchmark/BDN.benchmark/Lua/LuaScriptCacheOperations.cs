@@ -45,10 +45,10 @@ namespace BDN.benchmark.Lua
             var options = Params.CreateOptions();
 
             var builder = GarnetEmbeddedApplication.CreateHostBuilder([],
-                new GarnetServerOptions() {EnableLua = true, QuietMode = true, LuaOptions = options});
-            
+                new GarnetServerOptions() { EnableLua = true, QuietMode = true, LuaOptions = options });
+
             server = builder.Build();
-            
+
             storeWrapper = server.StoreWrapper;
             sessionScriptCache = new SessionScriptCache(storeWrapper, new GarnetNoAuthAuthenticator());
             session = server.GetRespSession();

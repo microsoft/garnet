@@ -165,11 +165,11 @@ return returnValue
 
             var builder = GarnetEmbeddedApplication.CreateHostBuilder([], new GarnetServerOptions
             {
-                 EnableLua = true, 
-                 QuietMode = true, 
-                 LuaOptions = opts 
+                EnableLua = true,
+                QuietMode = true,
+                LuaOptions = opts
             });
-            
+
             server = builder.Build();
 
             session = server.GetRespSession();

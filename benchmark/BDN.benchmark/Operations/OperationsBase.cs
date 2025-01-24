@@ -80,7 +80,7 @@ namespace BDN.benchmark.Operations
                 }
 
                 var builder = GarnetEmbeddedApplication.CreateHostBuilder([], opts);
-                
+
                 server = builder.Build();
                 session = server.GetRespSession();
             }

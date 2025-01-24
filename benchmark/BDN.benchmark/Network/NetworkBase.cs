@@ -48,7 +48,7 @@ namespace BDN.benchmark.Network
             };
 
             var builder = GarnetEmbeddedApplication.CreateHostBuilder([], opts);
-            
+
             server = builder.Build();
             networkHandler = server.GetNetworkHandler();
 
