@@ -41,6 +41,7 @@ namespace Garnet.test
             if (server != null)
             {
                 await server.StopAsync();
+                server.Dispose();
             }
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
         }

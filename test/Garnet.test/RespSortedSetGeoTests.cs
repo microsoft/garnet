@@ -138,6 +138,7 @@ namespace Garnet.test
         public async Task TearDown()
         {
             await server.StopAsync();
+            server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 

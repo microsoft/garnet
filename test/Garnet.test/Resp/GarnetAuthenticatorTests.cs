@@ -110,6 +110,7 @@ namespace Garnet.test.Resp
             ClassicAssert.AreEqual(3, authCalls);
 
             await server.StopAsync();
+            server.Dispose();
         }
     }
 }

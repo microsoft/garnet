@@ -35,6 +35,7 @@ namespace Garnet.test
         public async Task TearDown()
         {
             await server.StopAsync();
+            server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             TestUtils.DeleteDirectory(Directory.GetParent(testModuleDir)?.FullName);
         }
@@ -194,6 +195,7 @@ namespace Garnet.test
             var module1Path = CreateTestModule(onLoad, "TestModule1.dll");
             var module2Path = CreateTestModule(onLoad2, "TestModule2.dll");
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 disablePubSub: true,
                 loadModulePaths: [module1Path, module2Path]);

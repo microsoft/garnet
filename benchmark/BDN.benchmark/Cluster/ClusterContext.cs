@@ -27,6 +27,7 @@ namespace BDN.benchmark.Cluster
             session.Dispose();
             await server.StopAsync();
             server.Dispose();
+            server.Dispose();
         }
 
         public void SetupSingleInstance(bool disableSlotVerification = false)

@@ -31,6 +31,7 @@ namespace Garnet.test
         public async Task TearDown()
         {
             await server.StopAsync();
+            server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
@@ -578,6 +579,7 @@ namespace Garnet.test
         {
             bool sparse = seqSize < 128 ? true : false;
             await server.StopAsync();
+            server.Dispose();
             if (seqSize < 128)
                 server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                     lowMemory: true,
@@ -697,6 +699,7 @@ namespace Garnet.test
         public async Task HyperLogLogTestPFMERGE_LTM_SparseToSparse()
         {
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 lowMemory: true,
                 MemorySize: "1024",
@@ -807,6 +810,7 @@ namespace Garnet.test
         public async Task HyperLogLogTestPFMERGE_LTM_SparseToDense(bool reverse)
         {
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 MemorySize: "32k",
                 PageSize: "16k");
@@ -916,6 +920,7 @@ namespace Garnet.test
         public async Task HyperLogLogTestPFMERGE_LTM_DenseToDense()
         {
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 lowMemory: true,
                 MemorySize: "32k",

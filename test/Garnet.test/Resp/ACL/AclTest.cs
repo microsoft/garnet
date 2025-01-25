@@ -66,6 +66,7 @@ namespace Garnet.test.Resp.ACL
             if (server != null)
             {
                 await server.StopAsync();
+                server.Dispose();
                 server = null;
             }
 

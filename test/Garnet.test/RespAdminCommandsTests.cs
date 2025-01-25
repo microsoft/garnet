@@ -32,6 +32,7 @@ namespace Garnet.test
         public async Task TearDown()
         {
             await server.StopAsync();
+            server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
@@ -163,6 +164,7 @@ namespace Garnet.test
             if (useAzure)
                 TestUtils.IgnoreIfNotRunningAzureTests();
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: disableObj, UseAzureStorage: useAzure);
             await server.RunAsync();
 
@@ -178,6 +180,7 @@ namespace Garnet.test
             }
 
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, UseAzureStorage: useAzure);
             await server.RunAsync();
 
@@ -210,6 +213,7 @@ namespace Garnet.test
             }
 
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true);
             await server.RunAsync();
 
@@ -249,6 +253,7 @@ namespace Garnet.test
             }
 
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true);
             server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
             server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
@@ -295,6 +300,7 @@ namespace Garnet.test
             }
 
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true);
             server.Register.NewProcedure("SETMAINANDOBJECT", () => new SetStringAndList());
             await server.RunAsync();
@@ -315,6 +321,7 @@ namespace Garnet.test
             string sizeToString(int size) => size + "k";
 
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, MemorySize: sizeToString(memorySize), PageSize: sizeToString(pageSize));
             await server.RunAsync();
 
@@ -336,6 +343,7 @@ namespace Garnet.test
             }
 
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, MemorySize: sizeToString(recoveryMemorySize), PageSize: sizeToString(pageSize), objectStoreHeapMemorySize: "64k");
             await server.RunAsync();
 
@@ -364,6 +372,7 @@ namespace Garnet.test
             bool disableObj = true;
 
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: disableObj, lowMemory: true, MemorySize: memorySize, PageSize: "512", enableAOF: true);
             await server.RunAsync();
 
@@ -403,6 +412,7 @@ namespace Garnet.test
             }
 
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: disableObj, tryRecover: true, lowMemory: true, MemorySize: recoveryMemorySize, PageSize: "512", enableAOF: true);
             await server.RunAsync();
 
@@ -421,6 +431,7 @@ namespace Garnet.test
         public async Task SeAofRecoverTest()
         {
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableAOF: true);
             await server.RunAsync();
 
@@ -433,6 +444,7 @@ namespace Garnet.test
             }
 
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableAOF: true, tryRecover: true);
             await server.RunAsync();
 

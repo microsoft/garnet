@@ -41,6 +41,7 @@ namespace Garnet.test
             if (server != null)
             {
                 await server.StopAsync();
+                server.Dispose();
             }
         }
 
@@ -56,6 +57,7 @@ namespace Garnet.test
 
             server.Store.CommitAOF(true);
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
             await server.RunAsync();
 
@@ -81,6 +83,7 @@ namespace Garnet.test
 
             server.Store.WaitForCommit();
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
             await server.RunAsync();
 
@@ -98,6 +101,7 @@ namespace Garnet.test
         public async Task AofUpsertStoreAutoCommitCommitWaitRecoverTest()
         {
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: false, enableAOF: true, commitWait: true, UseAzureStorage: true);
             await server.RunAsync();
 
@@ -108,6 +112,7 @@ namespace Garnet.test
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
             }
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
             await server.RunAsync();
 
@@ -141,6 +146,7 @@ namespace Garnet.test
 
             server.Store.CommitAOF(true);
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
             await server.RunAsync();
 
@@ -168,6 +174,7 @@ namespace Garnet.test
 
             server.Store.CommitAOF(true);
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
             await server.RunAsync();
 
@@ -203,6 +210,7 @@ namespace Garnet.test
 
             server.Store.CommitAOF(true);
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
             await server.RunAsync();
 
@@ -238,6 +246,7 @@ namespace Garnet.test
 
             server.Store.CommitAOF(true);
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
             await server.RunAsync();
 
@@ -272,6 +281,7 @@ namespace Garnet.test
 
             server.Store.CommitAOF(true);
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
             await server.RunAsync();
 
@@ -318,6 +328,7 @@ namespace Garnet.test
 
             server.Store.CommitAOF(true);
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
             await server.RunAsync();
 
@@ -354,6 +365,7 @@ namespace Garnet.test
             }
             server.Store.CommitAOF(true);
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
             await server.RunAsync();
 
@@ -409,6 +421,7 @@ namespace Garnet.test
 
             server.Store.CommitAOF(true);
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
             await server.RunAsync();
 

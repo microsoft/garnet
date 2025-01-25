@@ -9,6 +9,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Azure.Core;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -180,6 +181,7 @@ namespace Garnet.test.cluster
 
             // Shutdown secondary
             await context.nodes[1].StopAsync();
+            context.nodes[1].Dispose();
 
             Thread.Sleep(TimeSpan.FromSeconds(2));
 
@@ -254,6 +256,7 @@ namespace Garnet.test.cluster
 
             // Shutdown secondary
             await context.nodes[1].StopAsync();
+            context.nodes[1].Dispose(); ;
             Thread.Sleep(TimeSpan.FromSeconds(2));
 
             // New insert
@@ -336,6 +339,7 @@ namespace Garnet.test.cluster
 
             context.logger?.LogTrace("Test disposing node 1");
             await context.nodes[1].StopAsync();
+            context.nodes[1].Dispose(); ;
             Thread.Sleep(TimeSpan.FromSeconds(1));
 
             // Populate Primary
@@ -693,7 +697,8 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
 
             // Simulate primary crash
-            context.nodes[0].StopAsync();
+            await context.nodes[0].StopAsync();
+            context.nodes[0].Dispose();
             context.nodes[0] = null;
 
             // Takeover as new primary
@@ -980,6 +985,7 @@ namespace Garnet.test.cluster
 
             // Dispose primary
             await context.nodes[oldPrimaryIndex].StopAsync();
+            context.nodes[oldPrimaryIndex].Dispose(); ;
             context.nodes[oldPrimaryIndex] = null;
 
             // Re-assign slots to replica manually since failover option was not            
@@ -1106,8 +1112,10 @@ namespace Garnet.test.cluster
 
             // Dispose primary and delete data
             await context.nodes[primaryNodeIndex].StopAsync();
+            context.nodes[primaryNodeIndex].Dispose();
             // Dispose primary but do not delete data
             await context.nodes[replicaNodeIndex].StopAsync();
+            context.nodes[replicaNodeIndex].Dispose();
 
             // Restart primary and do not recover
             context.nodes[primaryNodeIndex] = context.CreateInstance(

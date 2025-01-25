@@ -273,6 +273,7 @@ namespace Garnet.test.cluster
                     {
                         logger.LogDebug("\t a. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
                         await nodes[i].StopAsync();
+                        nodes[i].Dispose();
                         nodes[i] = null;
                         logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
                     }

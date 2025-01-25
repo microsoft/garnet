@@ -29,6 +29,7 @@ namespace Garnet.test
             if (server != null)
             {
                 await server.StopAsync();
+                server.Dispose();
             }
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
@@ -172,6 +173,7 @@ namespace Garnet.test
             }
 
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, indexSize: "512", indexMaxSize: "1k");
             await server.RunAsync();
 
@@ -236,6 +238,7 @@ namespace Garnet.test
             }
 
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, objectStoreIndexSize: "512", objectStoreIndexMaxSize: "1k");
             await server.RunAsync();
 

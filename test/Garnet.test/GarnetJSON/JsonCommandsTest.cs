@@ -33,6 +33,7 @@ namespace Garnet.test
         public async Task TearDown()
         {
             await server.StopAsync();
+            server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
@@ -104,6 +105,7 @@ namespace Garnet.test
             }
 
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true);
             RegisterCustomCommand();
             await server.RunAsync();
@@ -120,6 +122,7 @@ namespace Garnet.test
         public async Task AofUpsertRecoverTest()
         {
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableAOF: true);
             RegisterCustomCommand();
             await server.RunAsync();
@@ -135,6 +138,7 @@ namespace Garnet.test
 
             server.Store.CommitAOF(true);
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             RegisterCustomCommand();
             await server.RunAsync();

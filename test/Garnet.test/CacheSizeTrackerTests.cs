@@ -38,6 +38,7 @@ namespace Garnet.test
             if (server != null)
             {
                 await server.StopAsync();
+                server.Dispose();
             }
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
@@ -97,6 +98,7 @@ namespace Garnet.test
         public async Task ReadCacheIncreaseEmptyPageCountTest()
         {
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, MemorySize: "1k", PageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreReadCacheHeapMemorySize: "1k", enableObjectStoreReadCache: true);
             await server.RunAsync();
             objStore = server.Provider.StoreWrapper.objectStore;

@@ -216,6 +216,7 @@ namespace Garnet.test.cluster
 
             // Restart node with new ACL file
             await context.nodes[0].StopAsync();
+            context.nodes[0].Dispose(); ;
             context.nodes[0] = context.CreateInstance(context.clusterTestUtils.GetEndPoint(0).Port, useAcl: true, cleanClusterConfig: false);
             await context.nodes[0].RunAsync();
 

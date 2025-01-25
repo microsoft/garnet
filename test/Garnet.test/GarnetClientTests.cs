@@ -145,6 +145,7 @@ namespace Garnet.test
             e.Wait();
 
             await server.StopAsync();
+            server.Dispose();
         }
 
         [Test]
@@ -179,6 +180,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, metrics.Length); // Should be 0 after dispose
 
             await server.StopAsync();
+            server.Dispose();
         }
 
         [Test]
@@ -197,6 +199,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(10, n);
 
             await server.StopAsync();
+            server.Dispose();
         }
 
         [Test]
@@ -215,6 +218,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("OK", result);
 
             await server.StopAsync();
+            server.Dispose();
         }
 
         [Test]
@@ -279,6 +283,7 @@ namespace Garnet.test
             WaitAndReset(e);
 
             await server.StopAsync();
+            server.Dispose();
         }
 
         [Test]
@@ -343,6 +348,7 @@ namespace Garnet.test
             WaitAndReset(e);
 
             await server.StopAsync();
+            server.Dispose();
         }
 
         [Test]
@@ -364,6 +370,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("Hello", resultMykey);
 
             await server.StopAsync();
+            server.Dispose();
         }
 
         [Test]
@@ -433,6 +440,7 @@ namespace Garnet.test
             tokenSource.Dispose();
 
             await server.StopAsync();
+            server.Dispose();
         }
 
         private async Task<int> ReadValuesMGet(string[] keys, CancellationToken t)
@@ -571,6 +579,7 @@ namespace Garnet.test
             }
 
             await server.StopAsync();
+            server.Dispose();
         }
 
         private static async Task<long> DeleteKeysWithCT(string[] keys, Memory<byte>[] keysMB, ManualResetEventSlim mreObj, CancellationToken t, bool useMemoryType = false)

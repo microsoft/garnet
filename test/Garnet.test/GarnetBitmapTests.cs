@@ -30,6 +30,7 @@ namespace Garnet.test
         public async Task TearDown()
         {
             await server.StopAsync();
+            server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
@@ -443,6 +444,7 @@ namespace Garnet.test
         {
             int bitmapBytes = 512;
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 lowMemory: true,
                 MemorySize: (bitmapBytes << 2).ToString(),
@@ -640,6 +642,7 @@ namespace Garnet.test
         {
             int bitmapBytes = 512;
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 lowMemory: true,
                 MemorySize: (bitmapBytes << 2).ToString(),
@@ -1285,6 +1288,7 @@ namespace Garnet.test
         {
             int bitmapBytes = 512;
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 lowMemory: true,
                 MemorySize: (bitmapBytes << 2).ToString(),
@@ -1486,6 +1490,7 @@ namespace Garnet.test
         {
             int bitmapBytes = 512;
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 lowMemory: true,
                 MemorySize: (bitmapBytes << 2).ToString(),
@@ -1952,6 +1957,7 @@ namespace Garnet.test
         {
             int bitmapBytes = 512;
             await server.StopAsync();
+            server.Dispose();
             server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir,
                 lowMemory: true,
                 MemorySize: (bitmapBytes << 2).ToString(),
