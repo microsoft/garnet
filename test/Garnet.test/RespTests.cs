@@ -139,6 +139,312 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>
+        /// Tests RESTORE value that is not string
+        /// </summary>
+        [Test]
+        public void TryRestoreKeyNonStringType()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var payload = new byte[]
+            {
+                0x14, 0xf, 0xf, 0x0, 0x0, 0x0, 0x1, 0x0, 0xc2, 0x86, 0x62, 0x69, 0x6b, 0x65, 0x3a, 0x31, 0x7, 0xc3, 0xbf, 0xb, 0x0, 0xc3, 0xaa, 0x33, 0x68, 0x7b, 0x2a, 0xc3, 0xa6, 0xc3, 0xbf, 0xc3, 0xb9
+            };
+
+            Assert.Throws<RedisServerException>(() => db.KeyRestore("mykey", payload));
+        }
+
+        /// <summary>
+        /// Tests RESTORE command on existing key
+        /// </summary>
+        [Test]
+        public void TryRestoreExistingKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+
+            var dump = db.KeyDump("mykey")!;
+
+            Assert.Throws<RedisServerException>(() => db.KeyRestore("mykey", dump));
+        }
+
+        /// <summary>
+        /// Tests that RESTORE command restores payload with 32 bit encoded length
+        /// </summary>
+        [Test]
+        public void SingleRestore32Bit()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var valueBuilder = new StringBuilder();
+
+            for (var i = 0; i < 16_383; i++)
+                valueBuilder.Append('a');
+
+            var val = valueBuilder.ToString();
+
+            db.StringSet("mykey", val);
+
+            var dump = db.KeyDump("mykey")!;
+
+            db.KeyDelete("mykey");
+
+            db.KeyRestore("mykey", dump);
+
+            var value = db.StringGet("mykey");
+
+            ClassicAssert.AreEqual(val, value.ToString());
+        }
+
+        /// <summary>
+        /// Tests that RESTORE command restores payload with 14 bit encoded length
+        /// </summary>
+        [Test]
+        public void SingleRestore14Bit()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var valueBuilder = new StringBuilder();
+
+            for (var i = 0; i < 16_383 - 1; i++)
+                valueBuilder.Append('a');
+
+            var val = valueBuilder.ToString();
+
+            db.StringSet("mykey", val);
+
+            var dump = db.KeyDump("mykey")!;
+
+            db.KeyDelete("mykey");
+
+            db.KeyRestore("mykey", dump);
+
+            var value = db.StringGet("mykey");
+
+            ClassicAssert.AreEqual(val, value.ToString());
+        }
+
+        /// <summary>
+        /// Tests that RESTORE command restores payload with 6 bit encoded length
+        /// </summary>
+        [Test]
+        public void SingleRestore6Bit()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+
+            var dump = db.KeyDump("mykey")!;
+
+            db.KeyDelete("mykey");
+
+            db.KeyRestore("mykey", dump, TimeSpan.FromHours(3));
+
+            var value = db.StringGet("mykey");
+
+            ClassicAssert.AreEqual("val", value.ToString());
+        }
+
+        /// <summary>
+        /// Tests that RESTORE command restores payload with 6 bit encoded length without TTL
+        /// </summary>
+        [Test]
+        public void SingleRestore6BitWithoutTtl()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+
+            var dump = db.KeyDump("mykey")!;
+
+            db.KeyDelete("mykey");
+
+            db.KeyRestore("mykey", dump);
+
+            var value = db.StringGet("mykey");
+
+            ClassicAssert.AreEqual("val", value.ToString());
+        }
+
+        /// <summary>
+        /// Tests that DUMP command returns payload with 6 bit encoded length
+        /// </summary>
+        [Test]
+        public void SingleDump6Bit()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+
+            var dump = db.KeyDump("mykey");
+
+            var expectedValue = new byte[]
+            {
+                 0x00, // value type 
+                 0x03, // length of payload
+                 0x76, 0x61, 0x6C,       // 'v', 'a', 'l'
+                 0x0B, 0x00, // RDB version
+            };
+
+            var crc = new byte[]
+            {
+                 0xDB,
+                 0x82,
+                 0x3C,
+                 0x30,
+                 0x38,
+                 0x78,
+                 0x5A,
+                 0x99
+            };
+
+            expectedValue = [.. expectedValue, .. crc];
+
+            ClassicAssert.AreEqual(expectedValue, dump);
+        }
+
+        /// <summary>
+        /// Tests that DUMP command returns payload with 14 bit encoded length
+        /// </summary>
+        [Test]
+        public void SingleDump14Bit()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var valueBuilder = new StringBuilder();
+
+            for (var i = 0; i < 16_383 - 1; i++)
+                valueBuilder.Append('a');
+
+            var value = valueBuilder.ToString();
+
+            db.StringSet("mykey", value);
+
+            var dump = db.KeyDump("mykey");
+
+            var expectedValue = new byte[]
+            {
+                0x00, // value type
+                0x7F, 0xFE, // length of payload
+            };
+
+            expectedValue = [.. expectedValue, .. Encoding.UTF8.GetBytes(value)];
+
+            var rdbVersion = new byte[]
+            {
+                0x0B, 0x00, // RDB version
+            };
+
+            expectedValue = [.. expectedValue, .. rdbVersion];
+
+            var crc = new byte[]
+            {
+                0x7C,
+                0x09,
+                0x2D,
+                0x16,
+                0x73,
+                0xAE,
+                0x7C,
+                0xCF
+            };
+
+            expectedValue = [.. expectedValue, .. crc];
+
+            ClassicAssert.AreEqual(expectedValue, dump);
+        }
+
+        /// <summary>
+        /// Tests that DUMP command returns payload with 32 bit encoded length
+        /// </summary>
+        [Test]
+        public void SingleDump32Bit()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var valueBuilder = new StringBuilder();
+
+            for (var i = 0; i < 16_383 + 1; i++)
+                valueBuilder.Append('a');
+
+            var value = valueBuilder.ToString();
+
+            db.StringSet("mykey", value);
+
+            var dump = db.KeyDump("mykey");
+
+            var expectedValue = new byte[]
+            {
+                0x00, // value type
+                0x80, 0x00, 0x00, 0x40, 0x00, // length of payload
+            };
+
+            expectedValue = [.. expectedValue, .. Encoding.UTF8.GetBytes(value)];
+
+            var rdbVersion = new byte[]
+            {
+                0x0B, 0x00, // RDB version
+            };
+
+            expectedValue = [.. expectedValue, .. rdbVersion];
+
+            var crc = new byte[]
+            {
+                0x7F,
+                0x73,
+                0x7E,
+                0xA9,
+                0x87,
+                0xD9,
+                0x90,
+                0x14
+            };
+
+            expectedValue = [.. expectedValue, .. crc];
+
+            ClassicAssert.AreEqual(expectedValue, dump);
+        }
+
+        /// <summary>
+        /// Tests DUMP on non string type which is currently not supported
+        /// </summary>
+        [Test]
+        public void TryDumpKeyNonString()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SetAdd("mykey", "val1");
+            db.SetAdd("mykey", "val2");
+
+            var value = db.KeyDump("mykey");
+
+            ClassicAssert.AreEqual(null, value);
+        }
+
+        /// <summary>
+        /// Try DUMP key that does not exist
+        /// </summary>
+        [Test]
+        public void TryDumpKeyThatDoesNotExist()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var value = db.KeyDump("mykey");
+
+            ClassicAssert.AreEqual(null, value);
+        }
+
         [Test]
         public void SingleSetGet()
         {
@@ -4278,6 +4584,26 @@ namespace Garnet.test
             ClassicAssert.AreEqual(newValue, result);
         }
 
+        [Test]
+        public void SetNXCorrectResponse()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+
+            // Set key
+            var response = lightClientRequest.SendCommand("SETNX key1 2");
+            var expectedResponse = ":1\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // Setnx command should fail since key exists
+            response = lightClientRequest.SendCommand("SETNX key1 3");
+            expectedResponse = ":0\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // Be sure key wasn't modified
+            response = lightClientRequest.SendCommand("GET key1");
+            expectedResponse = "$1\r\n2\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+        }
         #endregion
 
         #region SUBSTR

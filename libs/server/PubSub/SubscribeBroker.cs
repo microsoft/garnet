@@ -326,7 +326,6 @@ namespace Garnet.server
             }
         }
 
-
         /// <summary>
         /// List all subscriptions made by a session
         /// </summary>
@@ -427,19 +426,19 @@ namespace Garnet.server
             {
                 if (subscriptions is null || subscriptions.Count == 0)
                 {
-                    while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
+                    while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     return;
                 }
 
                 if (input.parseState.Count == 0)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(subscriptions.Count, ref curr, end))
+                    while (!RespWriteUtils.TryWriteArrayLength(subscriptions.Count, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     foreach (var key in subscriptions.Keys)
                     {
-                        while (!RespWriteUtils.WriteBulkString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
+                        while (!RespWriteUtils.TryWriteBulkString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     return;
@@ -448,7 +447,7 @@ namespace Garnet.server
                 // Below WriteArrayLength is primarily to move the start of the buffer to the max length that is required to write the array length. The actual length is written in the below line.
                 // This is done to avoid multiple two passes over the subscriptions or new array allocation if we use single pass over the subscriptions
                 var totalArrayHeaderLen = 0;
-                while (!RespWriteUtils.WriteArrayLength(subscriptions.Count, ref curr, end, out var _, out totalArrayHeaderLen))
+                while (!RespWriteUtils.TryWriteArrayLength(subscriptions.Count, ref curr, end, out var _, out totalArrayHeaderLen))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 var noOfFoundChannels = 0;
@@ -464,7 +463,7 @@ namespace Garnet.server
                         var _patternPtr = patternPtr;
                         if (keySerializer.Match(ref keySerializer.ReadKeyByRef(ref endKeyPtr), true, ref keySerializer.ReadKeyByRef(ref _patternPtr), true))
                         {
-                            while (!RespWriteUtils.WriteSimpleString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
+                            while (!RespWriteUtils.TryWriteSimpleString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             noOfFoundChannels++;
                         }
@@ -474,7 +473,7 @@ namespace Garnet.server
                 if (noOfFoundChannels == 0)
                 {
                     curr = ptr;
-                    while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
+                    while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     return;
                 }
@@ -484,7 +483,7 @@ namespace Garnet.server
                 var newTotalArrayHeaderLen = 0;
                 var _ptr = ptr;
                 // ReallocateOutput is not needed here as there should be always be available space in the output buffer as we have already written the max array length
-                _ = RespWriteUtils.WriteArrayLength(noOfFoundChannels, ref _ptr, end, out var _, out newTotalArrayHeaderLen);
+                _ = RespWriteUtils.TryWriteArrayLength(noOfFoundChannels, ref _ptr, end, out var _, out newTotalArrayHeaderLen);
 
                 Debug.Assert(totalArrayHeaderLen >= newTotalArrayHeaderLen, "newTotalArrayHeaderLen can't be bigger than totalArrayHeaderLen as we have already written max array lenght in the buffer");
                 if (totalArrayHeaderLen != newTotalArrayHeaderLen)
@@ -530,12 +529,12 @@ namespace Garnet.server
                 var numOfChannels = input.parseState.Count;
                 if (subscriptions is null || numOfChannels == 0)
                 {
-                    while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
+                    while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     return;
                 }
 
-                while (!RespWriteUtils.WriteArrayLength(numOfChannels * 2, ref curr, end))
+                while (!RespWriteUtils.TryWriteArrayLength(numOfChannels * 2, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 var currChannelIdx = 0;
@@ -546,13 +545,13 @@ namespace Garnet.server
                     var channelPtr = channelSpan.ToPointer() - sizeof(int);  // Memory would have been already pinned
                     *(int*)channelPtr = channelSpan.Length;
 
-                    while (!RespWriteUtils.WriteBulkString(channelArg.ReadOnlySpan, ref curr, end))
+                    while (!RespWriteUtils.TryWriteBulkString(channelArg.ReadOnlySpan, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     var channel = new Span<byte>(channelPtr, channelSpan.Length + sizeof(int)).ToArray();
 
                     subscriptions.TryGetValue(channel, out var subscriptionDict);
-                    while (!RespWriteUtils.WriteInteger(subscriptionDict is null ? 0 : subscriptionDict.Count, ref curr, end))
+                    while (!RespWriteUtils.TryWriteInt32(subscriptionDict is null ? 0 : subscriptionDict.Count, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     currChannelIdx++;

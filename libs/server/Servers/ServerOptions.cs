@@ -99,6 +99,11 @@ namespace Garnet.server
         public bool FailOnRecoveryError = false;
 
         /// <summary>
+        /// Skip RDB restore checksum validation
+        /// </summary>
+        public bool SkipRDBRestoreChecksumValidation = false;
+
+        /// <summary>
         /// Logger
         /// </summary>
         public ILogger logger;
@@ -228,7 +233,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="value"></param>
         /// <returns></returns>
-        protected static long ParseSize(string value)
+        public static long ParseSize(string value)
         {
             char[] suffix = ['k', 'm', 'g', 't', 'p'];
             long result = 0;

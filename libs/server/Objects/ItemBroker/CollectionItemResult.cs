@@ -20,6 +20,20 @@ namespace Garnet.server
             Items = items;
         }
 
+        public CollectionItemResult(byte[] key, double score, byte[] item)
+        {
+            Key = key;
+            Score = score;
+            Item = item;
+        }
+
+        public CollectionItemResult(byte[] key, double[] scores, byte[][] items)
+        {
+            Key = key;
+            Scores = scores;
+            Items = items;
+        }
+
         private CollectionItemResult(bool isForceUnblocked)
         {
             IsForceUnblocked = isForceUnblocked;
@@ -41,9 +55,19 @@ namespace Garnet.server
         internal byte[] Item { get; }
 
         /// <summary>
+        /// Score associated with the item retrieved from the collection
+        /// </summary>
+        internal double Score { get; }
+
+        /// <summary>
         /// Item retrieved from collection
         /// </summary>
         internal byte[][] Items { get; }
+
+        /// <summary>
+        /// Scores associated with the items retrieved from the collection
+        /// </summary>
+        internal double[] Scores { get; }
 
         /// <summary>
         /// Gets a value indicating whether the item retrieval was force unblocked.

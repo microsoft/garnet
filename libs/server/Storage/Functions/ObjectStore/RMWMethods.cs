@@ -31,10 +31,10 @@ namespace Garnet.server
                     else
                     {
                         var customObjectCommand = GetCustomObjectCommand(ref input, type);
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                        (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
                         var ret = customObjectCommand.NeedInitialUpdate(key, ref input, ref outp);
-                        output.spanByteAndMemory.Memory = outp.Memory;
-                        output.spanByteAndMemory.Length = outp.Length;
+                        output.SpanByteAndMemory.Memory = outp.Memory;
+                        output.SpanByteAndMemory.Length = outp.Length;
                         return ret;
                     }
             }
@@ -47,7 +47,7 @@ namespace Garnet.server
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
-                value.Operate(ref input, ref output.spanByteAndMemory, out _, out _);
+                value.Operate(ref input, ref output, out _);
                 return true;
             }
             else
@@ -57,10 +57,10 @@ namespace Garnet.server
                 var customObjectCommand = GetCustomObjectCommand(ref input, type);
                 value = functionsState.GetCustomObjectFactory((byte)type).Create((byte)type);
 
-                (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
                 var result = customObjectCommand.InitialUpdater(key, ref input, value, ref outp, ref rmwInfo);
-                output.spanByteAndMemory.Memory = outp.Memory;
-                output.spanByteAndMemory.Length = outp.Length;
+                output.SpanByteAndMemory.Memory = outp.Memory;
+                output.SpanByteAndMemory.Length = outp.Length;
                 return result;
             }
         }
@@ -81,7 +81,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            if (InPlaceUpdaterWorker(ref key, ref input, ref value, ref output, ref rmwInfo, out long sizeChange))
+            if (InPlaceUpdaterWorker(ref key, ref input, ref value, ref output, ref rmwInfo, out var sizeChange))
             {
                 if (!rmwInfo.RecordInfo.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
@@ -133,17 +133,19 @@ namespace Garnet.server
                     if (value.Expiration > 0)
                     {
                         value.Expiration = 0;
-                        CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.spanByteAndMemory);
+                        CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
                     }
                     else
-                        CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
+                        CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
                     return true;
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        var operateSuccessful = value.Operate(ref input, ref output.spanByteAndMemory, out sizeChange,
-                        out var removeKey);
-                        if (removeKey)
+                        var operateSuccessful = value.Operate(ref input, ref output, out sizeChange);
+                        if (output.HasWrongType)
+                            return true;
+
+                        if (output.HasRemoveKey)
                         {
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;
@@ -153,14 +155,17 @@ namespace Garnet.server
                     }
                     else
                     {
-                        if (IncorrectObjectType(ref input, value, ref output.spanByteAndMemory))
+                        if (IncorrectObjectType(ref input, value, ref output.SpanByteAndMemory))
+                        {
+                            output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
                             return true;
+                        }
 
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                        (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
                         var result = customObjectCommand.Updater(key, ref input, value, ref outp, ref rmwInfo);
-                        output.spanByteAndMemory.Memory = outp.Memory;
-                        output.spanByteAndMemory.Length = outp.Length;
+                        output.SpanByteAndMemory.Memory = outp.Memory;
+                        output.SpanByteAndMemory.Length = outp.Length;
                         return result;
                         //return customObjectCommand.InPlaceUpdateWorker(key, ref input, value, ref output.spanByteAndMemory, ref rmwInfo);
                     }
@@ -225,16 +230,19 @@ namespace Garnet.server
                     if (value.Expiration > 0)
                     {
                         value.Expiration = 0;
-                        CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.spanByteAndMemory);
+                        CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
                     }
                     else
-                        CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
+                        CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
                     break;
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
-                        if (removeKey)
+                        value.Operate(ref input, ref output, out _);
+                        if (output.HasWrongType)
+                            return true;
+
+                        if (output.HasRemoveKey)
                         {
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;
@@ -245,14 +253,17 @@ namespace Garnet.server
                     {
                         // TODO: Update to invoke CopyUpdater of custom object command without creating a new object
                         // using Clone. Currently, expire and persist commands are performed on the new copy of the object.
-                        if (IncorrectObjectType(ref input, value, ref output.spanByteAndMemory))
+                        if (IncorrectObjectType(ref input, value, ref output.SpanByteAndMemory))
+                        {
+                            output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
                             return true;
+                        }
 
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                        (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
                         var result = customObjectCommand.Updater(key, ref input, value, ref outp, ref rmwInfo);
-                        output.spanByteAndMemory.Memory = outp.Memory;
-                        output.spanByteAndMemory.Length = outp.Length;
+                        output.SpanByteAndMemory.Memory = outp.Memory;
+                        output.SpanByteAndMemory.Length = outp.Length;
                         return result;
                     }
             }

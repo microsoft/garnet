@@ -7,7 +7,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Garnet.common;
-using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -160,7 +159,7 @@ namespace Garnet.server
                     }
 
                     var result = resultSb.ToString();
-                    while (!RespWriteUtils.WriteUtf8BulkString(result, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteUtf8BulkString(result, ref dcurr, dend))
                         SendAndReset();
 
                     return true;
@@ -194,7 +193,7 @@ namespace Garnet.server
             WriteClientInfo(storeWrapper.clusterProvider, resultSb, this, Environment.TickCount64);
 
             var result = resultSb.ToString();
-            while (!RespWriteUtils.WriteSimpleString(result, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteSimpleString(result, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -227,7 +226,7 @@ namespace Garnet.server
                             {
                                 _ = session.TryKill();
 
-                                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                                     SendAndReset();
 
                                 return true;
@@ -235,7 +234,7 @@ namespace Garnet.server
                         }
                     }
 
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NO_SUCH_CLIENT, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NO_SUCH_CLIENT, ref dcurr, dend))
                         SendAndReset();
 
                     return true;
@@ -273,7 +272,7 @@ namespace Garnet.server
                         {
                             if (!ParseUtils.TryReadLong(ref value, out var idParsed))
                             {
-                                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "client-id")));
+                                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "client-id")));
                             }
 
                             if (id is not null)
@@ -402,7 +401,7 @@ namespace Garnet.server
                     }
 
                     // Hand back result, which is count of clients _actually_ killed
-                    while (!RespWriteUtils.WriteInteger(killed, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(killed, ref dcurr, dend))
                         SendAndReset();
 
                     return true;
@@ -502,12 +501,12 @@ namespace Garnet.server
 
             if (string.IsNullOrEmpty(this.clientName))
             {
-                while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteUtf8BulkString(this.clientName, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteUtf8BulkString(this.clientName, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -532,7 +531,7 @@ namespace Garnet.server
 
             this.clientName = name;
 
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -563,7 +562,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
 
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;

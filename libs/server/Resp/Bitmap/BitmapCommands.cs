@@ -134,7 +134,7 @@ namespace Garnet.server
             // Validate offset
             if (!parseState.TryGetLong(1, out _))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
                            dend))
                     SendAndReset();
                 return true;
@@ -144,7 +144,7 @@ namespace Garnet.server
             var bSetValSlice = parseState.GetArgSliceByRef(2).ReadOnlySpan;
             if (bSetValSlice.Length != 1 || (bSetValSlice[0] != '0' && bSetValSlice[0] != '1'))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_BIT_IS_NOT_INTEGER, ref dcurr,
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BIT_IS_NOT_INTEGER, ref dcurr,
                            dend))
                     SendAndReset();
                 return true;
@@ -180,7 +180,7 @@ namespace Garnet.server
             // Validate offset
             if (!parseState.TryGetLong(1, out _))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
                            dend))
                     SendAndReset();
                 return true;
@@ -192,7 +192,7 @@ namespace Garnet.server
             var status = storageApi.StringGetBit(ref sbKey, ref input, ref o);
 
             if (status == GarnetStatus.NOTFOUND)
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
             else
                 dcurr += o.Length;
@@ -221,7 +221,7 @@ namespace Garnet.server
             {
                 if (!parseState.TryGetInt(1, out _) || (parseState.Count > 2 && !parseState.TryGetInt(2, out _)))
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
                                dend))
                         SendAndReset();
                     return true;
@@ -243,7 +243,7 @@ namespace Garnet.server
             }
             else if (status == GarnetStatus.NOTFOUND)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -269,7 +269,7 @@ namespace Garnet.server
             var bSetValSlice = parseState.GetArgSliceByRef(1).ReadOnlySpan;
             if (bSetValSlice.Length != 1 || (bSetValSlice[0] != '0' && bSetValSlice[0] != '1'))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_BIT_IS_NOT_INTEGER, ref dcurr,
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BIT_IS_NOT_INTEGER, ref dcurr,
                            dend))
                     SendAndReset();
                 return true;
@@ -281,7 +281,7 @@ namespace Garnet.server
                 if (!parseState.TryGetInt(2, out _) ||
                     (parseState.Count > 3 && !parseState.TryGetInt(3, out _)))
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
                                dend))
                         SendAndReset();
                     return true;
@@ -295,7 +295,7 @@ namespace Garnet.server
                 if (!sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) &&
                     !sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BYTE"u8))
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr,
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr,
                                dend))
                         SendAndReset();
                     return true;
@@ -318,7 +318,7 @@ namespace Garnet.server
             else if (status == GarnetStatus.NOTFOUND)
             {
                 var resp = bSetValSlice[0] == '0' ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_N1;
-                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -334,7 +334,7 @@ namespace Garnet.server
             // Too few keys
             if (parseState.Count < 2)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
                     SendAndReset();
 
                 return true;
@@ -342,7 +342,7 @@ namespace Garnet.server
 
             if (parseState.Count > 64)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_BITOP_KEY_LIMIT, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_BITOP_KEY_LIMIT, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -350,7 +350,7 @@ namespace Garnet.server
             var input = new RawStringInput(RespCommand.BITOP, ref parseState);
 
             _ = storageApi.StringBitOperation(ref input, bitOp, out var result);
-            while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteInt64(result, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -393,7 +393,7 @@ namespace Garnet.server
                     // Validate overflow type
                     if (!parseState.TryGetBitFieldOverflow(currTokenIdx, out _))
                     {
-                        while (!RespWriteUtils.WriteError(
+                        while (!RespWriteUtils.TryWriteError(
                                    $"ERR Overflow type {parseState.GetString(currTokenIdx)} not supported",
                                    ref dcurr, dend))
                             SendAndReset();
@@ -420,7 +420,7 @@ namespace Garnet.server
                     bitCount > 64 ||
                     (bitCount == 64 && encodingArg[0] == 'u'))
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_INVALID_BITFIELD_TYPE, ref dcurr,
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_BITFIELD_TYPE, ref dcurr,
                                dend))
                         SendAndReset();
                     return true;
@@ -433,7 +433,7 @@ namespace Garnet.server
 
                 if (!isOffsetValid)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
                                dend))
                         SendAndReset();
                     return true;
@@ -448,7 +448,7 @@ namespace Garnet.server
                 {
                     if (readOnly)
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -461,7 +461,7 @@ namespace Garnet.server
                         op = RespCommand.INCRBY;
                     else
                     {
-                        while (!RespWriteUtils.WriteError(
+                        while (!RespWriteUtils.TryWriteError(
                                    $"ERR Bitfield command {Encoding.ASCII.GetString(command)} not supported", ref dcurr,
                                    dend))
                             SendAndReset();
@@ -472,7 +472,7 @@ namespace Garnet.server
                     var valueSlice = parseState.GetArgSliceByRef(currTokenIdx);
                     if (!parseState.TryGetLong(currTokenIdx, out _))
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
                                    dend))
                             SendAndReset();
                         return true;
@@ -483,7 +483,7 @@ namespace Garnet.server
                 }
             }
 
-            while (!RespWriteUtils.WriteArrayLength(secondaryCommandArgs.Count, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteArrayLength(secondaryCommandArgs.Count, ref dcurr, dend))
                 SendAndReset();
 
             var input = new RawStringInput(RespCommand.BITFIELD);
@@ -512,7 +512,7 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.NOTFOUND && opCode == RespCommand.GET)
                 {
-                    while (!RespWriteUtils.WriteArrayItem(0, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayItem(0, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
