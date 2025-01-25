@@ -127,7 +127,8 @@ namespace Garnet.server
                 return false;
             }
 
-            e.AcceptSocket.NoDelay = true;
+            if (e.AcceptSocket.LocalEndPoint is not UnixDomainSocketEndPoint)
+                e.AcceptSocket.NoDelay = true;
 
             // Ok to create new event args on accept because we assume a connection to be long-running
             string remoteEndpointName = e.AcceptSocket.RemoteEndPoint?.ToString();

@@ -44,7 +44,6 @@ namespace Garnet.client
         static readonly Memory<byte> AUTH = "$4\r\nAUTH\r\n"u8.ToArray();
         static readonly MemoryResult<byte> RESP_OK = new(default(OK_MEM));
 
-        readonly EndPoint endpoint;
         readonly int sendPageSize;
         readonly int bufferSize;
         readonly int maxOutstandingTasks;
@@ -96,6 +95,11 @@ namespace Garnet.client
         static readonly Exception disposeException = new GarnetClientDisposedException();
 
         /// <summary>
+        /// The host endpoint
+        /// </summary>
+        public EndPoint EndPoint { get; }
+
+        /// <summary>
         /// Whether we are connected to the server
         /// </summary>
         public bool IsConnected => socket != null && socket.Connected && !Disposed;
@@ -140,7 +144,7 @@ namespace Garnet.client
             int networkSendThrottleMax = 8,
             ILogger logger = null)
         {
-            this.endpoint = endpoint;
+            EndPoint = endpoint;
             this.sendPageSize = (int)Utility.PreviousPowerOf2(sendPageSize);
             this.bufferSize = bufferSize;
             this.authUsername = authUsername;
@@ -184,9 +188,9 @@ namespace Garnet.client
         /// </summary>
         public void Connect(CancellationToken token = default)
         {
-            socket = CreateSendSocket(timeoutMilliseconds);
+            socket = ConnectSendSocketAsync(timeoutMilliseconds).ConfigureAwait(false).GetAwaiter().GetResult();
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
-            networkHandler.StartAsync(sslOptions, endpoint.ToString(), token).ConfigureAwait(false).GetAwaiter().GetResult();
+            networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
 
             if (timeoutMilliseconds > 0)
@@ -217,9 +221,9 @@ namespace Garnet.client
         /// </summary>
         public async Task ConnectAsync(CancellationToken token = default)
         {
-            socket = CreateSendSocket(timeoutMilliseconds);
+            socket = await ConnectSendSocketAsync(timeoutMilliseconds);
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
-            await networkHandler.StartAsync(sslOptions, endpoint.ToString(), token).ConfigureAwait(false);
+            await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
             networkSender = networkHandler.GetNetworkSender();
 
             if (timeoutMilliseconds > 0)
@@ -246,66 +250,73 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Create client send socket
+        /// Connect client send socket
         /// </summary>
         /// <param name="millisecondsTimeout"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        Socket CreateSendSocket(int millisecondsTimeout = 0)
+        private async Task<Socket> ConnectSendSocketAsync(int millisecondsTimeout = 0, CancellationToken cancellationToken = default)
         {
-            switch (endpoint)
+            if (EndPoint is DnsEndPoint dnsEndpoint)
             {
-                case DnsEndPoint dnsEndpoint:
-                    var hostEntries = Dns.GetHostEntry(dnsEndpoint.Host);
-                    // Try all available DNS entries if a hostName is provided
-                    foreach (var addressEntry in hostEntries.AddressList)
+                var hostEntries = await Dns.GetHostEntryAsync(dnsEndpoint.Host, cancellationToken).ConfigureAwait(false);
+                // Try all available DNS entries if a hostName is provided
+                foreach (var addressEntry in hostEntries.AddressList)
+                {
+                    var endpoint = new IPEndPoint(addressEntry, dnsEndpoint.Port);
+                    var socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
                     {
-                        var endPoint = new IPEndPoint(addressEntry, dnsEndpoint.Port);
-                        if (!TryConnectSocket(endPoint, millisecondsTimeout, out var socket))
-                            continue;
-                        return socket;
-                    }
+                        NoDelay = true
+                    };
 
-                    // Reaching this point means we failed to establish connection from any of the provided addresses
-                    throw new Exception($"Failed to connect at {endpoint}");
-                case UnixDomainSocketEndPoint unix:
-                    return new Socket(unix.AddressFamily, SocketType.Stream, ProtocolType.Unspecified);
-                default:
-                    if (!TryConnectSocket(endpoint, millisecondsTimeout, out socket))
-                    {
-                        // If failed here then provided endpoint does not accept connections
-                        logger?.LogWarning("Failed to connect at {endpoint}", endpoint);
-                        throw new Exception($"Failed to connect at {endpoint}");
-                    }
+                    if (await TryConnectSocketAsync(socket, endpoint, millisecondsTimeout, cancellationToken))
+                        return socket;
+                }
+            }
+            else
+            {
+                var socket = new Socket(EndPoint.AddressFamily, SocketType.Stream, ProtocolType.Unspecified);
+                if (EndPoint is not UnixDomainSocketEndPoint)
+                    socket.NoDelay = true;
+
+                if (await TryConnectSocketAsync(socket, EndPoint, millisecondsTimeout, cancellationToken))
                     return socket;
             }
+
+            logger?.LogWarning("Failed to connect at {endpoint}", EndPoint);
+            throw new Exception($"Failed to connect at {EndPoint}");
         }
 
         /// <summary>
         /// Try to establish connection for socket using endPoint
         /// </summary>
-        /// <param name="endPoint"></param>
-        /// <param name="millisecondsTimeout"></param>
         /// <param name="socket"></param>
+        /// <param name="endpoint"></param>
+        /// <param name="millisecondsTimeout"></param>
+        /// <param name="cancellationToken">The cancellation token</param>
         /// <returns></returns>
-        bool TryConnectSocket(EndPoint endPoint, int millisecondsTimeout, out Socket socket)
+        private async Task<bool> TryConnectSocketAsync(Socket socket, EndPoint endpoint, int millisecondsTimeout, CancellationToken cancellationToken = default)
         {
-            socket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
-            {
-                NoDelay = true
-            };
             try
             {
                 if (millisecondsTimeout > 0)
                 {
-                    var result = socket.BeginConnect(endPoint, null, null);
-                    result.AsyncWaitHandle.WaitOne(millisecondsTimeout, true);
+                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-                    if (socket.Connected)
+                    var connectTask = socket.ConnectAsync(endpoint, timeoutCts.Token).AsTask();
+                    if (await Task.WhenAny(connectTask, Task.Delay(millisecondsTimeout, timeoutCts.Token)) == connectTask)
                     {
-                        socket.EndConnect(result);
+                        // Task completed within timeout.
+                        // Consider that the task may have faulted or been canceled.
+                        // We re-await the task so that any exceptions/cancellation is rethrown.
+                        await connectTask;
                     }
                     else
+                    {
+                        timeoutCts.Cancel();
+                    }
+
+                    if (!socket.Connected)
                     {
                         socket.Close();
                         throw new Exception($"Failed to connect server {endpoint}.");
@@ -313,14 +324,13 @@ namespace Garnet.client
                 }
                 else
                 {
-                    socket.Connect(endPoint);
+                    await socket.ConnectAsync(endpoint, cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "Failed at GarnetClient.TryConnectSocket");
+                logger?.LogWarning(ex, "Failed at GarnetClient.TryConnectSocketAsync");
                 socket.Dispose();
-                socket = null;
                 return false;
             }
 

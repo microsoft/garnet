@@ -155,14 +155,14 @@ namespace Garnet.test
         static bool IsAzuriteRunning()
         {
             // If Azurite is running, it will run on localhost and listen on port 10000 and/or 10001.
-            IPAddress expectedIp = new([127, 0, 0, 1]);
+            var expectedIp = IPAddress.Loopback;
             var expectedPorts = new[] { 10000, 10001 };
 
             var activeTcpListeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners();
 
             var relevantListeners = activeTcpListeners.Where(t =>
                     expectedPorts.Contains(t.Port) &&
-                    t.Address.Equals(expectedIp))
+                    t.Address == expectedIp)
                 .ToList();
 
             return relevantListeners.Any();
@@ -180,6 +180,7 @@ namespace Garnet.test
         /// </summary>
         public static GarnetServer CreateGarnetServer(
             string logCheckpointDir,
+            EndPoint endpoint = null,
             bool disablePubSub = false,
             bool tryRecover = false,
             bool lowMemory = false,
@@ -215,7 +216,8 @@ namespace Garnet.test
             string pubSubPageSize = null,
             bool asyncReplay = false,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
-            string luaMemoryLimit = "")
+            string luaMemoryLimit = "",
+            string unixSocketPath = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -260,7 +262,7 @@ namespace Garnet.test
                 EnableStorageTier = logCheckpointDir != null,
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
-                EndPoint = EndPoint,
+                EndPoint = endpoint ?? EndPoint,
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexSize = indexSize,
@@ -295,6 +297,7 @@ namespace Garnet.test
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, logger) : null,
+                UnixSocketPath = unixSocketPath
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
@@ -695,7 +698,7 @@ namespace Garnet.test
             return configOptions;
         }
 
-        public static GarnetClient GetGarnetClient(bool useTLS = false, bool recordLatency = false)
+        public static GarnetClient GetGarnetClient(EndPoint endpoint = null, bool useTLS = false, bool recordLatency = false)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -708,7 +711,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClient(EndPoint, sslOptions, recordLatency: recordLatency);
+            return new GarnetClient(endpoint ?? EndPoint, sslOptions, recordLatency: recordLatency);
         }
 
         public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool recordLatency = false)

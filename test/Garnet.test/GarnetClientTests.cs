@@ -2,12 +2,15 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using NUnit.Framework;
+using NUnit.Framework.Internal;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
@@ -122,7 +125,7 @@ namespace Garnet.test
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, EnableTLS: useTLS);
             server.Start();
 
-            using var db = TestUtils.GetGarnetClient(useTLS);
+            using var db = TestUtils.GetGarnetClient(useTLS: useTLS);
             db.Connect();
 
             string origValue = "abcdefg";
@@ -574,6 +577,22 @@ namespace Garnet.test
                 t.ThrowIfCancellationRequested();
 
             return 0;
+        }
+
+        [Test]
+        public async Task UnixSocketServer_Ping()
+        {
+            var unixSocketPath = Path.Join(TestUtils.MethodTestDir, "garnet.sock");
+            var unixSocketEndpoint = new UnixDomainSocketEndPoint(unixSocketPath);
+
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, unixSocketEndpoint, unixSocketPath: unixSocketPath);
+            server.Start();
+
+            var db = TestUtils.GetGarnetClient(unixSocketEndpoint);
+            await db.ConnectAsync();
+
+            var result = await db.ExecuteForStringResultAsync("PING");
+            ClassicAssert.AreEqual("PONG", result);
         }
     }
 }

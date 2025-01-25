@@ -13,25 +13,16 @@ using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Internal;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 
 namespace Garnet.test
 {
-
     [TestFixture, NonParallelizable]
-
     public class GarnetServerConfigTests
     {
-        [SetUp]
-        public void Setup()
-        { }
-
-        [TearDown]
-        public void TearDown()
-        { }
-
         [Test]
         public void DefaultConfigurationOptionsCoverage()
         {
@@ -321,6 +312,23 @@ namespace Garnet.test
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
                 ClassicAssert.IsFalse(parseSuccessful);
             }
+        }
+
+        [Test]
+        public void UnixSocketPath_CanParseValidPath()
+        {
+            string[] args = ["--unixsocket", "./config-parse-test.sock"];
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _);
+            ClassicAssert.IsTrue(parseSuccessful);
+        }
+
+        [Test]
+        public void UnixSocketPath_InvalidPathFails()
+        {
+            // Socket path directory does not exists
+            string[] args = ["--unixsocket", "./does-not-exists/config-parse-test.sock"];
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _);
+            ClassicAssert.IsFalse(parseSuccessful);
         }
     }
 }
