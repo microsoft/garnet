@@ -49,6 +49,8 @@ namespace Garnet.server
         /// <returns></returns>
         MetricsItem[] GetBufferPoolStats();
 
+        RoleInfo GetRoleInfo();
+
         /// <summary>
         /// Purger buffer pool for provided manager
         /// </summary>

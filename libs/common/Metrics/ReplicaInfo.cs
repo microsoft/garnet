@@ -3,7 +3,7 @@
 
 namespace Garnet.common
 {
-    public struct ReplicationInfo
+    public struct ReplicaInfo
     {
         public long offset;
         public long lag;

@@ -63,10 +63,10 @@ namespace Garnet.cluster
             }
         }
 
-        public List<(int, ReplicationInfo)> GetReplicaInfo(long PrimaryReplicationOffset)
+        public List<(int, ReplicaInfo)> GetReplicaInfo(long PrimaryReplicationOffset)
         {
             // secondary0: ip=127.0.0.1,port=7001,state=online,offset=56,lag=0
-            List<(int, ReplicationInfo)> replicaInfo = new(numTasks);
+            List<(int, ReplicaInfo)> replicaInfo = new(numTasks);
 
             _lock.ReadLock();
             var current = clusterProvider.clusterManager.CurrentConfig;

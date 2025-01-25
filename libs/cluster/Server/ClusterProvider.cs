@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Diagnostics;
 using System.Threading;
 using Garnet.common;
@@ -253,6 +254,42 @@ namespace Garnet.cluster
                 }
             }
             return [.. replicationInfo];
+        }
+
+        public RoleInfo GetRoleInfo()
+        {
+            RoleInfo info;
+
+            if (!serverOptions.EnableCluster)
+            {
+                return new RoleInfo()
+                {
+                    role = "master"
+                };
+            }
+
+            info = new()
+            {
+                replication_offset = replicationManager.ReplicationOffset,
+                replication_offset2 = replicationManager.ReplicationOffset2
+            };
+
+            var config = clusterManager.CurrentConfig;
+            if (config.LocalNodeRole == NodeRole.PRIMARY)
+            {
+                info.role = "master";
+                info.replicaInfo = replicationManager.GetReplicaInfo();
+            }
+            else
+            {
+                info.role = "slave";
+                clusterManager.GetConnectionInfo(config.LocalNodePrimaryId, out var connection);
+                (info.master_host, info.master_port) = config.GetLocalNodePrimaryAddress();
+                info.replication_state = replicationManager.Recovering ? "sync" :
+                                         connection.connected ? "connected" : "connect";
+            }
+
+            return info;
         }
 
         /// <inheritdoc />

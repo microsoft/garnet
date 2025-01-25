@@ -48,6 +48,7 @@ namespace Garnet.server
                 RespCommand.LATENCY_HELP => NetworkLatencyHelp(),
                 RespCommand.LATENCY_HISTOGRAM => NetworkLatencyHistogram(),
                 RespCommand.LATENCY_RESET => NetworkLatencyReset(),
+                RespCommand.ROLE => NetworkROLE(),
                 RespCommand.SAVE => NetworkSAVE(),
                 RespCommand.LASTSAVE => NetworkLASTSAVE(),
                 RespCommand.BGSAVE => NetworkBGSAVE(),
@@ -644,6 +645,82 @@ namespace Garnet.server
             }
 
             clusterSession.ProcessClusterCommands(command, ref parseState, ref dcurr, ref dend);
+            return true;
+        }
+
+        private bool NetworkROLE()
+        {
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ROLE));
+            }
+
+            if (!storeWrapper.serverOptions.EnableCluster)
+            {
+                while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.TryWriteAsciiBulkString("master", ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                var role = storeWrapper.clusterProvider.GetRoleInfo();
+
+                if (!storeWrapper.clusterProvider.IsReplica())
+                {
+                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString("master", ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteInt64(role.replication_offset, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteArrayLength(role.replicaInfo.Count, ref dcurr, dend))
+                        SendAndReset();
+
+                    foreach (var replice in role.replicaInfo)
+                    {
+                        while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
+                            SendAndReset();
+                        while (!RespWriteUtils.TryWriteAsciiBulkString(replice.Item2.address, ref dcurr, dend))
+                            SendAndReset();
+                        while (!RespWriteUtils.TryWriteInt32(replice.Item2.port, ref dcurr, dend))
+                            SendAndReset();
+                        while (!RespWriteUtils.TryWriteInt64(replice.Item2.offset, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                }
+                else
+                {
+                    while (!RespWriteUtils.TryWriteArrayLength(5, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString("slave", ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(role.master_host, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteInt32(role.master_port, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(role.replication_state, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteInt64(role.replication_offset, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+
             return true;
         }
 
