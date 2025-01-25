@@ -85,6 +85,22 @@ namespace Garnet.test
             ClassicAssert.AreEqual("Tsavorite", r);
         }
 
+        // Covers the fix of #954.
+        [Test]
+        public void CanFieldPersistAndGetTimeToLive()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "user:user1";
+            var field = "field1";
+
+            db.HashSet(key, [new HashEntry(field, "v1")]);
+            db.HashFieldExpire(key, [field], TimeSpan.FromHours(1));
+            db.HashFieldPersist(key, [field]);
+            var ttl = db.HashFieldGetTimeToLive(key, [field]);
+            ClassicAssert.AreEqual(-1, ttl[0]);
+        }
+
         [Test]
         public void CanSetAndGetOnePairLarge()
         {
