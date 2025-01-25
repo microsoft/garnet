@@ -249,7 +249,7 @@ namespace Garnet.cluster
                 {
                     // replica0: ip=127.0.0.1,port=7001,state=online,offset=56,lag=0
                     foreach (var ri in replicaInfo)
-                        replicationInfo.Add(new(ri.Item1, ri.Item2));
+                        replicationInfo.Add(new($"slave{ri.Item1}", ri.Item2.ToString()));
                 }
             }
             return [.. replicationInfo];
