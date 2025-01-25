@@ -217,6 +217,115 @@ namespace Garnet.cluster
             return success;
         }
 
+        public bool TryAddReplicationTasks(ReplicaSyncSession[] replicaSyncSessions, long startAddress)
+        {
+            var current = clusterProvider.clusterManager.CurrentConfig;
+            var success = true;
+            if (startAddress == 0) startAddress = ReplicationManager.kFirstValidAofAddress;
+
+            // First iterate through all sync sessions and add an AOF sync task
+            // All tasks will be
+            foreach (var rss in replicaSyncSessions)
+            {
+                if (rss == null) continue;
+                var replicaNodeId = rss.replicaSyncMetadata.originNodeId;
+                var (address, port) = current.GetWorkerAddressFromNodeId(replicaNodeId);
+
+                try
+                {
+                    rss.AddAofSyncTask(new AofSyncTaskInfo(
+                        clusterProvider,
+                        this,
+                        current.LocalNodeId,
+                        replicaNodeId,
+                        new GarnetClientSession(
+                            address,
+                            port,
+                            clusterProvider.replicationManager.GetAofSyncNetworkBufferSettings,
+                            clusterProvider.replicationManager.GetNetworkPool,
+                            tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
+                            authUsername: clusterProvider.ClusterUsername,
+                            authPassword: clusterProvider.ClusterPassword,
+                            logger: logger),
+                        startAddress,
+                        logger));
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "{method} creating AOF sync task for {replicaNodeId} failed", nameof(TryAddReplicationTasks), replicaNodeId);
+                    return false;
+                }
+            }
+
+            _lock.WriteLock();
+            try
+            {
+                if (_disposed) return false;
+
+                // Fail adding the task if truncation has happened
+                if (startAddress < TruncatedUntil)
+                {
+                    logger?.LogWarning("{method} failed to add tasks for AOF sync {startAddress} {truncatedUntil}", nameof(TryAddReplicationTasks), startAddress, TruncatedUntil);
+                    return false;
+                }
+
+                foreach (var rss in replicaSyncSessions)
+                {
+                    if (rss == null) continue;
+
+                    var added = false;
+                    // Find if AOF sync task already exists
+                    for (var i = 0; i < numTasks; i++)
+                    {
+                        var t = tasks[i];
+                        Debug.Assert(t != null);
+                        if (t.remoteNodeId == rss.replicaNodeId)
+                        {
+                            tasks[i] = rss.GetAofSyncTask;
+                            t.Dispose();
+                            added = true;
+                            break;
+                        }
+                    }
+
+                    if (added) continue;
+
+                    // If AOF sync task did not exist and was not added we added below
+                    // Check if array can hold a new AOF sync task
+                    if (numTasks == tasks.Length)
+                    {
+                        var old_tasks = tasks;
+                        var _tasks = new AofSyncTaskInfo[tasks.Length * 2];
+                        Array.Copy(tasks, _tasks, tasks.Length);
+                        tasks = _tasks;
+                        Array.Clear(old_tasks);
+                    }
+                    // Add new AOF sync task
+                    tasks[numTasks++] = rss.GetAofSyncTask;
+                }
+
+                success = true;
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+
+                if (!success)
+                {
+                    foreach (var rss in replicaSyncSessions)
+                    {
+                        if (rss == null) continue;
+                        if (rss.GetAofSyncTask != null)
+                        {
+                            rss.GetAofSyncTask.Dispose();
+                        }
+                    }
+                }
+            }
+
+            return true;
+        }
+
         public bool TryRemove(AofSyncTaskInfo aofSyncTask)
         {
             // Lock addition of new tasks
