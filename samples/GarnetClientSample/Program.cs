@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Net;
 using System.Threading.Tasks;
 
 namespace GarnetClientSample
@@ -10,13 +11,13 @@ namespace GarnetClientSample
     /// </summary>
     class Program
     {
-        static readonly string address = "127.0.0.1";
-        static readonly int port = 6379;
+        static readonly EndPoint endpoint = new IPEndPoint(IPAddress.Loopback, 6379);
+
         static readonly bool useTLS = false;
 
         static async Task Main()
         {
-            await new GarnetClientSamples(address, port, useTLS).RunAll();
+            await new GarnetClientSamples(endpoint, useTLS).RunAll();
 
             // await new SERedisSamples(address, port).RunAll();
         }

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Threading;
 using Garnet.common;
 using Garnet.server.TLS;
@@ -49,7 +50,11 @@ namespace Garnet.cluster
             clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "nodes.conf"));
             pool = new(1, (int)clusterConfigDevice.SectorSize);
 
+            if (opts.EndPoint is not IPEndPoint endpoint)
+                throw new NotImplementedException("Cluster mode for unix domain sockets has not been implemented.");
+
             var address = clusterProvider.storeWrapper.GetIp();
+
             this.logger = logger;
             var recoverConfig = clusterConfigDevice.GetFileSize(0) > 0 && !opts.CleanClusterConfig;
 
@@ -65,14 +70,14 @@ namespace Garnet.cluster
                 var config = ClusterUtils.ReadDevice(clusterConfigDevice, pool, logger);
                 currentConfig = ClusterConfig.FromByteArray(config);
                 // Used to update endpoint if it change when running inside a container.
-                if (address != currentConfig.LocalNodeIp || opts.Port != currentConfig.LocalNodePort)
+                if (address != currentConfig.LocalNodeIp || endpoint.Port != currentConfig.LocalNodePort)
                 {
                     logger?.LogInformation(
                         "Updating local Endpoint: From {currentConfig.GetLocalNodeIp()}:{currentConfig.GetLocalNodePort()} to {address}:{opts.Port}",
                         currentConfig.LocalNodeIp,
                         currentConfig.LocalNodePort,
                         address,
-                        opts.Port);
+                        endpoint.Port);
                 }
             }
             else
@@ -82,7 +87,7 @@ namespace Garnet.cluster
             }
 
             clusterConnectionStore = new GarnetClusterConnectionStore(logger: logger);
-            InitLocal(address, opts.Port, recoverConfig);
+            InitLocal(address, endpoint.Port, recoverConfig);
             logger?.LogInformation("{NodeInfoStartup}", CurrentConfig.GetClusterInfo(clusterProvider).TrimEnd('\n'));
             gossipDelay = TimeSpan.FromSeconds(opts.GossipDelay);
             clusterTimeout = opts.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(opts.ClusterTimeout);

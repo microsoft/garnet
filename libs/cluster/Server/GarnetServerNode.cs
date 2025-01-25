@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Net.Security;
 using System.Threading;
 using System.Threading.Tasks;
@@ -50,30 +51,23 @@ namespace Garnet.cluster
         public string NodeId;
 
         /// <summary>
-        /// Address of remote node
+        /// EndPoint of remote node
         /// </summary>
-        public string Address;
-
-        /// <summary>
-        /// Port of remote node
-        /// </summary>
-        public int Port;
+        public EndPoint EndPoint;
 
         /// <summary>
         /// GarnetServerNode constructor
         /// </summary>
         /// <param name="clusterProvider"></param>
-        /// <param name="address"></param>
-        /// <param name="port"></param>
+        /// <param name="endpoint">The endpoint of the remote node</param>
         /// <param name="tlsOptions"></param>
         /// <param name="logger"></param>
-        public GarnetServerNode(ClusterProvider clusterProvider, string address, int port, SslClientAuthenticationOptions tlsOptions, ILogger logger = null)
+        public GarnetServerNode(ClusterProvider clusterProvider, EndPoint endpoint, SslClientAuthenticationOptions tlsOptions, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
-            this.Address = address;
-            this.Port = port;
+            this.EndPoint = endpoint;
             this.gc = new GarnetClient(
-                address, port, tlsOptions,
+                endpoint, tlsOptions,
                 sendPageSize: 1 << 17,
                 maxOutstandingTasks: 8,
                 authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,

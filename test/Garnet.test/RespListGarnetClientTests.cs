@@ -55,7 +55,7 @@ namespace Garnet.test
         public async Task AddElementsToTheListHeadInBulk_WithCallback(string key, string[] elements, string[] expectedList)
         {
             // Arrange
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             await db.ConnectAsync();
 
             using ManualResetEventSlim e = new();
@@ -85,7 +85,7 @@ namespace Garnet.test
         public async Task AddElementsToTheListHead_WithCallback(string key, string[] elements, string[] expectedList)
         {
             // Arrange
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             await db.ConnectAsync();
 
             using ManualResetEventSlim e = new();
@@ -120,7 +120,7 @@ namespace Garnet.test
         public async Task AddElementsToTheListHead_WithAsync(string key, string[] elements, string[] expectedList)
         {
             // Arrange
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             await db.ConnectAsync();
 
             // Act & Assert
@@ -137,7 +137,7 @@ namespace Garnet.test
         public async Task AddElementsToListTailInBulk_WithCallback(string key, string[] elements, string[] expectedList)
         {
             // Arrange
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             await db.ConnectAsync();
 
             using ManualResetEventSlim e = new();
@@ -167,7 +167,7 @@ namespace Garnet.test
         public async Task AddElementsToListTail_WithCallback(string key, string[] elements, string[] expectedList)
         {
             // Arrange
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             await db.ConnectAsync();
 
             using ManualResetEventSlim e = new();
@@ -202,7 +202,7 @@ namespace Garnet.test
         public async Task AddElementsToTheListTail_WithAsync(string key, string[] elements, string[] expectedList)
         {
             // Arrange
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             await db.ConnectAsync();
 
             // Act & Assert
@@ -220,7 +220,7 @@ namespace Garnet.test
         {
             // Arrange
             var testKey = GetTestKey("list1");
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             await db.ConnectAsync();
 
             await db.KeyDeleteAsync([testKey]);
@@ -239,7 +239,7 @@ namespace Garnet.test
         {
             // Arrange
             var testKey = GetTestKey("list1");
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             await db.ConnectAsync();
 
             await db.KeyDeleteAsync([testKey]);

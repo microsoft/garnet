@@ -165,7 +165,7 @@ namespace CommandInfoUpdater
             byte[] response;
             try
             {
-                var lightClient = new LightClientRequest(respServerHost.ToString(), respServerPort, 0);
+                var lightClient = new LightClientRequest(new IPEndPoint(respServerHost, respServerPort), 0);
                 response = lightClient.SendCommand($"COMMAND INFO {string.Join(' ', commandsToQuery)}");
             }
             catch (Exception e)
