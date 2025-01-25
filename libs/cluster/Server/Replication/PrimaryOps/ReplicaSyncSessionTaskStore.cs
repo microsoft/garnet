@@ -48,17 +48,47 @@ namespace Garnet.cluster
             }
         }
 
-        public bool TryAddReplicaSyncSession(string remoteNodeId, string remote_primary_replid, CheckpointEntry remoteEntry, long replicaAofBeginAddress, long replicaAofTailAddress)
+        public bool TryAddReplicaSyncSession(ReplicaSyncSession session)
         {
-            var retSession = new ReplicaSyncSession(storeWrapper, clusterProvider, remoteNodeId, remote_primary_replid, remoteEntry, replicaAofBeginAddress, replicaAofTailAddress, logger);
-            bool success = false;
             try
             {
                 _lock.WriteLock();
-                for (int i = 0; i < numSessions; i++)
+                for (var i = 0; i < numSessions; i++)
                 {
                     var s = sessions[i];
-                    if (s.remoteNodeId == retSession.remoteNodeId)
+                    if (s.replicaNodeId == session.replicaSyncMetadata.originNodeId)
+                    {
+                        logger?.LogError("Error syncSession for {replicaNodeId} already exists", session.replicaNodeId);
+                        return false;
+                    }
+                }
+
+                GrowSessionArray();
+                sessions[numSessions++] = session;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, $"{nameof(TryAddReplicaSyncSession)}");
+                return false;
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+        }
+
+        public bool TryAddReplicaSyncSession(string replicaNodeId, string replicaAssignedPrimaryId, CheckpointEntry replicaCheckpointEntry, long replicaAofBeginAddress, long replicaAofTailAddress)
+        {
+            var retSession = new ReplicaSyncSession(storeWrapper, clusterProvider, replicaSyncMetadata: null, replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress, logger);
+            var success = false;
+            try
+            {
+                _lock.WriteLock();
+                for (var i = 0; i < numSessions; i++)
+                {
+                    var s = sessions[i];
+                    if (s.replicaNodeId == retSession.replicaNodeId)
                     {
                         success = false;
                         return false;
@@ -103,7 +133,7 @@ namespace Garnet.cluster
                 for (int i = 0; i < numSessions; i++)
                 {
                     var s = sessions[i];
-                    if (s.remoteNodeId == remoteNodeId)
+                    if (s.replicaNodeId == remoteNodeId)
                     {
                         sessions[i] = null;
                         if (i < numSessions - 1)
@@ -150,7 +180,7 @@ namespace Garnet.cluster
                 for (int i = 0; i < numSessions; i++)
                 {
                     session = sessions[i];
-                    if (session.remoteNodeId == remoteNodeId)
+                    if (session.replicaNodeId == remoteNodeId)
                         return true;
                 }
                 return false;
@@ -158,6 +188,33 @@ namespace Garnet.cluster
             finally
             {
                 _lock.ReadUnlock();
+            }
+        }
+
+        public ReplicaSyncSession[] GetSessions() => sessions;
+
+        public int GetNumSessions() => numSessions;
+
+        /// <summary>
+        /// Clear references to entries
+        /// </summary>
+        /// <returns></returns>
+        public void Clear()
+        {
+            try
+            {
+                _lock.WriteLock();
+                if (_disposed) return;
+                for (var i = 0; i < numSessions; i++)
+                {
+                    var s = sessions[i];
+                    sessions[i] = null;
+                }
+                numSessions = 0;
+            }
+            finally
+            {
+                _lock.WriteUnlock();
             }
         }
     }
