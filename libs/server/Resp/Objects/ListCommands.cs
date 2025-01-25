@@ -306,7 +306,7 @@ namespace Garnet.server
 
             if (result.IsForceUnblocked)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -988,7 +988,7 @@ namespace Garnet.server
 
             if (result.IsForceUnblocked)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
                     SendAndReset();
             }
 

@@ -607,7 +607,7 @@ namespace Garnet.server
 
                 if (session is null)
                 {
-                    while (!RespWriteUtils.WriteInteger(0, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -618,7 +618,7 @@ namespace Garnet.server
 
                     if (!isBlocked)
                     {
-                        while (!RespWriteUtils.WriteInteger(0, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -632,18 +632,18 @@ namespace Garnet.server
                         observer.ResultFoundSemaphore.Release();
                     }
 
-                    while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(1, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteInteger(0, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
                         SendAndReset();
                 }
             }
             else
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_UBLOCKING_CLINET, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_UBLOCKING_CLINET, ref dcurr, dend))
                     SendAndReset();
             }
 
