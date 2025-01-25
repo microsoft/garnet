@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -16,8 +16,7 @@ using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
-    [TestFixture(false, false), NonParallelizable]
-    public class ClusterReplicationTests(bool UseTLS = false, bool asyncReplay = false)
+    public class ClusterReplicationBaseTests
     {
         public (Action, string)[] GetUnitTests()
         {
@@ -81,7 +80,8 @@ namespace Garnet.test.cluster
         ClusterTestContext context;
 
         public void SetLogTextWriter(TextWriter logTextWriter) => context.logTextWriter = logTextWriter;
-        readonly bool useTLS = UseTLS;
+        protected bool useTLS = false;
+        protected bool asyncReplay = false;
         readonly int timeout = 60;
         readonly int keyCount = 256;
 
@@ -91,14 +91,14 @@ namespace Garnet.test.cluster
         };
 
         [SetUp]
-        public void Setup()
+        public virtual void Setup()
         {
             context = new ClusterTestContext();
             context.Setup(monitorTests);
         }
 
         [TearDown]
-        public void TearDown()
+        public virtual void TearDown()
         {
             context?.TearDown();
         }
