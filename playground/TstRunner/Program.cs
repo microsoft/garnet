@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using Garnet.test;
 using Garnet.test.cluster;
 
@@ -10,7 +11,7 @@ namespace TstRunner
 {
     public class Program
     {
-        static void Main()
+        static async Task Main()
         {
             //Trace.Listeners.Add(new ConsoleTraceListener());
 
@@ -42,7 +43,7 @@ namespace TstRunner
                 clusterReplicationTests.SetLogTextWriter(Console.Out);
                 var clusterReplicationTestItems = clusterReplicationTests.GetUnitTests();
                 foreach (var item in clusterReplicationTestItems)
-                    RunTest(clusterReplicationTests, item.Item1, item.Item2);
+                    await RunTest(clusterReplicationTests, item.Item1, item.Item2);
 
                 swatch.Stop();
                 Console.WriteLine($">>>>>>>>>> run: {i++} duration (sec):{swatch.ElapsedMilliseconds / 1000}");
@@ -50,14 +51,14 @@ namespace TstRunner
             }
         }
 
-        private static void RunTest<T>(T test, Action testCase, string name = "")
+        private static async Task RunTest<T>(T test, Task testCase, string name = "")
         {
             dynamic ctest = test;
             try
             {
                 Console.WriteLine($"\tStarted {name} on {DateTime.Now}");
                 ctest.Setup();
-                testCase();
+                await testCase;
             }
             finally
             {

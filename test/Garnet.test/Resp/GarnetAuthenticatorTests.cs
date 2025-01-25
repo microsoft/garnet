@@ -77,8 +77,8 @@ namespace Garnet.test.Resp
                     return true;
                 };
 
-            using GarnetServer server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, authenticationSettings: authSettings);
-            server.Start();
+            var server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, authenticationSettings: authSettings);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -108,6 +108,8 @@ namespace Garnet.test.Resp
 
             await c.ExecuteAsync("AUTH", "foo", "bar");
             ClassicAssert.AreEqual(3, authCalls);
+
+            await server.StopAsync();
         }
     }
 }

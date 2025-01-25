@@ -18,36 +18,36 @@ using StackExchange.Redis;
 namespace Garnet.test.cluster
 {
     [TestFixture(false), NonParallelizable]
-    public unsafe class ClusterMigrateTests(bool UseTLS)
+    public class ClusterMigrateTests(bool UseTLS)
     {
         const int testTimeout = 100000;
 
-        public (Action, string)[] GetUnitTests()
+        public (Task, string)[] GetUnitTests()
         {
-            (Action, string)[] x =
+            (Task, string)[] x =
             [
                 //1
-                new(ClusterSimpleInitialize, "ClusterSimpleInitialize()"),
+                new(ClusterSimpleInitialize(), "ClusterSimpleInitialize()"),
                 //2
-                new(ClusterSimpleSlotInfo, "ClusterSimpleSlotInfo()"),
+                new(ClusterSimpleSlotInfo(), "ClusterSimpleSlotInfo()"),
                 //3
-                new(ClusterAddDelSlots, "ClusterAddDelSlots()"),
+                new(ClusterAddDelSlots(), "ClusterAddDelSlots()"),
                 //4
-                new(ClusterSlotChangeStatus, "ClusterSlotChangeStatus()"),
+                new(ClusterSlotChangeStatus(), "ClusterSlotChangeStatus()"),
                 //5
-                new(ClusterRedirectMessage, "ClusterRedirectMessage()"),
+                new(ClusterRedirectMessage(), "ClusterRedirectMessage()"),
                 //6
-                new(ClusterSimpleMigrateSlots, "ClusterSimpleMigrateSlots()"),
+                new(ClusterSimpleMigrateSlots(), "ClusterSimpleMigrateSlots()"),
                 //7
-                new(ClusterSimpleMigrateSlotsExpiry, "ClusterSimpleMigrateSlotsExpiry()"),
+                new(ClusterSimpleMigrateSlotsExpiry(), "ClusterSimpleMigrateSlotsExpiry()"),
                 //8
-                new(ClusterSimpleMigrateSlotsWithObjects, "ClusterSimpleMigrateSlotsWithObjects()"),
+                new(ClusterSimpleMigrateSlotsWithObjects(), "ClusterSimpleMigrateSlotsWithObjects()"),
                 //9
-                new(ClusterSimpleMigrateKeys, "ClusterSimpleMigrateKeys()"),
+                new(ClusterSimpleMigrateKeys(), "ClusterSimpleMigrateKeys()"),
                 //10
-                new(ClusterSimpleMigrateKeysWithObjects, "ClusterSimpleMigrateKeysWithObjects()"),
+                new(ClusterSimpleMigrateKeysWithObjects(), "ClusterSimpleMigrateKeysWithObjects()"),
                 //11
-                new(ClusterSimpleMigrateWithReadWrite, "ClusterSimpleMigrateWithReadWrite()"),
+                new(ClusterSimpleMigrateWithReadWrite(), "ClusterSimpleMigrateWithReadWrite()"),
             ];
             return x;
         }
@@ -234,9 +234,9 @@ namespace Garnet.test.cluster
 
         [Test, Order(1)]
         [Category("CLUSTER")]
-        public void ClusterSimpleInitialize()
+        public async Task ClusterSimpleInitialize()
         {
-            context.CreateInstances(defaultShards, useTLS: UseTLS);
+            await context.CreateInstances(defaultShards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             context.logger.LogDebug("0. ClusterSimpleInitialize started");
 
@@ -254,9 +254,9 @@ namespace Garnet.test.cluster
 
         [Test, Order(2)]
         [Category("CLUSTER")]
-        public void ClusterSimpleSlotInfo()
+        public async Task ClusterSimpleSlotInfo()
         {
-            context.CreateInstances(defaultShards, useTLS: UseTLS);
+            await context.CreateInstances(defaultShards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
 
             context.logger.LogDebug("0. ClusterSimpleSlotInfoTest started");
@@ -283,9 +283,9 @@ namespace Garnet.test.cluster
 
         [Test, Order(3)]
         [Category("CLUSTER")]
-        public void ClusterAddDelSlots()
+        public async Task ClusterAddDelSlots()
         {
-            context.CreateInstances(defaultShards, useTLS: UseTLS);
+            await context.CreateInstances(defaultShards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             context.logger.LogDebug("0. ClusterAddDelSlotsTest started");
 
@@ -360,10 +360,10 @@ namespace Garnet.test.cluster
 
         [Test, Order(4)]
         [Category("CLUSTER")]
-        public void ClusterSlotChangeStatus()
+        public async Task ClusterSlotChangeStatus()
         {
             context.logger.LogDebug("0. ClusterSlotChangeStatusTest started");
-            context.CreateInstances(defaultShards, useTLS: UseTLS);
+            await context.CreateInstances(defaultShards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
             var sourcePortIndex = 1;
@@ -508,11 +508,11 @@ namespace Garnet.test.cluster
 
         [Test, Order(5)]
         [Category("CLUSTER")]
-        public void ClusterRedirectMessage()
+        public async Task ClusterRedirectMessage()
         {
             context.logger.LogDebug("0. ClusterRedirectMessageTest started");
             var Shards = 2;
-            context.CreateInstances(Shards, useTLS: UseTLS);
+            await context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
             var key = Encoding.ASCII.GetBytes("{abc}0");
@@ -565,12 +565,12 @@ namespace Garnet.test.cluster
 
         [Test, Order(6)]
         [Category("CLUSTER")]
-        public void ClusterSimpleMigrateSlots()
+        public async Task ClusterSimpleMigrateSlots()
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateSlotsTest started");
             var Port = TestUtils.Port;
             var Shards = defaultShards;
-            context.CreateInstances(Shards, useTLS: UseTLS);
+            await context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
 
             var (_, slots) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
@@ -653,10 +653,10 @@ namespace Garnet.test.cluster
 
         [Test, Order(7)]
         [Category("CLUSTER")]
-        public void ClusterSimpleMigrateSlotsExpiry()
+        public async Task ClusterSimpleMigrateSlotsExpiry()
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateSlotsExpiryTest started");
-            context.CreateInstances(defaultShards, useTLS: UseTLS);
+            await context.CreateInstances(defaultShards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
@@ -839,12 +839,12 @@ namespace Garnet.test.cluster
 
         [Test, Order(8)]
         [Category("CLUSTER")]
-        public void ClusterSimpleMigrateSlotsWithObjects()
+        public async Task ClusterSimpleMigrateSlotsWithObjects()
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateSlotsWithObjectsTest started");
             var Port = TestUtils.Port;
             var Shards = defaultShards;
-            context.CreateInstances(defaultShards, useTLS: UseTLS);
+            await context.CreateInstances(defaultShards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             var (_, slots) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
@@ -895,10 +895,10 @@ namespace Garnet.test.cluster
 
         [Test, Order(9)]
         [Category("CLUSTER")]
-        public void ClusterSimpleMigrateKeys()
+        public async Task ClusterSimpleMigrateKeys()
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateKeysTest started");
-            context.CreateInstances(defaultShards, useTLS: UseTLS);
+            await context.CreateInstances(defaultShards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
@@ -1003,12 +1003,12 @@ namespace Garnet.test.cluster
 
         [Test, Order(10)]
         [Category("CLUSTER")]
-        public void ClusterSimpleMigrateKeysWithObjects()
+        public async Task ClusterSimpleMigrateKeysWithObjects()
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateKeysWithObjectsTest started");
             var Port = TestUtils.Port;
             var Shards = defaultShards;
-            context.CreateInstances(Shards, useTLS: UseTLS);
+            await context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             var (_, slots) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
@@ -1231,11 +1231,11 @@ namespace Garnet.test.cluster
 
         [Test, Order(11)]
         [Category("CLUSTER")]
-        public void ClusterSimpleMigrateWithReadWrite()
+        public async Task ClusterSimpleMigrateWithReadWrite()
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateTestWithReadWrite started");
             var Shards = defaultShards;
-            context.CreateInstances(Shards, useTLS: UseTLS);
+            await context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
@@ -1291,9 +1291,9 @@ namespace Garnet.test.cluster
 
         [Test, Order(12)]
         [Category("CLUSTER")]
-        public void ClusterSimpleTxn()
+        public async Task ClusterSimpleTxn()
         {
-            context.CreateInstances(defaultShards, useTLS: UseTLS);
+            await context.CreateInstances(defaultShards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
 
             List<(string, ICollection<object>)> commands = [];
@@ -1337,11 +1337,11 @@ namespace Garnet.test.cluster
         [Test, Order(13)]
         [Category("CLUSTER")]
         [TestCaseSource("_slotranges")]
-        public void ClusterSimpleMigrateSlotsRanges(List<int> migrateRange)
+        public async Task ClusterSimpleMigrateSlotsRanges(List<int> migrateRange)
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateSlotsRanges started");
             var Shards = defaultShards;
-            context.CreateInstances(Shards, useTLS: UseTLS);
+            await context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
@@ -1389,11 +1389,11 @@ namespace Garnet.test.cluster
         [Test, Order(14)]
         [Category("CLUSTER")]
         [TestCaseSource("_slotranges")]
-        public void ClusterSimpleMigrateWithAuth(List<int> migrateRange)
+        public async Task ClusterSimpleMigrateWithAuth(List<int> migrateRange)
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateWithAuth started");
             var Shards = defaultShards;
-            context.CreateInstances(Shards, useTLS: UseTLS);
+            await context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
@@ -1441,11 +1441,11 @@ namespace Garnet.test.cluster
 
         [Test, Order(15)]
         [Category("CLUSTER")]
-        public void ClusterAllowWritesDuringMigrateTest()
+        public async Task ClusterAllowWritesDuringMigrateTest()
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateTestWithReadWrite started");
             var Shards = defaultShards;
-            context.CreateInstances(Shards, useTLS: UseTLS);
+            await context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
@@ -1570,11 +1570,11 @@ namespace Garnet.test.cluster
 
         [Test, Order(16)]
         [Category("CLUSTER")]
-        public void ClusterMigrateForgetTest()
+        public async Task ClusterMigrateForgetTest()
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateSlotsRanges started");
             var Shards = defaultShards;
-            context.CreateInstances(Shards, useTLS: UseTLS);
+            await context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
@@ -1611,10 +1611,10 @@ namespace Garnet.test.cluster
 
         [Test, Order(17)]
         [Category("CLUSTER")]
-        public void ClusterMigrateDataSlotsRange()
+        public async Task ClusterMigrateDataSlotsRange()
         {
             var Shards = 2;
-            context.CreateInstances(Shards, useTLS: UseTLS);
+            await context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
 
             var srcNodeIndex = 0;
@@ -1706,10 +1706,10 @@ namespace Garnet.test.cluster
             ClusterMigrateExpirationWithVaryingPayload(expiration, data);
         }
 
-        private void ClusterMigrateExpirationWithVaryingPayload(bool expiration, List<(byte[], byte[])> data)
+        private async void ClusterMigrateExpirationWithVaryingPayload(bool expiration, List<(byte[], byte[])> data)
         {
             var Shards = 2;
-            context.CreateInstances(Shards, useTLS: UseTLS);
+            await context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
 
             var srcNodeIndex = 0;
@@ -1777,14 +1777,14 @@ namespace Garnet.test.cluster
         [Order(20), CancelAfter(testTimeout)]
         [TestCase(true)]
         [TestCase(false)]
-        public void ClusterMigrateSlotWalk(bool slots, CancellationToken cancellationToken)
+        public async Task ClusterMigrateSlotWalk(bool slots, CancellationToken cancellationToken)
         {
             var sourceNode = 0;
             var shards = 5;
             var targetNode = shards - 1;
             var slotCount = 10;
 
-            SetupInstances(sourceNode, out var nodeIds, out var nodeEndpoints);
+            var (nodeIds, nodeEndpoints) = await SetupInstances(sourceNode);
 
             for (var slot = 0; slot < slotCount; slot++)
             {
@@ -1884,9 +1884,12 @@ namespace Garnet.test.cluster
 
             ValidateConfig();
 
-            void SetupInstances(int sourceNode, out string[] nodeIds, out IPEndPoint[] nodeEndpoints)
+            async Task<(string[] nodeIds, IPEndPoint[] nodeEndpoints)> SetupInstances(int sourceNode)
             {
-                context.CreateInstances(shards, useTLS: UseTLS);
+                string[] nodeIds = null;
+                IPEndPoint[] nodeEndpoints = null;
+
+                await context.CreateInstances(shards, useTLS: UseTLS);
                 context.CreateConnection(useTLS: UseTLS);
 
                 // Assign all slots to first node
@@ -1912,6 +1915,8 @@ namespace Garnet.test.cluster
                 nodeEndpoints = new IPEndPoint[shards];
                 for (var i = 0; i < shards; i++)
                     nodeEndpoints[i] = context.clusterTestUtils.GetEndPoint(i);
+
+                return (nodeIds, nodeEndpoints);
             }
 
             void ValidateConfig()

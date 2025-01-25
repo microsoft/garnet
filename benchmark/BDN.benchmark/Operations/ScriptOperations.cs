@@ -187,7 +187,7 @@ return returnValue
         /// 100 us =  1 Mops/sec
         /// </summary>
         internal const int batchSize = 100;
-        internal EmbeddedRespServer server;
+        internal GarnetEmbeddedApplication server;
         internal RespServerSession session;
 
         /// <summary>
@@ -203,7 +203,8 @@ return returnValue
                 LuaOptions = Params.CreateOptions(),
             };
 
-            server = new EmbeddedRespServer(opts);
+            var builder = GarnetEmbeddedApplication.CreateHostBuilder([], opts);
+            server = builder.Build();
 
             session = server.GetRespSession();
 

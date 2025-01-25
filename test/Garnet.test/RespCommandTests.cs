@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -21,7 +22,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespCommandTests
     {
-        GarnetServer server;
+        GarnetApplication server;
         private string extTestDir;
         private IReadOnlyDictionary<string, RespCommandsInfo> respCommandsInfo;
         private IReadOnlyDictionary<string, RespCommandsInfo> externalRespCommandsInfo;
@@ -51,7 +52,7 @@ namespace Garnet.test
         ];
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             extTestDir = Path.Combine(TestUtils.MethodTestDir, "test");
@@ -75,15 +76,15 @@ namespace Garnet.test
                     .Union(respSubCommandsInfo.Values.Where(sc => sc.IsInternal).Select(sc => sc.Command))
             ];
 
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true,
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, disablePubSub: true,
                 extensionBinPaths: [extTestDir]);
-            server.Start();
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server.Dispose();
+            await server.StopAsync();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             TestUtils.DeleteDirectory(Directory.GetParent(extTestDir)?.FullName);
         }

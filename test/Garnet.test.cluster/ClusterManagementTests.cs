@@ -38,11 +38,11 @@ namespace Garnet.test.cluster
         [Test, Order(1)]
         [TestCase(0, 16383)]
         [TestCase(1234, 5678)]
-        public void ClusterSlotsTest(int startSlot, int endSlot)
+        public async Task ClusterSlotsTest(int startSlot, int endSlot)
         {
             var slotRanges = new List<(int, int)>[1];
             slotRanges[0] = [(startSlot, endSlot)];
-            context.CreateInstances(defaultShards);
+            await context.CreateInstances(defaultShards);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(customSlotRanges: slotRanges, logger: context.logger);
 
@@ -58,9 +58,9 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(2)]
-        public void ClusterSlotRangesTest()
+        public async Task ClusterSlotRangesTest()
         {
-            context.CreateInstances(defaultShards);
+            await context.CreateInstances(defaultShards);
             context.CreateConnection();
             var slotRanges = new List<(int, int)>[3];
             slotRanges[0] = [(5680, 6150), (12345, 14567)];
@@ -97,10 +97,10 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(3)]
-        public void ClusterForgetTest()
+        public async Task ClusterForgetTest()
         {
             var node_count = 4;
-            context.CreateInstances(node_count);
+            await context.CreateInstances(node_count);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
 
@@ -127,10 +127,10 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(4)]
-        public void ClusterResetTest()
+        public async Task ClusterResetTest()
         {
             var node_count = 4;
-            context.CreateInstances(node_count);
+            await context.CreateInstances(node_count);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
 
@@ -172,10 +172,10 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(4)]
-        public void ClusterResetFailsForMasterWithKeysInSlotsTest()
+        public async Task ClusterResetFailsForMasterWithKeysInSlotsTest()
         {
             var node_count = 4;
-            context.CreateInstances(node_count);
+            await context.CreateInstances(node_count);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
 
@@ -202,10 +202,10 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(4)]
-        public void ClusterResetFailsForMasterWithKeysInSlotsObjectStoreTest()
+        public async Task ClusterResetFailsForMasterWithKeysInSlotsObjectStoreTest()
         {
             var node_count = 4;
-            context.CreateInstances(node_count);
+            await context.CreateInstances(node_count);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
             context.kvPairsObj = new Dictionary<string, List<int>>();
@@ -229,10 +229,10 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(4)]
-        public void ClusterResetAfterFLushAllTest()
+        public async Task ClusterResetAfterFLushAllTest()
         {
             var node_count = 4;
-            context.CreateInstances(node_count);
+            await context.CreateInstances(node_count);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
             context.kvPairsObj = new Dictionary<string, List<int>>();
@@ -289,7 +289,7 @@ namespace Garnet.test.cluster
         public async Task ClusterResetDisposesGossipConnections()
         {
             var node_count = 3;
-            context.CreateInstances(node_count, metricsSamplingFrequency: 1);
+            await context.CreateInstances(node_count, metricsSamplingFrequency: 1);
             context.CreateConnection();
             var endpoints = context.clusterTestUtils.GetEndpoints();
             for (int i = 0; i < endpoints.Length - 1; i++)
@@ -323,10 +323,10 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(5)]
-        public void ClusterKeySlotTest()
+        public async Task ClusterKeySlotTest()
         {
             var node_count = 1;
-            context.CreateInstances(node_count);
+            await context.CreateInstances(node_count);
             context.CreateConnection();
 
             (string, int)[] testCases = [("6e6bzswz8}", 7038),
@@ -376,16 +376,16 @@ namespace Garnet.test.cluster
 
         //[Test, Order(5)]
         //[Category("CLUSTER")]
-        public void ClusterRestartNodeDropGossip()
+        public async Task ClusterRestartNodeDropGossip()
         {
             var logger = context.loggerFactory.CreateLogger("ClusterRestartNodeDropGossip");
-            context.CreateInstances(defaultShards);
+            await context.CreateInstances(defaultShards);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(logger: logger);
 
             var restartingNode = 2;
             // Dispose node and delete data
-            context.nodes[restartingNode].Dispose(deleteDir: true);
+            await context.nodes[restartingNode].RunAsync();
 
             context.nodes[restartingNode] = context.CreateInstance(
                 context.clusterTestUtils.GetEndPoint(restartingNode).Port,
@@ -395,7 +395,7 @@ namespace Garnet.test.cluster
                 timeout: 60,
                 gossipDelay: 1,
                 cleanClusterConfig: false);
-            context.nodes[restartingNode].Start();
+            await context.nodes[restartingNode].RunAsync();
             context.CreateConnection();
 
             Thread.Sleep(5000);
@@ -409,10 +409,10 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(7)]
-        public void ClusterClientList()
+        public async Task ClusterClientList()
         {
             const int NodeCount = 4;
-            context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
+            await context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
 
@@ -455,10 +455,10 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(7)]
-        public void ClusterClientKill()
+        public async Task ClusterClientKill()
         {
             const int NodeCount = 4;
-            context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
+            await context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
 
@@ -470,12 +470,12 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(7)]
-        public void ClusterClientKillSlave()
+        public async Task ClusterClientKillSlave()
         {
             // Test SLAVE separately - it's equivalent to REPLICA, but needed for compatibility
 
             const int NodeCount = 4;
-            context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
+            await context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
 
@@ -485,10 +485,10 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(8)]
-        public void FailoverBadOptions()
+        public async Task FailoverBadOptions()
         {
             var node_count = 4;
-            context.CreateInstances(node_count);
+            await context.CreateInstances(node_count);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
 
@@ -520,10 +520,10 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(9)]
-        public void ClusterFailoverBadOptions()
+        public async Task ClusterFailoverBadOptions()
         {
             var node_count = 4;
-            context.CreateInstances(node_count);
+            await context.CreateInstances(node_count);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
 
@@ -555,10 +555,10 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(10)]
-        public void ClusterSetSlotBadOptions()
+        public async Task ClusterSetSlotBadOptions()
         {
             var node_count = 4;
-            context.CreateInstances(node_count);
+            await context.CreateInstances(node_count);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
 

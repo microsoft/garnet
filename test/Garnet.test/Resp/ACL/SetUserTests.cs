@@ -20,11 +20,11 @@ namespace Garnet.test.Resp.ACL
         /// Tests that new connections start with default user when no users are defined
         /// </summary>
         [Test]
-        public void PasswordlessDefaultUserTest()
+        public async Task PasswordlessDefaultUserTest()
         {
             // Create a new test server without password - should automatically login default user
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
 
             // Check user is authenticated as default
             using var lightClientRequest = TestUtils.CreateRequest();
@@ -43,8 +43,8 @@ namespace Garnet.test.Resp.ACL
         public async Task ProtectedDefaultUserErrorHandlingTest()
         {
             // Create a new test server with password - should disallow any operation
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, defaultPassword: DummyPassword);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true, defaultPassword: DummyPassword);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -68,8 +68,8 @@ namespace Garnet.test.Resp.ACL
         public async Task ProtectedDefaultUserLoginImplicitTest()
         {
             // Create a new test server with password - should disallow any operation
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, defaultPassword: DummyPassword);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true, defaultPassword: DummyPassword);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -90,8 +90,8 @@ namespace Garnet.test.Resp.ACL
         public async Task ProtectedDefaultUserLoginExplicitTest()
         {
             // Create a new test server with password - should disallow any operation
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, defaultPassword: DummyPassword);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true, defaultPassword: DummyPassword);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -113,8 +113,8 @@ namespace Garnet.test.Resp.ACL
         public async Task EnableAndDisableUsers()
         {
             // Create a new test server without default password
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -168,8 +168,8 @@ namespace Garnet.test.Resp.ACL
         public async Task AddPasswordFromCleartextTest()
         {
             // Create a new test server with password - should disallow any operation
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -198,8 +198,8 @@ namespace Garnet.test.Resp.ACL
         public async Task AddPasswordFromHashTest()
         {
             // Create a new test server with password - should disallow any operation
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -228,8 +228,8 @@ namespace Garnet.test.Resp.ACL
         public async Task RemovePasswordFromCleartextTest()
         {
             // Create a new test server with password - should disallow any operation
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -260,8 +260,8 @@ namespace Garnet.test.Resp.ACL
         public async Task RemovePasswordFromHashTest()
         {
             // Create a new test server with password - should disallow any operation
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -292,8 +292,8 @@ namespace Garnet.test.Resp.ACL
         public async Task AddDuplicatePasswordTest()
         {
             // Create a new test server with password - should disallow any operation
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -325,8 +325,8 @@ namespace Garnet.test.Resp.ACL
         public async Task PasswordlessUserTest()
         {
             // Create a new test server with password - should disallow any operation
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -348,8 +348,8 @@ namespace Garnet.test.Resp.ACL
         public async Task ResetPasswordsTest()
         {
             // Create a new test server with password - should disallow any operation
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -392,8 +392,8 @@ namespace Garnet.test.Resp.ACL
             const string TestCategory = "admin";
 
             // Create a new test server with password - should disallow any operation
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -448,8 +448,8 @@ namespace Garnet.test.Resp.ACL
         public async Task ResetUser()
         {
             // Create a new test server
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -493,8 +493,8 @@ namespace Garnet.test.Resp.ACL
         public async Task BadInputEmpty()
         {
             // Create a new test server
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -518,8 +518,8 @@ namespace Garnet.test.Resp.ACL
         public async Task BadInputUnknownOperation()
         {
             // Create a new test server
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -543,8 +543,8 @@ namespace Garnet.test.Resp.ACL
         public async Task KeyPatternsWildcard()
         {
             // Create a new test server
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();

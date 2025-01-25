@@ -16,22 +16,22 @@ namespace Garnet.test
     [TestFixture]
     public class RespEtagTests
     {
-        private GarnetServer server;
+        private GarnetApplication server;
         private Random r;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             r = new Random(674386);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: false);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, disablePubSub: false);
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server.Dispose();
+            await server.StopAsync();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
@@ -976,13 +976,13 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SingleDeleteWithObjectStoreDisabledForEtagSetData()
+        public async Task SingleDeleteWithObjectStoreDisabledForEtagSetData()
         {
-            TearDown();
+            await TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: true);
+            await server.RunAsync();
 
             var key = "delKey";
             var value = "1234";
@@ -1009,13 +1009,13 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SingleDeleteWithObjectStoreDisable_LTMForEtagSetData()
+        public async Task SingleDeleteWithObjectStoreDisable_LTMForEtagSetData()
         {
-            TearDown();
+            await TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
+            await server.RunAsync();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -1049,14 +1049,14 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiKeyDeleteForEtagSetData([Values] bool withoutObjectStore)
+        public async Task MultiKeyDeleteForEtagSetData([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
             {
-                TearDown();
+                await TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
-                server.Start();
+                server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: true);
+                await server.RunAsync();
             }
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1084,14 +1084,14 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiKeyUnlinkForEtagSetData([Values] bool withoutObjectStore)
+        public async Task MultiKeyUnlinkForEtagSetData([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
             {
-                TearDown();
+                await TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
-                server.Start();
+                server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: true);
+                await server.RunAsync();
             }
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1118,14 +1118,14 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SingleExistsForEtagSetData([Values] bool withoutObjectStore)
+        public async Task SingleExistsForEtagSetData([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
             {
-                TearDown();
+                await TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
-                server.Start();
+                server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: true);
+                await server.RunAsync();
             }
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

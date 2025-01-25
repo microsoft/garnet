@@ -5,6 +5,7 @@ using System;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -16,7 +17,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespSortedSetGeoTests
     {
-        GarnetServer server;
+        GarnetApplication server;
 
         readonly string[,] cities = new string[,] { {"-74.0059413", "40.7127837", "New York"},
                 {"-118.2436849", "34.0522342", "Los Angeles"},
@@ -126,17 +127,17 @@ namespace Garnet.test
 
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true);
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server.Dispose();
+            await server.StopAsync();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 

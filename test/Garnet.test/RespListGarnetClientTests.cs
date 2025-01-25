@@ -12,14 +12,14 @@ namespace Garnet.test
     [TestFixture]
     public class RespListGarnetClientTests
     {
-        private GarnetServer server;
+        private GarnetApplication server;
 
         [OneTimeSetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true);
+            await server.RunAsync();
         }
 
         private static object[] LeftPushTestCases =
@@ -271,9 +271,9 @@ namespace Garnet.test
         }
 
         [OneTimeTearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server.Dispose();
+            await server.StopAsync();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }

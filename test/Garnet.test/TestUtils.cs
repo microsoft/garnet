@@ -180,9 +180,9 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Create GarnetServer
+        /// Create GarnetApplication
         /// </summary>
-        public static GarnetServer CreateGarnetServer(
+        public static GarnetApplication CreateGarnetApplication(
             string logCheckpointDir,
             bool disablePubSub = false,
             bool tryRecover = false,
@@ -333,17 +333,25 @@ namespace Garnet.test
 
             if (useTestLogger)
             {
-                var loggerFactory = LoggerFactory.Create(builder =>
-                {
-                    builder.AddProvider(new NUnitLoggerProvider(TestContext.Progress, TestContext.CurrentContext.Test.MethodName, null, false, false, LogLevel.Trace));
-                    builder.SetMinimumLevel(LogLevel.Trace);
-                });
+                var builder = GarnetApplication.CreateHostBuilder([], opts);
 
-                return new GarnetServer(opts, loggerFactory);
+                builder.Logging.ClearProviders();
+                builder.Logging.AddProvider(new NUnitLoggerProvider(TestContext.Progress,
+                    TestContext.CurrentContext.Test.MethodName, null, false, false, LogLevel.Trace));
+                builder.Logging.SetMinimumLevel(LogLevel.Trace);
+
+                var app = builder.Build();
+
+                return app;
             }
             else
             {
-                return new GarnetServer(opts);
+
+                var builder = GarnetApplication.CreateHostBuilder([], opts);
+
+                var app = builder.Build();
+
+                return app;
             }
         }
 
@@ -367,7 +375,7 @@ namespace Garnet.test
             });
         }
 
-        public static GarnetServer[] CreateGarnetCluster(
+        public static GarnetApplication[] CreateGarnetCluster(
             string checkpointDir,
             EndPointCollection endpoints,
             bool disablePubSub = false,
@@ -405,7 +413,7 @@ namespace Garnet.test
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
-            GarnetServer[] nodes = new GarnetServer[endpoints.Count];
+            var nodes = new GarnetApplication[endpoints.Count];
             for (int i = 0; i < nodes.Length; i++)
             {
                 IPEndPoint endpoint = (IPEndPoint)endpoints[i];
@@ -455,7 +463,13 @@ namespace Garnet.test
                     TestContext.Progress.WriteLine($"Waiting for Port {opts.Port} to become available for {TestContext.CurrentContext.WorkerId}:{iter++}");
                     Thread.Sleep(1000);
                 }
-                nodes[i] = new GarnetServer(opts, loggerFactory);
+
+                var builder = GarnetApplication.CreateHostBuilder([], opts);
+
+                var app = builder.Build();
+
+                nodes[i] = app;
+
             }
             return nodes;
         }

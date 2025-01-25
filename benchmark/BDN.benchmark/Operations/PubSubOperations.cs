@@ -27,7 +27,8 @@ namespace BDN.benchmark.Operations
                 DisablePubSub = false,
             };
 
-            server = new EmbeddedRespServer(opts, null, new GarnetServerEmbedded());
+            var builder = GarnetEmbeddedApplication.CreateHostBuilder([], opts);
+            server = builder.Build();
             session = server.GetRespSession();
             subscribeSession = server.GetRespSession();
 

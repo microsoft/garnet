@@ -1,12 +1,13 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Threading.Tasks;
 using NUnit.Framework;
 
 namespace Garnet.test.cluster
 {
     [TestFixture, NonParallelizable]
-    public unsafe class ClusterTLSMT
+    public class ClusterTLSMT
     {
         ClusterMigrateTests tests;
 
@@ -26,57 +27,57 @@ namespace Garnet.test.cluster
 
         [Test, Order(1)]
         [Category("CLUSTER")]
-        public void ClusterTLSInitialize()
-            => tests.ClusterSimpleInitialize();
+        public async Task ClusterTLSInitialize()
+            => await tests.ClusterSimpleInitialize();
 
         [Test, Order(2)]
         [Category("CLUSTER")]
-        public void ClusterTLSSlotInfo()
-            => tests.ClusterSimpleSlotInfo();
+        public async Task ClusterTLSSlotInfo()
+            => await tests.ClusterSimpleSlotInfo();
 
         [Test, Order(3)]
         [Category("CLUSTER")]
-        public void ClusterTLSAddDelSlots()
-            => tests.ClusterAddDelSlots();
+        public async Task ClusterTLSAddDelSlots()
+            => await tests.ClusterAddDelSlots();
 
         [Test, Order(4)]
         [Category("CLUSTER")]
-        public void ClusterTLSSlotChangeStatus()
-            => tests.ClusterSlotChangeStatus();
+        public async Task ClusterTLSSlotChangeStatus()
+            => await tests.ClusterSlotChangeStatus();
 
         [Test, Order(5)]
         [Category("CLUSTER")]
-        public void ClusterTLSRedirectMessage()
-            => tests.ClusterRedirectMessage();
+        public async Task ClusterTLSRedirectMessage()
+            => await tests.ClusterRedirectMessage();
 
         [Test, Order(6)]
         [Category("CLUSTER")]
-        public void ClusterTLSMigrateSlots()
-            => tests.ClusterSimpleMigrateSlots();
+        public async Task ClusterTLSMigrateSlots()
+            => await tests.ClusterSimpleMigrateSlots();
 
         [Test, Order(7)]
         [Category("CLUSTER")]
-        public void ClusterTLSMigrateSlotsExpiry()
-            => tests.ClusterSimpleMigrateSlotsExpiry();
+        public async Task ClusterTLSMigrateSlotsExpiry()
+            => await tests.ClusterSimpleMigrateSlotsExpiry();
 
         [Test, Order(8)]
         [Category("CLUSTER")]
-        public void ClusterTLSMigrateSlotsWithObjects()
-            => tests.ClusterSimpleMigrateSlotsWithObjects();
+        public async Task ClusterTLSMigrateSlotsWithObjects()
+            => await tests.ClusterSimpleMigrateSlotsWithObjects();
 
         [Test, Order(9)]
         [Category("CLUSTER")]
-        public void ClusterTLSMigrateKeys()
-            => tests.ClusterSimpleMigrateKeys();
+        public async Task ClusterTLSMigrateKeys()
+            => await tests.ClusterSimpleMigrateKeys();
 
         [Test, Order(10)]
         [Category("CLUSTER")]
-        public void ClusterTLSMigrateKeysWithObjects()
-            => tests.ClusterSimpleMigrateKeysWithObjects();
+        public async Task ClusterTLSMigrateKeysWithObjects()
+            => await tests.ClusterSimpleMigrateKeysWithObjects();
 
         [Test, Order(11)]
         [Category("CLUSTER")]
-        public void ClusterTLSMigratetWithReadWrite()
-            => tests.ClusterSimpleMigrateWithReadWrite();
+        public async Task ClusterTLSMigratetWithReadWrite()
+            => await tests.ClusterSimpleMigrateWithReadWrite();
     }
 }

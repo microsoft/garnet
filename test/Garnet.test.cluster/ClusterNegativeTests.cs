@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -75,9 +76,9 @@ namespace Garnet.test.cluster
         [TestCase("BEGIN_REPLICA_RECOVER", new int[] { 0, 1, 2, 3, 4, 5, 6, 8, 9 })]
         [TestCase("FAILSTOPWRITES", new int[] { 0, 2, 3, 4 })]
         [TestCase("FAILREPLICATIONOFFSET", new int[] { 0, 2, 3, 4 })]
-        public void ClusterCommandWrongParameters(string subcommand, params int[] invalidCount)
+        public async Task ClusterCommandWrongParameters(string subcommand, params int[] invalidCount)
         {
-            context.CreateInstances(1);
+            await context.CreateInstances(1);
 
             using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
             socket.NoDelay = true;
@@ -113,7 +114,7 @@ namespace Garnet.test.cluster
         [TestCase(10240)]
         public void ClusterAddSlotsPartialPackage(int chunkSize)
         {
-            context.CreateInstances(1);
+            context.CreateInstances(1).GetAwaiter().GetResult();
             using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
             socket.NoDelay = true;
             socket.Connect(IPAddress.Loopback, 7000);

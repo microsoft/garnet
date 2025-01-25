@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -13,22 +14,22 @@ namespace Garnet.test
     [TestFixture]
     public class RespInfoTests
     {
-        GarnetServer server;
+        GarnetApplication server;
         Random r;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             r = new Random(674386);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true, latencyMonitor: true, metricsSamplingFreq: 1, DisableObjects: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, disablePubSub: true, latencyMonitor: true, metricsSamplingFreq: 1, DisableObjects: true);
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server.Dispose();
+            await server.StopAsync();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
@@ -53,7 +54,7 @@ namespace Garnet.test
             infoResult = db.Execute("INFO").ToString();
             infoResultArr = infoResult.Split("\r\n");
             totalFound = infoResultArr.First(x => x.StartsWith("total_found"));
-            ClassicAssert.AreEqual("total_found:1", totalFound, "Expected total_foudn to be incremented to 1 after a successful request.");
+            ClassicAssert.AreEqual("total_found:1", totalFound, "Expected total_found to be incremented to 1 after a successful request.");
 
             var result = db.Execute("INFO", "RESET");
             ClassicAssert.IsNotNull(result);

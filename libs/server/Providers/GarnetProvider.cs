@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Threading;
 using Garnet.common;
 using Garnet.networking;
@@ -51,14 +52,6 @@ namespace Garnet.server
         /// </summary>
         public void Recover()
             => storeWrapper.Recover();
-
-        /// <summary>
-        /// Dispose
-        /// </summary>
-        public void Dispose()
-        {
-            storeWrapper.Dispose();
-        }
 
         /// <inheritdoc />
         public override SpanByteFunctionsForServer<long> GetFunctions() => new();

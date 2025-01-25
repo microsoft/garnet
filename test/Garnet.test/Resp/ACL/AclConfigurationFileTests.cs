@@ -29,8 +29,8 @@ namespace Garnet.test.Resp.ACL
             File.CreateText(configurationFile).Close();
 
             // Ensure Garnet starts up with default user only
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -51,8 +51,8 @@ namespace Garnet.test.Resp.ACL
             File.WriteAllText(configurationFile, "user testA on >password123 +@admin\r\nuser testB on >passw0rd >password +@admin ");
 
             // Start up Garnet
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -77,8 +77,8 @@ namespace Garnet.test.Resp.ACL
             File.WriteAllText(configurationFile, "user testA on >password123 +@admin +@slow\r\nuser testB on >passw0rd >password +@admin\r\nuser default on nopass +@admin +@slow");
 
             // Start up Garnet with a defined default user password
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile, defaultPassword: DummyPassword);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile, defaultPassword: DummyPassword);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -117,8 +117,8 @@ namespace Garnet.test.Resp.ACL
             File.WriteAllText(configurationFile, originalConfigurationFile);
 
             // Start up Garnet
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile, defaultPassword: DummyPassword);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile, defaultPassword: DummyPassword);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -188,8 +188,8 @@ namespace Garnet.test.Resp.ACL
             File.WriteAllText(configurationFile, originalConfigurationFile);
 
             // Start up Garnet
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -243,8 +243,8 @@ namespace Garnet.test.Resp.ACL
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
             File.WriteAllText(configurationFile, $"user test on >{DummyPassword} +@admin\r\nuser test off");
 
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
+            await server.RunAsync();
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -279,8 +279,10 @@ namespace Garnet.test.Resp.ACL
             // NOTE: Do not create the configuration file
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
 
+            // TODO propagate the ACLException to builder
+
             // Garnet should ignore the non-existing configuration file and start up with default user
-            Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+            Assert.Throws<ACLException>(() => TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile).Register?.GetType());
         }
 
         /// <summary>
@@ -294,8 +296,10 @@ namespace Garnet.test.Resp.ACL
                 var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
                 File.WriteAllText(configurationFile, "user test on >password123 +@admin\r\nuser testB badinput on >passw0rd >password +@admin ");
 
+                // TODO propagate the ACLException to builder
+
                 // Ensure Garnet starts up and just ignores the malformed statement
-                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile).Register?.GetType());
             }
 
             // Test numeric RespCommand rejected
@@ -313,7 +317,7 @@ namespace Garnet.test.Resp.ACL
                 File.WriteAllText(configurationFile, "user test on >password123 +none");
 
                 // Ensure Garnet starts up and just ignores the malformed statement
-                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile).Register?.GetType());
             }
 
 
@@ -323,12 +327,12 @@ namespace Garnet.test.Resp.ACL
                 File.WriteAllText(configurationFile, "user test on >password123 +invalid");
 
                 // Ensure Garnet starts up and just ignores the malformed statement
-                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile).Register?.GetType());
             }
         }
 
         [Test]
-        public void AclSave()
+        public async Task AclSave()
         {
             // Create a modified ACL that (1) removes two users, (2) adds one user, (3) removes one password and (4) removes the default user
             var originalConfigurationFile =
@@ -342,8 +346,8 @@ namespace Garnet.test.Resp.ACL
             File.WriteAllText(configurationFile, originalConfigurationFile);
 
             // Start up Garnet
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile, defaultPassword: DummyPassword);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile, defaultPassword: DummyPassword);
+            await server.RunAsync();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
