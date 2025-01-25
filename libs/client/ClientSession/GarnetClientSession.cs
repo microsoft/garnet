@@ -204,7 +204,6 @@ namespace Garnet.client
             throw new Exception($"Failed to connect at {EndPoint}");
         }
 
-
         /// <summary>
         /// Try to establish connection for <paramref name="socket"/> using <paramref name="endpoint"/>
         /// </summary>
@@ -254,7 +253,6 @@ namespace Garnet.client
 
             return true;
         }
-
 
         /// <summary>
         /// Reconnect to server
