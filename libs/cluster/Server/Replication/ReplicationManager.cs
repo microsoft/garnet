@@ -19,6 +19,8 @@ namespace Garnet.cluster
         readonly StoreWrapper storeWrapper;
         readonly AofProcessor aofProcessor;
         readonly CheckpointStore checkpointStore;
+        readonly ReplicationSyncManager replicationSyncManager;
+
 
         readonly CancellationTokenSource ctsRepManager = new();
 
@@ -101,6 +103,7 @@ namespace Garnet.cluster
 
             aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, logger: logger);
             replicaSyncSessionTaskStore = new ReplicaSyncSessionTaskStore(storeWrapper, clusterProvider, logger);
+            replicationSyncManager = new ReplicationSyncManager(clusterProvider, logger);
 
             ReplicationOffset = 0;
 
