@@ -148,7 +148,7 @@ namespace Garnet.server
         /// <summary>
         /// RESP protocol version (RESP2 is the default)
         /// </summary>
-        byte respProtocolVersion = 2;
+        internal byte respProtocolVersion = 2;
 
         /// <summary>
         /// Client name for the session
@@ -327,7 +327,7 @@ namespace Garnet.server
                 logger?.Log(ex.LogLevel, ex, "Aborting open session due to RESP parsing error");
 
                 // Forward parsing error as RESP error
-                while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
                     SendAndReset();
 
                 // Send message and dispose the network sender to end the session
@@ -345,7 +345,7 @@ namespace Garnet.server
                 // Forward Garnet error as RESP error
                 if (ex.ClientResponse)
                 {
-                    while (!RespWriteUtils.WriteError($"ERR Garnet Exception: {ex.Message}", ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError($"ERR Garnet Exception: {ex.Message}", ref dcurr, dend))
                         SendAndReset();
                 }
 
@@ -438,7 +438,9 @@ namespace Garnet.server
                 // Check ACL permissions for the command
                 if (cmd != RespCommand.INVALID)
                 {
-                    if (CheckACLPermissions(cmd))
+                    var noScriptPassed = true;
+
+                    if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
                         if (txnManager.state != TxnState.None)
                         {
@@ -463,8 +465,16 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
-                            SendAndReset();
+                        if (noScriptPassed)
+                        {
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOSCRIPT, ref dcurr, dend))
+                                SendAndReset();
+                        }
                     }
                 }
                 else
@@ -806,7 +816,7 @@ namespace Garnet.server
                     return AbortWithWrongNumberOfArguments("client|id");
                 }
 
-                while (!RespWriteUtils.WriteInteger(Id, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteInt64(Id, ref dcurr, dend))
                     SendAndReset();
 
                 return true;
@@ -894,7 +904,7 @@ namespace Garnet.server
                 if ((cmdInfo.Arity > 0 && count != cmdInfo.Arity - 1) ||
                     (cmdInfo.Arity < 0 && count < -cmdInfo.Arity - 1))
                 {
-                    while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName), ref dcurr, dend))
                         SendAndReset();
 
                     return false;
@@ -910,7 +920,7 @@ namespace Garnet.server
             var end = recvBufferPtr + bytesRead;
 
             // Try the command length
-            if (!RespReadUtils.ReadUnsignedLengthHeader(out int length, ref ptr, end))
+            if (!RespReadUtils.TryReadUnsignedLengthHeader(out int length, ref ptr, end))
             {
                 success = false;
                 return default;
@@ -1079,12 +1089,12 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteDirectLargeRespString(ReadOnlySpan<byte> message)
         {
-            while (!RespWriteUtils.WriteBulkStringLength(message, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteBulkStringLength(message, ref dcurr, dend))
                 SendAndReset();
 
             WriteDirectLarge(message);
 
-            while (!RespWriteUtils.WriteNewLine(ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
                 SendAndReset();
         }
 

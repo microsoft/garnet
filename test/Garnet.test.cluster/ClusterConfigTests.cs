@@ -67,7 +67,7 @@ namespace Garnet.test.cluster
         public async Task ClusterForgetAfterNodeRestartTest()
         {
             int nbInstances = 4;
-            context.CreateInstances(4);
+            context.CreateInstances(nbInstances);
             context.CreateConnection();
             var (shards, slots) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
@@ -80,7 +80,7 @@ namespace Garnet.test.cluster
 
             var firstNode = context.nodes[0];
             var nodesResult = context.clusterTestUtils.ClusterNodes(0);
-            Assert.That(nodesResult.Nodes.Count == 4);
+            Assert.That(nodesResult.Nodes.Count == nbInstances);
 
             try
             {
@@ -99,13 +99,13 @@ namespace Garnet.test.cluster
             }
 
             nodesResult = context.clusterTestUtils.ClusterNodes(0);
-            Assert.That(nodesResult.Nodes.Count == 4, "No node should've been removed from the cluster after an invalid id was passed.");
+            Assert.That(nodesResult.Nodes.Count == nbInstances, "No node should've been removed from the cluster after an invalid id was passed.");
             Assert.That(nodesResult.Nodes.ElementAt(0).IsMyself);
             Assert.That(nodesResult.Nodes.ElementAt(0).EndPoint.ToIPEndPoint().Port == 7000, "Expected the node to be replying to be the one with port 7000.");
 
             context.clusterTestUtils.ClusterForget(0, nodesResult.Nodes.Last().NodeId, 0);
             nodesResult = context.clusterTestUtils.ClusterNodes(0);
-            Assert.That(nodesResult.Nodes.Count == 3, "A node should've been removed from the cluster.");
+            Assert.That(nodesResult.Nodes.Count == nbInstances - 1, "A node should've been removed from the cluster.");
             Assert.That(nodesResult.Nodes.ElementAt(0).IsMyself);
             Assert.That(nodesResult.Nodes.ElementAt(0).EndPoint.ToIPEndPoint().Port == 7000, "Expected the node to be replying to be the one with port 7000.");
         }

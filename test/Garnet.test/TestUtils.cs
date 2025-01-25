@@ -637,7 +637,8 @@ namespace Garnet.test
             bool useTLS = false,
             string authUsername = null,
             string authPassword = null,
-            X509CertificateCollection certificates = null)
+            X509CertificateCollection certificates = null,
+            RedisProtocol? protocol = null)
         {
             var cmds = RespCommandsInfo.TryGetRespCommandNames(out var names)
                 ? new HashSet<string>(names)
@@ -665,6 +666,7 @@ namespace Garnet.test
                 Password = authPassword,
                 User = authUsername,
                 ClientName = TestContext.CurrentContext.Test.MethodName,
+                Protocol = protocol,
             };
 
             if (Debugger.IsAttached)

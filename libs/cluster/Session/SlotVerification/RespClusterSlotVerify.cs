@@ -28,7 +28,7 @@ namespace Garnet.cluster
                 errorMessage = CmdStrings.RESP_ERR_CLUSTERDOWN;
 
             logger?.LogDebug("SEND: {msg}", Encoding.ASCII.GetString(errorMessage));
-            while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                 SendAndReset();
         }
 
@@ -81,7 +81,7 @@ namespace Garnet.cluster
         private void WriteClusterSlotVerificationMessage(ClusterConfig config, ClusterSlotVerificationResult vres, ref byte* dcurr, ref byte* dend)
         {
             var errorMessage = GetSlotVerificationMessage(config, vres);
-            while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                 SendAndReset(ref dcurr, ref dend);
         }
 

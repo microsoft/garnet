@@ -495,58 +495,58 @@ namespace Resp.benchmark
                         break;
                     case OpType.GET:
                         var getCurr = getBuffer + 13;
-                        RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref getCurr, getEnd);
+                        RespWriteUtils.TryWriteAsciiBulkString(req.GenerateKey(), ref getCurr, getEnd);
                         client.Send(getBuffer, (int)(getCurr - getBuffer), 1);
                         client.CompletePendingRequests();
                         break;
                     case OpType.SET:
                         var setCurr = setBuffer + 13;
-                        RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref setCurr, setEnd);
-                        RespWriteUtils.WriteBulkString(req.GenerateValueBytes().Span, ref setCurr, setEnd);
+                        RespWriteUtils.TryWriteAsciiBulkString(req.GenerateKey(), ref setCurr, setEnd);
+                        RespWriteUtils.TryWriteBulkString(req.GenerateValueBytes().Span, ref setCurr, setEnd);
                         client.Send(setBuffer, (int)(setCurr - setBuffer), 1);
                         client.CompletePendingRequests();
                         break;
                     case OpType.SETEX:
                         var setexCurr = setexBuffer + 15;
-                        RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref setexCurr, setexEnd);
-                        RespWriteUtils.WriteIntegerAsBulkString(opts.Ttl, ref setexCurr, setexEnd);
-                        RespWriteUtils.WriteBulkString(req.GenerateValueBytes().Span, ref setexCurr, setexEnd);
+                        RespWriteUtils.TryWriteAsciiBulkString(req.GenerateKey(), ref setexCurr, setexEnd);
+                        RespWriteUtils.TryWriteInt32AsBulkString(opts.Ttl, ref setexCurr, setexEnd);
+                        RespWriteUtils.TryWriteBulkString(req.GenerateValueBytes().Span, ref setexCurr, setexEnd);
                         client.Send(setexBuffer, (int)(setexCurr - setexBuffer), 1);
                         client.CompletePendingRequests();
                         break;
                     case OpType.DEL:
                         var delCurr = delBuffer + 13;
-                        RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref delCurr, delEnd);
+                        RespWriteUtils.TryWriteAsciiBulkString(req.GenerateKey(), ref delCurr, delEnd);
                         client.Send(delBuffer, (int)(delCurr - delBuffer), 1);
                         client.CompletePendingRequests();
                         break;
                     case OpType.ZADD:
                         var zaddCurr = zaddBuffer + 14;
-                        RespWriteUtils.WriteAsciiBulkString(sskey, ref zaddCurr, zaddEnd);
-                        RespWriteUtils.WriteIntegerAsBulkString(1, ref zaddCurr, zaddEnd);
-                        RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref zaddCurr, zaddEnd);
+                        RespWriteUtils.TryWriteAsciiBulkString(sskey, ref zaddCurr, zaddEnd);
+                        RespWriteUtils.TryWriteInt32AsBulkString(1, ref zaddCurr, zaddEnd);
+                        RespWriteUtils.TryWriteAsciiBulkString(req.GenerateKey(), ref zaddCurr, zaddEnd);
                         client.Send(zaddBuffer, (int)(zaddCurr - zaddBuffer), 1);
                         if (opts.Ttl > 0)
                         {
                             // NOTE: Here we are not resetting opType. This only works for online bench
                             var expireCurr = expireBuffer + 16;
-                            RespWriteUtils.WriteAsciiBulkString(sskey, ref expireCurr, expireEnd);
-                            RespWriteUtils.WriteIntegerAsBulkString(opts.Ttl, ref expireCurr, expireEnd);
+                            RespWriteUtils.TryWriteAsciiBulkString(sskey, ref expireCurr, expireEnd);
+                            RespWriteUtils.TryWriteInt32AsBulkString(opts.Ttl, ref expireCurr, expireEnd);
                             client.Send(expireBuffer, (int)(expireCurr - expireBuffer), 1);
                         }
                         client.CompletePendingRequests();
                         break;
                     case OpType.ZREM:
                         var zremCurr = zremBuffer + 14;
-                        RespWriteUtils.WriteAsciiBulkString(sskey, ref zremCurr, zremEnd);
-                        RespWriteUtils.WriteIntegerAsBulkString(1, ref zremCurr, zremEnd);
-                        RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref zremCurr, zremEnd);
+                        RespWriteUtils.TryWriteAsciiBulkString(sskey, ref zremCurr, zremEnd);
+                        RespWriteUtils.TryWriteInt32AsBulkString(1, ref zremCurr, zremEnd);
+                        RespWriteUtils.TryWriteAsciiBulkString(req.GenerateKey(), ref zremCurr, zremEnd);
                         client.Send(zremBuffer, (int)(zremCurr - zremBuffer), 1);
                         client.CompletePendingRequests();
                         break;
                     case OpType.ZCARD:
                         var zcardCurr = zcardBuffer + 15;
-                        RespWriteUtils.WriteAsciiBulkString(sskey, ref zcardCurr, zcardEnd);
+                        RespWriteUtils.TryWriteAsciiBulkString(sskey, ref zcardCurr, zcardEnd);
                         client.Send(zcardBuffer, (int)(zcardCurr - zcardEnd), 1);
                         client.CompletePendingRequests();
                         break;

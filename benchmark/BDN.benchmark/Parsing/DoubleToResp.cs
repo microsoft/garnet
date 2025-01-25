@@ -44,7 +44,7 @@ namespace BDN.benchmark.Parsing
         public bool WriteDoubleAsBulkStringByTranscoding(double value)
         {
             var startPtr = _bufferPtr;
-            return RespWriteUtils.WriteAsciiBulkString(value.ToString(CultureInfo.InvariantCulture), ref startPtr, _bufferPtr + _buffer.Length);
+            return RespWriteUtils.TryWriteAsciiBulkString(value.ToString(CultureInfo.InvariantCulture), ref startPtr, _bufferPtr + _buffer.Length);
         }
 
         public static double[] TestDoubles => [
