@@ -53,12 +53,12 @@ namespace Garnet.server
         /// <summary>
         /// True if output flag WrongType is set
         /// </summary>
-        public bool IsWrongType => (OutputFlags & ObjectStoreOutputFlags.WrongType) == ObjectStoreOutputFlags.WrongType;
+        public bool HasWrongType => (OutputFlags & ObjectStoreOutputFlags.WrongType) == ObjectStoreOutputFlags.WrongType;
 
         /// <summary>
         /// True if output flag RemoveKey is set
         /// </summary>
-        public bool RemoveKey => (OutputFlags & ObjectStoreOutputFlags.RemoveKey) == ObjectStoreOutputFlags.RemoveKey;
+        public bool HasRemoveKey => (OutputFlags & ObjectStoreOutputFlags.RemoveKey) == ObjectStoreOutputFlags.RemoveKey;
 
         public void ConvertToHeap()
         {
