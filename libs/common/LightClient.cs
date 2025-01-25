@@ -234,7 +234,7 @@ namespace Garnet.common
             return numPendingRequests == 0;
         }
 
-        private static (int, int) DefaultLightReceiveUnsafe(byte* buf, int bytesRead, int opType) => (bytesRead, 1);
+        private static unsafe (int, int) DefaultLightReceiveUnsafe(byte* buf, int bytesRead, int opType) => (bytesRead, 1);
 
         /// <inheritdoc />
         public override void Dispose()
