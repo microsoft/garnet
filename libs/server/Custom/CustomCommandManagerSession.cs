@@ -14,29 +14,24 @@ namespace Garnet.server
     /// </summary>
     internal sealed class CustomCommandManagerSession
     {
+        // Initial size of expandable maps
+        private static readonly int MinMapSize = 8;
+
         // The instance of the CustomCommandManager that this session is associated with
         readonly CustomCommandManager customCommandManager;
 
         // These session specific maps are indexed by the same ID as the arrays in CustomCommandManager
         // Maps between the transaction ID and a tuple of the per-session transaction procedure and its arity
-        readonly Dictionary<int, (CustomTransactionProcedure, int)> sessionTransactionProcMap;
+        ExpandableMap<(CustomTransactionProcedure, int)> sessionTransactionProcMap;
         // Maps between the custom procedure ID and the per-session custom procedure instance
-        readonly Dictionary<int, CustomProcedure> sessionCustomProcMap;
-
-        // Cache of custom command info by command name
-        readonly Dictionary<string, RespCommandsInfo> sessionCustomCommandsInfo;
-        // Cache of custom command docs by command name
-        readonly Dictionary<string, RespCommandDocs> sessionCustomCommandsDocs;
+        ExpandableMap<CustomProcedure> sessionCustomProcMap;
 
         public CustomCommandManagerSession(CustomCommandManager customCommandManager)
         {
             this.customCommandManager = customCommandManager;
 
-            sessionTransactionProcMap = new Dictionary<int, (CustomTransactionProcedure, int)>();
-            sessionCustomProcMap = new Dictionary<int, CustomProcedure>();
-
-            sessionCustomCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
-            sessionCustomCommandsDocs = new Dictionary<string, RespCommandDocs>(StringComparer.OrdinalIgnoreCase);
+            sessionTransactionProcMap = new ExpandableMap<(CustomTransactionProcedure, int)>(MinMapSize, 0, byte.MaxValue);
+            sessionCustomProcMap = new ExpandableMap<CustomProcedure>(MinMapSize, 0, byte.MaxValue);
         }
 
         /// <summary>
@@ -58,7 +53,7 @@ namespace Garnet.server
                 // Create the session-specific instance and add it to the cache
                 customProc = entry.CustomProcedureFactory();
                 customProc.respServerSession = respServerSession;
-                sessionCustomProcMap.Add(id, customProc);
+                sessionCustomProcMap.TrySetValue(id, ref customProc);
             }
 
             return customProc;
@@ -96,7 +91,8 @@ namespace Garnet.server
             customTranProc.respServerSession = respServerSession;
 
             arity = entry.arity;
-            sessionTransactionProcMap.Add(id, (customTranProc, arity));
+            tranToArity = new ValueTuple<CustomTransactionProcedure, int>(customTranProc, arity);
+            sessionTransactionProcMap.TrySetValue(id, ref tranToArity);
 
             return customTranProc;
         }
@@ -144,19 +140,7 @@ namespace Garnet.server
         /// <param name="respCommandsInfo">The matching command info</param>
         /// <returns>True if command info was found</returns>
         public bool TryGetCustomCommandInfo(string cmdName, out RespCommandsInfo respCommandsInfo)
-        {
-            // Check if we already have a cached entry of the custom command info
-            if (!sessionCustomCommandsInfo.TryGetValue(cmdName, out respCommandsInfo))
-            {
-                // If not, get the custom command info from the CustomCommandManager
-                if (!customCommandManager.TryGetCustomCommandInfo(cmdName, out respCommandsInfo))
-                    return false;
-
-                sessionCustomCommandsInfo.Add(cmdName, respCommandsInfo);
-            }
-
-            return true;
-        }
+            => customCommandManager.TryGetCustomCommandInfo(cmdName, out respCommandsInfo);
 
         /// <summary>
         /// Get custom command docs by name
@@ -165,19 +149,7 @@ namespace Garnet.server
         /// <param name="respCommandsDocs">The matching command docs</param>
         /// <returns>True if command docs was found</returns>
         public bool TryGetCustomCommandDocs(string cmdName, out RespCommandDocs respCommandsDocs)
-        {
-            // Check if we already have a cached entry of the custom command docs
-            if (!sessionCustomCommandsDocs.TryGetValue(cmdName, out respCommandsDocs))
-            {
-                // If not, get the custom command docs from the CustomCommandManager
-                if (!customCommandManager.TryGetCustomCommandDocs(cmdName, out respCommandsDocs))
-                    return false;
-
-                sessionCustomCommandsDocs.Add(cmdName, respCommandsDocs);
-            }
-
-            return true;
-        }
+            => customCommandManager.TryGetCustomCommandDocs(cmdName, out respCommandsDocs);
 
         /// <summary>
         /// Get all custom command infos

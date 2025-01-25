@@ -10,7 +10,7 @@ namespace Garnet.server
     /// <summary>
     /// This struct defines a map of items of type T whose keys are a specified range of IDs (can be descending / ascending)
     /// The size of the underlying array containing the items doubles in size as needed.
-    /// This struct is thread-safe.
+    /// This struct is thread-safe, note that it does not support re-setting an already set item.
     /// </summary>
     /// <typeparam name="T">Type of item to store</typeparam>
     internal struct ExpandableMap<T>
@@ -202,6 +202,9 @@ namespace Garnet.server
             // If index within array bounds, set item
             if (Map != null && idx < Map.Length)
             {
+                // This struct does not support setting an already set item
+                // This check is not thread-safe, but it is a best-effort attempt at validation.
+                Debug.Assert(Equals(Map[idx], default(T)));
                 Map[idx] = value;
                 TryUpdateActualSize(id);
                 return true;
