@@ -23,6 +23,9 @@ namespace Garnet.cluster
         public bool TryAddReplicationTask(string nodeid, long startAddress, out AofSyncTaskInfo aofSyncTaskInfo)
             => aofTaskStore.TryAddReplicationTask(nodeid, startAddress, out aofSyncTaskInfo);
 
+        public bool TryAddReplicationTasks(ReplicaSyncSession[] replicaSyncSessions, long startAddress)
+            => aofTaskStore.TryAddReplicationTasks(replicaSyncSessions, startAddress);
+
         public long AofTruncatedUntil => aofTaskStore.AofTruncatedUntil;
 
         public bool TryRemoveReplicationTask(AofSyncTaskInfo aofSyncTaskInfo)
