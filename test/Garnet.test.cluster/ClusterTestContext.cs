@@ -89,18 +89,26 @@ namespace Garnet.test.cluster
         /// <param name="pageSize"></param>
         /// <param name="segmentSize"></param>
         /// <param name="enableAOF"></param>
-        /// <param name="mainMemoryReplication"></param>
-        /// <param name="onDemandCheckpoint"></param>
-        /// <param name="aofMemorySize"></param>
-        /// <param name="commitFrequencyMs"></param>
-        /// <param name="disableStorageTier"></param>
-        /// <param name="enableIncrementalSnapshots"></param>
-        /// <param name="fastCommit"></param>
-        /// <param name="useAcl"></param>
-        /// <param name="clusterCreds"></param>
+        /// <param name="MainMemoryReplication"></param>
+        /// <param name="OnDemandCheckpoint"></param>
+        /// <param name="AofMemorySize"></param>
+        /// <param name="CommitFrequencyMs"></param>
+        /// <param name="DisableStorageTier"></param>
+        /// <param name="EnableIncrementalSnapshots"></param>
+        /// <param name="FastCommit"></param>
         /// <param name="timeout"></param>
         /// <param name="useTLS"></param>
+        /// <param name="useAcl"></param>
         /// <param name="certificates"></param>
+        /// <param name="clusterCreds"></param>
+        /// <param name="authenticationSettings"></param>
+        /// <param name="disablePubSub"></param>
+        /// <param name="metricsSamplingFrequency"></param>
+        /// <param name="enableLua"></param>
+        /// <param name="asyncReplay"></param>
+        /// <param name="enableDisklessSync"></param>
+        /// <param name="luaMemoryMode"></param>
+        /// <param name="luaMemoryLimit"></param>
         public void CreateInstances(
             int shards,
             bool cleanClusterConfig = true,
@@ -111,13 +119,13 @@ namespace Garnet.test.cluster
             string pageSize = default,
             string segmentSize = "1g",
             bool enableAOF = false,
-            bool mainMemoryReplication = false,
-            bool onDemandCheckpoint = false,
-            string aofMemorySize = "64m",
-            int commitFrequencyMs = 0,
-            bool disableStorageTier = false,
-            bool enableIncrementalSnapshots = false,
-            bool fastCommit = true,
+            bool MainMemoryReplication = false,
+            bool OnDemandCheckpoint = false,
+            string AofMemorySize = "64m",
+            int CommitFrequencyMs = 0,
+            bool DisableStorageTier = false,
+            bool EnableIncrementalSnapshots = false,
+            bool FastCommit = true,
             int timeout = -1,
             bool useTLS = false,
             bool useAcl = false,
@@ -128,6 +136,7 @@ namespace Garnet.test.cluster
             int metricsSamplingFrequency = 0,
             bool enableLua = false,
             bool asyncReplay = false,
+            bool enableDisklessSync = false,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "")
         {
@@ -149,13 +158,13 @@ namespace Garnet.test.cluster
                 MemorySize: memorySize,
                 PageSize: pageSize,
                 SegmentSize: segmentSize,
-                MainMemoryReplication: mainMemoryReplication,
-                AofMemorySize: aofMemorySize,
-                CommitFrequencyMs: commitFrequencyMs,
-                DisableStorageTier: disableStorageTier,
-                OnDemandCheckpoint: onDemandCheckpoint,
-                EnableIncrementalSnapshots: enableIncrementalSnapshots,
-                FastCommit: fastCommit,
+                MainMemoryReplication: MainMemoryReplication,
+                AofMemorySize: AofMemorySize,
+                CommitFrequencyMs: CommitFrequencyMs,
+                DisableStorageTier: DisableStorageTier,
+                OnDemandCheckpoint: OnDemandCheckpoint,
+                EnableIncrementalSnapshots: EnableIncrementalSnapshots,
+                FastCommit: FastCommit,
                 useAcl: useAcl,
                 aclFile: credManager.aclFilePath,
                 authUsername: clusterCreds.user,
@@ -165,6 +174,7 @@ namespace Garnet.test.cluster
                 metricsSamplingFrequency: metricsSamplingFrequency,
                 enableLua: enableLua,
                 asyncReplay: asyncReplay,
+                enableDisklessSync: enableDisklessSync,
                 luaMemoryMode: luaMemoryMode,
                 luaMemoryLimit: luaMemoryLimit);
 
@@ -195,6 +205,7 @@ namespace Garnet.test.cluster
         /// <param name="gossipDelay"></param>
         /// <param name="useTLS"></param>
         /// <param name="useAcl"></param>
+        /// <param name="asyncReplay"></param>
         /// <param name="clusterCreds"></param>
         /// <param name="certificates"></param>
         /// <returns></returns>
