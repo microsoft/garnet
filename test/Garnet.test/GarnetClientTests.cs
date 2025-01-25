@@ -153,7 +153,7 @@ namespace Garnet.test
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
 
-            var db = TestUtils.GetGarnetClient(recordLatency: recordLatency);
+            using var db = TestUtils.GetGarnetClient(recordLatency: recordLatency);
             db.Connect();
 
             var metrics = db.GetLatencyMetrics();
@@ -185,7 +185,7 @@ namespace Garnet.test
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
 
-            var db = TestUtils.GetGarnetClient();
+            using var db = TestUtils.GetGarnetClient();
             db.Connect();
 
             long n = stringParams ?
@@ -201,7 +201,7 @@ namespace Garnet.test
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
 
-            var db = TestUtils.GetGarnetClient();
+            using var db = TestUtils.GetGarnetClient();
             db.Connect();
 
             var result = await db.ExecuteForStringResultAsync("PING");
@@ -219,7 +219,7 @@ namespace Garnet.test
             server.Start();
 
             var key = "mykey";
-            var db = TestUtils.GetGarnetClient();
+            using var db = TestUtils.GetGarnetClient();
             db.Connect();
 
             long expectedV = 1;
@@ -281,7 +281,7 @@ namespace Garnet.test
             server.Start();
 
             var key = "mykey";
-            var db = TestUtils.GetGarnetClient();
+            using var db = TestUtils.GetGarnetClient();
             db.Connect();
 
             long expectedV = -1;
@@ -341,7 +341,7 @@ namespace Garnet.test
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
 
-            var db = TestUtils.GetGarnetClient();
+            using var db = TestUtils.GetGarnetClient();
             db.Connect();
 
             var result = await db.ExecuteForStringResultAsync("SET", ["mykey", "Hello", "NX"]);
@@ -360,7 +360,7 @@ namespace Garnet.test
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObjectStore);
             server.Start();
 
-            var db = TestUtils.GetGarnetClient();
+            using var db = TestUtils.GetGarnetClient();
             db.Connect();
             var nKeys = worldcities.GetLength(0);
             var keys = new string[nKeys];
@@ -423,7 +423,7 @@ namespace Garnet.test
 
         private async Task<int> ReadValuesMGet(string[] keys, CancellationToken t)
         {
-            var db = TestUtils.GetGarnetClient();
+            using var db = TestUtils.GetGarnetClient();
             db.Connect();
             var vals = new string[keys.Length];
             vals = await db.StringGetAsync(keys, t);
@@ -467,7 +467,7 @@ namespace Garnet.test
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
 
-            var db = TestUtils.GetGarnetClient();
+            using var db = TestUtils.GetGarnetClient();
             db.Connect();
 
             var nKeys = worldcities.GetLength(0);
@@ -559,7 +559,7 @@ namespace Garnet.test
 
         private static async Task<long> DeleteKeysWithCT(string[] keys, Memory<byte>[] keysMB, ManualResetEventSlim mreObj, CancellationToken t, bool useMemoryType = false)
         {
-            var db = TestUtils.GetGarnetClient();
+            using var db = TestUtils.GetGarnetClient();
             db.Connect();
 
             //wait until is signaled to proceed
@@ -588,7 +588,7 @@ namespace Garnet.test
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, unixSocketEndpoint, unixSocketPath: unixSocketPath);
             server.Start();
 
-            var db = TestUtils.GetGarnetClient(unixSocketEndpoint);
+            using var db = TestUtils.GetGarnetClient(unixSocketEndpoint);
             await db.ConnectAsync();
 
             var result = await db.ExecuteForStringResultAsync("PING");
