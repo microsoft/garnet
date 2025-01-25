@@ -87,6 +87,25 @@ namespace Garnet.common
             Interlocked.Decrement(ref _lock);
         }
 
+        /// <summary>
+        /// Continuously attempt to acquire write lock until lock is acquired or it is write locked
+        /// </summary>
+        /// <returns>Return true if current thread is the one that acquired write lock</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool OneWriteLock()
+        {
+            while (true)
+            {
+                var isWriteLocked = IsWriteLocked;
+                var acquiredWriteLock = TryWriteLock();
+                if (isWriteLocked || acquiredWriteLock)
+                {
+                    return acquiredWriteLock;
+                }
+                Thread.Yield();
+            }
+        }
+
         /// <inheritdoc />
         public override string ToString()
             => _lock.ToString();
