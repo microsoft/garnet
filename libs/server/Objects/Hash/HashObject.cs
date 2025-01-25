@@ -553,7 +553,7 @@ namespace Garnet.server
                 return -2;
             }
 
-            if (expirationTimes.TryGetValue(key, out var expiration))
+            if (expirationTimes is not null && expirationTimes.TryGetValue(key, out var expiration))
             {
                 return expiration;
             }
