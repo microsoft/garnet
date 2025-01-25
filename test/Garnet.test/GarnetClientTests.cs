@@ -582,7 +582,7 @@ namespace Garnet.test
         [Test]
         public async Task UnixSocketServer_Ping()
         {
-            var unixSocketPath = Path.Join(TestUtils.MethodTestDir, "garnet.sock");
+            var unixSocketPath = "./unix-socket-ping-test.sock";
             var unixSocketEndpoint = new UnixDomainSocketEndPoint(unixSocketPath);
 
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, unixSocketEndpoint, unixSocketPath: unixSocketPath);

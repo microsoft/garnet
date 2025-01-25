@@ -221,7 +221,7 @@ namespace Garnet.client
         /// </summary>
         public async Task ConnectAsync(CancellationToken token = default)
         {
-            socket = await ConnectSendSocketAsync(timeoutMilliseconds);
+            socket = await ConnectSendSocketAsync(timeoutMilliseconds, token).ConfigureAwait(false);
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
             await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
             networkSender = networkHandler.GetNetworkSender();
@@ -288,7 +288,7 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Try to establish connection for socket using endPoint
+        /// Try to establish connection for <paramref name="socket"/> using <paramref name="endpoint"/>
         /// </summary>
         /// <param name="socket"></param>
         /// <param name="endpoint"></param>
