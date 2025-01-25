@@ -134,7 +134,7 @@ namespace Garnet.server
                 // Wait for either the result found notification or the timeout to expire
                 await observer.ResultFoundSemaphore.WaitAsync(timeout, observer.CancellationTokenSource.Token);
             }
-            catch (OperationCanceledException) when (observer.CancellationTokenSource.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
                 // Session is disposed
             }
