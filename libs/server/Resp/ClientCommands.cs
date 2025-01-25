@@ -623,16 +623,9 @@ namespace Garnet.server
                         return true;
                     }
 
-                    if (toThrowError)
-                    {
-                        observer.CancellationTokenSource.Cancel();
-                    }
-                    else
-                    {
-                        observer.ResultFoundSemaphore.Release();
-                    }
+                    var result = observer.TryForceUnblock(toThrowError);
 
-                    while (!RespWriteUtils.TryWriteInt32(1, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(result ? 1 : 0, ref dcurr, dend))
                         SendAndReset();
                 }
                 else

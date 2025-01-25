@@ -4893,7 +4893,10 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task MultipleClientsUnblockAndAddTest()
+        [TestCase(0, Description = "Guarantied concurrent unblock test")]
+        [TestCase(3, Description = "Random chance unblock sucess/failed case")]
+        [TestCase(20, Description = "Probable unblock failed case")]
+        public async Task MultipleClientsUnblockAndAddTest(int numberOfItems)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -4919,9 +4922,10 @@ namespace Garnet.test
             // Start parallel unblock and add tasks
             var unblockTasks = new List<Task<int>>();
             var addTasks = new List<Task>();
-            for (int i = 0; i < 20; i++)
+            for (int i = 0; i < numberOfItems; i++)
             {
-                addTasks.Add(Task.Run(() => redis.GetDatabase(0).ListLeftPush(key, $"{value}{i}")));
+                var _i = i;
+                addTasks.Add(Task.Run(() => redis.GetDatabase(0).ListLeftPush(key, $"{value}{_i}")));
             }
 
             for (int i = 0; i < 3; i++)
@@ -4936,7 +4940,17 @@ namespace Garnet.test
             var numberOfItemsReturned = Regex.Matches(blockingResult, value).Count;
 
             var listLength = db.ListLength(key);
-            ClassicAssert.AreEqual(20 - numberOfItemsReturned, listLength);
+            ClassicAssert.AreEqual(numberOfItems - numberOfItemsReturned, listLength);
+
+            if (numberOfItemsReturned == 0)
+            {
+                ClassicAssert.IsTrue(blockingResult.StartsWith("-UNBLOCKED"));
+                ClassicAssert.IsTrue(unblockTasks.Any(x => x.Result == 1));
+            }
+            else
+            {
+                ClassicAssert.IsTrue(unblockTasks.All(x => x.Result == 0));
+            }
         }
 
         [Test]

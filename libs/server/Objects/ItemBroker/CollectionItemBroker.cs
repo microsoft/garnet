@@ -129,7 +129,6 @@ namespace Garnet.server
                 ? TimeSpan.FromMilliseconds(-1)
                 : TimeSpan.FromSeconds(timeoutInSeconds);
 
-            var isForceUnblocked = false;
             try
             {
                 // Wait for either the result found notification or the timeout to expire
@@ -137,7 +136,7 @@ namespace Garnet.server
             }
             catch (OperationCanceledException) when (observer.CancellationTokenSource.IsCancellationRequested)
             {
-                isForceUnblocked = true;
+                // Session is disposed
             }
 
             SessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
@@ -147,11 +146,6 @@ namespace Garnet.server
             {
                 // Try to set the observer result to an empty one
                 observer.HandleSetResult(CollectionItemResult.Empty);
-            }
-
-            if (isForceUnblocked)
-            {
-                return CollectionItemResult.Error;
             }
 
             return observer.Result;

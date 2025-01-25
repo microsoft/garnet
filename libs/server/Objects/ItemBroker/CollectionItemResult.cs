@@ -80,8 +80,8 @@ namespace Garnet.server
         internal static readonly CollectionItemResult Empty = new(null, item: null);
 
         /// <summary>
-        /// Instance representing an error result.
+        /// Instance representing an Force Unblocked result.
         /// </summary>
-        internal static readonly CollectionItemResult Error = new(true);
+        internal static readonly CollectionItemResult ForceUnblocked = new(true);
     }
 }
