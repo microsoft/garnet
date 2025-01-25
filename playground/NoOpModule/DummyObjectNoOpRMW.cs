@@ -20,7 +20,6 @@ namespace NoOpModule
         public override bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value,
             ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
         {
-            WriteSimpleString(ref output, "OK");
             return true;
         }
     }

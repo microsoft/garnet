@@ -126,9 +126,9 @@ namespace Garnet.server
             retVal.Span[..headerSize].Clear(); // Clear the header
 
             byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
-            var success = RespWriteUtils.WriteBulkString(arg1.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
+            var success = RespWriteUtils.TryWriteBulkString(arg1.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
             Debug.Assert(success);
-            success = RespWriteUtils.WriteBulkString(arg2.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
+            success = RespWriteUtils.TryWriteBulkString(arg2.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
             Debug.Assert(success);
 
             scratchBufferOffset += length;
@@ -148,7 +148,7 @@ namespace Garnet.server
             retVal.Span[..headerSize].Clear(); // Clear the header
 
             byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
-            var success = RespWriteUtils.WriteBulkString(arg1.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
+            var success = RespWriteUtils.TryWriteBulkString(arg1.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
             Debug.Assert(success);
 
             scratchBufferOffset += length;
@@ -235,14 +235,14 @@ namespace Garnet.server
 
             var ptr = scratchBufferHead + scratchBufferOffset;
 
-            while (!RespWriteUtils.WriteArrayLength(argCount + 1, ref ptr, scratchBufferHead + scratchBuffer.Length))
+            while (!RespWriteUtils.TryWriteArrayLength(argCount + 1, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
                 ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
             scratchBufferOffset = (int)(ptr - scratchBufferHead);
 
-            while (!RespWriteUtils.WriteBulkString(cmd, ref ptr, scratchBufferHead + scratchBuffer.Length))
+            while (!RespWriteUtils.TryWriteBulkString(cmd, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
                 ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
@@ -257,7 +257,7 @@ namespace Garnet.server
         {
             var ptr = scratchBufferHead + scratchBufferOffset;
 
-            while (!RespWriteUtils.WriteNull(ref ptr, scratchBufferHead + scratchBuffer.Length))
+            while (!RespWriteUtils.TryWriteNull(ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
                 ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
@@ -273,7 +273,7 @@ namespace Garnet.server
         {
             var ptr = scratchBufferHead + scratchBufferOffset;
 
-            while (!RespWriteUtils.WriteBulkString(arg, ref ptr, scratchBufferHead + scratchBuffer.Length))
+            while (!RespWriteUtils.TryWriteBulkString(arg, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
                 ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
@@ -290,7 +290,7 @@ namespace Garnet.server
         /// <param name="slice"></param>
         /// <returns></returns>
         static int GetRespFormattedStringLength(ArgSlice slice)
-            => 1 + NumUtils.NumDigits(slice.Length) + 2 + slice.Length + 2;
+            => 1 + NumUtils.CountDigits(slice.Length) + 2 + slice.Length + 2;
 
         void ExpandScratchBufferIfNeeded(int newLength)
         {

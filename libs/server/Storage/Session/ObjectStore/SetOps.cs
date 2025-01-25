@@ -187,7 +187,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
             var input = new ObjectInput(header);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
@@ -237,7 +237,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SPOP };
             var input = new ObjectInput(header, count);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
@@ -284,7 +284,7 @@ namespace Garnet.server
                 if (srcGetStatus == GarnetStatus.NOTFOUND)
                     return GarnetStatus.NOTFOUND;
 
-                if (srcObject.garnetObject is not SetObject srcSetObject)
+                if (srcObject.GarnetObject is not SetObject srcSetObject)
                     return GarnetStatus.WRONGTYPE;
 
                 // If the keys are the same, no operation is performed.
@@ -297,7 +297,7 @@ namespace Garnet.server
                 SetObject dstSetObject;
                 if (dstGetStatus == GarnetStatus.OK)
                 {
-                    if (dstObject.garnetObject is not SetObject tmpDstSetObject)
+                    if (dstObject.GarnetObject is not SetObject tmpDstSetObject)
                         return GarnetStatus.WRONGTYPE;
 
                     dstSetObject = tmpDstSetObject;
@@ -466,7 +466,7 @@ namespace Garnet.server
             var status = GET(keys[0].ToArray(), out var first, ref objectContext);
             if (status == GarnetStatus.OK)
             {
-                if (first.garnetObject is not SetObject firstObject)
+                if (first.GarnetObject is not SetObject firstObject)
                 {
                     output = default;
                     return GarnetStatus.WRONGTYPE;
@@ -492,7 +492,7 @@ namespace Garnet.server
                 status = GET(keys[i].ToArray(), out var next, ref objectContext);
                 if (status == GarnetStatus.OK)
                 {
-                    if (next.garnetObject is not SetObject nextObject)
+                    if (next.GarnetObject is not SetObject nextObject)
                     {
                         output = default;
                         return GarnetStatus.WRONGTYPE;
@@ -629,7 +629,7 @@ namespace Garnet.server
             {
                 if (GET(item.ToArray(), out var currObject, ref objectContext) == GarnetStatus.OK)
                 {
-                    if (currObject.garnetObject is not SetObject setObject)
+                    if (currObject.GarnetObject is not SetObject setObject)
                     {
                         output = default;
                         return GarnetStatus.WRONGTYPE;
@@ -736,7 +736,7 @@ namespace Garnet.server
                 SetOp = SetOperation.SMISMEMBER,
             }, ref parseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
 
             if (status == GarnetStatus.OK)
@@ -892,7 +892,7 @@ namespace Garnet.server
             var status = GET(keys[0].ToArray(), out var first, ref objectContext);
             if (status == GarnetStatus.OK)
             {
-                if (first.garnetObject is not SetObject firstObject)
+                if (first.GarnetObject is not SetObject firstObject)
                 {
                     output = default;
                     return GarnetStatus.WRONGTYPE;
@@ -911,7 +911,7 @@ namespace Garnet.server
                 status = GET(keys[i].ToArray(), out var next, ref objectContext);
                 if (status == GarnetStatus.OK)
                 {
-                    if (next.garnetObject is not SetObject nextObject)
+                    if (next.GarnetObject is not SetObject nextObject)
                     {
                         output = default;
                         return GarnetStatus.WRONGTYPE;
