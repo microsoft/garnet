@@ -200,14 +200,14 @@ namespace Garnet.server
         /// <param name="customCommand">Parsed raw string command</param>
         /// <returns>True if command found, false otherwise</returns>
         public bool ParseCustomRawStringCommand(string cmd, out CustomRawStringCommand customCommand) =>
-            storeWrapper.customCommandManager.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out customCommand);
+            customCommandManagerSession.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out customCommand);
 
         /// <summary>Parse custom object command</summary>
         /// <param name="cmd">Command name</param>
         /// <param name="customObjCommand">Parsed object command</param>
         /// <returns>True if command found, false othrewise</returns>
         public bool ParseCustomObjectCommand(string cmd, out CustomObjectCommand customObjCommand) =>
-            storeWrapper.customCommandManager.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out customObjCommand);
+            customCommandManagerSession.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out customObjCommand);
 
         /// <summary>Execute a specific custom raw string command</summary>
         /// <typeparam name="TGarnetApi"></typeparam>
