@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
@@ -1005,6 +1006,53 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
+        public async Task ClusterAttachSyncACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER ATTACH_SYNC",
+                [DoClusterAttachSyncAsync]
+            );
+
+            static async Task DoClusterAttachSyncAsync(GarnetClient client)
+            {
+                var ms = new MemoryStream();
+                var writer = new BinaryWriter(ms, Encoding.ASCII);
+                // See SyncMetadata
+                writer.Write(0);
+                writer.Write(0);
+
+                writer.Write(0);
+                writer.Write(0);
+
+                writer.Write(0);
+                writer.Write(0);
+
+                writer.Write(0);
+
+                byte[] byteBuffer = ms.ToArray();
+                writer.Dispose();
+                ms.Dispose();
+
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["ATTACH_SYNC", Encoding.UTF8.GetString(byteBuffer)]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+
         [Test]
         public async Task ClusterBanListACLsAsync()
         {
@@ -1690,6 +1738,35 @@ namespace Garnet.test.Resp.ACL
                 try
                 {
                     await client.ExecuteForStringResultAsync("CLUSTER", ["MIGRATE", "a", "b", "c"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task ClusterSyncACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER SYNC",
+                [DoClusterMigrateAsync]
+            );
+
+            static async Task DoClusterMigrateAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SYNC", "a", "b", "c"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
                 catch (Exception e)
