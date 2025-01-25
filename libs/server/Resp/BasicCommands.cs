@@ -434,11 +434,17 @@ namespace Garnet.server
         {
             Debug.Assert(parseState.Count == 2);
             var key = parseState.GetArgSliceByRef(0);
-            var value = parseState.GetArgSliceByRef(1);
-            var getOption = ArgSlice.FromPinnedSpan(CmdStrings.NX);
-            parseState.InitializeWithArguments(key, value, getOption);
+            var sbKey = key.SpanByte;
 
-            return NetworkSETEXNX(ref storageApi);
+            var input = new RawStringInput(RespCommand.SETEXNX, ref parseState, startIdx: 1);
+            var status = storageApi.SET_Conditional(ref sbKey, ref input);
+
+            // The status returned for SETNX as NOTFOUND is the expected status in the happy path
+            var retVal = status == GarnetStatus.NOTFOUND ? 1 : 0;
+            while (!RespWriteUtils.TryWriteInt32(retVal, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
         }
 
         /// <summary>

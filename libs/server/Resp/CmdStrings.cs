@@ -164,6 +164,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_EXEC_ABORT => "EXECABORT Transaction discarded because of previous errors."u8;
         public static ReadOnlySpan<byte> RESP_ERR_ETAG_ON_CUSTOM_PROC => "WRONGTYPE Key with etag cannot be used for custom procedure."u8;
 
+        public static ReadOnlySpan<byte> RESP_ERR_NOSCRIPT => "ERR This Redis command is not allowed from script"u8;
+
         /// <summary>
         /// Generic error response strings, i.e. these are of the form "-ERR error message\r\n"
         /// </summary>
