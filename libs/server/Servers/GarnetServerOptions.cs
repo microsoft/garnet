@@ -330,6 +330,16 @@ namespace Garnet.server
         public bool OnDemandCheckpoint = false;
 
         /// <summary>
+        /// Whether diskless replication is enabled or not.
+        /// </summary>
+        public bool ReplicaDisklessSync = false;
+
+        /// <summary>
+        /// Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.
+        /// </summary>
+        public int ReplicaDisklessSyncDelay = 5;
+
+        /// <summary>
         /// With main-memory replication, whether we use null device for AOF. Ensures no disk IO, but can cause data loss during replication.
         /// </summary>
         public bool UseAofNullDevice = false;

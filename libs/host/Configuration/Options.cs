@@ -9,7 +9,6 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using CommandLine;
@@ -409,6 +408,14 @@ namespace Garnet
         public bool? OnDemandCheckpoint { get; set; }
 
         [OptionValidation]
+        [Option("repl-diskless-sync", Required = false, HelpText = "Whether diskless replication is enabled or not.")]
+        public bool? ReplicaDisklessSync { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("repl-diskless-sync-delay", Required = false, Default = 5, HelpText = "Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.")]
+        public int ReplicaDisklessSyncDelay { get; set; }
+
+        [OptionValidation]
         [Option("aof-null-device", Required = false, HelpText = "With main-memory replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
         public bool? UseAofNullDevice { get; set; }
 
@@ -773,6 +780,8 @@ namespace Garnet
                 ReplicationOffsetMaxLag = ReplicationOffsetMaxLag,
                 MainMemoryReplication = MainMemoryReplication.GetValueOrDefault(),
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
+                ReplicaDisklessSync = ReplicaDisklessSync.GetValueOrDefault(),
+                ReplicaDisklessSyncDelay = ReplicaDisklessSyncDelay,
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),
                 ClusterUsername = ClusterUsername,
                 ClusterPassword = ClusterPassword,
