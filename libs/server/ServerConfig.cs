@@ -12,13 +12,13 @@ namespace Garnet.server
 {
     static class ServerConfig
     {
-        public static readonly HashSet<ServerConfigType> DefaultConfigType = Enum.GetValues<ServerConfigType>().
+        public static readonly HashSet<ServerConfigType> DefaultConfigType = [.. Enum.GetValues<ServerConfigType>().
             Where(e => e switch
             {
                 ServerConfigType.NONE => false,
                 ServerConfigType.ALL => false,
                 _ => true
-            }).ToHashSet();
+            })];
 
         public static unsafe ServerConfigType GetConfig(Span<byte> parameter)
         {

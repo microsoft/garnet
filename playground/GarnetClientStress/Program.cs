@@ -24,11 +24,6 @@ namespace GarnetClientStress
         private static void ConfigureGlobalRuntimeSettings()
         {
             ThreadPool.SetMinThreads(workerThreads: 1000, completionPortThreads: 1000);
-            ServicePointManager.UseNagleAlgorithm = false;
-            ServicePointManager.Expect100Continue = false;
-            ServicePointManager.CheckCertificateRevocationList = false;
-            ServicePointManager.DefaultConnectionLimit = 1024;
-            ServicePointManager.ReusePort = true;
         }
     }
 }

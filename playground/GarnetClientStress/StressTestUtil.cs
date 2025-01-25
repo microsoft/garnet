@@ -20,17 +20,25 @@ namespace GarnetClientStress
 
         public static string RandomValue(Random r, int valueSize)
         {
-            return new string(Enumerable.Repeat(ascii_chars, valueSize)
-                .Select(s => s[r.Next(s.Length)]).ToArray());
+            return new string([.. Enumerable.Repeat(ascii_chars, valueSize).Select(s => s[r.Next(s.Length)])]);
         }
 
         public static T NotNull<T>(T argument, string parameterName) where T : class => argument ?? throw new ArgumentNullException(parameterName);
+
+        private static X509Certificate2 GetClientCertificate(string filename, string password)
+        {
+#if NET9_0_OR_GREATER
+            return X509CertificateLoader.LoadPkcs12FromFile(filename, password);
+#else
+            return new X509Certificate2(filename, password);
+#endif
+        }
 
         public static SslClientAuthenticationOptions GetTlsOptions(string tlsHost)
         {
             return new SslClientAuthenticationOptions
             {
-                ClientCertificates = [new X509Certificate2("testcert.pfx", "placeholder")],
+                ClientCertificates = [GetClientCertificate("testcert.pfx", "placeholder")],
                 TargetHost = tlsHost,
                 AllowRenegotiation = false,
                 RemoteCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true,
