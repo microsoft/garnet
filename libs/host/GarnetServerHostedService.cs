@@ -125,10 +125,9 @@ internal class GarnetServerHostedService : BackgroundService
         await Task.CompletedTask;
     }
 
-    public override void Dispose()
+    public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        base.Dispose();
-        server?.Dispose();
+        await base.StopAsync(cancellationToken);
 
         if (cleanupDir)
         {
