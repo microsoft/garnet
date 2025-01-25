@@ -148,7 +148,7 @@ namespace Garnet.server
         /// <summary>
         /// RESP protocol version (RESP2 is the default)
         /// </summary>
-        byte respProtocolVersion = 2;
+        internal byte respProtocolVersion = 2;
 
         /// <summary>
         /// Client name for the session
@@ -438,7 +438,9 @@ namespace Garnet.server
                 // Check ACL permissions for the command
                 if (cmd != RespCommand.INVALID)
                 {
-                    if (CheckACLPermissions(cmd))
+                    var noScriptPassed = true;
+
+                    if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
                         if (txnManager.state != TxnState.None)
                         {
@@ -463,8 +465,16 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
-                            SendAndReset();
+                        if (noScriptPassed)
+                        {
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOSCRIPT, ref dcurr, dend))
+                                SendAndReset();
+                        }
                     }
                 }
                 else
