@@ -27,7 +27,7 @@ namespace Garnet.server
             var ptr = slice.ptr;
 
             if (slice.length == 0 ||
-                !RespReadUtils.TryReadInt(ref ptr, slice.ptr + slice.length, out number, out var bytesRead) ||
+                !RespReadUtils.TryReadInt32(ref ptr, slice.ptr + slice.length, out number, out var bytesRead) ||
                 (int)bytesRead != slice.length)
             {
                 RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
@@ -48,7 +48,7 @@ namespace Garnet.server
             number = default;
             var ptr = slice.ptr;
             return slice.length != 0 &&
-                   RespReadUtils.TryReadIntSafe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead, out _,
+                   RespReadUtils.TryReadInt32Safe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead, out _,
                        out _, allowLeadingZeros: false) &&
                    (int)bytesRead == slice.length;
         }
@@ -66,7 +66,7 @@ namespace Garnet.server
             var ptr = slice.ptr;
 
             if (slice.length == 0 ||
-                !RespReadUtils.TryReadLong(ref ptr, slice.ptr + slice.length, out number, out var bytesRead) ||
+                !RespReadUtils.TryReadInt64(ref ptr, slice.ptr + slice.length, out number, out var bytesRead) ||
                 (int)bytesRead != slice.length)
             {
                 RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
@@ -87,7 +87,7 @@ namespace Garnet.server
             number = default;
             var ptr = slice.ptr;
             return slice.length != 0 &&
-                   RespReadUtils.TryReadLongSafe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead,
+                   RespReadUtils.TryReadInt64Safe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead,
                        out _, out _, allowLeadingZeros: false) &&
                    (int)bytesRead == slice.length;
         }

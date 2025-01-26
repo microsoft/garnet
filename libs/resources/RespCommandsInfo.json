@@ -416,6 +416,78 @@
     ]
   },
   {
+    "Command": "BZMPOP",
+    "Name": "BZMPOP",
+    "Arity": -5,
+    "Flags": "Blocking, MovableKeys, Write",
+    "AclCategories": "Blocking, SortedSet, Slow, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysKeyNum",
+          "KeyNumIdx": 0,
+          "FirstKey": 1,
+          "KeyStep": 1
+        },
+        "Flags": "RW, Access, Delete"
+      }
+    ]
+  },
+  {
+    "Command": "BZPOPMAX",
+    "Name": "BZPOPMAX",
+    "Arity": -3,
+    "Flags": "Blocking, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": -2,
+    "Step": 1,
+    "AclCategories": "Blocking, Fast, SortedSet, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -2,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Access, Delete"
+      }
+    ]
+  },
+  {
+    "Command": "BZPOPMIN",
+    "Name": "BZPOPMIN",
+    "Arity": -3,
+    "Flags": "Blocking, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": -2,
+    "Step": 1,
+    "AclCategories": "Blocking, Fast, SortedSet, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -2,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Access, Delete"
+      }
+    ]
+  },
+  {
     "Command": "CLIENT",
     "Name": "CLIENT",
     "Arity": -2,
@@ -1047,6 +1119,31 @@
     "Arity": 1,
     "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
     "AclCategories": "Fast, Transaction"
+  },
+  {
+    "Command": "DUMP",
+    "Name": "DUMP",
+    "Arity": 2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "KeySpace, Read",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
   },
   {
     "Command": "ECHO",
@@ -3402,6 +3499,31 @@
     "Arity": 3,
     "Flags": "Admin, NoAsyncLoading, NoScript, Stale",
     "AclCategories": "Admin, Dangerous, Slow"
+  },
+  {
+    "Command": "RESTORE",
+    "Name": "RESTORE",
+    "Arity": -4,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Dangerous, KeySpace, Slow, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 0,
+          "Limit": 0
+        },
+        "Flags": "OW, Update"
+      }
+    ]
   },
   {
     "Command": "RPOP",

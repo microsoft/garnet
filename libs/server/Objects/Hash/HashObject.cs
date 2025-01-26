@@ -155,17 +155,17 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new HashObject(hash, expirationTimes, expirationQueue, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
+        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
         {
-            removeKey = false;
+            sizeChange = 0;
 
-            fixed (byte* _output = output.SpanByte.AsSpan())
+            fixed (byte* outputSpan = output.SpanByteAndMemory.SpanByte.AsSpan())
             {
                 if (input.header.type != GarnetObjectType.Hash)
                 {
                     //Indicates when there is an incorrect type 
-                    output.Length = 0;
-                    sizeChange = 0;
+                    output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                    output.SpanByteAndMemory.Length = 0;
                     return true;
                 }
 
@@ -173,73 +173,73 @@ namespace Garnet.server
                 switch (input.header.HashOp)
                 {
                     case HashOperation.HSET:
-                        HashSet(ref input, _output);
+                        HashSet(ref input, outputSpan);
                         break;
                     case HashOperation.HMSET:
-                        HashSet(ref input, _output);
+                        HashSet(ref input, outputSpan);
                         break;
                     case HashOperation.HGET:
-                        HashGet(ref input, ref output);
+                        HashGet(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HMGET:
-                        HashMultipleGet(ref input, ref output);
+                        HashMultipleGet(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HGETALL:
-                        HashGetAll(ref input, ref output);
+                        HashGetAll(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HDEL:
-                        HashDelete(ref input, _output);
+                        HashDelete(ref input, outputSpan);
                         break;
                     case HashOperation.HLEN:
-                        HashLength(_output);
+                        HashLength(outputSpan);
                         break;
                     case HashOperation.HSTRLEN:
-                        HashStrLength(ref input, _output);
+                        HashStrLength(ref input, outputSpan);
                         break;
                     case HashOperation.HEXISTS:
-                        HashExists(ref input, _output);
+                        HashExists(ref input, outputSpan);
                         break;
                     case HashOperation.HEXPIRE:
-                        HashExpire(ref input, ref output);
+                        HashExpire(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HTTL:
-                        HashTimeToLive(ref input, ref output);
+                        HashTimeToLive(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HPERSIST:
-                        HashPersist(ref input, ref output);
+                        HashPersist(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HKEYS:
-                        HashGetKeysOrValues(ref input, ref output);
+                        HashGetKeysOrValues(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HVALS:
-                        HashGetKeysOrValues(ref input, ref output);
+                        HashGetKeysOrValues(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HINCRBY:
-                        HashIncrement(ref input, ref output);
+                        HashIncrement(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HINCRBYFLOAT:
-                        HashIncrement(ref input, ref output);
+                        HashIncrement(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HSETNX:
-                        HashSet(ref input, _output);
+                        HashSet(ref input, outputSpan);
                         break;
                     case HashOperation.HRANDFIELD:
-                        HashRandomField(ref input, ref output);
+                        HashRandomField(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HCOLLECT:
-                        HashCollect(ref input, _output);
+                        HashCollect(ref input, outputSpan);
                         break;
                     case HashOperation.HSCAN:
-                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
-                                out var patternLength, out var limitCount, out bool isNoValue, out var error))
+                        if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
+                                out var patternLength, out var limitCount, out var isNoValue, out var error))
                         {
                             Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                                 patternLength: patternLength, isNoValue);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output);
+                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory);
                         }
                         else
                         {
-                            ObjectUtils.WriteScanError(error, ref output);
+                            ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory);
                         }
                         break;
                     default:
@@ -249,7 +249,9 @@ namespace Garnet.server
                 sizeChange = this.Size - previousSize;
             }
 
-            removeKey = hash.Count == 0;
+            if (hash.Count == 0)
+                output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;
+
             return true;
         }
 
@@ -499,9 +501,9 @@ namespace Garnet.server
 
             if (expirationTimes.TryGetValue(key, out var currentExpiration))
             {
-                if (expireOption.HasFlag(ExpireOption.NX) ||
-                    (expireOption.HasFlag(ExpireOption.GT) && expiration <= currentExpiration) ||
-                    (expireOption.HasFlag(ExpireOption.LT) && expiration >= currentExpiration))
+                if ((expireOption & ExpireOption.NX) == ExpireOption.NX ||
+                    ((expireOption & ExpireOption.GT) == ExpireOption.GT && expiration <= currentExpiration) ||
+                    ((expireOption & ExpireOption.LT) == ExpireOption.LT && expiration >= currentExpiration))
                 {
                     return (int)ExpireResult.ExpireConditionNotMet;
                 }
@@ -513,7 +515,8 @@ namespace Garnet.server
             }
             else
             {
-                if (expireOption.HasFlag(ExpireOption.XX) || expireOption.HasFlag(ExpireOption.GT))
+                if ((expireOption & ExpireOption.XX) == ExpireOption.XX ||
+                    (expireOption & ExpireOption.GT) == ExpireOption.GT)
                 {
                     return (int)ExpireResult.ExpireConditionNotMet;
                 }
@@ -551,7 +554,7 @@ namespace Garnet.server
                 return -2;
             }
 
-            if (expirationTimes.TryGetValue(key, out var expiration))
+            if (expirationTimes is not null && expirationTimes.TryGetValue(key, out var expiration))
             {
                 return expiration;
             }
