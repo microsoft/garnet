@@ -188,7 +188,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Get Span&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (excluding metadata if any)
         /// <paramref name="offset">
-        /// Optional Parameter to avoid having to call slice when wanting to interact directly with payload skipping ETag at the front of the payload
+        /// Parameter to avoid having to call slice when wanting to interact directly with payload skipping ETag at the front of the payload
         /// </paramref>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -215,7 +215,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Get ReadOnlySpan&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (excluding metadata if any)
         /// <paramref name="offset">
-        /// Optional Parameter to avoid having to call slice when wanting to interact directly with payload skipping ETag at the front of the payload
+        /// Parameter to avoid having to call slice when wanting to interact directly with payload skipping ETag at the front of the payload
         /// </paramref>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
