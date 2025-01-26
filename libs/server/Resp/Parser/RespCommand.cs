@@ -274,6 +274,7 @@ namespace Garnet.server
         ACL,
         ACL_CAT,
         ACL_DELUSER,
+        ACL_GETUSER,
         ACL_LIST,
         ACL_LOAD,
         ACL_SAVE,
@@ -377,6 +378,7 @@ namespace Garnet.server
             // ACL
             RespCommand.ACL_CAT,
             RespCommand.ACL_DELUSER,
+            RespCommand.ACL_GETUSER,
             RespCommand.ACL_LIST,
             RespCommand.ACL_LOAD,
             RespCommand.ACL_SAVE,
@@ -1641,7 +1643,7 @@ namespace Garnet.server
         /// <summary>
         /// Parses the receive buffer, starting from the current read head, for all command names that are
         /// not covered by FastParseArrayCommand() and advances the read head to the end of the command name.
-        /// 
+        ///
         /// NOTE: Assumes the input command names have already been converted to upper-case.
         /// </summary>
         /// <param name="count">Reference to the number of remaining tokens in the packet. Will be reduced to number of command arguments.</param>
@@ -2122,6 +2124,10 @@ namespace Garnet.server
                 {
                     return RespCommand.ACL_DELUSER;
                 }
+                else if (subCommand.SequenceEqual(CmdStrings.GETUSER))
+                {
+                    return RespCommand.ACL_GETUSER;
+                }
                 else if (subCommand.SequenceEqual(CmdStrings.LIST))
                 {
                     return RespCommand.ACL_LIST;
@@ -2326,7 +2332,7 @@ namespace Garnet.server
             if (txnManager.state == TxnState.Started)
                 return;
 
-            /* 
+            /*
                 If a previous command marked AOF for blocking we should not change AOF blocking flag.
                 If no previous command marked AOF for blocking, then we only change AOF flag to block
                 if the current command is AOF dependent.

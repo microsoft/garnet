@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Text;
 using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
@@ -363,6 +364,91 @@ namespace Garnet.server
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes ACL GETUSER subcommand.
+        /// </summary>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkAclGetUser()
+        {
+            // Have to have at least the username
+            if (parseState.Count != 1)
+            {
+                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL GETUSER.", ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                if (!ValidateACLAuthenticator())
+                    return true;
+
+                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+                User user = null;
+
+                try
+                {
+                    user = aclAuthenticator
+                        .GetAccessControlList()
+                        .GetUser(parseState.GetString(0));
+                }
+                catch (ACLException exception)
+                {
+                    logger?.LogDebug("ACLException: {message}", exception.Message);
+
+                    // Abort command execution
+                    while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
+                        SendAndReset();
+
+                    return true;
+                }
+
+                if (user is null)
+                {
+                    while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.TryWriteArrayLength(6, ref dcurr, dend))
+                        SendAndReset();
+
+                    var flags = user.GetFlags();
+                    var passwordHashes = user.GetPasswordHashes();
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString("flags", ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteArrayLength(flags.Count, ref dcurr, dend))
+                        SendAndReset();
+
+                    foreach (var flag in flags)
+                    {
+                        while (!RespWriteUtils.TryWriteBulkString(Encoding.ASCII.GetBytes(flag), ref dcurr, dend))
+                            SendAndReset();
+                    }
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString("passwords", ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteArrayLength(passwordHashes.Count, ref dcurr, dend))
+                        SendAndReset();
+
+                    foreach (var passwordHash in passwordHashes)
+                    {
+                        while (!RespWriteUtils.TryWriteAsciiBulkString(passwordHash, ref dcurr, dend))
+                            SendAndReset();
+                    }
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString("commands", ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(user.GetEnabledCommandsDescription(), ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
 
             return true;
         }

@@ -124,7 +124,7 @@ namespace Garnet.server.ACL
 
         /// <summary>
         /// Adds the given command to the user.
-        /// 
+        ///
         /// If the command has subcommands, and no specific subcommand is indicated, adds all subcommands too.
         /// </summary>
         /// <param name="command">Command to add.</param>
@@ -246,7 +246,7 @@ namespace Garnet.server.ACL
 
         /// <summary>
         /// Removes the given command from the user.
-        /// 
+        ///
         /// If the command has subcommands, and no specific subcommand is indicated, removes all subcommands too.
         /// </summary>
         /// <param name="command">Command to remove.</param>
@@ -421,6 +421,33 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
+        /// Returns flags for the <see cref="User"/>.
+        /// </summary>
+        /// <returns>A <see cref="List{T}"/> of <see cref="string"/> representing flags for the user.</returns>
+        public List<string> GetFlags()
+        {
+            return new() { IsEnabled ? "on" : "off" };
+        }
+
+        /// <summary>
+        /// Returns password hashes for the <see cref="User"/>.
+        /// </summary>
+        /// <returns>A <see cref="List{T}"/> of <see cref="string"/> representing password hashes for the user.</returns>
+        public List<string> GetPasswordHashes()
+        {
+            return _passwordHashes.Select(hash => $"#{hash}").ToList();
+        }
+
+        /// <summary>
+        /// Returns a <see cref="string"/> containing the enabled commands.
+        /// </summary>
+        /// <returns>A <see cref="string"/> containing the enabled commands.</returns>
+        public string GetEnabledCommandsDescription()
+        {
+            return _enabledCommands.Description;
+        }
+
+        /// <summary>
         /// Determine the command / sub command pairs that are associated with this command information entries
         /// </summary>
         internal static IEnumerable<RespCommand> DetermineCommandDetails(IReadOnlyList<RespCommandsInfo> infos)
@@ -448,7 +475,7 @@ namespace Garnet.server.ACL
 
         /// <summary>
         /// Check to see if any tokens from a description can be removed without modifying the effective permissions.
-        /// 
+        ///
         /// This is an expensive method, but ACL modifications are rare enough it's hopefully not a problem.
         /// </summary>
         private static string RationalizeACLDescription(CommandPermissionSet set, string description)
@@ -492,7 +519,7 @@ namespace Garnet.server.ACL
 
         /// <summary>
         /// A set of all allowed _passwordHashes for the user.
-        /// 
+        ///
         /// NOTE: HashSet is not thread-safe, so accesses need to be synchronized
         /// </summary>
         readonly HashSet<ACLPassword> _passwordHashes = [];
