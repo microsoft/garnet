@@ -82,7 +82,7 @@ namespace Garnet.server
                     var length = sbSrcHLL.Length;
                     var srcHLL = sbSrcHLL.ToPointer();
                     var dstHLL = value.ToPointer();
-                   
+
                     value.ShrinkSerializedLength(length);
                     Buffer.MemoryCopy(srcHLL, dstHLL, value.Length, value.Length);
                     break;
