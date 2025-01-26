@@ -98,7 +98,7 @@ namespace Garnet.test.Resp.ACL
             string commands,
             string expectedCommands)
         {
-            if(!string.IsNullOrWhiteSpace(credential) && credential != "nopass")
+            if (!string.IsNullOrWhiteSpace(credential) && credential != "nopass")
             {
                 credential = $">{credential}";
             }
@@ -202,3 +202,4 @@ namespace Garnet.test.Resp.ACL
         }
     }
 }
+
