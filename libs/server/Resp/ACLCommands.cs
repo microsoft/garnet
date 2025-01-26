@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Text;
 using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
@@ -426,7 +425,7 @@ namespace Garnet.server
 
                     foreach (var flag in flags)
                     {
-                        while (!RespWriteUtils.TryWriteBulkString(Encoding.ASCII.GetBytes(flag), ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteAsciiBulkString(flag, ref dcurr, dend))
                             SendAndReset();
                     }
 
