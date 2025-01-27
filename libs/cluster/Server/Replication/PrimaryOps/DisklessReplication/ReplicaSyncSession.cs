@@ -65,7 +65,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public Task<string> ExecuteAsync(params string[] commands)
         {
-            if (flushTask != null) WaitForFlush().GetAwaiter().GetResult();
+            WaitForFlush().GetAwaiter().GetResult();
             return aofSyncTask.garnetClient.ExecuteAsync(commands);
         }
 
@@ -74,7 +74,7 @@ namespace Garnet.cluster
         /// </summary>
         public void InitializeIterationBuffer()
         {
-            if (flushTask != null) WaitForFlush().GetAwaiter().GetResult();
+            WaitForFlush().GetAwaiter().GetResult();
             aofSyncTask.garnetClient.InitializeIterationBuffer();
         }
 
@@ -84,7 +84,7 @@ namespace Garnet.cluster
         /// <param name="isMainStore"></param>
         public void SetClusterSyncHeader(bool isMainStore)
         {
-            if (flushTask != null) WaitForFlush().GetAwaiter().GetResult();
+            WaitForFlush().GetAwaiter().GetResult();
             if (aofSyncTask.garnetClient.NeedsInitialization)
                 aofSyncTask.garnetClient.SetClusterSyncHeader(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, isMainStore: isMainStore);
         }
@@ -98,7 +98,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TryWriteKeyValueSpanByte(ref SpanByte key, ref SpanByte value, out Task<string> task)
         {
-            if (flushTask != null) WaitForFlush().GetAwaiter().GetResult();
+            WaitForFlush().GetAwaiter().GetResult();
             return aofSyncTask.garnetClient.TryWriteKeyValueSpanByte(ref key, ref value, out task);
         }
 
@@ -112,7 +112,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TryWriteKeyValueByteArray(byte[] key, byte[] value, long expiration, out Task<string> task)
         {
-            if (flushTask != null) WaitForFlush().GetAwaiter().GetResult();
+            WaitForFlush().GetAwaiter().GetResult();
             return aofSyncTask.garnetClient.TryWriteKeyValueByteArray(key, value, expiration, out task);
         }
 
@@ -122,7 +122,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public void SendAndResetIterationBuffer(TimeSpan timeout, CancellationToken token)
         {
-            if (flushTask != null) WaitForFlush().GetAwaiter().GetResult();
+            WaitForFlush().GetAwaiter().GetResult();
             SetFlushTask(aofSyncTask.garnetClient.SendAndResetIterationBuffer(), timeout: timeout, token: token);
         }
         #endregion
@@ -196,16 +196,19 @@ namespace Garnet.cluster
         /// <param name="token"></param>
         public void SetFlushTask(Task<string> task, TimeSpan timeout, CancellationToken token)
         {
-            flushTask = task.ContinueWith(resp =>
+            if (task != null)
             {
-                if (!resp.Result.Equals("OK", StringComparison.Ordinal))
+                flushTask = task.ContinueWith(resp =>
                 {
-                    logger?.LogError("ReplicaSyncSession: {errorMsg}", resp.Result);
-                    SetStatus(SyncStatus.FAILED, resp.Result);
-                    return false;
-                }
-                return true;
-            }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(timeout, token);
+                    if (!resp.Result.Equals("OK", StringComparison.Ordinal))
+                    {
+                        logger?.LogError("ReplicaSyncSession: {errorMsg}", resp.Result);
+                        SetStatus(SyncStatus.FAILED, resp.Result);
+                        return false;
+                    }
+                    return true;
+                }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(timeout, token);
+            }
         }
 
         /// <summary>
@@ -216,7 +219,7 @@ namespace Garnet.cluster
         {
             try
             {
-                _ = await flushTask;
+                if (flushTask != null) _ = await flushTask;
                 flushTask = null;
             }
             catch (Exception ex)
