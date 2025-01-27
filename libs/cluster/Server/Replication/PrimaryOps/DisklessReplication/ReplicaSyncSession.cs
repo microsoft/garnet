@@ -70,10 +70,19 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Initialize iteration buffer
+        /// </summary>
+        public void InitializeIterationBuffer()
+        {
+            if (flushTask != null) WaitForFlush().GetAwaiter().GetResult();
+            aofSyncTask.garnetClient.InitializeIterationBuffer();
+        }
+
+        /// <summary>
         /// Set Cluster Sync header
         /// </summary>
         /// <param name="isMainStore"></param>
-        public void SetClysterSyncHeader(bool isMainStore)
+        public void SetClusterSyncHeader(bool isMainStore)
         {
             if (flushTask != null) WaitForFlush().GetAwaiter().GetResult();
             if (aofSyncTask.garnetClient.NeedsInitialization)
@@ -222,6 +231,8 @@ namespace Garnet.cluster
         /// </summary>
         public async Task BeginAofSync()
         {
+            var aofSyncTask = this.aofSyncTask;
+            this.aofSyncTask = null;
             var mmr = clusterProvider.serverOptions.MainMemoryReplication;
             var aofNull = clusterProvider.serverOptions.UseAofNullDevice;
 
