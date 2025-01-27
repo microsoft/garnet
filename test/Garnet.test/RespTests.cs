@@ -624,6 +624,26 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SetExpiryThenExpireAndAppend()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "user:string1";
+            string value1 = "a";
+            string value2 = "ab";
+            var ttl = TimeSpan.FromMilliseconds(100);
+
+            var ok = db.StringSet(key, value1, ttl);
+            ClassicAssert.IsTrue(ok);
+
+            Thread.Sleep(ttl * 2);
+
+            var len = db.StringAppend(key, value2);
+            ClassicAssert.IsTrue(len == 2);
+        }
+
+        [Test]
         public void SetExpiryNx()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
