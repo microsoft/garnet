@@ -37,7 +37,6 @@ namespace Garnet.cluster
 
                 // Wait for threads to agree configuration change of this node
                 session.UnsafeBumpAndWaitForEpochTransition();
-
                 _ = Task.Run(() => TryBeginReplicaSync());
             }
             catch (Exception ex)
@@ -50,6 +49,7 @@ namespace Garnet.cluster
             {
                 var disklessSync = clusterProvider.serverOptions.ReplicaDisklessSync;
                 var dissableObjects = clusterProvider.serverOptions.DisableObjects;
+                GarnetClientSession gcs = null;
                 try
                 {
                     if (!clusterProvider.serverOptions.EnableFastCommit)
@@ -74,7 +74,6 @@ namespace Garnet.cluster
                     //      Retrieval completion coordinated by remoteCheckpointRetrievalCompleted
                     var current = clusterProvider.clusterManager.CurrentConfig;
                     var (address, port) = current.GetLocalNodePrimaryAddress();
-                    GarnetClientSession gcs = null;
                     CheckpointEntry checkpointEntry = null;
 
                     if (!disklessSync)
@@ -123,6 +122,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
+                    gcs?.Dispose();
                     recvCheckpointHandler?.Dispose();
                 }
             }
