@@ -150,7 +150,7 @@ namespace Garnet.test
         [Test]
         public void SerializationTest()
         {
-            var jsonObject = new JsonObject(23);
+            var jsonObject = new GarnetJsonObject(23);
             jsonObject.TrySet("$", "{\"a\": 1}");
 
             byte[] serializedData;
@@ -168,7 +168,7 @@ namespace Garnet.test
             {
                 using (var binaryReader = new BinaryReader(memoryStream))
                 {
-                    var deserializedObject = new JsonObject(binaryReader.ReadByte(), binaryReader);
+                    var deserializedObject = new GarnetJsonObject(binaryReader.ReadByte(), binaryReader);
 
                     deserializedObject.TryGet("$", out var newString);
                     ClassicAssert.AreEqual("[{\"a\":1}]", newString);
@@ -191,7 +191,7 @@ namespace Garnet.test
 
         void RegisterCustomCommand()
         {
-            var jsonFactory = new JsonObjectFactory();
+            var jsonFactory = new GarnetJsonObjectFactory();
             server.Register.NewCommand("JSON.SET", CommandType.ReadModifyWrite, jsonFactory, new JsonSET());
             server.Register.NewCommand("JSON.GET", CommandType.Read, jsonFactory, new JsonGET());
         }

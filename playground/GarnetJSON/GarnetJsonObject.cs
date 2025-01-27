@@ -6,38 +6,38 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Garnet.server;
-using Json.Path;
+using GarnetJSON.JSONPath;
 using Microsoft.Extensions.Logging;
 
 namespace GarnetJSON
 {
     /// <summary>
-    /// Represents a factory for creating instances of <see cref="JsonObject"/>.
+    /// Represents a factory for creating instances of <see cref="GarnetJsonObject"/>.
     /// </summary>
-    public class JsonObjectFactory : CustomObjectFactory
+    public class GarnetJsonObjectFactory : CustomObjectFactory
     {
         /// <summary>
-        /// Creates a new instance of <see cref="JsonObject"/> with the specified type.
+        /// Creates a new instance of <see cref="GarnetJsonObject"/> with the specified type.
         /// </summary>
         /// <param name="type">The type of the object.</param>
-        /// <returns>A new instance of <see cref="JsonObject"/>.</returns>
+        /// <returns>A new instance of <see cref="GarnetJsonObject"/>.</returns>
         public override CustomObjectBase Create(byte type)
-            => new JsonObject(type);
+            => new GarnetJsonObject(type);
 
         /// <summary>
-        /// Deserializes a <see cref="JsonObject"/> from the specified binary reader.
+        /// Deserializes a <see cref="GarnetJsonObject"/> from the specified binary reader.
         /// </summary>
         /// <param name="type">The type of the object.</param>
         /// <param name="reader">The binary reader to deserialize from.</param>
-        /// <returns>A deserialized instance of <see cref="JsonObject"/>.</returns>
+        /// <returns>A deserialized instance of <see cref="GarnetJsonObject"/>.</returns>
         public override CustomObjectBase Deserialize(byte type, BinaryReader reader)
-            => new JsonObject(type, reader);
+            => new GarnetJsonObject(type, reader);
     }
 
     /// <summary>
     /// Represents a JSON object that supports SET and GET operations using JSON path.
     /// </summary>
-    public class JsonObject : CustomObjectBase
+    public class GarnetJsonObject : CustomObjectBase
     {
         private const string JsonPathPattern = @"(\.[^.\[]+)|(\['[^']+'\])|(\[\d+\])";
 
@@ -45,20 +45,20 @@ namespace GarnetJSON
         private JsonNode? jNode;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="JsonObject"/> class with the specified type.
+        /// Initializes a new instance of the <see cref="GarnetJsonObject"/> class with the specified type.
         /// </summary>
         /// <param name="type">The type of the object.</param>
-        public JsonObject(byte type)
+        public GarnetJsonObject(byte type)
             : base(type, 0, MemoryUtils.DictionaryOverhead)
         {
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="JsonObject"/> class by deserializing from the specified binary reader.
+        /// Initializes a new instance of the <see cref="GarnetJsonObject"/> class by deserializing from the specified binary reader.
         /// </summary>
         /// <param name="type">The type of the object.</param>
         /// <param name="reader">The binary reader to deserialize from.</param>
-        public JsonObject(byte type, BinaryReader reader)
+        public GarnetJsonObject(byte type, BinaryReader reader)
             : base(type, reader)
         {
             Debug.Assert(reader != null);
@@ -68,23 +68,23 @@ namespace GarnetJSON
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="JsonObject"/> class by cloning another <see cref="JsonObject"/> instance.
+        /// Initializes a new instance of the <see cref="GarnetJsonObject"/> class by cloning another <see cref="GarnetJsonObject"/> instance.
         /// </summary>
-        /// <param name="obj">The <see cref="JsonObject"/> instance to clone.</param>
-        public JsonObject(JsonObject obj)
+        /// <param name="obj">The <see cref="GarnetJsonObject"/> instance to clone.</param>
+        public GarnetJsonObject(GarnetJsonObject obj)
             : base(obj)
         {
             jNode = obj.jNode;
         }
 
         /// <summary>
-        /// Creates a new instance of <see cref="JsonObject"/> that is a clone of the current instance.
+        /// Creates a new instance of <see cref="GarnetJsonObject"/> that is a clone of the current instance.
         /// </summary>
-        /// <returns>A new instance of <see cref="JsonObject"/> that is a clone of the current instance.</returns>
-        public override CustomObjectBase CloneObject() => new JsonObject(this);
+        /// <returns>A new instance of <see cref="GarnetJsonObject"/> that is a clone of the current instance.</returns>
+        public override CustomObjectBase CloneObject() => new GarnetJsonObject(this);
 
         /// <summary>
-        /// Serializes the <see cref="JsonObject"/> to the specified binary writer.
+        /// Serializes the <see cref="GarnetJsonObject"/> to the specified binary writer.
         /// </summary>
         /// <param name="writer">The binary writer to serialize to.</param>
         public override void SerializeObject(BinaryWriter writer)
@@ -95,7 +95,7 @@ namespace GarnetJSON
         }
 
         /// <summary>
-        /// Disposes the <see cref="JsonObject"/> instance.
+        /// Disposes the <see cref="GarnetJsonObject"/> instance.
         /// </summary>
         public override void Dispose() { }
 
@@ -112,28 +112,27 @@ namespace GarnetJSON
         /// <param name="logger">The logger to log any errors.</param>
         /// <returns><c>true</c> if the value was successfully retrieved; otherwise, <c>false</c>.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> is <c>null</c>.</exception>
-        public bool TryGet(string path, out string jsonString, ILogger? logger = null)
+        public bool TryGet(string path, out string? jsonString, ILogger? logger = null)
         {
             if (path == null)
                 throw new ArgumentNullException(nameof(path));
 
-            jsonString = string.Empty;
+            jsonString = null;
 
             try
             {
+                if (jNode is null)
+                {
+                    return true;
+                }
+
                 // Find all items matching JSON path
-                var jPath = JsonPath.Parse(path);
-                var result = jPath.Evaluate(jNode);
+                var result = jNode.SelectNodes(path);
 
                 // Return matches in JSON array format
-                jsonString = $"[{string.Join(",", result.Matches.Select(m => m.Value!.ToJsonString()))}]";
+                jsonString = $"[{string.Join(",", result.Select(m => m?.ToJsonString()))}]";
 
                 return true;
-            }
-            catch (PathParseException ex)
-            {
-                logger?.LogError(ex, "Failed to parse JSON path");
-                return false;
             }
             catch (JsonException ex)
             {
@@ -163,11 +162,6 @@ namespace GarnetJSON
                 Set(path, value);
                 return true;
             }
-            catch (PathParseException ex)
-            {
-                logger?.LogError(ex, "Failed to parse JSON path");
-                return false;
-            }
             catch (JsonException ex)
             {
                 logger?.LogError(ex, "Failed to set JSON value");
@@ -177,25 +171,36 @@ namespace GarnetJSON
 
         private void Set(string path, string value)
         {
+            if (jNode is null)
+            {
+                if (path == "$")
+                {
+                    jNode = JsonNode.Parse(value);
+                    return;
+                }
+                else
+                {
+                    throw new JsonException("ERR new objects must be created at the root");
+                }
+            }
+
             // Find all items matching JSON path
-            var jPath = JsonPath.Parse(path);
-            var result = jPath.Evaluate(jNode);
+            var result = jNode.SelectNodes(path);
 
             // No matched items
-            if (result.Matches.Count == 0)
+            if (!result.Any())
             {
                 // Find parent node path
-                var parentPath = JsonPath.Parse(GetParentPathExt(path));
-                result = parentPath.Evaluate(jNode);
-                if (result.Matches.Count == 0)
+                result = jNode.SelectNodes(GetParentPathExt(path));
+                if (!result.Any())
                     throw new JsonException("Unable to find parent node(s) for JSON path.");
 
                 // Get parent node from path & parse child node from input value
-                var parentNode = result.Matches[0].Value;
+                var parentNode = result.First();
                 var childNode = JsonNode.Parse(value);
 
                 // Check if parent node is a JsonObject
-                if (parentNode is System.Text.Json.Nodes.JsonObject matchObject)
+                if (parentNode is JsonObject matchObject)
                 {
                     // Get key name from JSON path
                     var propName = GetPropertyName(path);
@@ -216,13 +221,14 @@ namespace GarnetJSON
             // Matches found
             else
             {
-                foreach (var match in result.Matches)
+                // Need ToList to avoid modifying collection while iterating
+                foreach (var match in result.ToList())
                 {
                     // Parse node from input value
                     var valNode = JsonNode.Parse(value);
 
                     // If matched node is root
-                    if (match.Value == null && match.Location?.ToString() == "$")
+                    if (jNode == match)
                     {
                         // Set root node to parsed value node
                         jNode = valNode;
@@ -230,7 +236,7 @@ namespace GarnetJSON
                     }
 
                     // Replace matched value with input value
-                    if (match.Value is JsonValue matchValue)
+                    if (match is JsonValue matchValue)
                     {
                         matchValue.ReplaceWith(valNode);
                     }

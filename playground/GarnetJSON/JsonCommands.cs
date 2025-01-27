@@ -20,13 +20,13 @@ namespace GarnetJSON
 
         public override bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject jsonObject, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
         {
-            Debug.Assert(jsonObject is JsonObject);
+            Debug.Assert(jsonObject is GarnetJsonObject);
 
             int offset = 0;
             var path = CustomCommandUtils.GetNextArg(ref input, ref offset);
             var value = CustomCommandUtils.GetNextArg(ref input, ref offset);
 
-            if (!((JsonObject)jsonObject).TrySet(Encoding.UTF8.GetString(path), Encoding.UTF8.GetString(value), logger))
+            if (!((GarnetJsonObject)jsonObject).TrySet(Encoding.UTF8.GetString(path), Encoding.UTF8.GetString(value), logger))
             {
                 WriteError(ref output, "ERR Invalid input");
             }
@@ -43,14 +43,14 @@ namespace GarnetJSON
 
         public override bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
         {
-            Debug.Assert(value is JsonObject);
+            Debug.Assert(value is GarnetJsonObject);
 
             var offset = 0;
             var path = CustomCommandUtils.GetNextArg(ref input, ref offset);
             var strPath = path.IsEmpty ? "$" : Encoding.UTF8.GetString(path);
 
-            if (((JsonObject)value).TryGet(strPath, out var result, logger))
-                CustomCommandUtils.WriteBulkString(ref output, Encoding.UTF8.GetBytes(result));
+            if (((GarnetJsonObject)value).TryGet(strPath, out var result, logger))
+                CustomCommandUtils.WriteBulkString(ref output, Encoding.UTF8.GetBytes(result!));
             else
                 WriteNullBulkString(ref output);
             return true;
