@@ -70,10 +70,11 @@ namespace Garnet.test.cluster
             // Attach sync session
             _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
 
-            while (true)
-            {
+            // Wait for replica to catch up
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
 
-            }
+            // Validate replica data
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex: replicaIndex, primaryIndex: primaryIndex);
         }
     }
 }
