@@ -103,7 +103,7 @@ namespace Garnet.cluster
                 var keyCount = *(int*)payloadPtr;
                 payloadPtr += 4;
                 var i = 0;
-                TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
+                TrackImportProgress(keyCount, isMainStore: false, keyCount == 0);
                 while (i < keyCount)
                 {
                     if (!RespReadUtils.TryReadSerializedData(out var key, out var data, out var expiration, ref payloadPtr, payloadEndPtr))
