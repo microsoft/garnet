@@ -198,6 +198,8 @@ namespace Garnet.cluster
             replicationConfigDevice?.Dispose();
             replicationConfigDevicePool?.Free();
 
+            replicationSyncManager?.Dispose();
+
             checkpointStore.WaitForReplicas();
             replicaSyncSessionTaskStore.Dispose();
             replicaReplayTaskCts.Cancel();

@@ -19,12 +19,12 @@ namespace Garnet.cluster
 
         public ReplicaSyncSessionTaskStore GetSessionStore { get; }
 
-        public ClusterProvider GetClusterProvider { get; }
+        public ClusterProvider ClusterProvider { get; }
 
         public ReplicationSyncManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
             GetSessionStore = new ReplicaSyncSessionTaskStore(clusterProvider.storeWrapper, clusterProvider, logger);
-            this.GetClusterProvider = clusterProvider;
+            ClusterProvider = clusterProvider;
             this.logger = logger;
 
             var opts = clusterProvider.serverOptions;
@@ -47,7 +47,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool AddSyncSession(SyncMetadata replicaSyncMetadata, out ReplicaSyncSession replicaSyncSession)
         {
-            replicaSyncSession = new ReplicaSyncSession(GetClusterProvider.storeWrapper, GetClusterProvider, replicaSyncMetadata, logger: logger);
+            replicaSyncSession = new ReplicaSyncSession(ClusterProvider.storeWrapper, ClusterProvider, replicaSyncMetadata, logger: logger);
             replicaSyncSession.SetStatus(SyncStatus.INITIALIZING);
             try
             {
@@ -67,42 +67,49 @@ namespace Garnet.cluster
         /// <returns></returns>
         public async Task<SyncStatusInfo> MainDisklessSync(ReplicaSyncSession replicaSyncSession)
         {
-            // Give opportunity to other replicas to attach for streaming sync
-            if (GetClusterProvider.serverOptions.ReplicaDisklessSyncDelay > 0)
-                Thread.Sleep(TimeSpan.FromSeconds(GetClusterProvider.serverOptions.ReplicaDisklessSyncDelay));
-
-            // Started syncing
-            replicaSyncSession.SetStatus(SyncStatus.INPROGRESS);
-
-            // Only one thread will acquire this lock
-            if (syncInProgress.OneWriteLock())
+            try
             {
-                // Launch a background task to sync the attached replicas using streaming snapshot
-                _ = Task.Run(() => StreamingSnapshotSync());
-            }
+                // Give opportunity to other replicas to attach for streaming sync
+                if (ClusterProvider.serverOptions.ReplicaDisklessSyncDelay > 0)
+                    Thread.Sleep(TimeSpan.FromSeconds(ClusterProvider.serverOptions.ReplicaDisklessSyncDelay));
 
-            // Wait for main sync task to complete
-            await replicaSyncSession.CompletePending();
+                // Started syncing
+                replicaSyncSession.SetStatus(SyncStatus.INPROGRESS);
 
-            // If session faulted return early
-            if (replicaSyncSession.Failed)
-            {
-                replicaSyncSession.LogError();
-                replicaSyncSession.Dispose();
+                // Only one thread will acquire this lock
+                if (syncInProgress.OneWriteLock())
+                {
+                    // Launch a background task to sync the attached replicas using streaming snapshot
+                    _ = Task.Run(() => StreamingSnapshotSync());
+                }
+
+                // Wait for main sync task to complete
+                await replicaSyncSession.CompletePending();
+
+                // If session faulted return early
+                if (replicaSyncSession.Failed)
+                {
+                    replicaSyncSession.LogError();
+                    replicaSyncSession.Dispose();
+                    return replicaSyncSession.GetSyncStatusInfo;
+                }
+
+                await replicaSyncSession.BeginAofSync();
+
                 return replicaSyncSession.GetSyncStatusInfo;
             }
-
-            await replicaSyncSession.BeginAofSync();
-
-            return replicaSyncSession.GetSyncStatusInfo;
+            finally
+            {
+                replicaSyncSession.Dispose();
+            }
         }
 
         // Main streaming snapshot task
         async Task StreamingSnapshotSync()
         {
             // Parameters for sync operation
-            var disklessRepl = GetClusterProvider.serverOptions.ReplicaDisklessSync;
-            var disableObjects = GetClusterProvider.serverOptions.DisableObjects;
+            var disklessRepl = ClusterProvider.serverOptions.ReplicaDisklessSync;
+            var disableObjects = ClusterProvider.serverOptions.DisableObjects;
 
             // Replica sync session
             var numSessions = GetSessionStore.GetNumSessions();
@@ -111,7 +118,7 @@ namespace Garnet.cluster
             try
             {
                 // Take lock to ensure no other task will be taking a checkpoint
-                while (!GetClusterProvider.storeWrapper.TryPauseCheckpoints())
+                while (!ClusterProvider.storeWrapper.TryPauseCheckpoints())
                     await Task.Yield();
 
                 // Get sync metadata for checkpoint
@@ -130,7 +137,7 @@ namespace Garnet.cluster
                 GetSessionStore.Clear();
 
                 // Release checkpoint lock
-                GetClusterProvider.storeWrapper.ResumeCheckpoints();
+                ClusterProvider.storeWrapper.ResumeCheckpoints();
 
                 // Unlock sync session lock
                 syncInProgress.WriteUnlock();
@@ -145,10 +152,10 @@ namespace Garnet.cluster
                     while (true)
                     {
                         // Calculate minimum address from which replicas should start streaming from
-                        var syncFromAddress = GetClusterProvider.storeWrapper.appendOnlyFile.TailAddress;
+                        var syncFromAddress = ClusterProvider.storeWrapper.appendOnlyFile.TailAddress;
 
                         // Lock AOF address for sync streaming
-                        if (GetClusterProvider.replicationManager.TryAddReplicationTasks(GetSessionStore.GetSessions(), syncFromAddress))
+                        if (ClusterProvider.replicationManager.TryAddReplicationTasks(GetSessionStore.GetSessions(), syncFromAddress))
                             break;
 
                         // Retry if failed to lock AOF address because truncation occurred
@@ -165,8 +172,8 @@ namespace Garnet.cluster
                             sessions[i].Connect();
 
                             // Set store version to operate on
-                            sessions[i].currentStoreVersion = GetClusterProvider.storeWrapper.store.CurrentVersion;
-                            sessions[i].currentObjectStoreVersion = disableObjects ? -1 : GetClusterProvider.storeWrapper.objectStore.CurrentVersion;
+                            sessions[i].currentStoreVersion = ClusterProvider.storeWrapper.store.CurrentVersion;
+                            sessions[i].currentObjectStoreVersion = disableObjects ? -1 : ClusterProvider.storeWrapper.objectStore.CurrentVersion;
 
                             // If checkpoint is not needed mark this sync session as complete
                             // to avoid waiting for other replicas which may need to receive the latest checkpoint
@@ -201,13 +208,13 @@ namespace Garnet.cluster
             var manager = new SnapshotIteratorManager(this, clusterTimeout, cts.Token, logger);
 
             // Iterate through main store
-            var mainStoreResult = await GetClusterProvider.storeWrapper.store.
+            var mainStoreResult = await ClusterProvider.storeWrapper.store.
                 TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.mainStoreSnapshotIterator);
 
-            if (!GetClusterProvider.serverOptions.DisableObjects)
+            if (!ClusterProvider.serverOptions.DisableObjects)
             {
                 // Iterate through object store
-                var objectStoreResult = await GetClusterProvider.storeWrapper.objectStore.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
+                var objectStoreResult = await ClusterProvider.storeWrapper.objectStore.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
             }
         }
     }
