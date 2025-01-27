@@ -714,7 +714,7 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            //Wait for checkpoints to complete and disable checkpointing
+            // Wait for checkpoints to complete and disable checkpointing
             _checkpointTaskLock.WriteLock();
 
             itemBroker?.Dispose();

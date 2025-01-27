@@ -34,7 +34,7 @@ namespace Garnet.cluster
             numSessions = sessionStore.GetNumSessions();
 
             mainStoreSnapshotIterator = new MainStoreSnapshotIterator(this);
-            if (!replicationSyncManager.GetClusterProvider.serverOptions.DisableObjects)
+            if (!replicationSyncManager.ClusterProvider.serverOptions.DisableObjects)
                 objectStoreSnapshotIterator = new ObjectStoreSnapshotIterator(this);
         }
 
@@ -62,12 +62,16 @@ namespace Garnet.cluster
             for (var i = 0; i < numSessions; i++)
             {
                 if (!IsActive(sessions, i)) continue;
-                sessions[i].SetClysterSyncHeader(isMainStore: isMainStore);
+                sessions[i].InitializeIterationBuffer();
+                sessions[i].SetClusterSyncHeader(isMainStore: isMainStore);
                 if (isMainStore)
                     sessions[i].currentStoreVersion = targetVersion;
                 else
                     sessions[i].currentObjectStoreVersion = targetVersion;
             }
+
+            logger?.LogTrace("{OnStart} {store} {token} {currentVersion} {targetVersion}",
+                nameof(OnStart), isMainStore ? "MAIN STORE" : "OBJECT STORE", checkpointToken, currentVersion, targetVersion);
 
             return true;
         }
@@ -96,7 +100,7 @@ namespace Garnet.cluster
                     if (!IsActive(sessions, i)) continue;
 
                     // Initialize header if necessary
-                    sessions[i].SetClysterSyncHeader(isMainStore: true);
+                    sessions[i].SetClusterSyncHeader(isMainStore: true);
 
                     // Try to write to network buffer. If failed we need to retry
                     if (!sessions[i].TryWriteKeyValueSpanByte(ref key, ref value, out var task))
@@ -110,6 +114,7 @@ namespace Garnet.cluster
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
                 WaitForFlushAll();
+                needToFlush = false;
             }
 
             return true;
@@ -130,7 +135,7 @@ namespace Garnet.cluster
                     if (!IsActive(sessions, i)) continue;
 
                     // Initialize header if necessary
-                    sessions[i].SetClysterSyncHeader(isMainStore: false);
+                    sessions[i].SetClusterSyncHeader(isMainStore: false);
 
                     // Try to write to network buffer. If failed we need to retry
                     if (!sessions[i].TryWriteKeyValueByteArray(key, objectData, value.Expiration, out var task))
@@ -162,7 +167,10 @@ namespace Garnet.cluster
             WaitForFlushAll();
 
             // Enqueue version change commit
-            replicationSyncManager.GetClusterProvider.storeWrapper.EnqueueCommit(isMainStore, targetVersion);
+            replicationSyncManager.ClusterProvider.storeWrapper.EnqueueCommit(isMainStore, targetVersion);
+
+            logger?.LogTrace("{OnStop} {store} {numberOfRecords} {targetVersion}",
+                nameof(OnStop), isMainStore ? "MAIN STORE" : "OBJECT STORE", numberOfRecords, targetVersion);
         }
     }
 
