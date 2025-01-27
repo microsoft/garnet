@@ -63,7 +63,6 @@ namespace Garnet.cluster
             {
                 if (!IsActive(sessions, i)) continue;
                 sessions[i].InitializeIterationBuffer();
-                sessions[i].SetClusterSyncHeader(isMainStore: isMainStore);
                 if (isMainStore)
                     sessions[i].currentStoreVersion = targetVersion;
                 else
