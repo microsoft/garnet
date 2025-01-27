@@ -193,7 +193,7 @@ namespace Tsavorite.core
             var keySize = sizeInfo.FieldInfo.KeySize;
             if (keySize > maxInlineKeySize)
             {
-                keySize = LogRecord.MinOverflowTotalInlineSize;
+                keySize = SpanField.OverflowInlineSize;
                 sizeInfo.KeyIsOverflow = true;
             }
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + ObjectIdMap.ObjectIdSize + sizeInfo.OptionalSize;

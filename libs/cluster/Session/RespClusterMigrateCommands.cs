@@ -83,7 +83,7 @@ namespace Garnet.cluster
                         continue;
                     }
 
-                    var slot = HashSlotUtils.HashSlot(ref key);
+                    var slot = HashSlotUtils.HashSlot(key);
                     if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
                     {
                         migrateState = 1;
@@ -94,7 +94,7 @@ namespace Garnet.cluster
                     // Set if key replace flag is set or key does not exist
                     var keySlice = new ArgSlice(key.ToPointer(), key.Length);
                     if (replaceOption || !Exists(ref keySlice))
-                        _ = basicGarnetApi.SET(ref key, ref value);
+                        _ = basicGarnetApi.SET(key, value);
                     i++;
                 }
             }
@@ -125,8 +125,10 @@ namespace Garnet.cluster
 
                     // Set if key replace flag is set or key does not exist
                     if (replaceOption || !CheckIfKeyExists(key))
-                        _ = basicGarnetApi.SET(key, value);
-
+                    { 
+                        fixed(byte* keyPtr = key)
+                            _ = basicGarnetApi.SET(SpanByte.FromPinnedPointer(keyPtr, key.Length), value);
+                    }
                     i++;
                 }
             }

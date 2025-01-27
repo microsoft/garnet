@@ -412,7 +412,7 @@ namespace Tsavorite.core
         public static SpanByte GetKey(long physicalAddress) => LogRecord<TValue>.GetKey(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<TValue> logRecord, int maxInlineKeySize)
+        public unsafe void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<TValue> logRecord, int maxInlineKeySize)   // TODO remove
         {
             if (key.Length <= maxInlineKeySize)
             {

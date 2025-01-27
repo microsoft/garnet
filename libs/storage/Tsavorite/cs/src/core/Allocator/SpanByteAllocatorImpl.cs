@@ -173,13 +173,13 @@ namespace Tsavorite.core
             var keySize = sizeInfo.FieldInfo.KeySize;
             if (keySize > maxInlineKeySize)
             {
-                keySize = LogRecord.MinOverflowTotalInlineSize;
+                keySize = SpanField.OverflowInlineSize;
                 sizeInfo.KeyIsOverflow = true;
             }
             var valueSize = sizeInfo.FieldInfo.ValueSize;
             if (valueSize > maxInlineValueSize)
             {
-                valueSize = LogRecord.MinOverflowTotalInlineSize;
+                valueSize = SpanField.OverflowInlineSize;
                 sizeInfo.ValueSpanIsOverflow = true;
             }
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;

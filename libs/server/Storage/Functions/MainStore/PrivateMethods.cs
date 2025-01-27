@@ -424,12 +424,12 @@ namespace Garnet.server
             if (!logRecord.TrySetValueSpanLength(ndigits))
                 return false;
 
-            ref var valueRef = ref logRecord.ValueSpanRef;  // To eliminate redundant length calculations getting to Value
-            _ = NumUtils.LongToSpanByte(val, valueRef.AsSpan());
+            var value = logRecord.ValueSpan;    // To eliminate redundant length calculations getting to Value
+            _ = NumUtils.LongToSpanByte(val, value.AsSpan());
 
             Debug.Assert(output.IsSpanByte, "This code assumes it is called in-place and did not go pending");
-            valueRef.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
-            output.SpanByte.Length = valueRef.Length;
+            value.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
+            output.SpanByte.Length = value.Length;
             return true;
         }
 
@@ -440,12 +440,12 @@ namespace Garnet.server
             if (!logRecord.TrySetValueSpanLength(ndigits))
                 return false;
 
-            ref var valueRef = ref logRecord.ValueSpanRef;  // To reduce redundant length calculations getting to Value
-            _ = NumUtils.DoubleToSpanByte(val, valueRef.AsSpan());
+            var value = logRecord.ValueSpan;    // To reduce redundant length calculations getting to Value
+            _ = NumUtils.DoubleToSpanByte(val, value.AsSpan());
 
             Debug.Assert(output.IsSpanByte, "This code assumes it is called in-place and did not go pending");
-            valueRef.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
-            output.SpanByte.Length = valueRef.Length;
+            value.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
+            output.SpanByte.Length = value.Length;
             return true;
         }
 
@@ -488,7 +488,7 @@ namespace Garnet.server
             return InPlaceUpdateNumber(ref logRecord, val, ref output, ref rmwInfo);
         }
 
-        static bool TryCopyUpdateNumber(long next, ref SpanByte newValue, ref SpanByteAndMemory output)
+        static bool TryCopyUpdateNumber(long next, SpanByte newValue, ref SpanByteAndMemory output)
         {
             if (NumUtils.LongToSpanByte(next, newValue.AsSpan()) == 0)
                 return false;
@@ -497,7 +497,7 @@ namespace Garnet.server
             return true;
         }
 
-        static bool TryCopyUpdateNumber(double next, ref SpanByte newValue, ref SpanByteAndMemory output)
+        static bool TryCopyUpdateNumber(double next, SpanByte newValue, ref SpanByteAndMemory output)
         {
             if (NumUtils.DoubleToSpanByte(next, newValue.AsSpan()) == 0)
                 return false;
@@ -541,7 +541,7 @@ namespace Garnet.server
             }
 
             // Move to tail of the log and update
-            return TryCopyUpdateNumber(val, ref dstLogRecord.ValueSpanRef, ref output);
+            return TryCopyUpdateNumber(val, dstLogRecord.ValueSpan, ref output);
         }
 
         /// <summary>
@@ -575,7 +575,7 @@ namespace Garnet.server
             }
 
             // Move to tail of the log and update
-            return TryCopyUpdateNumber(val, ref dstLogRecord.ValueSpanRef, ref output);
+            return TryCopyUpdateNumber(val, dstLogRecord.ValueSpan, ref output);
         }
 
         /// <summary>
