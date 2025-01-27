@@ -414,6 +414,7 @@ namespace Garnet.client
             tcsQueue.Enqueue(currTcsIterationTask);
             curr = offset;
             this.isMainStore = isMainStore;
+            this.ist = IncrementalSendType.SYNC;
             var storeType = isMainStore ? MAIN_STORE : OBJECT_STORE;
 
             var arraySize = 5;
