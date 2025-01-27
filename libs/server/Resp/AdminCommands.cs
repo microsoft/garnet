@@ -671,36 +671,38 @@ namespace Garnet.server
             }
             else
             {
-                var role = storeWrapper.clusterProvider.GetRoleInfo();
-
-                if (!storeWrapper.clusterProvider.IsReplica())
+                if (storeWrapper.clusterProvider.IsPrimary())
                 {
+                    var (replication_offset, replicaInfo) = storeWrapper.clusterProvider.GetMasterInfo();
+
                     while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
 
                     while (!RespWriteUtils.TryWriteAsciiBulkString("master", ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteInt64(role.replication_offset, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt64(replication_offset, ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteArrayLength(role.replicaInfo.Count, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(replicaInfo.Length, ref dcurr, dend))
                         SendAndReset();
 
-                    foreach (var replice in role.replicaInfo)
+                    foreach (var replice in replicaInfo)
                     {
                         while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                             SendAndReset();
-                        while (!RespWriteUtils.TryWriteAsciiBulkString(replice.Item2.address, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteAsciiBulkString(replice.address, ref dcurr, dend))
                             SendAndReset();
-                        while (!RespWriteUtils.TryWriteInt32(replice.Item2.port, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteInt32(replice.port, ref dcurr, dend))
                             SendAndReset();
-                        while (!RespWriteUtils.TryWriteInt64(replice.Item2.offset, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteInt64(replice.offset, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
                 else
                 {
+                    var role = storeWrapper.clusterProvider.GetReplicaInfo();
+
                     while (!RespWriteUtils.TryWriteArrayLength(5, ref dcurr, dend))
                         SendAndReset();
 

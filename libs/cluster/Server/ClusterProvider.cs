@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using Garnet.common;
 using Garnet.networking;
@@ -115,6 +116,8 @@ namespace Garnet.cluster
             failoverManager?.Dispose();
             migrationManager?.Dispose();
         }
+
+        public bool IsPrimary() => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.PRIMARY;
 
         /// <inheritdoc />
         public bool IsReplica()
@@ -256,38 +259,37 @@ namespace Garnet.cluster
             return [.. replicationInfo];
         }
 
-        public RoleInfo GetRoleInfo()
+        public (long replication_offset, ReplicaInfo[] replicaInfo) GetMasterInfo()
         {
-            RoleInfo info;
+            if (!serverOptions.EnableCluster)
+            {
+                return (0, default);
+            };
+
+            return (replicationManager.ReplicationOffset, replicationManager.GetReplicaInfo().Select(w => w.Item2).ToArray());
+        }
+
+        public RoleReplicaInfo GetReplicaInfo()
+        {
+            RoleReplicaInfo info;
 
             if (!serverOptions.EnableCluster)
             {
-                return new RoleInfo()
+                return new RoleReplicaInfo()
                 {
-                    role = "master"
                 };
             }
+
+            var config = clusterManager.CurrentConfig;
+            clusterManager.GetConnectionInfo(config.LocalNodePrimaryId, out var connection);
 
             info = new()
             {
                 replication_offset = replicationManager.ReplicationOffset,
-                replication_offset2 = replicationManager.ReplicationOffset2
+                replication_state = replicationManager.Recovering ? "sync" :
+                                        connection.connected ? "connected" : "connect"
             };
-
-            var config = clusterManager.CurrentConfig;
-            if (config.LocalNodeRole == NodeRole.PRIMARY)
-            {
-                info.role = "master";
-                info.replicaInfo = replicationManager.GetReplicaInfo();
-            }
-            else
-            {
-                info.role = "slave";
-                clusterManager.GetConnectionInfo(config.LocalNodePrimaryId, out var connection);
-                (info.master_host, info.master_port) = config.GetLocalNodePrimaryAddress();
-                info.replication_state = replicationManager.Recovering ? "sync" :
-                                         connection.connected ? "connected" : "connect";
-            }
+            (info.master_host, info.master_port) = config.GetLocalNodePrimaryAddress();
 
             return info;
         }
