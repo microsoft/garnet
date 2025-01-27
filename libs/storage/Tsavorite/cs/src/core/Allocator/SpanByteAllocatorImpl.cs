@@ -98,10 +98,10 @@ namespace Tsavorite.core
         int GetPageIndex(long logicalAddress) => (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress) => new LogRecord<SpanByte>(GetPhysicalAddress(logicalAddress));
+        internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord<SpanByte>(physicalAddress);
+        internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord<SpanByte>(physicalAddress, GetOverflowAllocator(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)];
@@ -173,13 +173,13 @@ namespace Tsavorite.core
             var keySize = sizeInfo.FieldInfo.KeySize;
             if (keySize > maxInlineKeySize)
             {
-                keySize = Constants.kUnserializedSpanByteSize;
+                keySize = LogRecord.MinOverflowTotalInlineSize;
                 sizeInfo.KeyIsOverflow = true;
             }
             var valueSize = sizeInfo.FieldInfo.ValueSize;
             if (valueSize > maxInlineValueSize)
             {
-                valueSize = Constants.kUnserializedSpanByteSize;
+                valueSize = LogRecord.MinOverflowTotalInlineSize;
                 sizeInfo.ValueSpanIsOverflow = true;
             }
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;

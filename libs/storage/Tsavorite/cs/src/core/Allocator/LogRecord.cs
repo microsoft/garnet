@@ -12,8 +12,9 @@ namespace Tsavorite.core
 {
     /// <summary>A non-Generic form of the in-memory <see cref="LogRecord{TValue}"/> that provides access to <see cref="RecordInfo"/> and Key only.
     /// Useful in quick recordInfo-testing and key-matching operations</summary>
-    public unsafe struct LogRecord(long physicalAddress)
+    public unsafe partial struct LogRecord(long physicalAddress)
     {
+
         /// <summary>The physicalAddress in the log.</summary>
         internal readonly long physicalAddress = physicalAddress;
 
@@ -58,6 +59,9 @@ namespace Tsavorite.core
         /// <summary>The physicalAddress in the log.</summary>
         internal readonly long physicalAddress;
 
+        /// <summary>The overflow allocator for Keys and, if SpanByteAllocator, Values.</summary>
+        readonly OverflowAllocator overflowAllocator;
+
         /// <summary>The ObjectIdMap if this is a record in the object log.</summary>
         readonly ObjectIdMap<TValue> objectIdMap;
 
@@ -67,9 +71,10 @@ namespace Tsavorite.core
 
         /// <summary>This ctor is primarily used for internal record-creation operations and is passed to IObjectSessionFunctions callbacks.</summary> 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord(long physicalAddress, ObjectIdMap<TValue> objectIdMap)
+        internal LogRecord(long physicalAddress, OverflowAllocator overflowAllocator, ObjectIdMap<TValue> objectIdMap = null)
             : this(physicalAddress)
         {
+            this.overflowAllocator = overflowAllocator;
             this.objectIdMap = objectIdMap;
         }
 
@@ -97,6 +102,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly TValue ValueObject
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
                 Debug.Assert(IsObjectRecord, "ValueObject is not valid for String log records");
@@ -105,6 +111,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly ref TValue GetReadOnlyValueRef()
         {
             if (IsObjectRecord)
@@ -118,7 +125,10 @@ namespace Tsavorite.core
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
 
         /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#pragma warning disable IDE0251 // Make member 'readonly': not doing so because it modifies the object list
         public void ClearValueObject(Action<TValue> disposer)
+#pragma warning restore IDE0251
         {
             Debug.Assert(IsObjectRecord, "ClearValueObject() is not valid for String log records");
             if (IsObjectRecord)
@@ -152,12 +162,13 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static RecordInfo GetInfo(long physicalAddress) => *(RecordInfo*)physicalAddress;
 
-        /// <summary>The key:
-        ///     <list type="bullet">
-        ///     <item>If serialized, then the key is inline in this record (i.e. is below the overflow size).</item>
-        ///     <item>If not serialized, then it is a pointer to the key in <see cref="OverflowAllocator"/>.</item>
-        ///     </list>
-        /// </summary>
+        /// <summary>The address of the key</summary>
+        internal readonly long KeyAddress => GetKeyAddress(physicalAddress);
+        /// <summary>The address of the key</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static long GetKeyAddress(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
+
+        /// <summary>A <see cref="SpanField"/> representing the record Key</summary>
         /// <remarks>Not a ref return as it cannot be changed</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static SpanByte GetKey(long physicalAddress) => *(SpanByte*)(physicalAddress + RecordInfo.GetLength());
@@ -165,18 +176,22 @@ namespace Tsavorite.core
         /// <summary>Get a reference to the key; used for initial key setting.</summary>
         public readonly ref SpanByte KeyRef => ref GetKeyRef(physicalAddress);
         /// <summary>Get a reference to the key; used for initial key setting.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ref SpanByte GetKeyRef(long physicalAddress) => ref *(SpanByte*)(physicalAddress + RecordInfo.GetLength());
 
         /// <summary>The address of the value</summary>
         internal readonly long ValueAddress => GetValueAddress(physicalAddress);
         /// <summary>The address of the value</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long GetValueAddress(long physicalAddress) => physicalAddress + RecordInfo.GetLength() + GetKey(physicalAddress).TotalInlineSize;
+        internal static long GetValueAddress(long physicalAddress)
+        {
+            var keyAddress = GetKeyAddress(physicalAddress);
+            return keyAddress + SpanField.InlineSize(GetKeyAddress(physicalAddress));
+        }
 
-        /// <summary>The span of the value; may be inline-serialized or out-of-line overflow</summary>
-        public readonly ref SpanByte ValueSpanRef => ref *(SpanByte*)ValueAddress;
+        private readonly int InlineKeySize => SpanField.InlineSize(KeyAddress);
 
-        private readonly int InlineValueLength => IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalInlineSize;
+        private readonly int InlineValueSize => IsObjectRecord ? ObjectIdMap.ObjectIdSize : SpanField.InlineSize(ValueAddress);
 
         internal readonly int* ValueObjectIdAddress => (int*)ValueAddress;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -195,72 +210,97 @@ namespace Tsavorite.core
         internal readonly ref TValue ObjectRef => ref objectIdMap.GetRef(ValueObjectId);
 
         /// <summary>The actual size of the main-log (inline) portion of the record; for in-memory records it does not include filler length.</summary>
-        public readonly int ActualRecordSize => RecordInfo.GetLength() + Key.TotalInlineSize + InlineValueLength + OptionalLength;
+        public readonly int ActualRecordSize
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                // Step through the address to reduce redundant addition operations.
+                var size = RecordInfo.GetLength();
+                var address = KeyAddress;
+                var fieldSize = SpanField.InlineSize(address);      // Key
+                size += fieldSize;
+                address += fieldSize;
+                size += SpanField.InlineSize(address);              // Value
+                return size + OptionalLength;
+            }
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetValueSpanLength(int newValueLen)
+        public bool TrySetValueSpanLength(int newValueLength)
         {
             Debug.Assert(!IsObjectRecord, "ValueSpan cannot be used with Object log records");
 
+            var address = ValueAddress;
+            var currentDataSize = SpanField.DataSize(address);
+
             // Do nothing if no size change. Growth and fillerLen may be negative if shrinking.
-            var growth = newValueLen - InlineValueLength;
+            var growth = newValueLength - currentDataSize;
             if (growth == 0)
                 return true;
 
-            // TODO: handle the overflow-ness of this size changing
-            var recordLen = ActualRecordSize;
-            var fillerLenAddress = physicalAddress + recordLen;
-            var maxLen = recordLen + GetFillerLen(fillerLenAddress);
-            var availableSpace = maxLen - recordLen;
+            var currentInlineSize = SpanField.InlineSize(address);
+            var isOverflow = Info.ValueIsOverflow;
+            var valueAddress = ValueAddress;
+            var optionalStartAddress = valueAddress + SpanField.InlineSize(valueAddress);
 
-            var optLen = OptionalLength;
-            var optStartAddress = GetOptionalStartAddress();
-            var fillerLen = availableSpace - growth;
+            var (usedRecordSize, allocatedRecordSize) = GetFullRecordSizes();
+            var fillerLen = allocatedRecordSize - usedRecordSize;
+
+            // Handle changed size, including the overflow-ness of this size changing.
+            // Note: We don't need to know the allocator's maxInlineSize because the in-place growth is gated by the current record size (including any filler size).
 
             if (growth > 0)
             {
-                // We're growing. See if there is enough space for the requested growth of Value.
-                if (growth > availableSpace)
-                    return false;
-
-                // Preserve zero-init by:
-                //  - Zeroing out FillerLen (this will leave only zeroes all the way to the next record, as there is nothing past FillerLen in this record).
-                //      - We must do this here in case there is not enough room for filler after the growth.
-                if (Info.HasFiller)
-                    *(int*)fillerLenAddress = 0;
-                //  - Zeroing out optionals is *not* necessary as GetRecordSize bases its calculation on Info bits.
-                //  - Update the value length
-                ValueSpanRef.Length += growth;
-                //  - Set the new (reduced) FillerLength if there is still space for it.
-                if (fillerLen >= LogRecord.FillerLenSize)
+                // We are growing
+                if (!isOverflow)
                 {
-                    fillerLenAddress += growth;
-                    *(int*)fillerLenAddress = fillerLen;
+                    if (growth <= fillerLen)
+                    {
+                        // There is enough space to stay inline and adjust filler.
+                        var optionalFields = new OptionalFieldsShift(optionalStartAddress, ref InfoRef);
+                        SpanField.LengthRef(ValueAddress) = newValueLength; // growing into zero-init'd space
+                        optionalStartAddress += growth;
+                        optionalFields.Restore(optionalStartAddress, ref InfoRef, fillerLen - growth);
+                    }
+                    else
+                    {
+                        // There is not enough room to grow stay inline. If we do not have enough space for the out-of-line pointer, we must RCU.
+                        if (currentInlineSize + fillerLen < SpanField.OverflowInlineSize)
+                            return false;
+
+                        // Convert to overflow
+                        var optionalFields = new OptionalFieldsShift(optionalStartAddress, ref InfoRef);
+                        growth = currentInlineSize - SpanField.OverflowInlineSize;
+                        SpanField.ConvertToOverflow(ValueAddress, newValueLength, overflowAllocator);   // zeroes any "extra" space if there was shrinkage
+                        optionalStartAddress = valueAddress + SpanField.OverflowInlineSize;
+                        optionalFields.Restore(optionalStartAddress, ref InfoRef, fillerLen - growth);
+                    }
+                    return true;
+                }
+                else    // currently isOverflow
+                {
+                    // Growing and already oversize. SpanField will handle this either in-place (shrinking, or growth within the already-allocated size) or by free/alloc.
+                    SpanField.ConvertToInline(address, newValueLength, overflowAllocator);
+                }
+            }
+            else
+            {
+                // We are shrinking
+                if (!isOverflow)
+                {
+                    // Stay inline and adjust filler
+                    var optionalFields = new OptionalFieldsShift(optionalStartAddress, ref InfoRef);
+                    SpanField.ShrinkInline(address, newValueLength);
+                    optionalStartAddress += growth;
+                    optionalFields.Restore(optionalStartAddress, ref InfoRef, fillerLen - growth);
                 }
                 else
-                    InfoRef.ClearHasFiller();
-
-                // Put the optionals in their new locations (MemoryCopy handles overlap). Let the caller's value update overwrite the previous optional space.
-                Buffer.MemoryCopy((byte*)optStartAddress, (byte*)(optStartAddress + growth), optLen, optLen);
-
-                return true;
+                {
+                    // We are in overflow and shrinking. Do so in-place; we do not need to zero-init in overflow space.
+                    SpanField.LengthRef(address) = newValueLength;
+                }
             }
-
-            // We're shrinking. Preserve zero-init by:
-            //  - Store off optionals. We don't need to store FillerLen because we have to recalculate it anyway.
-            var saveBuf = stackalloc byte[optLen]; // Garanteed not to be large
-            Buffer.MemoryCopy((byte*)optStartAddress, saveBuf, optLen, optLen);
-            //  - Zeroing FillerLen and the optionals space
-            if (Info.HasFiller)
-                *(int*)fillerLenAddress = 0;
-            Unsafe.InitBlockUnaligned((byte*)optStartAddress, 0, (uint)optLen);
-            //  - Shrinking the value and zeroing unused space (TODO: handle overflow allocation)
-            ValueSpanRef.ShrinkSerializedLength(newValueLen);
-            //  - Set the new (increased) FillerLength first, then the optionals
-            if (fillerLen >= LogRecord.FillerLenSize)
-                *(int*)fillerLenAddress = fillerLen;
-            Buffer.MemoryCopy((byte*)(optStartAddress + growth), saveBuf, optLen, optLen);
-
             return true;
         }
 
@@ -271,12 +311,14 @@ namespace Tsavorite.core
 
             if (!TrySetValueSpanLength(value.Length))
                 return false;
-            value.CopyTo(ref ValueSpanRef);
+            value.CopyTo(SpanField.AsSpan(ValueAddress));
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#pragma warning disable IDE0251 // Make member 'readonly': Not doing so because it modifies the object list
         public bool TrySetValueObject(TValue value)
+#pragma warning restore IDE0251
         {
             if (*ValueObjectIdAddress == ObjectIdMap.InvalidObjectId)
             {
@@ -299,7 +341,13 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly long GetOptionalStartAddress() => physicalAddress + RecordInfo.GetLength() + Key.TotalInlineSize + InlineValueLength;
+        internal readonly long GetOptionalStartAddress()
+        {
+            // Step through the address to reduce redundant addition operations.
+            var address = KeyAddress + RecordInfo.GetLength();
+            address += SpanField.InlineSize(address);           // Key
+            return address + SpanField.InlineSize(address);     // Value
+        }
 
         public readonly int OptionalLength => ETagLen + ExpirationLen;
 
@@ -343,7 +391,7 @@ namespace Tsavorite.core
             if (availableSpace < growth)
                 return false;
 
-            // Start at FillerLen address
+            // Start at FillerLen address and back up, for speed
             var address = fillerLenAddress;
             var fillerLen = availableSpace - growth;
 
@@ -376,10 +424,10 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void RemoveETag()
+        public bool RemoveETag()
         {
             if (!Info.HasETag)
-                return;
+                return true;
 
             const int growth = -LogRecord.ETagSize;
             var recordLen = ActualRecordSize;
@@ -387,7 +435,7 @@ namespace Tsavorite.core
             var maxLen = recordLen + GetFillerLen(fillerLenAddress);
             var availableSpace = maxLen - recordLen;
 
-            // Start at FillerLen address
+            // Start at FillerLen address and back up, for speed
             var address = fillerLenAddress;
             var fillerLen = availableSpace + growth;
 
@@ -407,17 +455,21 @@ namespace Tsavorite.core
             if (Info.HasExpiration)
             {
                 *(long*)address = expiration;
-                address += LogRecord.ExpirationSize;
+                address += LogRecord.ExpirationSize; // repositions to fillerAddress
             }
             InfoRef.ClearHasETag();
             //  - Set the new (increased) FillerLength if there is space for it.
             if (fillerLen >= LogRecord.FillerLenSize)
                 *(int*)address = fillerLen;
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySetExpiration(long expiration)
         {
+            if (expiration == 0)
+                return RemoveExpiration();
+
             if (Info.HasExpiration)
             {
                 *(long*)GetExpirationAddress() = expiration;
@@ -433,7 +485,7 @@ namespace Tsavorite.core
             if (availableSpace < growth)
                 return false;
 
-            // Start at FillerLen address
+            // Start at FillerLen address and back up, for speed
             var address = fillerLenAddress;
             var fillerLen = availableSpace - growth;
 
@@ -455,10 +507,10 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void RemoveExpiration()
+        public bool RemoveExpiration()
         {
             if (!Info.HasExpiration)
-                return;
+                return true;
 
             const int growth = -LogRecord.ETagSize;
             var recordLen = ActualRecordSize;
@@ -466,7 +518,7 @@ namespace Tsavorite.core
             var maxLen = recordLen + GetFillerLen(fillerLenAddress);
             var availableSpace = maxLen - recordLen;
 
-            // Start at FillerLen address
+            // Start at FillerLen address and back up, for speed
             var address = fillerLenAddress;
             var fillerLen = availableSpace + growth;
 
@@ -481,13 +533,14 @@ namespace Tsavorite.core
             //  - Set the new (increased) FillerLength if there is space for it.
             if (fillerLen >= LogRecord.FillerLenSize)
                 *(int*)address = fillerLen;
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool HasEnoughSpace(int newValueLen, bool withETag, bool withExpiration)
         {
             // TODO: Consider overflow in this
-            var growth = newValueLen - InlineValueLength;
+            var growth = newValueLen - InlineValueSize;
             if (Info.HasETag != withETag)
                 growth += withETag ? LogRecord.ETagSize : -LogRecord.ETagSize;
             if (Info.HasExpiration != withExpiration)

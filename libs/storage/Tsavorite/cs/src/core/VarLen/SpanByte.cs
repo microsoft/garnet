@@ -68,11 +68,6 @@ namespace Tsavorite.core
         public readonly int TotalSize => sizeof(int) + Length;
 
         /// <summary>
-        /// Total serialized size in bytes if serialized (including header if any), else the combined sizes of the Length field and payload pointer.
-        /// </summary>
-        public readonly int TotalInlineSize => Serialized ? TotalSize : Constants.kUnserializedSpanByteSize;
-
-        /// <summary>
         /// Create a nonserialized <see cref="SpanByte"/> around a given <paramref name="payload"/> pointer and given <paramref name="length"/>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -279,12 +274,13 @@ namespace Tsavorite.core
             var len = Math.Min(Length, bytes.Length);
             StringBuilder sb = new($"len: {Length}, isSer {Serialized}, ");
             for (var ii = 0; ii < len; ++ii)
-                sb.Append(bytes[ii].ToString("x2"));
+                _ = sb.Append(bytes[ii].ToString("x2"));
             if (bytes.Length > len)
-                sb.Append("...");
+                _ = sb.Append("...");
             return sb.ToString();
         }
 
+        /// <summary>Return an abbreviated string representation of this <see cref="SpanByte"/></summary>
         public string ToShortString(int maxLen) 
             => Length > maxLen
                 ? FromPinnedSpan(AsReadOnlySpan().Slice(0, maxLen)).ToString() + "..."

@@ -14,6 +14,27 @@ namespace Tsavorite.core
     /// <param name="oversizeLimit">If an allocation request is greater than this, an individual allocation is made for it. Must be less than or equal to pageSize.</param>
     public unsafe class OverflowAllocator(int pageSize, int oversizeLimit)
     {
+        /// <summary>
+        /// A page header in the oversize list
+        /// </summary>
+        internal struct OversizePageHeader
+        {
+            /// <summary>The next page in the Oversize linked list.</summary>
+            internal nuint NextPage;
+
+            /// <summary>The header for the single block in this oversize allocation.</summary>
+            internal BlockHeader BlockHeader;
+        }
+
+        /// <summary>
+        /// A header for an individual block of memory
+        /// </summary>
+        internal struct BlockHeader
+        {
+            /// <summary>Full size of this block. Actual used size is kept by LogRecord{TValue} in the key or value Span length.</summary>
+            internal int Size;
+        }
+
         private const int InitialPageCount = 1024;
 
         private readonly int pageSize = pageSize;
@@ -28,26 +49,35 @@ namespace Tsavorite.core
         private nuint oversizeList;
 
         // We advance the tail only; no deallocations until the main log page is deallocated.
-        private PageOffset tailPageOffset = new() { Page = -1, Offset = pageSize + 1};
+        private PageOffset tailPageOffset = new() { Page = -1, Offset = pageSize + 1 };
 
-        public SpanByte Allocate(int size)
+        public byte* Allocate(int size, bool zeroInit)
         {
             System.Diagnostics.Debug.Assert(size > 0, "Cannot have negative allocation size");
             System.Diagnostics.Debug.Assert(oversizeLimit > 0 && pageSize >= oversizeLimit, "OversizeLimit must be greater than zero and within pageSize");
 
             if (size > oversizeLimit)
-                return AllocateOversize(size);
+                return AllocateOversize(size, zeroInit);
 
             while (true)
             {
                 PageOffset localPageOffset = new() { PageAndOffset = tailPageOffset.PageAndOffset };
 
+                var sizeWithHeader = size + sizeof(BlockHeader);
+
                 // See if it fits on the current last page. This also applies to the "no pages allocated" case, because we initialize tailPageOffset.Offset to out-of-range
-                while (localPageOffset.Offset + size < pageSize)
+                while (localPageOffset.Offset + sizeWithHeader < pageSize)
                 {
                     // Fast path; simple offset pointer advance
-                    if (Interlocked.CompareExchange(ref tailPageOffset.PageAndOffset, localPageOffset.PageAndOffset + size, localPageOffset.PageAndOffset) == localPageOffset.PageAndOffset)
-                        return new(size, (IntPtr)pages[localPageOffset.Page][localPageOffset.Offset]);
+                    if (Interlocked.CompareExchange(ref tailPageOffset.PageAndOffset, localPageOffset.PageAndOffset + sizeWithHeader, localPageOffset.PageAndOffset) == localPageOffset.PageAndOffset)
+                    {
+                        var blockPtr = (BlockHeader*)pages[localPageOffset.Page] + localPageOffset.Offset;
+                        blockPtr->Size = size;
+                        var ptr = (byte*)(blockPtr + 1);
+                        if (zeroInit)
+                            NativeMemory.Clear(ptr, (nuint)size);
+                        return ptr;
+                    }
                     localPageOffset.PageAndOffset = tailPageOffset.PageAndOffset;
                 }
 
@@ -75,33 +105,53 @@ namespace Tsavorite.core
                     pages = newPages;
                 }
 
-                // Allocate the new page.
-                pages[newPageOffset.Page] = (byte*)NativeMemory.AlignedAlloc((nuint)pageSize, Constants.kCacheLineBytes);
+                // Allocate the new page. Always zeroinit these
+                var pagePtr = (byte*)NativeMemory.AlignedAlloc((nuint)pageSize, Constants.kCacheLineBytes);
+                pages[newPageOffset.Page] = pagePtr;
+                NativeMemory.Clear(pagePtr, (nuint)size);
 
                 // Update tailPageOffset and retry.
                 tailPageOffset.PageAndOffset = newPageOffset.PageAndOffset;
             }
         }
 
-        public SpanByte AllocateOversize(int size)
+        /// <summary>Get the allocated size of this block. In-use size is tracked by caller.</summary>
+        public int GetAllocatedSize(long address) => (*((BlockHeader*)address - 1)).Size;
+
+        public byte* AllocateOversize(int size, bool zeroInit)
         {
-            var page = (byte*)NativeMemory.AlignedAlloc((nuint)(size + sizeof(nuint)), Constants.kCacheLineBytes);
-            *(nuint*)page = Interlocked.Exchange(ref oversizeList, (nuint)page);
-            NativeMemory.Clear(page + sizeof(nuint), (nuint)size);
-            return new(size, (IntPtr)(page + sizeof(nuint)));
+            var page = (byte*)NativeMemory.AlignedAlloc((nuint)(size + sizeof(OversizePageHeader)), Constants.kCacheLineBytes);
+            var pageHeader = *(OversizePageHeader*)page;
+            pageHeader.BlockHeader.Size = size;
+
+            while (true)
+            {
+                pageHeader.NextPage = oversizeList;
+                if (Interlocked.CompareExchange(ref oversizeList, (nuint)page, pageHeader.NextPage) == pageHeader.NextPage)
+                    break;
+            }
+            var ptr = page + sizeof(OversizePageHeader);
+            if (zeroInit)
+                NativeMemory.Clear(ptr, (nuint)size);
+            return ptr;
+        }
+
+        internal void Free(byte* address)
+        {
+            // TODO
         }
 
         /// <summary>Clears and frees all allocations and prepares for reuse</summary>
         public void Clear()
         {
             // Free the oversize list.
-            nuint nextPage = (nuint)null;
-            for (nuint page = oversizeList; page != (nuint)null; page = nextPage)
+            nuint nextPage = default;
+            for (nuint page = oversizeList; page != default; page = nextPage)
             {
-                nextPage = *(nuint*)page;
-                NativeMemory.AlignedFree((nuint*)page);
+                nextPage = (*(OversizePageHeader*)page).NextPage;
+                NativeMemory.AlignedFree((void*)page);
             }
-            oversizeList = (nuint)null;
+            oversizeList = default;
 
             for (var ii = 0; ii < tailPageOffset.Page; ++ii)
             { 

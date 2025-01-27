@@ -12,7 +12,7 @@ namespace Tsavorite.core
 {
     // RecordInfo layout (64 bits total, high to low):
     //      [Unused1][Modified][InNewVersion][Filler][Dirty][Unused2][Sealed][Valid][Tombstone]
-    //      [PreviousAddressIsOnDisk][HasExpiration][HasETag][HasDbid][Unused5][Unused4][Unused3]
+    //      [PreviousAddressIsOnDisk][HasExpiration][HasETag][HasDbid][KeyIsOverflow][ValueIsOverflow][Unused3]
     //      [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] where R = readcache, A = address
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
@@ -25,9 +25,9 @@ namespace Tsavorite.core
         internal const long kPreviousAddressMaskInWord = (1L << kPreviousAddressBits) - 1;
 
         // Other marker bits. Unused* means bits not yet assigned; use the highest number when assigning
-        const int kUnused5BitOffset = kPreviousAddressBits;
-        const int kUnused4BitOffset = kUnused5BitOffset + 1;
-        const int kUnused3BitOffset = kUnused4BitOffset + 1;
+        const int kKeyIsOverflowBitOffset = kPreviousAddressBits;
+        const int kValueIsOverflowBitOffset = kKeyIsOverflowBitOffset + 1;
+        const int kUnused3BitOffset = kValueIsOverflowBitOffset + 1;
         const int kHasDBIdBitOffset = kUnused3BitOffset + 1;
         const int kHasETagBitOffset = kHasDBIdBitOffset + 1;
         const int kHasExpirationBitOffset = kHasETagBitOffset + 1;
@@ -43,8 +43,8 @@ namespace Tsavorite.core
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
         const int kUnused1BitOffset = kModifiedBitOffset + 1;
 
-        const long kUnused5BitMask = 1L << kUnused5BitOffset;
-        const long kUnused4BitMask = 1L << kUnused4BitOffset;
+        const long kKeyIsOverflowBitMask = 1L << kKeyIsOverflowBitOffset;
+        const long kValueIsOverflowBitMask = 1L << kValueIsOverflowBitOffset;
         const long kUnused3BitMask = 1L << kUnused3BitOffset;
         const long kHasDBIdBitMask = 1L << kHasDBIdBitOffset;
         const long kHasETagBitMask = 1L << kHasETagBitOffset;
@@ -320,16 +320,16 @@ namespace Tsavorite.core
             set => word = value ? word | kUnused3BitMask : word & ~kUnused3BitMask;
         }
 
-        internal bool Unused4
+        internal bool KeyIsOverflow
         {
-            readonly get => (word & kUnused4BitMask) != 0;
-            set => word = value ? word | kUnused4BitMask : word & ~kUnused4BitMask;
+            readonly get => (word & kKeyIsOverflowBitMask) != 0;
+            set => word = value ? word | kKeyIsOverflowBitMask : word & ~kKeyIsOverflowBitMask;
         }
 
-        internal bool Unused5
+        internal bool ValueIsOverflow
         {
-            readonly get => (word & kUnused5BitMask) != 0;
-            set => word = value ? word | kUnused5BitMask : word & ~kUnused5BitMask;
+            readonly get => (word & kValueIsOverflowBitMask) != 0;
+            set => word = value ? word | kValueIsOverflowBitMask : word & ~kValueIsOverflowBitMask;
         }
 
         public override readonly string ToString()

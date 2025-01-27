@@ -49,13 +49,12 @@ namespace Garnet.server
         public readonly bool InitialUpdater(ref LogRecord<SpanByte> logRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             var value = logRecord.ValueSpan;
+            logRecord.RemoveExpiration();
 
             // Because this is InitialUpdater, the destination length should be set correctly, but test and log failures to be safe.
             switch (input.header.cmd)
             {
                 case RespCommand.PFADD:
-                    logRecord.RemoveExpiration();
-
                     if (!logRecord.TrySetValueSpanLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input)))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "PFADD");
@@ -69,8 +68,6 @@ namespace Garnet.server
                 case RespCommand.PFMERGE:
                     //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy + 4 (skip len size)
                     var sbSrcHLL = input.parseState.GetArgSliceByRef(0).SpanByte;
-
-                    logRecord.RemoveExpiration();
 
                     if (!logRecord.TrySetValueSpanLength(sbSrcHLL.Length))
                     {
@@ -93,9 +90,7 @@ namespace Garnet.server
                     }
 
                     // Set or remove expiration
-                    if (input.arg1 == 0)
-                        logRecord.RemoveETag();
-                    else if (!logRecord.TrySetExpiration(input.arg1))
+                    if (input.arg1 != 0 && !logRecord.TrySetExpiration(input.arg1))
                     {
                         functionsState.logger?.LogError("Could not set expiration in {methodName}.{caseName}", "InitialUpdater", "SETEXNX");
                         return false;
@@ -128,16 +123,12 @@ namespace Garnet.server
                         return false;
                     }
 
-                    logRecord.RemoveExpiration();
-
                     // Always return 0 at initial updater because previous value was 0
                     _ = BitmapManager.UpdateBitmap(value.ToPointer(), bOffset, bSetVal);
                     functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
                     break;
 
                 case RespCommand.BITFIELD:
-                    logRecord.RemoveExpiration();
-
                     var bitFieldArgs = GetBitFieldArguments(ref input);
 
                     if (!logRecord.TrySetValueSpanLength(BitmapManager.LengthFromType(bitFieldArgs)))
@@ -172,8 +163,6 @@ namespace Garnet.server
                         return false;
                     break;
                 case RespCommand.INCR:
-                    logRecord.RemoveExpiration();
-
                     // This is InitialUpdater so set the value to 1 and the length to the # of digits in "1"
                     if (!logRecord.TrySetValueSpanLength(1))
                     {
@@ -183,7 +172,6 @@ namespace Garnet.server
                     _ = TryCopyUpdateNumber(1L, ref value, ref output);
                     break;
                 case RespCommand.INCRBY:
-                    logRecord.RemoveExpiration();
                     var fNeg = false;
                     var incrBy = input.arg1;
 
@@ -197,8 +185,6 @@ namespace Garnet.server
                     _ = TryCopyUpdateNumber(incrBy, ref value, ref output);
                     break;
                 case RespCommand.DECR:
-                    logRecord.RemoveExpiration();
-
                     // This is InitialUpdater so set the value to -1 and the length to the # of digits in "-1"
                     if (!logRecord.TrySetValueSpanLength(2))
                     {
@@ -208,7 +194,6 @@ namespace Garnet.server
                     _ = TryCopyUpdateNumber(-1, ref value, ref output);
                     break;
                 case RespCommand.DECRBY:
-                    logRecord.RemoveExpiration();
                     fNeg = false;
                     var decrBy = -input.arg1;
 
@@ -222,7 +207,6 @@ namespace Garnet.server
                     _ = TryCopyUpdateNumber(decrBy, ref value, ref output);
                     break;
                 case RespCommand.INCRBYFLOAT:
-                    logRecord.RemoveExpiration();
                     // Check if input contains a valid number
                     if (!input.parseState.TryGetDouble(0, out var incrByFloat))
                     {
@@ -233,8 +217,6 @@ namespace Garnet.server
                         return false;
                     break;
                 default:
-                    logRecord.RemoveExpiration();
-
                     if ((ushort)input.header.cmd >= CustomCommandManager.StartOffset)
                     {
                         var functions = functionsState.customCommands[(ushort)input.header.cmd - CustomCommandManager.StartOffset].functions;
