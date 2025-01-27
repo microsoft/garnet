@@ -64,13 +64,13 @@ namespace Garnet.server
         public bool InitialUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
+            value.UnmarkExtraMetadata();
 
             RespCommand cmd = input.header.cmd;
             switch (cmd)
             {
                 case RespCommand.PFADD:
                     var v = value.ToPointer();
-                    value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input));
                     HyperLogLog.DefaultHLL.Init(ref input, v, value.Length);
                     *output.SpanByte.ToPointer() = 1;
@@ -83,7 +83,6 @@ namespace Garnet.server
                     var srcHLL = sbSrcHLL.ToPointer();
                     var dstHLL = value.ToPointer();
 
-                    value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(length);
                     Buffer.MemoryCopy(srcHLL, dstHLL, value.Length, value.Length);
                     break;
@@ -94,7 +93,6 @@ namespace Garnet.server
                     // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
-                    value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
                     value.ExtraMetadata = input.arg1;
                     newInputValue.CopyTo(value.AsSpan(spaceForEtag));
@@ -112,7 +110,7 @@ namespace Garnet.server
                     break;
                 case RespCommand.SETKEEPTTL:
                     spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
-                    // Copy input to value, retain metadata in value
+                    // Copy input to value
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     value.ShrinkSerializedLength(value.MetadataSize + setValue.Length + spaceForEtag);
                     setValue.CopyTo(value.AsSpan(spaceForEtag));
@@ -143,7 +141,6 @@ namespace Garnet.server
                     var bOffset = input.parseState.GetLong(0);
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
-                    value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(BitmapManager.Length(bOffset));
 
                     // Always return 0 at initial updater because previous value was 0
@@ -152,7 +149,6 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITFIELD:
-                    value.UnmarkExtraMetadata();
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     value.ShrinkSerializedLength(BitmapManager.LengthFromType(bitFieldArgs));
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer(), value.Length);
@@ -172,31 +168,27 @@ namespace Garnet.server
 
                 case RespCommand.APPEND:
                     var appendValue = input.parseState.GetArgSliceByRef(0);
-
+                    value.ShrinkSerializedLength(appendValue.Length);
                     // Copy value to be appended to the newly allocated value buffer
                     appendValue.ReadOnlySpan.CopyTo(value.AsSpan());
 
                     CopyValueLengthToOutput(ref value, ref output, 0);
                     break;
                 case RespCommand.INCR:
-                    value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(1); // # of digits in "1"
                     CopyUpdateNumber(1, ref value, ref output);
                     break;
                 case RespCommand.INCRBY:
-                    value.UnmarkExtraMetadata();
                     var incrBy = input.arg1;
                     var ndigits = NumUtils.CountDigits(incrBy, out var isNegative);
                     value.ShrinkSerializedLength(ndigits + (isNegative ? 1 : 0));
                     CopyUpdateNumber(incrBy, ref value, ref output);
                     break;
                 case RespCommand.DECR:
-                    value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(2); // # of digits in "-1"
                     CopyUpdateNumber(-1, ref value, ref output);
                     break;
                 case RespCommand.DECRBY:
-                    value.UnmarkExtraMetadata();
                     isNegative = false;
                     var decrBy = -input.arg1;
                     ndigits = NumUtils.CountDigits(decrBy, out isNegative);
@@ -204,7 +196,6 @@ namespace Garnet.server
                     CopyUpdateNumber(decrBy, ref value, ref output);
                     break;
                 case RespCommand.INCRBYFLOAT:
-                    value.UnmarkExtraMetadata();
                     // Check if input contains a valid number
                     if (!input.parseState.TryGetDouble(0, out var incrByFloat))
                     {
@@ -214,7 +205,6 @@ namespace Garnet.server
                     CopyUpdateNumber(incrByFloat, ref value, ref output);
                     break;
                 default:
-                    value.UnmarkExtraMetadata();
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
                         var functions = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd);
