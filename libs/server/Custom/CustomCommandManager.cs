@@ -18,7 +18,7 @@ namespace Garnet.server
         private static readonly int MaxCustomRawStringCommands = 256;
 
         // Initial size of expandable maps
-        private static readonly int MinMapSize = 8;
+        private static readonly int MinMapSize = 1;
 
         // ID ranges for custom raw string commands and custom object types
         private static readonly int CustomRawStringCommandMinId = (ushort)RespCommand.INVALID - MaxCustomRawStringCommands;
