@@ -460,6 +460,7 @@ namespace Garnet.cluster
             }
             else if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("OSTORE"u8))
             {
+                TrackImportProgress(keyValuePairCount, isMainStore: false, keyValuePairCount == 0);
                 while (i < keyValuePairCount)
                 {
                     if (!RespReadUtils.TryReadSerializedData(out var key, out var data, out var expiration, ref payloadPtr, payloadEndPtr))
