@@ -24,27 +24,57 @@ namespace Garnet.test
         GarnetServer server;
         private string extTestDir;
         private IReadOnlyDictionary<string, RespCommandsInfo> respCommandsInfo;
+        private IReadOnlyDictionary<string, RespCommandsInfo> externalRespCommandsInfo;
         private IReadOnlyDictionary<string, RespCommandsInfo> respSubCommandsInfo;
         private IReadOnlyDictionary<string, RespCommandDocs> respCommandsDocs;
+        private IReadOnlyDictionary<string, RespCommandDocs> externalRespCommandsDocs;
         private IReadOnlyDictionary<string, RespCommandDocs> respSubCommandsDocs;
         private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
         private IReadOnlyDictionary<string, RespCommandDocs> respCustomCommandsDocs;
+        private HashSet<RespCommand> internalOnlyCommands;
+
+        // List of commands that don't require metadata (info / docs)
+        // These are either marker commands (e.g. NONE, INVALID)
+        // or pseudo-commands or subcommands that are only used internally (e.g. SETEXNX, SETEXXX, etc.)
+        private readonly HashSet<RespCommand> noMetadataCommands =
+        [
+            RespCommand.NONE,
+            RespCommand.SETEXNX,
+            RespCommand.SETEXXX,
+            RespCommand.SETKEEPTTL,
+            RespCommand.SETKEEPTTLXX,
+            RespCommand.BITOP_AND,
+            RespCommand.BITOP_OR,
+            RespCommand.BITOP_XOR,
+            RespCommand.BITOP_NOT,
+            RespCommand.INVALID
+        ];
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             extTestDir = Path.Combine(TestUtils.MethodTestDir, "test");
-            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo, externalOnly: false));
-            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespSubCommandsInfo(out respSubCommandsInfo, externalOnly: false));
-            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespCommandsDocs(out respCommandsDocs, externalOnly: false));
-            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespSubCommandsDocs(out respSubCommandsDocs, externalOnly: false));
+            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo));
+            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out externalRespCommandsInfo, externalOnly: true));
+            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespSubCommandsInfo(out respSubCommandsInfo));
+            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespCommandsDocs(out respCommandsDocs));
+            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespCommandsDocs(out externalRespCommandsDocs, externalOnly: true));
+            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespSubCommandsDocs(out respSubCommandsDocs));
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsDocs(out respCustomCommandsDocs));
             ClassicAssert.IsNotNull(respCommandsInfo);
+            ClassicAssert.IsNotNull(externalRespCommandsInfo);
             ClassicAssert.IsNotNull(respCommandsDocs);
+            ClassicAssert.IsNotNull(externalRespCommandsDocs);
             ClassicAssert.IsNotNull(respCustomCommandsInfo);
             ClassicAssert.IsNotNull(respCustomCommandsDocs);
+            internalOnlyCommands =
+            [
+                .. respCommandsInfo.Values.Where(ci => ci.IsInternal).Select(ci => ci.Command)
+                    .Union(respSubCommandsInfo.Values.Where(sc => sc.IsInternal).Select(sc => sc.Command))
+            ];
+
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true,
                 extensionBinPaths: [extTestDir]);
             server.Start();
@@ -56,6 +86,58 @@ namespace Garnet.test
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             TestUtils.DeleteDirectory(Directory.GetParent(extTestDir)?.FullName);
+        }
+
+        /// <summary>
+        /// Verify that all existing values of RespCommand
+        /// have a matching RespCommandInfo objects defined in RespCommandsInfo.json / GarnetCommandInfo.json
+        /// </summary>
+        [Test]
+        public void CommandsInfoCoverageTest()
+        {
+            // Get all commands that have RespCommandInfo objects defined
+            var commandsWithInfo = new HashSet<RespCommand>();
+            foreach (var commandInfo in respCommandsInfo.Values)
+            {
+                commandsWithInfo.Add(commandInfo.Command);
+
+                if (commandInfo.SubCommands != null)
+                {
+                    foreach (var subCommandInfo in commandInfo.SubCommands)
+                    {
+                        commandsWithInfo.Add(subCommandInfo.Command);
+                    }
+                }
+            }
+
+            var allCommands = Enum.GetValues<RespCommand>().Except(noMetadataCommands);
+            CollectionAssert.AreEquivalent(allCommands, commandsWithInfo, "Some commands have missing info. Please see https://microsoft.github.io/garnet/docs/dev/garnet-api#adding-command-info for more details.");
+        }
+
+        /// <summary>
+        /// Verify that all existing values of RespCommand
+        /// have a matching RespCommandDocs objects defined in RespCommandsDocs.json / GarnetCommandDocs.json
+        /// </summary>
+        [Test]
+        public void CommandsDocsCoverageTest()
+        {
+            // Get all commands that have RespCommandInfo objects defined
+            var commandsWithDocs = new HashSet<RespCommand>();
+            foreach (var commandDocs in respCommandsDocs.Values)
+            {
+                commandsWithDocs.Add(commandDocs.Command);
+
+                if (commandDocs.SubCommands != null)
+                {
+                    foreach (var subCommandInfo in commandDocs.SubCommands)
+                    {
+                        commandsWithDocs.Add(subCommandInfo.Command);
+                    }
+                }
+            }
+
+            var allCommands = Enum.GetValues<RespCommand>().Except(noMetadataCommands).Except(internalOnlyCommands);
+            CollectionAssert.AreEquivalent(allCommands, commandsWithDocs, "Some commands have missing docs. Please see https://microsoft.github.io/garnet/docs/dev/garnet-api#adding-command-info for more details.");
         }
 
         /// <summary>
@@ -71,7 +153,7 @@ namespace Garnet.test
             var results = (RedisResult[])db.Execute("COMMAND");
 
             ClassicAssert.IsNotNull(results);
-            ClassicAssert.AreEqual(respCommandsInfo.Count, results.Length);
+            ClassicAssert.AreEqual(externalRespCommandsInfo.Count, results.Length);
 
             // Register custom commands
             var customCommandsRegistered = RegisterCustomCommands();
@@ -83,7 +165,7 @@ namespace Garnet.test
             results = (RedisResult[])db.Execute("COMMAND");
 
             ClassicAssert.IsNotNull(results);
-            ClassicAssert.AreEqual(respCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, results.Length);
+            ClassicAssert.AreEqual(externalRespCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, results.Length);
         }
 
         /// <summary>
@@ -99,7 +181,7 @@ namespace Garnet.test
             var results = (RedisResult[])db.Execute("COMMAND", "INFO");
 
             ClassicAssert.IsNotNull(results);
-            ClassicAssert.AreEqual(respCommandsInfo.Count, results.Length);
+            ClassicAssert.AreEqual(externalRespCommandsInfo.Count, results.Length);
 
             // Register custom commands
             var customCommandsRegistered = RegisterCustomCommands();
@@ -111,13 +193,13 @@ namespace Garnet.test
             results = (RedisResult[])db.Execute("COMMAND", "INFO");
 
             ClassicAssert.IsNotNull(results);
-            ClassicAssert.AreEqual(respCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, results.Length);
+            ClassicAssert.AreEqual(externalRespCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, results.Length);
 
             ClassicAssert.IsTrue(results.All(res => res.Length == 10));
             ClassicAssert.IsTrue(results.All(res => (string)res[0] != null));
             var cmdNameToResult = results.ToDictionary(res => (string)res[0], res => res);
 
-            foreach (var cmdName in respCommandsInfo.Keys.Union(customCommandsRegistered).Union(customCommandsRegisteredDyn))
+            foreach (var cmdName in externalRespCommandsInfo.Keys.Union(customCommandsRegistered).Union(customCommandsRegisteredDyn))
             {
                 ClassicAssert.Contains(cmdName, cmdNameToResult.Keys);
                 VerifyCommandInfo(cmdName, cmdNameToResult[cmdName]);
@@ -137,7 +219,7 @@ namespace Garnet.test
             var results = (RedisResult[])db.Execute("COMMAND", "DOCS");
 
             ClassicAssert.IsNotNull(results);
-            ClassicAssert.AreEqual(respCommandsDocs.Count, results.Length / 2);
+            ClassicAssert.AreEqual(externalRespCommandsDocs.Count, results.Length / 2);
 
             // Register custom commands
             var customCommandsRegistered = RegisterCustomCommands();
@@ -150,7 +232,7 @@ namespace Garnet.test
 
             ClassicAssert.IsNotNull(results);
             var expectedCommands =
-                respCommandsDocs.Keys
+                externalRespCommandsDocs.Keys
                     .Union(customCommandsRegistered)
                     .Union(customCommandsRegisteredDyn).OrderBy(c => c);
 
@@ -163,7 +245,7 @@ namespace Garnet.test
             var actualCommands = cmdNameToResult.Keys.OrderBy(c => c);
             CollectionAssert.AreEqual(expectedCommands, actualCommands);
 
-            foreach (var cmdName in respCommandsDocs.Keys.Union(customCommandsRegistered).Union(customCommandsRegisteredDyn))
+            foreach (var cmdName in externalRespCommandsDocs.Keys.Union(customCommandsRegistered).Union(customCommandsRegisteredDyn))
             {
                 ClassicAssert.Contains(cmdName, cmdNameToResult.Keys);
                 VerifyCommandDocs(cmdName, cmdNameToResult[cmdName]);
@@ -182,7 +264,7 @@ namespace Garnet.test
             // Get command count
             var commandCount = (int)db.Execute("COMMAND", "COUNT");
 
-            ClassicAssert.AreEqual(respCommandsInfo.Count, commandCount);
+            ClassicAssert.AreEqual(externalRespCommandsInfo.Count, commandCount);
 
             // Register custom commands
             var customCommandsRegistered = RegisterCustomCommands();
@@ -193,7 +275,7 @@ namespace Garnet.test
             // Get command count (including custom commands)
             commandCount = (int)db.Execute("COMMAND", "COUNT");
 
-            ClassicAssert.AreEqual(respCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, commandCount);
+            ClassicAssert.AreEqual(externalRespCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, commandCount);
         }
 
         /// <summary>
@@ -368,11 +450,14 @@ namespace Garnet.test
                 RespCommand.CLIENT_GETNAME,
                 RespCommand.CLIENT_SETNAME,
                 RespCommand.CLIENT_SETINFO,
+                RespCommand.CLIENT_UNBLOCK,
                 // Command
                 RespCommand.COMMAND,
                 RespCommand.COMMAND_COUNT,
                 RespCommand.COMMAND_DOCS,
                 RespCommand.COMMAND_INFO,
+                RespCommand.COMMAND_GETKEYS,
+                RespCommand.COMMAND_GETKEYSANDFLAGS,
                 RespCommand.MEMORY_USAGE,
                 // Config
                 RespCommand.CONFIG_GET,
@@ -506,7 +591,7 @@ namespace Garnet.test
         {
             ClassicAssert.IsNotNull(result);
 
-            if (!respCommandsDocs.TryGetValue(cmdName, out var cmdDoc) &&
+            if (!externalRespCommandsDocs.TryGetValue(cmdName, out var cmdDoc) &&
                 !respSubCommandsDocs.TryGetValue(cmdName, out cmdDoc) &&
                 !respCustomCommandsDocs.TryGetValue(cmdName, out cmdDoc))
                 Assert.Fail();
@@ -534,6 +619,89 @@ namespace Garnet.test
                         break;
                 }
             }
+        }
+
+        /// <summary>
+        /// Test COMMAND GETKEYS command with various command signatures
+        /// </summary>
+        [Test]
+        [TestCase("SET", new[] { "mykey" }, new[] { "mykey", "value" }, Description = "Simple SET command")]
+        [TestCase("MSET", new[] { "key1", "key2" }, new[] { "key1", "value1", "key2", "value2" }, Description = "Multiple SET pairs")]
+        [TestCase("MGET", new[] { "key1", "key2", "key3" }, new[] { "key1", "key2", "key3" }, Description = "Multiple GET keys")]
+        [TestCase("ZUNIONSTORE", new[] { "destination", "key1", "key2" }, new[] { "destination", "2", "key1", "key2" }, Description = "ZUNIONSTORE with multiple source keys")]
+        [TestCase("EVAL", new[] { "key1", "key2" }, new[] { "return redis.call('GET', KEYS[1])", "2", "key1", "key2" }, Description = "EVAL with multiple keys")]
+        [TestCase("EXPIRE", new[] { "mykey" }, new[] { "mykey", "100", "NX" }, Description = "EXPIRE with NX option")]
+        [TestCase("MIGRATE", new[] { "key1", "key2" }, new[] { "127.0.0.1", "6379", "", "0", "5000", "KEYS", "key1", "key2" }, Description = "MIGRATE with multiple keys")]
+        [TestCase("GEOSEARCHSTORE", new[] { "dst", "src" }, new[] { "dst", "src", "FROMMEMBER", "member", "COUNT", "10", "ASC" }, Description = "GEOSEARCHSTORE with options")]
+        public void CommandGetKeysTest(string command, string[] expectedKeys, string[] args)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var cmdArgs = new object[] { "GETKEYS", command }.Union(args).ToArray();
+            var results = (RedisResult[])db.Execute("COMMAND", cmdArgs);
+
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(expectedKeys.Length, results.Length);
+
+            for (var i = 0; i < expectedKeys.Length; i++)
+            {
+                ClassicAssert.AreEqual(expectedKeys[i], results[i].ToString());
+            }
+        }
+
+        /// <summary>
+        /// Test COMMAND GETKEYSANDFLAGS command with various command signatures
+        /// </summary>
+        [Test]
+        [TestCase("SET", "mykey", "RW access update variable_flags", new[] { "mykey", "value" }, Description = "Simple SET command")]
+        [TestCase("MSET", "key1,key2", "OW update|OW update", new[] { "key1", "value1", "key2", "value2" }, Description = "Multiple SET pairs")]
+        [TestCase("MGET", "key1,key2,key3", "RO access|RO access|RO access", new[] { "key1", "key2", "key3" }, Description = "Multiple GET keys")]
+        [TestCase("ZUNIONSTORE", "destination,key1,key2", "OW update|RO access|RO access", new[] { "destination", "2", "key1", "key2" }, Description = "ZUNIONSTORE with multiple source keys")]
+        [TestCase("EVAL", "key1,key2", "RW access update|RW access update", new[] { "return redis.call('GET', KEYS[1])", "2", "key1", "key2" }, Description = "EVAL with multiple keys")]
+        [TestCase("EXPIRE", "mykey", "RW update", new[] { "mykey", "100", "NX" }, Description = "EXPIRE with NX option")]
+        [TestCase("MIGRATE", "key1,key2", "RW access delete incomplete|RW access delete incomplete", new[] { "127.0.0.1", "6379", "", "0", "5000", "KEYS", "key1", "key2" }, Description = "MIGRATE with multiple keys")]
+        [TestCase("GEOSEARCHSTORE", "dst,src", "OW update|RO access", new[] { "dst", "src", "FROMMEMBER", "member", "COUNT", "10", "ASC" }, Description = "GEOSEARCHSTORE with options")]
+        public void CommandGetKeysAndFlagsTest(string command, string expectedKeysStr, string expectedFlagsStr, string[] args)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var expectedKeys = expectedKeysStr.Split(',');
+            var expectedFlags = expectedFlagsStr.Split('|')
+                .Select(f => f.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                .ToArray();
+
+            var cmdArgs = new object[] { "GETKEYSANDFLAGS", command }.Union(args).ToArray();
+            var results = (RedisResult[])db.Execute("COMMAND", cmdArgs);
+
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(expectedKeys.Length, results.Length);
+
+            for (var i = 0; i < expectedKeys.Length; i++)
+            {
+                var keyInfo = (RedisResult[])results[i];
+                ClassicAssert.AreEqual(2, keyInfo.Length);
+                ClassicAssert.AreEqual(expectedKeys[i], keyInfo[0].ToString());
+
+                var flags = ((RedisResult[])keyInfo[1]).Select(f => f.ToString()).ToArray();
+                CollectionAssert.AreEquivalent(expectedFlags[i], flags);
+            }
+        }
+
+        /// <summary>
+        /// Test COMMAND GETKEYS and GETKEYSANDFLAGS with invalid input
+        /// </summary>
+        [Test]
+        [TestCase("GETKEYS", Description = "GETKEYS with no command")]
+        [TestCase("GETKEYSANDFLAGS", Description = "GETKEYSANDFLAGS with no command")]
+        public void CommandGetKeysInvalidInputTest(string subcommand)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            Assert.Throws<RedisServerException>(() => db.Execute("COMMAND", subcommand));
+            Assert.Throws<RedisServerException>(() => db.Execute("COMMAND", subcommand, "INVALIDCOMMAND", "key1"));
         }
     }
 }

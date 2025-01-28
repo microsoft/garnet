@@ -43,7 +43,7 @@ namespace Garnet.client
             byte* curr = offset;
             int arraySize = username == null ? 2 : 3;
 
-            while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -51,7 +51,7 @@ namespace Garnet.client
             offset = curr;
 
             //1
-            while (!RespWriteUtils.WriteBulkString(AUTH, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(AUTH, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -61,7 +61,7 @@ namespace Garnet.client
             if (username != null)
             {
                 //2
-                while (!RespWriteUtils.WriteAsciiBulkString(username, ref curr, end))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(username, ref curr, end))
                 {
                     Flush();
                     curr = offset;
@@ -70,7 +70,7 @@ namespace Garnet.client
             }
 
             //3
-            while (!RespWriteUtils.WriteAsciiBulkString(password, ref curr, end))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(password, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -101,7 +101,7 @@ namespace Garnet.client
             //CLUSTER SETSLOTRANGE NODE <node-id> <slot-start> <slot-end> [slot-start slot-end]
             //CLUSTER SETSLOTRANGE STABLE <slot-start> <slot-end> [slot-start slot-end]
 
-            while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -109,7 +109,7 @@ namespace Garnet.client
             offset = curr;
 
             //1
-            while (!RespWriteUtils.WriteDirect(CLUSTER, ref curr, end))
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -117,7 +117,7 @@ namespace Garnet.client
             offset = curr;
 
             //2
-            while (!RespWriteUtils.WriteBulkString(SETSLOTSRANGE, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(SETSLOTSRANGE, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -125,7 +125,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteBulkString(state.Span, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(state.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -135,7 +135,7 @@ namespace Garnet.client
             if (nodeid != null)
             {
                 //4
-                while (!RespWriteUtils.WriteAsciiBulkString(nodeid, ref curr, end))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(nodeid, ref curr, end))
                 {
                     Flush();
                     curr = offset;
@@ -146,14 +146,14 @@ namespace Garnet.client
             //5+
             foreach (var slotRange in slotRanges)
             {
-                while (!RespWriteUtils.WriteIntegerAsBulkString(slotRange.Item1, ref curr, end))
+                while (!RespWriteUtils.TryWriteInt32AsBulkString(slotRange.Item1, ref curr, end))
                 {
                     Flush();
                     curr = offset;
                 }
                 offset = curr;
 
-                while (!RespWriteUtils.WriteIntegerAsBulkString(slotRange.Item2, ref curr, end))
+                while (!RespWriteUtils.TryWriteInt32AsBulkString(slotRange.Item2, ref curr, end))
                 {
                     Flush();
                     curr = offset;
@@ -216,7 +216,7 @@ namespace Garnet.client
 
             var arraySize = 6;
 
-            while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -224,7 +224,7 @@ namespace Garnet.client
             offset = curr;
 
             // 1
-            while (!RespWriteUtils.WriteDirect(CLUSTER, ref curr, end))
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -232,7 +232,7 @@ namespace Garnet.client
             offset = curr;
 
             // 2
-            while (!RespWriteUtils.WriteBulkString(MIGRATE, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(MIGRATE, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -240,7 +240,7 @@ namespace Garnet.client
             offset = curr;
 
             // 3
-            while (!RespWriteUtils.WriteAsciiBulkString(sourceNodeId, ref curr, end))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(sourceNodeId, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -248,7 +248,7 @@ namespace Garnet.client
             offset = curr;
 
             // 4
-            while (!RespWriteUtils.WriteBulkString(replaceOption, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(replaceOption, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -256,7 +256,7 @@ namespace Garnet.client
             offset = curr;
 
             // 5
-            while (!RespWriteUtils.WriteBulkString(storeType, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(storeType, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -288,7 +288,7 @@ namespace Garnet.client
             // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
             var size = (int)(curr - 2 - head - (ExtraSpace - 4));
             TrackMigrateProgress(keyCount, size);
-            var success = RespWriteUtils.WritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
+            var success = RespWriteUtils.TryWritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
             Debug.Assert(success);
 
             // Number of key value pairs in payload
@@ -325,7 +325,7 @@ namespace Garnet.client
             // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
             var size = (int)(curr - 2 - head - (ExtraSpace - 4));
             TrackMigrateProgress(keyCount, size, completed: true);
-            var success = RespWriteUtils.WritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
+            var success = RespWriteUtils.TryWritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
             Debug.Assert(success);
 
             // Number of key value pairs in payload

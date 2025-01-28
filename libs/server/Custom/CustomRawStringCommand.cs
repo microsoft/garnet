@@ -10,15 +10,17 @@ namespace Garnet.server
         public readonly string NameStr;
         public readonly ushort id;
         public readonly CommandType type;
+        public readonly int arity;
         public readonly CustomRawStringFunctions functions;
         public long expirationTicks;
 
-        internal CustomRawStringCommand(string name, ushort id, CommandType type, CustomRawStringFunctions functions, long expirationTicks)
+        internal CustomRawStringCommand(string name, ushort id, CommandType type, int arity, CustomRawStringFunctions functions, long expirationTicks)
         {
             NameStr = name.ToUpperInvariant();
             this.Name = System.Text.Encoding.ASCII.GetBytes(NameStr);
             this.id = id;
             this.type = type;
+            this.arity = arity;
             this.functions = functions;
             this.expirationTicks = expirationTicks;
         }

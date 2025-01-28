@@ -32,7 +32,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
             }
             else
@@ -41,7 +41,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.WriteError($"ERR Transaction failed.", ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError($"ERR Transaction failed.", ref dcurr, dend))
                         SendAndReset();
             }
             latencyMetrics?.Stop(LatencyMetricsType.TX_PROC_LAT);
@@ -68,7 +68,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
             }
             else
@@ -76,7 +76,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.WriteError($"ERR Command failed.", ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError($"ERR Command failed.", ref dcurr, dend))
                         SendAndReset();
             }
         }
@@ -102,7 +102,7 @@ namespace Garnet.server
                 if (output.Memory != null)
                     SendAndReset(output.Memory, output.Length);
                 else
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
             }
             else
@@ -115,13 +115,13 @@ namespace Garnet.server
                     if (output.Memory != null)
                         SendAndReset(output.Memory, output.Length);
                     else
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
                 }
                 else
                 {
                     Debug.Assert(output.Memory == null);
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -142,26 +142,26 @@ namespace Garnet.server
             var header = new RespInputHeader(objType) { SubId = subid };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             GarnetStatus status;
 
             if (type == CommandType.ReadModifyWrite)
             {
                 status = storageApi.RMW_ObjectStore(ref keyBytes, ref input, ref output);
-                Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
+                Debug.Assert(!output.SpanByteAndMemory.IsSpanByte);
 
                 switch (status)
                 {
                     case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                             SendAndReset();
                         break;
                     default:
-                        if (output.spanByteAndMemory.Memory != null)
-                            SendAndReset(output.spanByteAndMemory.Memory, output.spanByteAndMemory.Length);
+                        if (output.SpanByteAndMemory.Memory != null)
+                            SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                         else
-                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                                 SendAndReset();
                         break;
                 }
@@ -169,24 +169,24 @@ namespace Garnet.server
             else
             {
                 status = storageApi.Read_ObjectStore(ref keyBytes, ref input, ref output);
-                Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
+                Debug.Assert(!output.SpanByteAndMemory.IsSpanByte);
 
                 switch (status)
                 {
                     case GarnetStatus.OK:
-                        if (output.spanByteAndMemory.Memory != null)
-                            SendAndReset(output.spanByteAndMemory.Memory, output.spanByteAndMemory.Length);
+                        if (output.SpanByteAndMemory.Memory != null)
+                            SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                         else
-                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                                 SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
-                        Debug.Assert(output.spanByteAndMemory.Memory == null);
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        Debug.Assert(output.SpanByteAndMemory.Memory == null);
+                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                             SendAndReset();
                         break;
                     case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
@@ -200,14 +200,14 @@ namespace Garnet.server
         /// <param name="customCommand">Parsed raw string command</param>
         /// <returns>True if command found, false otherwise</returns>
         public bool ParseCustomRawStringCommand(string cmd, out CustomRawStringCommand customCommand) =>
-            storeWrapper.customCommandManager.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out customCommand);
+            customCommandManagerSession.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out customCommand);
 
         /// <summary>Parse custom object command</summary>
         /// <param name="cmd">Command name</param>
         /// <param name="customObjCommand">Parsed object command</param>
         /// <returns>True if command found, false othrewise</returns>
         public bool ParseCustomObjectCommand(string cmd, out CustomObjectCommand customObjCommand) =>
-            storeWrapper.customCommandManager.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out customObjCommand);
+            customCommandManagerSession.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out customObjCommand);
 
         /// <summary>Execute a specific custom raw string command</summary>
         /// <typeparam name="TGarnetApi"></typeparam>
@@ -295,12 +295,12 @@ namespace Garnet.server
             customCommandParseState.InitializeWithArguments(args);
             var input = new ObjectInput(header, ref customCommandParseState);
 
-            var _output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             GarnetStatus status;
             if (customObjCommand.type == CommandType.ReadModifyWrite)
             {
                 status = storageApi.RMW_ObjectStore(ref keyBytes, ref input, ref _output);
-                Debug.Assert(!_output.spanByteAndMemory.IsSpanByte);
+                Debug.Assert(!_output.SpanByteAndMemory.IsSpanByte);
 
                 switch (status)
                 {
@@ -308,8 +308,8 @@ namespace Garnet.server
                         output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_ERR_WRONG_TYPE);
                         break;
                     default:
-                        if (_output.spanByteAndMemory.Memory != null)
-                            output = scratchBufferManager.FormatScratch(0, _output.spanByteAndMemory.AsReadOnlySpan());
+                        if (_output.SpanByteAndMemory.Memory != null)
+                            output = scratchBufferManager.FormatScratch(0, _output.SpanByteAndMemory.AsReadOnlySpan());
                         else
                             output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_OK);
                         break;
@@ -318,18 +318,18 @@ namespace Garnet.server
             else
             {
                 status = storageApi.Read_ObjectStore(ref keyBytes, ref input, ref _output);
-                Debug.Assert(!_output.spanByteAndMemory.IsSpanByte);
+                Debug.Assert(!_output.SpanByteAndMemory.IsSpanByte);
 
                 switch (status)
                 {
                     case GarnetStatus.OK:
-                        if (_output.spanByteAndMemory.Memory != null)
-                            output = scratchBufferManager.FormatScratch(0, _output.spanByteAndMemory.AsReadOnlySpan());
+                        if (_output.SpanByteAndMemory.Memory != null)
+                            output = scratchBufferManager.FormatScratch(0, _output.SpanByteAndMemory.AsReadOnlySpan());
                         else
                             output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_OK);
                         break;
                     case GarnetStatus.NOTFOUND:
-                        Debug.Assert(_output.spanByteAndMemory.Memory == null);
+                        Debug.Assert(_output.SpanByteAndMemory.Memory == null);
                         output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_ERRNOTFOUND);
                         break;
                     case GarnetStatus.WRONGTYPE:

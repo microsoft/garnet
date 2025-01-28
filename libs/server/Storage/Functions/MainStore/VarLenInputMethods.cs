@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -25,7 +24,7 @@ namespace Garnet.server
             try
             {
                 // Check for valid number
-                if (!NumUtils.TryBytesToLong(length, source, out val))
+                if (!NumUtils.TryReadInt64(length, source, out val))
                 {
                     // Signal value is not a valid number
                     return false;
@@ -52,7 +51,7 @@ namespace Garnet.server
             try
             {
                 // Check for valid number
-                if (!NumUtils.TryBytesToDouble(length, source, out val) || !double.IsFinite(val))
+                if (!NumUtils.TryReadDouble(length, source, out val) || !double.IsFinite(val))
                 {
                     // Signal value is not a valid number
                     return false;
@@ -70,6 +69,7 @@ namespace Garnet.server
         public int GetRMWInitialValueLength(ref RawStringInput input)
         {
             var cmd = input.header.cmd;
+
             switch (cmd)
             {
                 case RespCommand.SETBIT:
@@ -99,25 +99,21 @@ namespace Garnet.server
                     return sizeof(int) + 2; // # of digits in "-1"
 
                 case RespCommand.INCRBY:
-                    var fNeg = false;
-                    var ndigits = NumUtils.NumDigitsInLong(input.arg1, ref fNeg);
+                    var ndigits = NumUtils.CountDigits(input.arg1, out var isNegative);
 
-                    return sizeof(int) + ndigits + (fNeg ? 1 : 0);
+                    return sizeof(int) + ndigits + (isNegative ? 1 : 0);
 
                 case RespCommand.DECRBY:
-                    fNeg = false;
-                    ndigits = NumUtils.NumDigitsInLong(-input.arg1, ref fNeg);
+                    ndigits = NumUtils.CountDigits(-input.arg1, out isNegative);
 
-                    return sizeof(int) + ndigits + (fNeg ? 1 : 0);
-
+                    return sizeof(int) + ndigits + (isNegative ? 1 : 0);
                 case RespCommand.INCRBYFLOAT:
                     if (!input.parseState.TryGetDouble(0, out var incrByFloat))
                         return sizeof(int);
 
-                    ndigits = NumUtils.NumOfCharInDouble(incrByFloat, out var _, out var _, out var _);
+                    ndigits = NumUtils.CountCharsInDouble(incrByFloat, out var _, out var _, out var _);
 
                     return sizeof(int) + ndigits;
-
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -132,8 +128,7 @@ namespace Garnet.server
                         return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
                     }
 
-                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length +
-                        (input.arg1 == 0 ? 0 : sizeof(long));
+                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + (input.arg1 == 0 ? 0 : sizeof(long)) + this.functionsState.etagState.etagOffsetForVarlen;
             }
         }
 
@@ -143,43 +138,42 @@ namespace Garnet.server
             if (input.header.cmd != RespCommand.NONE)
             {
                 var cmd = input.header.cmd;
+
                 switch (cmd)
                 {
                     case RespCommand.INCR:
                     case RespCommand.INCRBY:
                         var incrByValue = input.header.cmd == RespCommand.INCRBY ? input.arg1 : 1;
 
-                        var curr = NumUtils.BytesToLong(t.AsSpan());
+                        var curr = NumUtils.ReadInt64(t.AsSpan(functionsState.etagState.etagOffsetForVarlen));
                         var next = curr + incrByValue;
 
-                        var fNeg = false;
-                        var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
-                        ndigits += fNeg ? 1 : 0;
+                        var ndigits = NumUtils.CountDigits(next, out var isNegative);
+                        ndigits += isNegative ? 1 : 0;
 
-                        return sizeof(int) + ndigits + t.MetadataSize;
+                        return sizeof(int) + ndigits + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
 
                     case RespCommand.DECR:
                     case RespCommand.DECRBY:
                         var decrByValue = input.header.cmd == RespCommand.DECRBY ? input.arg1 : 1;
 
-                        curr = NumUtils.BytesToLong(t.AsSpan());
+                        curr = NumUtils.ReadInt64(t.AsSpan(functionsState.etagState.etagOffsetForVarlen));
                         next = curr - decrByValue;
 
-                        fNeg = false;
-                        ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
-                        ndigits += fNeg ? 1 : 0;
+                        ndigits = NumUtils.CountDigits(next, out isNegative);
+                        ndigits += isNegative ? 1 : 0;
 
-                        return sizeof(int) + ndigits + t.MetadataSize;
+                        return sizeof(int) + ndigits + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
                     case RespCommand.INCRBYFLOAT:
                         // We don't need to TryGetDouble here because InPlaceUpdater will raise an error before we reach this point
                         var incrByFloat = input.parseState.GetDouble(0);
 
-                        NumUtils.TryBytesToDouble(t.AsSpan(), out var currVal);
+                        NumUtils.TryReadDouble(t.AsSpan(functionsState.etagState.etagOffsetForVarlen), out var currVal);
                         var nextVal = currVal + incrByFloat;
 
-                        ndigits = NumUtils.NumOfCharInDouble(nextVal, out _, out _, out _);
+                        ndigits = NumUtils.CountCharsInDouble(nextVal, out _, out _, out _);
 
-                        return sizeof(int) + ndigits + t.MetadataSize;
+                        return sizeof(int) + ndigits + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
                     case RespCommand.SETBIT:
                         var bOffset = input.parseState.GetLong(0);
                         return sizeof(int) + BitmapManager.NewBlockAllocLength(t.Length, bOffset);
@@ -202,14 +196,17 @@ namespace Garnet.server
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
                         var setValue = input.parseState.GetArgSliceByRef(0);
-                        return sizeof(int) + t.MetadataSize + setValue.Length;
+                        return sizeof(int) + t.MetadataSize + setValue.Length + functionsState.etagState.etagOffsetForVarlen;
 
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
-                        break;
+                        return sizeof(int) + input.parseState.GetArgSliceByRef(0).Length + (input.arg1 == 0 ? 0 : sizeof(long)) + functionsState.etagState.etagOffsetForVarlen;
                     case RespCommand.PERSIST:
                         return sizeof(int) + t.LengthWithoutMetadata;
-
+                    case RespCommand.SETIFMATCH:
+                        var newValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                        int metadataSize = input.arg1 == 0 ? t.MetadataSize : sizeof(long);
+                        return sizeof(int) + newValue.Length + EtagConstants.EtagSize + metadataSize;
                     case RespCommand.EXPIRE:
                     case RespCommand.PEXPIRE:
                     case RespCommand.EXPIREAT:
@@ -218,10 +215,10 @@ namespace Garnet.server
 
                     case RespCommand.SETRANGE:
                         var offset = input.parseState.GetInt(0);
-                        var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                        newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
-                        if (newValue.Length + offset > t.LengthWithoutMetadata)
-                            return sizeof(int) + newValue.Length + offset + t.MetadataSize;
+                        if (newValue.Length + offset > t.LengthWithoutMetadata - functionsState.etagState.etagOffsetForVarlen)
+                            return sizeof(int) + newValue.Length + offset + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
                         return sizeof(int) + t.Length;
 
                     case RespCommand.GETDEL:
@@ -240,7 +237,7 @@ namespace Garnet.server
                         {
                             var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
                             // compute metadata for result
-                            var metadataSize = input.arg1 switch
+                            metadataSize = input.arg1 switch
                             {
                                 -1 => 0,
                                 0 => t.MetadataSize,

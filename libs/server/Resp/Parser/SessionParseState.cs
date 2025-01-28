@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using Garnet.common;
 using Garnet.common.Parsing;
 using Tsavorite.core;
@@ -334,7 +335,7 @@ namespace Garnet.server
             ref var slice = ref Unsafe.AsRef<ArgSlice>(bufferPtr + i);
 
             // Parse RESP string header
-            if (!RespReadUtils.ReadUnsignedLengthHeader(out slice.length, ref ptr, end))
+            if (!RespReadUtils.TryReadUnsignedLengthHeader(out slice.length, ref ptr, end))
             {
                 return false;
             }

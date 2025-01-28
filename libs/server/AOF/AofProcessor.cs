@@ -344,10 +344,10 @@ namespace Garnet.server
             ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
             var valB = garnetObjectSerializer.Deserialize(value.ToByteArray());
 
-            var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(outputPtr, outputLength) };
             basicContext.Upsert(ref keyB, ref valB);
-            if (!output.spanByteAndMemory.IsSpanByte)
-                output.spanByteAndMemory.Memory.Dispose();
+            if (!output.SpanByteAndMemory.IsSpanByte)
+                output.SpanByteAndMemory.Memory.Dispose();
         }
 
         static unsafe void ObjectStoreRMW(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
@@ -364,12 +364,12 @@ namespace Garnet.server
             objectStoreInput.DeserializeFrom(curr);
 
             // Call RMW with the reconstructed key & ObjectInput
-            var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(outputPtr, outputLength) };
             if (basicContext.RMW(ref keyB, ref objectStoreInput, ref output).IsPending)
                 basicContext.CompletePending(true);
 
-            if (!output.spanByteAndMemory.IsSpanByte)
-                output.spanByteAndMemory.Memory.Dispose();
+            if (!output.SpanByteAndMemory.IsSpanByte)
+                output.SpanByteAndMemory.Memory.Dispose();
         }
 
         static unsafe void ObjectStoreDelete(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext, byte* ptr)

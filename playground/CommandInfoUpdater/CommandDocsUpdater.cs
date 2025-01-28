@@ -11,6 +11,7 @@ namespace CommandInfoUpdater
 {
     public class CommandDocsUpdater
     {
+        const int QUERY_CMD_BATCH_SIZE = 25;
         private static readonly string CommandDocsFileName = "RespCommandsDocs.json";
         private static readonly string GarnetCommandDocsJsonPath = "GarnetCommandsDocs.json";
 
@@ -59,11 +60,18 @@ namespace CommandInfoUpdater
             IDictionary<string, RespCommandDocs> queriedCommandsDocs = new Dictionary<string, RespCommandDocs>();
             var commandsToQuery = commandsToAdd.Keys.Select(k => k.Command)
                 .Where(c => updatedCommandsInfo.ContainsKey(c) && !updatedCommandsInfo[c].IsInternal).ToArray();
-            if (commandsToQuery.Length > 0 && !TryGetCommandsDocs(commandsToQuery, respServerPort, respServerHost,
-                    logger, out queriedCommandsDocs))
+            if (commandsToQuery.Length > 0)
             {
-                logger.LogError("Unable to get RESP command docs from local RESP server.");
-                return false;
+                for (var i = 0; i < commandsToQuery.Length; i += QUERY_CMD_BATCH_SIZE)
+                {
+                    var batchToQuery = commandsToQuery.Skip(i).Take(QUERY_CMD_BATCH_SIZE).ToArray();
+                    if (!TryGetCommandsDocs(batchToQuery, respServerPort, respServerHost,
+                            logger, ref queriedCommandsDocs))
+                    {
+                        logger.LogError("Unable to get RESP command info from local RESP server.");
+                        return false;
+                    }
+                }
             }
 
             var additionalCommandsDocs = new Dictionary<string, RespCommandDocs>();
@@ -71,24 +79,24 @@ namespace CommandInfoUpdater
             {
                 if (!additionalCommandsDocs.ContainsKey(cmd))
                 {
-                    var baseCommandDocs = queriedCommandsDocs.TryGetValue(cmd, out var doc)
-                        ? doc
-                        : garnetCommandsDocs[cmd];
+                    var inQueried = queriedCommandsDocs.TryGetValue(cmd, out var queriedCommandDocs);
+                    var inGarnet = garnetCommandsDocs.TryGetValue(cmd, out var garnetCommandDocs);
+                    var baseCommandDocs = inGarnet ? garnetCommandDocs : queriedCommandDocs;
 
                     RespCommandDocs[] subCommandsDocs;
-                    if (garnetCommandsDocs.ContainsKey(cmd) && queriedCommandsDocs.ContainsKey(cmd))
+                    if (inQueried && inGarnet)
                     {
                         var subCommandsInfoMap = new Dictionary<string, RespCommandDocs>();
 
-                        if (garnetCommandsDocs.TryGetValue(cmd, out var garnetCmdDocs) && garnetCmdDocs.SubCommands != null)
+                        if (garnetCommandDocs.SubCommands != null)
                         {
-                            foreach (var sc in garnetCmdDocs.SubCommands)
+                            foreach (var sc in garnetCommandDocs.SubCommands)
                                 subCommandsInfoMap.Add(sc.Name, sc);
                         }
 
-                        if (queriedCommandsDocs.TryGetValue(cmd, out var queriedCmdDocs) && queriedCmdDocs.SubCommands != null)
+                        if (queriedCommandDocs.SubCommands != null)
                         {
-                            foreach (var sc in queriedCmdDocs.SubCommands)
+                            foreach (var sc in queriedCommandDocs.SubCommands)
                             {
                                 subCommandsInfoMap.TryAdd(sc.Name, sc);
                             }
@@ -134,14 +142,10 @@ namespace CommandInfoUpdater
         /// <param name="commandDocs">Queried commands docs</param>
         /// <returns>True if succeeded</returns>
         private static unsafe bool TryGetCommandsDocs(string[] commandsToQuery, int respServerPort,
-            IPAddress respServerHost, ILogger logger, out IDictionary<string, RespCommandDocs> commandDocs)
+            IPAddress respServerHost, ILogger logger, ref IDictionary<string, RespCommandDocs> commandDocs)
         {
-            commandDocs = default;
-
             // If there are no commands to query, return
             if (commandsToQuery.Length == 0) return true;
-
-            var tmpCommandsDocs = new Dictionary<string, RespCommandDocs>();
 
             // Get a map of supported commands to Garnet's RespCommand & ArrayCommand for the parser
             var supportedCommands = new ReadOnlyDictionary<string, RespCommand>(
@@ -171,10 +175,9 @@ namespace CommandInfoUpdater
                     return false;
                 }
 
-                tmpCommandsDocs.Add(cmdName, cmdDocs);
+                commandDocs.Add(cmdName, cmdDocs);
             }
 
-            commandDocs = tmpCommandsDocs;
             return true;
         }
 
@@ -212,7 +215,7 @@ namespace CommandInfoUpdater
                     : existingCommandsDocs[command.Command].SubCommands.Select(sc => sc.Name).ToArray();
                 var remainingSubCommands = existingSubCommands == null ? null :
                     command.SubCommands == null ? existingSubCommands :
-                    existingSubCommands.Except(command.SubCommands.Keys).ToArray();
+                    [.. existingSubCommands.Except(command.SubCommands.Keys)];
 
                 // Create updated command docs based on existing command
                 var existingCommandDoc = existingCommandsDocs[command.Command];
@@ -227,7 +230,7 @@ namespace CommandInfoUpdater
                     existingCommandDoc.Arguments,
                     remainingSubCommands == null || remainingSubCommands.Length == 0
                         ? null
-                        : existingCommandDoc.SubCommands.Where(sc => remainingSubCommands.Contains(sc.Name)).ToArray());
+                        : [.. existingCommandDoc.SubCommands.Where(sc => remainingSubCommands.Contains(sc.Name))]);
 
                 updatedCommandsDocs.Add(updatedCommandDoc.Name, updatedCommandDoc);
             }
@@ -267,7 +270,7 @@ namespace CommandInfoUpdater
                     // Update sub-commands to contain supported sub-commands only
                     updatedSubCommandsDocs = command.SubCommands == null
                         ? null
-                        : baseCommandDocs.SubCommands.Where(sc => command.SubCommands.Keys.Contains(sc.Name)).ToList();
+                        : [.. baseCommandDocs.SubCommands.Where(sc => command.SubCommands.Keys.Contains(sc.Name))];
                 }
 
                 // Create updated command docs based on base command & updated sub-commands
@@ -280,7 +283,7 @@ namespace CommandInfoUpdater
                     baseCommandDocs.DocFlags,
                     baseCommandDocs.ReplacedBy,
                     baseCommandDocs.Arguments,
-                    updatedSubCommandsDocs?.ToArray());
+                    updatedSubCommandsDocs?.OrderBy(sc => sc.Name).ToArray());
 
                 updatedCommandsDocs.Add(updatedCommandDocs.Name, updatedCommandDocs);
             }

@@ -99,7 +99,7 @@ namespace Garnet.cluster
                 {
                     var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
                         respCommandName ?? command.ToString());
-                    while (!RespWriteUtils.WriteError(errorMessage, ref this.dcurr, this.dend))
+                    while (!RespWriteUtils.TryWriteError(errorMessage, ref this.dcurr, this.dend))
                         SendAndReset();
                 }
             }

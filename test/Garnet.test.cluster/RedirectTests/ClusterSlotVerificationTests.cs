@@ -58,6 +58,8 @@ namespace Garnet.test.cluster
                 new PERSIST(),
                 new EXPIRE(),
                 new TTL(),
+                new DUMP(),
+                new RESTORE(),
                 new SDIFFSTORE(),
                 new SDIFF(),
                 new SMOVE(),
@@ -127,6 +129,16 @@ namespace Garnet.test.cluster
                 new HEXISTS(),
                 new HKEYS(),
                 new HINCRBY(),
+                new HEXPIRE(),
+                new HPEXPIRE(),
+                new HEXPIREAT(),
+                new HPEXPIREAT(),
+                new HTTL(),
+                new HPTTL(),
+                new HEXPIRETIME(),
+                new HPEXPIRETIME(),
+                new HPERSIST(),
+                new HCOLLECT(),
                 new CLUSTERGETPROC(),
                 new CLUSTERSETPROC(),
                 new WATCH(),
@@ -250,6 +262,8 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("DUMP")]
+        [TestCase("RESTORE")]
         [TestCase("SDIFFSTORE")]
         [TestCase("SDIFF")]
         [TestCase("SMOVE")]
@@ -317,6 +331,16 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("HEXPIRE")]
+        [TestCase("HPEXPIRE")]
+        [TestCase("HEXPIREAT")]
+        [TestCase("HPEXPIREAT")]
+        [TestCase("HTTL")]
+        [TestCase("HPTTL")]
+        [TestCase("HEXPIRETIME")]
+        [TestCase("HPEXPIRETIME")]
+        [TestCase("HPERSIST")]
+        [TestCase("HCOLLECT")]
         [TestCase("CLUSTERGETPROC")]
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCH")]
@@ -402,6 +426,8 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("DUMP")]
+        [TestCase("RESTORE")]
         [TestCase("SDIFFSTORE")]
         [TestCase("SDIFF")]
         [TestCase("SMOVE")]
@@ -471,6 +497,16 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("HEXPIRE")]
+        [TestCase("HPEXPIRE")]
+        [TestCase("HEXPIREAT")]
+        [TestCase("HPEXPIREAT")]
+        [TestCase("HTTL")]
+        [TestCase("HPTTL")]
+        [TestCase("HEXPIRETIME")]
+        [TestCase("HPEXPIRETIME")]
+        [TestCase("HPERSIST")]
+        [TestCase("HCOLLECT")]
         [TestCase("CLUSTERGETPROC")]
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]
@@ -565,6 +601,8 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("DUMP")]
+        [TestCase("RESTORE")]
         [TestCase("SDIFFSTORE")]
         [TestCase("SDIFF")]
         [TestCase("SMOVE")]
@@ -634,6 +672,16 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("HEXPIRE")]
+        [TestCase("HPEXPIRE")]
+        [TestCase("HEXPIREAT")]
+        [TestCase("HPEXPIREAT")]
+        [TestCase("HTTL")]
+        [TestCase("HPTTL")]
+        [TestCase("HEXPIRETIME")]
+        [TestCase("HPEXPIRETIME")]
+        [TestCase("HPERSIST")]
+        [TestCase("HCOLLECT")]
         [TestCase("CLUSTERGETPROC")]
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]
@@ -788,6 +836,16 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("HEXPIRE")]
+        [TestCase("HPEXPIRE")]
+        [TestCase("HEXPIREAT")]
+        [TestCase("HPEXPIREAT")]
+        [TestCase("HTTL")]
+        [TestCase("HPTTL")]
+        [TestCase("HEXPIRETIME")]
+        [TestCase("HPEXPIRETIME")]
+        [TestCase("HPERSIST")]
+        [TestCase("HCOLLECT")]
         [TestCase("CLUSTERGETPROC")]
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]
@@ -883,6 +941,8 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("DUMP")]
+        [TestCase("RESTORE")]
         [TestCase("SDIFFSTORE")]
         [TestCase("SDIFF")]
         [TestCase("SMOVE")]
@@ -950,6 +1010,16 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("HEXPIRE")]
+        [TestCase("HPEXPIRE")]
+        [TestCase("HEXPIREAT")]
+        [TestCase("HPEXPIREAT")]
+        [TestCase("HTTL")]
+        [TestCase("HPTTL")]
+        [TestCase("HEXPIRETIME")]
+        [TestCase("HPEXPIRETIME")]
+        [TestCase("HPERSIST")]
+        [TestCase("HCOLLECT")]
         [TestCase("CLUSTERGETPROC")]
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]
@@ -1063,6 +1133,8 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("DUMP")]
+        [TestCase("RESTORE")]
         [TestCase("SDIFFSTORE")]
         [TestCase("SDIFF")]
         [TestCase("SMOVE")]
@@ -1130,6 +1202,16 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("HEXPIRE")]
+        [TestCase("HPEXPIRE")]
+        [TestCase("HEXPIREAT")]
+        [TestCase("HPEXPIREAT")]
+        [TestCase("HTTL")]
+        [TestCase("HPTTL")]
+        [TestCase("HEXPIRETIME")]
+        [TestCase("HPEXPIRETIME")]
+        [TestCase("HPERSIST")]
+        [TestCase("HCOLLECT")]
         [TestCase("CLUSTERGETPROC")]
         [TestCase("CLUSTERSETPROC")]
         [TestCase("WATCHMS")]

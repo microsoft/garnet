@@ -120,11 +120,11 @@ namespace Garnet.cluster
                         continue;
                     }
 
-                    if (!ClusterSession.Expired(ref value.garnetObject))
+                    if (!ClusterSession.Expired(ref value.GarnetObject))
                     {
-                        var objectData = GarnetObjectSerializer.Serialize(value.garnetObject);
+                        var objectData = GarnetObjectSerializer.Serialize(value.GarnetObject);
 
-                        if (!WriteOrSendObjectStoreKeyValuePair(key, objectData, value.garnetObject.Expiration))
+                        if (!WriteOrSendObjectStoreKeyValuePair(key, objectData, value.GarnetObject.Expiration))
                             return false;
                     }
                 }

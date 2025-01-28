@@ -126,7 +126,9 @@ namespace Garnet.test.cluster
             bool disablePubSub = true,
             int metricsSamplingFrequency = 0,
             bool enableLua = false,
-            bool asyncReplay = false)
+            bool asyncReplay = false,
+            LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
+            string luaMemoryLimit = "")
         {
             endpoints = TestUtils.GetEndPoints(shards, 7000);
             nodes = TestUtils.CreateGarnetCluster(
@@ -159,7 +161,9 @@ namespace Garnet.test.cluster
                 authenticationSettings: authenticationSettings,
                 metricsSamplingFrequency: metricsSamplingFrequency,
                 enableLua: enableLua,
-                asyncReplay: asyncReplay);
+                asyncReplay: asyncReplay,
+                luaMemoryMode: luaMemoryMode,
+                luaMemoryLimit: luaMemoryLimit);
 
             foreach (var node in nodes)
                 node.Start();
