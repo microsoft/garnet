@@ -281,7 +281,7 @@ namespace Garnet.cluster
                         Debug.Assert(t != null);
                         if (t.remoteNodeId == rss.replicaNodeId)
                         {
-                            tasks[i] = rss.GetAofSyncTask;
+                            tasks[i] = rss.AofSyncTask;
                             t.Dispose();
                             added = true;
                             break;
@@ -301,7 +301,7 @@ namespace Garnet.cluster
                         Array.Clear(old_tasks);
                     }
                     // Add new AOF sync task
-                    tasks[numTasks++] = rss.GetAofSyncTask;
+                    tasks[numTasks++] = rss.AofSyncTask;
                 }
 
                 success = true;
@@ -315,9 +315,9 @@ namespace Garnet.cluster
                     foreach (var rss in replicaSyncSessions)
                     {
                         if (rss == null) continue;
-                        if (rss.GetAofSyncTask != null)
+                        if (rss.AofSyncTask != null)
                         {
-                            rss.GetAofSyncTask.Dispose();
+                            rss.AofSyncTask.Dispose();
                         }
                     }
                 }

@@ -3,6 +3,9 @@
 
 namespace Garnet.cluster
 {
+    /// <summary>
+    /// Replication attach sync status
+    /// </summary>
     enum SyncStatus : byte
     {
         SUCCESS,
@@ -11,6 +14,9 @@ namespace Garnet.cluster
         INITIALIZING
     }
 
+    /// <summary>
+    /// Replication sync status info
+    /// </summary>
     struct SyncStatusInfo
     {
         public SyncStatus syncStatus;
