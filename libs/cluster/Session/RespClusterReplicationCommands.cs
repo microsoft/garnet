@@ -469,6 +469,7 @@ namespace Garnet.cluster
                     var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);
                     value.Expiration = expiration;
                     _ = basicGarnetApi.SET(key, value);
+                    i++;
                 }
             }
 
