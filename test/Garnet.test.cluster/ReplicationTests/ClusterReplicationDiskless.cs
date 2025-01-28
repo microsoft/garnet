@@ -42,9 +42,36 @@ namespace Garnet.test.cluster
             context?.TearDown();
         }
 
+        void PopulatePrimary(int primaryIndex, bool disableObjects, bool performRMW)
+        {
+            context.kvPairs = [];
+            context.kvPairsObj = [];
+            var addCount = 5;
+            var keyLength = 16;
+            var kvpairCount = keyCount;
+            context.kvPairs = [];
+            context.kvPairsObj = [];
+            // New insert
+            if (!performRMW)
+                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex: primaryIndex);
+            else
+                context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, primaryIndex: 0, addCount);
+
+            if (!disableObjects)
+                context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, primaryIndex: 0);
+        }
+
+        void Validate(int primaryIndex, int replicaIndex, bool disableObjects)
+        {
+            // Validate replica data
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex: replicaIndex, primaryIndex: primaryIndex);
+            if (disableObjects)
+                context.ValidateNodeObjects(ref context.kvPairsObj, replicaIndex);
+        }
+
         [Test, Order(1)]
         [Category("REPLICATION")]
-        public void ClusterSimpleAttachSync([Values] bool disableObjects)
+        public void ClusterSimpleAttachDisklessSync([Values] bool disableObjects, [Values] bool performRMW)
         {
             var nodes_count = 2;
             var primaryIndex = 0;
@@ -58,14 +85,11 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
 
-            // Populate Primary
-            var keyLength = 16;
-            var kvpairCount = keyCount;
-            context.kvPairs = [];
-            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
-
             // Ensure node is known
             context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Populate Primary
+            PopulatePrimary(primaryIndex, disableObjects, performRMW);
 
             // Attach sync session
             _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
@@ -74,7 +98,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
 
             // Validate replica data
-            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex: replicaIndex, primaryIndex: primaryIndex);
+            Validate(primaryIndex, replicaIndex, disableObjects);
         }
     }
 }
