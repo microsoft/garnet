@@ -1025,7 +1025,7 @@ namespace Garnet.test.cluster
             if (disableObjects)
                 context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex: replicaIndex, primaryIndex: newPrimaryIndex);
             else
-                context.ValidateNodeObjects(ref context.kvPairsObj, nodeIndex: newPrimaryIndex, set: set);
+                context.ValidateNodeObjects(ref context.kvPairsObj, replicaIndex: newPrimaryIndex, set: set);
         }
 
         [Test, Order(21)]
