@@ -14,14 +14,17 @@ namespace Garnet.cluster
     {
         SyncStatusInfo ssInfo;
         Task<bool> flushTask;
-        AofSyncTaskInfo aofSyncTask = null;
-
         bool sendMainStore = false;
         bool sendObjectStore = false;
         bool truncatedAof = false;
         bool fullSync = false;
 
-        public bool IsConnected => aofSyncTask != null && aofSyncTask.IsConnected;
+        /// <summary>
+        /// Get the associated aof sync task instance with this replica sync session
+        /// </summary>
+        public AofSyncTaskInfo AofSyncTask { get; private set; } = null;
+
+        public bool IsConnected => AofSyncTask != null && AofSyncTask.IsConnected;
 
         public bool Failed => ssInfo.syncStatus == SyncStatus.FAILED;
 
@@ -54,8 +57,8 @@ namespace Garnet.cluster
         /// </summary>
         public void Connect()
         {
-            if (!aofSyncTask.IsConnected)
-                aofSyncTask.garnetClient.Connect();
+            if (!AofSyncTask.IsConnected)
+                AofSyncTask.garnetClient.Connect();
         }
 
         /// <summary>
@@ -66,7 +69,7 @@ namespace Garnet.cluster
         public Task<string> ExecuteAsync(params string[] commands)
         {
             WaitForFlush().GetAwaiter().GetResult();
-            return aofSyncTask.garnetClient.ExecuteAsync(commands);
+            return AofSyncTask.garnetClient.ExecuteAsync(commands);
         }
 
         /// <summary>
@@ -75,7 +78,7 @@ namespace Garnet.cluster
         public void InitializeIterationBuffer()
         {
             WaitForFlush().GetAwaiter().GetResult();
-            aofSyncTask.garnetClient.InitializeIterationBuffer();
+            AofSyncTask.garnetClient.InitializeIterationBuffer();
         }
 
         /// <summary>
@@ -85,8 +88,8 @@ namespace Garnet.cluster
         public void SetClusterSyncHeader(bool isMainStore)
         {
             WaitForFlush().GetAwaiter().GetResult();
-            if (aofSyncTask.garnetClient.NeedsInitialization)
-                aofSyncTask.garnetClient.SetClusterSyncHeader(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, isMainStore: isMainStore);
+            if (AofSyncTask.garnetClient.NeedsInitialization)
+                AofSyncTask.garnetClient.SetClusterSyncHeader(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, isMainStore: isMainStore);
         }
 
         /// <summary>
@@ -99,7 +102,7 @@ namespace Garnet.cluster
         public bool TryWriteKeyValueSpanByte(ref SpanByte key, ref SpanByte value, out Task<string> task)
         {
             WaitForFlush().GetAwaiter().GetResult();
-            return aofSyncTask.garnetClient.TryWriteKeyValueSpanByte(ref key, ref value, out task);
+            return AofSyncTask.garnetClient.TryWriteKeyValueSpanByte(ref key, ref value, out task);
         }
 
         /// <summary>
@@ -113,7 +116,7 @@ namespace Garnet.cluster
         public bool TryWriteKeyValueByteArray(byte[] key, byte[] value, long expiration, out Task<string> task)
         {
             WaitForFlush().GetAwaiter().GetResult();
-            return aofSyncTask.garnetClient.TryWriteKeyValueByteArray(key, value, expiration, out task);
+            return AofSyncTask.garnetClient.TryWriteKeyValueByteArray(key, value, expiration, out task);
         }
 
         /// <summary>
@@ -123,7 +126,7 @@ namespace Garnet.cluster
         public void SendAndResetIterationBuffer(TimeSpan timeout, CancellationToken token)
         {
             WaitForFlush().GetAwaiter().GetResult();
-            SetFlushTask(aofSyncTask.garnetClient.SendAndResetIterationBuffer(), timeout: timeout, token: token);
+            SetFlushTask(AofSyncTask.garnetClient.SendAndResetIterationBuffer(), timeout: timeout, token: token);
         }
         #endregion
 
@@ -131,50 +134,7 @@ namespace Garnet.cluster
         /// Associated aof sync task instance with this replica sync session
         /// </summary>
         /// <param name="aofSyncTask"></param>
-        public void AddAofSyncTask(AofSyncTaskInfo aofSyncTask) => this.aofSyncTask = aofSyncTask;
-
-        /// <summary>
-        /// Get the associated aof sync task instance with this replica sync session
-        /// </summary>
-        public AofSyncTaskInfo GetAofSyncTask => aofSyncTask;
-
-        /// <summary>
-        /// Wait until sync of checkpoint is completed
-        /// </summary>
-        /// <returns></returns>
-        public async Task CompletePending()
-        {
-            while (ssInfo.syncStatus == SyncStatus.INPROGRESS)
-                await Task.Yield();
-        }
-
-        /// <summary>
-        /// Should stream
-        /// </summary>
-        /// <returns></returns>
-        public bool ShouldStreamCheckpoint()
-        {
-            // TODO: implement disk-based logic if possible
-            return clusterProvider.serverOptions.ReplicaDisklessSync ?
-                ShouldStreamDisklessCheckpoint() : true;
-
-            bool ShouldStreamDisklessCheckpoint()
-            {
-                var localPrimaryReplId = clusterProvider.replicationManager.PrimaryReplId;
-                var sameHistory = localPrimaryReplId.Equals(replicaSyncMetadata.currentPrimaryReplId, StringComparison.Ordinal);
-                sendMainStore = !sameHistory || replicaSyncMetadata.currentStoreVersion != currentStoreVersion;
-                sendObjectStore = !sameHistory || replicaSyncMetadata.currentObjectStoreVersion != currentObjectStoreVersion;
-                truncatedAof = replicaSyncMetadata.currentAofTailAddress < aofSyncTask.StartAddress;
-
-                // We need to stream checkpoint if any of the following conditions are met:
-                // 1. Replica has different history than primary
-                // 2. Replica has different main store version than primary
-                // 3. Replica has different object store version than primary
-                // 4. Replica has truncated AOF
-                fullSync = sendMainStore || sendObjectStore || truncatedAof;
-                return fullSync;
-            }
-        }
+        public void AddAofSyncTask(AofSyncTaskInfo aofSyncTask) => AofSyncTask = aofSyncTask;
 
         /// <summary>
         /// Set status of replica sync session
@@ -230,57 +190,101 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Wait until sync of checkpoint is completed
+        /// </summary>
+        /// <returns></returns>
+        public async Task WaitForSyncCompletion()
+        {
+            while (ssInfo.syncStatus is not SyncStatus.SUCCESS and not SyncStatus.FAILED)
+                await Task.Yield();
+        }
+
+        /// <summary>
+        /// Should stream
+        /// </summary>
+        /// <returns></returns>
+        public bool NeedToFullSync()
+        {
+            // TODO: consolidate disk-based logic
+            return clusterProvider.serverOptions.ReplicaDisklessSync ?
+                ShouldStreamDisklessCheckpoint() : true;
+
+            bool ShouldStreamDisklessCheckpoint()
+            {
+                var localPrimaryReplId = clusterProvider.replicationManager.PrimaryReplId;
+                var sameHistory = localPrimaryReplId.Equals(replicaSyncMetadata.currentPrimaryReplId, StringComparison.Ordinal);
+                sendMainStore = !sameHistory || replicaSyncMetadata.currentStoreVersion != currentStoreVersion;
+                sendObjectStore = !sameHistory || replicaSyncMetadata.currentObjectStoreVersion != currentObjectStoreVersion;
+                truncatedAof = replicaSyncMetadata.currentAofTailAddress < AofSyncTask.StartAddress;
+
+                // We need to stream checkpoint if any of the following conditions are met:
+                // 1. Replica has different history than primary
+                // 2. Replica has different main store version than primary
+                // 3. Replica has different object store version than primary
+                // 4. Replica has truncated AOF
+                fullSync = sendMainStore || sendObjectStore || truncatedAof;
+                return fullSync;
+            }
+        }
+
+        /// <summary>
         /// Begin syncing AOF to the replica
         /// </summary>
         public async Task BeginAofSync()
         {
-            var aofSyncTask = this.aofSyncTask;
-            this.aofSyncTask = null;
-            var mmr = clusterProvider.serverOptions.MainMemoryReplication;
-            var aofNull = clusterProvider.serverOptions.UseAofNullDevice;
-
-            var canReplayFromAddress = aofSyncTask.StartAddress;
-            var replicaAofBeginAddress = replicaSyncMetadata.currentAofBeginAddress;
-            var replicaAofTailAddress = replicaSyncMetadata.currentAofTailAddress;
-
-            var currentAofBeginAddress = canReplayFromAddress;
-            var currentTailAofAddress = clusterProvider.storeWrapper.appendOnlyFile.TailAddress;
-
-            // TODO:
-            // If partial sync we need to calculate the beginAddress and endAddress of replica AOF
-            // to match the primary AOF
-            if (!fullSync)
+            try
             {
+                var aofSyncTask = AofSyncTask;
+                var mmr = clusterProvider.serverOptions.MainMemoryReplication;
+                var aofNull = clusterProvider.serverOptions.UseAofNullDevice;
 
+                var canReplayFromAddress = aofSyncTask.StartAddress;
+                var replicaAofBeginAddress = replicaSyncMetadata.currentAofBeginAddress;
+                var replicaAofTailAddress = replicaSyncMetadata.currentAofTailAddress;
+
+                var currentAofBeginAddress = canReplayFromAddress;
+                var currentTailAofAddress = clusterProvider.storeWrapper.appendOnlyFile.TailAddress;
+
+                // TODO:
+                // If partial sync we need to calculate the beginAddress and endAddress of replica AOF
+                // to match the primary AOF
+                if (!fullSync)
+                {
+
+                }
+
+                var recoverSyncMetadata = new SyncMetadata(
+                    fullSync: fullSync,
+                    originNodeRole: clusterProvider.clusterManager.CurrentConfig.LocalNodeRole,
+                    originNodeId: clusterProvider.clusterManager.CurrentConfig.LocalNodeId,
+                    currentPrimaryReplId: clusterProvider.replicationManager.PrimaryReplId,
+                    currentStoreVersion: currentStoreVersion,
+                    currentObjectStoreVersion: currentObjectStoreVersion,
+                    currentAofBeginAddress: currentAofBeginAddress,
+                    currentAofTailAddress: currentTailAofAddress,
+                    currentReplicationOffset: clusterProvider.replicationManager.ReplicationOffset,
+                    checkpointEntry: null);
+
+                var result = await aofSyncTask.garnetClient.ExecuteAttachSync(recoverSyncMetadata.ToByteArray());
+                if (!long.TryParse(result, out var syncFromAofAddress))
+                {
+                    logger?.LogError("Failed to parse syncFromAddress at {method}", nameof(BeginAofSync));
+                    SetStatus(SyncStatus.FAILED, "Failed to parse recovery offset");
+                    return;
+                }
+
+                // We have already added the iterator for the covered address above but replica might request an address
+                // that is ahead of the covered address so we should start streaming from that address in order not to
+                // introduce duplicate insertions.
+                if (!clusterProvider.replicationManager.TryAddReplicationTask(replicaSyncMetadata.originNodeId, syncFromAofAddress, out var aofSyncTaskInfo))
+                    throw new GarnetException("Failed trying to try update replication task");
+                if (!clusterProvider.replicationManager.TryConnectToReplica(replicaSyncMetadata.originNodeId, syncFromAofAddress, aofSyncTaskInfo, out _))
+                    throw new GarnetException("Failed connecting to replica for aofSync");
             }
-
-            var recoverSyncMetadata = new SyncMetadata(
-                fullSync: fullSync,
-                originNodeRole: clusterProvider.clusterManager.CurrentConfig.LocalNodeRole,
-                originNodeId: clusterProvider.clusterManager.CurrentConfig.LocalNodeId,
-                currentPrimaryReplId: clusterProvider.replicationManager.PrimaryReplId,
-                currentStoreVersion: currentStoreVersion,
-                currentObjectStoreVersion: currentObjectStoreVersion,
-                currentAofBeginAddress: currentAofBeginAddress,
-                currentAofTailAddress: currentTailAofAddress,
-                currentReplicationOffset: clusterProvider.replicationManager.ReplicationOffset,
-                checkpointEntry: null);
-
-            var result = await aofSyncTask.garnetClient.ExecuteAttachSync(recoverSyncMetadata.ToByteArray());
-            if (!long.TryParse(result, out var syncFromAofAddress))
+            finally
             {
-                logger?.LogError("Failed to parse syncFromAddress at {method}", nameof(BeginAofSync));
-                SetStatus(SyncStatus.FAILED, "Failed to parse recovery offset");
-                return;
+                AofSyncTask = null;
             }
-
-            // We have already added the iterator for the covered address above but replica might request an address
-            // that is ahead of the covered address so we should start streaming from that address in order not to
-            // introduce duplicate insertions.
-            if (!clusterProvider.replicationManager.TryAddReplicationTask(replicaSyncMetadata.originNodeId, syncFromAofAddress, out var aofSyncTaskInfo))
-                throw new GarnetException("Failed trying to try update replication task");
-            if (!clusterProvider.replicationManager.TryConnectToReplica(replicaSyncMetadata.originNodeId, syncFromAofAddress, aofSyncTaskInfo, out _))
-                throw new GarnetException("Failed connecting to replica for aofSync");
         }
     }
 }

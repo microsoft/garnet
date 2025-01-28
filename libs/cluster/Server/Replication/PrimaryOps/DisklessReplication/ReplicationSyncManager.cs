@@ -84,7 +84,7 @@ namespace Garnet.cluster
                 }
 
                 // Wait for main sync task to complete
-                await replicaSyncSession.CompletePending();
+                await replicaSyncSession.WaitForSyncCompletion();
 
                 // If session faulted return early
                 if (replicaSyncSession.Failed)
@@ -177,7 +177,7 @@ namespace Garnet.cluster
 
                             // If checkpoint is not needed mark this sync session as complete
                             // to avoid waiting for other replicas which may need to receive the latest checkpoint
-                            if (!sessions[i].ShouldStreamCheckpoint())
+                            if (!sessions[i].NeedToFullSync())
                             {
                                 sessions[i]?.SetStatus(SyncStatus.SUCCESS, "Partial sync");
                                 sessions[i] = null;
