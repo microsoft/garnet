@@ -34,6 +34,11 @@ namespace Garnet.server
             Items = items;
         }
 
+        private CollectionItemResult(bool isForceUnblocked)
+        {
+            IsForceUnblocked = isForceUnblocked;
+        }
+
         /// <summary>
         /// True if item was found
         /// </summary>
@@ -65,8 +70,18 @@ namespace Garnet.server
         internal double[] Scores { get; }
 
         /// <summary>
+        /// Gets a value indicating whether the item retrieval was force unblocked.
+        /// </summary>
+        internal readonly bool IsForceUnblocked { get; }
+
+        /// <summary>
         /// Instance of empty result
         /// </summary>
         internal static readonly CollectionItemResult Empty = new(null, item: null);
+
+        /// <summary>
+        /// Instance representing an Force Unblocked result.
+        /// </summary>
+        internal static readonly CollectionItemResult ForceUnblocked = new(true);
     }
 }
