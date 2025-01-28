@@ -5310,6 +5310,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task SetIfGreaterACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "SETIFGREATER",
+               [DoSetIfGreaterAsync]
+           );
+
+            static async Task DoSetIfGreaterAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringResultAsync("SETIFGREATER", ["foo", "rizz", "0"]);
+                ClassicAssert.IsNull(res);
+            }
+        }
+
+        [Test]
         public async Task GetIfNotMatchACLsAsync()
         {
             await CheckCommandsAsync(
