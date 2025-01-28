@@ -259,6 +259,7 @@ namespace Garnet.cluster
             return [.. replicationInfo];
         }
 
+        /// <inheritdoc />
         public (long replication_offset, RoleInfo[] replicaInfo) GetPrimaryInfo()
         {
             if (!serverOptions.EnableCluster)
@@ -269,6 +270,7 @@ namespace Garnet.cluster
             return (replicationManager.ReplicationOffset, replicationManager.GetReplicaInfo().Select(w => w.roleInfo).ToArray());
         }
 
+        /// <inheritdoc />
         public RoleInfo GetReplicaInfo()
         {
             if (!serverOptions.EnableCluster)
