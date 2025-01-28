@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
+using Garnet.common;
 
 namespace Garnet.server
 {
@@ -18,7 +19,7 @@ namespace Garnet.server
         /// <summary>
         /// Reader-writer lock for the underlying item array pointer
         /// </summary>
-        internal ReaderWriterLockSlim mapLock = new();
+        internal SingleWriterMultiReaderLock mapLock = new();
 
         /// <summary>
         /// The underlying array containing the items
@@ -84,27 +85,27 @@ namespace Garnet.server
         public bool TrySetValue(int id, ref T value)
         {
             // Try to perform set without taking a write lock first
-            mapLock.EnterUpgradeableReadLock();
+            mapLock.ReadLock();
             try
             {
                 // Try to set value without expanding map
                 if (this.TrySetValueUnsafe(id, ref value, noExpansion: true))
                     return true;
-
-                mapLock.EnterWriteLock();
-                try
-                {
-                    // Try to set value with expanding the map, if needed
-                    return this.TrySetValueUnsafe(id, ref value, noExpansion: false);
-                }
-                finally
-                {
-                    mapLock.ExitWriteLock();
-                }
             }
             finally
             {
-                mapLock.ExitUpgradeableReadLock();
+                mapLock.ReadUnlock();
+            }
+
+            mapLock.WriteLock();
+            try
+            {
+                // Try to set value with expanding the map, if needed
+                return this.TrySetValueUnsafe(id, ref value, noExpansion: false);
+            }
+            finally
+            {
+                mapLock.WriteUnlock();
             }
         }
 
