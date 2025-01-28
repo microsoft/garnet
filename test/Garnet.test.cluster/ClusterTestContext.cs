@@ -472,23 +472,23 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void ValidateNodeObjects(ref Dictionary<string, List<int>> kvPairsObj, int nodeIndex, bool set = false)
+        public void ValidateNodeObjects(ref Dictionary<string, List<int>> kvPairsObj, int replicaIndex, bool set = false)
         {
             foreach (var key in kvPairsObj.Keys)
             {
                 var elements = kvPairsObj[key];
                 List<int> result;
                 if (!set)
-                    result = clusterTestUtils.Lrange(nodeIndex, key, logger);
+                    result = clusterTestUtils.Lrange(replicaIndex, key, logger);
                 else
-                    result = clusterTestUtils.Smembers(nodeIndex, key, logger);
+                    result = clusterTestUtils.Smembers(replicaIndex, key, logger);
 
                 while (result.Count == 0)
                 {
                     if (!set)
-                        result = clusterTestUtils.Lrange(nodeIndex, key, logger);
+                        result = clusterTestUtils.Lrange(replicaIndex, key, logger);
                     else
-                        result = clusterTestUtils.Smembers(nodeIndex, key, logger);
+                        result = clusterTestUtils.Smembers(replicaIndex, key, logger);
                     ClusterTestUtils.BackOff(cancellationToken: cts.Token);
                 }
                 if (!set)
