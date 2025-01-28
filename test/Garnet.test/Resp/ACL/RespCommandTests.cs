@@ -781,6 +781,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ClientUnblockACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CLIENT UNBLOCK",
+                [DoClientUnblockAsync]
+            );
+
+            static async Task DoClientUnblockAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForLongResultAsync("CLIENT", ["UNBLOCK", "123"]);
+                ClassicAssert.AreEqual(0, count);
+            }
+        }
+
+        [Test]
         public async Task ClusterAddSlotsACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
@@ -5369,8 +5384,8 @@ namespace Garnet.test.Resp.ACL
 
             async Task DoSetIfNotExistAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("SETNX", [$"foo-{keyIx++}", "bar"]);
-                ClassicAssert.AreEqual(val, "OK");
+                var val = await client.ExecuteForLongResultAsync("SETNX", [$"foo-{keyIx++}", "bar"]);
+                ClassicAssert.AreEqual(1, val);
             }
         }
 

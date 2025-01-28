@@ -434,11 +434,17 @@ namespace Garnet.server
         {
             Debug.Assert(parseState.Count == 2);
             var key = parseState.GetArgSliceByRef(0);
-            var value = parseState.GetArgSliceByRef(1);
-            var getOption = ArgSlice.FromPinnedSpan(CmdStrings.NX);
-            parseState.InitializeWithArguments(key, value, getOption);
+            var sbKey = key.SpanByte;
 
-            return NetworkSETEXNX(ref storageApi);
+            var input = new RawStringInput(RespCommand.SETEXNX, ref parseState, startIdx: 1);
+            var status = storageApi.SET_Conditional(ref sbKey, ref input);
+
+            // The status returned for SETNX as NOTFOUND is the expected status in the happy path
+            var retVal = status == GarnetStatus.NOTFOUND ? 1 : 0;
+            while (!RespWriteUtils.TryWriteInt32(retVal, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
         }
 
         /// <summary>
@@ -964,10 +970,10 @@ namespace Garnet.server
             var resultSb = new StringBuilder();
             var cmdCount = 0;
 
-            foreach (var customCmd in storeWrapper.customCommandManager.customCommandsInfo.Values)
+            foreach (var customCmd in customCommandManagerSession.GetAllCustomCommandsInfos())
             {
                 cmdCount++;
-                resultSb.Append(customCmd.RespFormat);
+                resultSb.Append(customCmd.Value.RespFormat);
             }
 
             if (RespCommandsInfo.TryGetRespCommandsInfo(out var respCommandsInfo, true, logger))
@@ -1027,7 +1033,7 @@ namespace Garnet.server
                     respCommandCount = 0;
                 }
 
-                var commandCount = storeWrapper.customCommandManager.CustomCommandsInfoCount + respCommandCount;
+                var commandCount = customCommandManagerSession.GetCustomCommandInfoCount() + respCommandCount;
 
                 while (!RespWriteUtils.TryWriteInt32(commandCount, ref dcurr, dend))
                     SendAndReset();
@@ -1058,10 +1064,10 @@ namespace Garnet.server
                     resultSb.Append(cmdDocs.RespFormat);
                 }
 
-                foreach (var customCmd in storeWrapper.customCommandManager.customCommandsDocs.Values)
+                foreach (var customCmd in customCommandManagerSession.GetAllCustomCommandsDocs())
                 {
                     docsCount++;
-                    resultSb.Append(customCmd.RespFormat);
+                    resultSb.Append(customCmd.Value.RespFormat);
                 }
             }
             else
@@ -1070,7 +1076,7 @@ namespace Garnet.server
                 {
                     var cmdName = parseState.GetString(i);
                     if (RespCommandDocs.TryGetRespCommandDocs(cmdName, out var cmdDocs, true, true, logger) ||
-                        storeWrapper.customCommandManager.TryGetCustomCommandDocs(cmdName, out cmdDocs))
+                        customCommandManagerSession.TryGetCustomCommandDocs(cmdName, out cmdDocs))
                     {
                         docsCount++;
                         resultSb.Append(cmdDocs.RespFormat);
@@ -1123,7 +1129,7 @@ namespace Garnet.server
                     var cmdName = parseState.GetString(i);
 
                     if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
-                        storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo))
+                        customCommandManagerSession.TryGetCustomCommandInfo(cmdName, out cmdInfo))
                     {
                         while (!RespWriteUtils.TryWriteAsciiDirect(cmdInfo.RespFormat, ref dcurr, dend))
                             SendAndReset();

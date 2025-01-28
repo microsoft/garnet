@@ -47,17 +47,21 @@ namespace Garnet.server
             ReadOnlySpan<byte> optionsError = default;
 
             // XX & NX are mutually exclusive
-            if (options.HasFlag(SortedSetAddOption.XX) && options.HasFlag(SortedSetAddOption.NX))
+            if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX &&
+                (options & SortedSetAddOption.NX) == SortedSetAddOption.NX)
                 optionsError = CmdStrings.RESP_ERR_XX_NX_NOT_COMPATIBLE;
 
             // NX, GT & LT are mutually exclusive
-            if ((options.HasFlag(SortedSetAddOption.GT) && options.HasFlag(SortedSetAddOption.LT)) ||
-               ((options.HasFlag(SortedSetAddOption.GT) || options.HasFlag(SortedSetAddOption.LT)) &&
-                options.HasFlag(SortedSetAddOption.NX)))
+            if (((options & SortedSetAddOption.GT) == SortedSetAddOption.GT &&
+                 (options & SortedSetAddOption.LT) == SortedSetAddOption.LT) ||
+               (((options & SortedSetAddOption.GT) == SortedSetAddOption.GT ||
+                 (options & SortedSetAddOption.LT) == SortedSetAddOption.LT) &&
+                (options & SortedSetAddOption.NX) == SortedSetAddOption.NX))
                 optionsError = CmdStrings.RESP_ERR_GT_LT_NX_NOT_COMPATIBLE;
 
             // INCR supports only one score-element pair
-            if (options.HasFlag(SortedSetAddOption.INCR) && (input.parseState.Count - currTokenIdx > 2))
+            if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR &&
+                (input.parseState.Count - currTokenIdx > 2))
                 optionsError = CmdStrings.RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR;
 
             if (!optionsError.IsEmpty)
@@ -131,7 +135,7 @@ namespace Garnet.server
                     if (!sortedSetDict.TryGetValue(member, out var scoreStored))
                     {
                         // Don't add new member if XX flag is set
-                        if (options.HasFlag(SortedSetAddOption.XX)) continue;
+                        if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX) continue;
 
                         sortedSetDict.Add(member, score);
                         if (sortedSet.Add((score, member)))
@@ -143,7 +147,7 @@ namespace Garnet.server
                     else
                     {
                         // Update new score if INCR flag is set
-                        if (options.HasFlag(SortedSetAddOption.INCR))
+                        if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
                         {
                             score += scoreStored;
                             incrResult = score;
@@ -155,9 +159,9 @@ namespace Garnet.server
 
                         // Don't update existing member if NX flag is set
                         // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
-                        if (options.HasFlag(SortedSetAddOption.NX) ||
-                            (options.HasFlag(SortedSetAddOption.GT) && scoreStored > score) ||
-                            (options.HasFlag(SortedSetAddOption.LT) && scoreStored < score)) continue;
+                        if ((options & SortedSetAddOption.NX) == SortedSetAddOption.NX ||
+                            ((options & SortedSetAddOption.GT) == SortedSetAddOption.GT && scoreStored > score) ||
+                            ((options & SortedSetAddOption.LT) == SortedSetAddOption.LT && scoreStored < score)) continue;
 
                         sortedSetDict[member] = score;
                         var success = sortedSet.Remove((scoreStored, member));
@@ -166,12 +170,12 @@ namespace Garnet.server
                         Debug.Assert(success);
 
                         // If CH flag is set, add changed member to final count
-                        if (options.HasFlag(SortedSetAddOption.CH))
+                        if ((options & SortedSetAddOption.CH) == SortedSetAddOption.CH)
                             addedOrChanged++;
                     }
                 }
 
-                if (options.HasFlag(SortedSetAddOption.INCR))
+                if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
                 {
                     while (!RespWriteUtils.TryWriteDoubleBulkString(incrResult, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
