@@ -46,7 +46,7 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
-            aofSyncTask = null;
+            AofSyncTask = null;
             cts.Cancel();
             cts.Dispose();
             semaphore?.Dispose();
