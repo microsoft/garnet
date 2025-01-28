@@ -606,5 +606,31 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual("ERR syntax error", errorMsg);
             }
         }
+
+        [Test, Order(11)]
+        public void ClusterRoleCommand()
+        {
+            var node_count = 3;
+            var replica_count = node_count - 1;
+            context.CreateInstances(node_count, enableAOF: true);
+            context.CreateConnection();
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(1, replica_count, logger: context.logger);
+
+            var result = context.clusterTestUtils.GetServer(0).Execute("ROLE");
+            ClassicAssert.True(result.Length == 3);
+            ClassicAssert.AreEqual("master", result[0].ToString());
+            ClassicAssert.True(int.TryParse(result[1].ToString(), out _));
+            ClassicAssert.True(result[2].Length == 2);
+            ClassicAssert.AreEqual("127.0.0.1", result[2][0][0].ToString());
+            ClassicAssert.AreEqual("127.0.0.1", result[2][1][0].ToString());
+
+            result = context.clusterTestUtils.GetServer(1).Execute("ROLE");
+            ClassicAssert.True(result.Length == 5);
+            ClassicAssert.AreEqual("slave", result[0].ToString());
+            ClassicAssert.AreEqual("127.0.0.1", result[1].ToString());
+            ClassicAssert.True(int.TryParse(result[2].ToString(), out _));
+            ClassicAssert.AreEqual("connected", result[3].ToString());
+            ClassicAssert.True(int.TryParse(result[4].ToString(), out _));
+        }
     }
 }
