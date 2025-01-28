@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -63,10 +64,10 @@ namespace Garnet.cluster
             }
         }
 
-        public List<(int, ReplicaInfo)> GetReplicaInfo(long PrimaryReplicationOffset)
+        public List<(int count, RoleInfo roleInfo)> GetReplicaInfo(long PrimaryReplicationOffset)
         {
             // secondary0: ip=127.0.0.1,port=7001,state=online,offset=56,lag=0
-            List<(int, ReplicaInfo)> replicaInfo = new(numTasks);
+            List<(int, RoleInfo)> replicaInfo = new(numTasks);
 
             _lock.ReadLock();
             var current = clusterProvider.clusterManager.CurrentConfig;
@@ -83,9 +84,9 @@ namespace Garnet.cluster
                     {
                         address = address,
                         port = port,
-                        state = cr.garnetClient.IsConnected ? "online" : "offline",
-                        offset = cr.previousAddress,
-                        lag = cr.previousAddress - PrimaryReplicationOffset
+                        replication_state = cr.garnetClient.IsConnected ? "online" : "offline",
+                        replication_offset = cr.previousAddress,
+                        replication_lag = cr.previousAddress - PrimaryReplicationOffset
                     }));
                 }
             }

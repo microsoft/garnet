@@ -253,29 +253,27 @@ namespace Garnet.cluster
                 {
                     // replica0: ip=127.0.0.1,port=7001,state=online,offset=56,lag=0
                     foreach (var ri in replicaInfo)
-                        replicationInfo.Add(new($"slave{ri.Item1}", ri.Item2.ToString()));
+                        replicationInfo.Add(new($"slave{ri.count}", ri.roleInfo.ToString()));
                 }
             }
             return [.. replicationInfo];
         }
 
-        public (long replication_offset, ReplicaInfo[] replicaInfo) GetMasterInfo()
+        public (long replication_offset, RoleInfo[] replicaInfo) GetPrimaryInfo()
         {
             if (!serverOptions.EnableCluster)
             {
                 return (0, default);
             };
 
-            return (replicationManager.ReplicationOffset, replicationManager.GetReplicaInfo().Select(w => w.Item2).ToArray());
+            return (replicationManager.ReplicationOffset, replicationManager.GetReplicaInfo().Select(w => w.roleInfo).ToArray());
         }
 
-        public RoleReplicaInfo GetReplicaInfo()
+        public RoleInfo GetReplicaInfo()
         {
-            RoleReplicaInfo info;
-
             if (!serverOptions.EnableCluster)
             {
-                return new RoleReplicaInfo()
+                return new RoleInfo()
                 {
                 };
             }
@@ -283,13 +281,15 @@ namespace Garnet.cluster
             var config = clusterManager.CurrentConfig;
             clusterManager.GetConnectionInfo(config.LocalNodePrimaryId, out var connection);
 
-            info = new()
+            var (address, port) = config.GetLocalNodePrimaryAddress();
+            var info = new RoleInfo()
             {
+                address = address,
+                port = port,
                 replication_offset = replicationManager.ReplicationOffset,
                 replication_state = replicationManager.Recovering ? "sync" :
-                                        connection.connected ? "connected" : "connect"
+                        connection.connected ? "connected" : "connect"
             };
-            (info.master_host, info.master_port) = config.GetLocalNodePrimaryAddress();
 
             return info;
         }

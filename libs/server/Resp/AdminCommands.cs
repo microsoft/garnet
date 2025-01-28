@@ -673,7 +673,7 @@ namespace Garnet.server
             {
                 if (storeWrapper.clusterProvider.IsPrimary())
                 {
-                    var (replication_offset, replicaInfo) = storeWrapper.clusterProvider.GetMasterInfo();
+                    var (replication_offset, replicaInfo) = storeWrapper.clusterProvider.GetPrimaryInfo();
 
                     while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
@@ -695,7 +695,7 @@ namespace Garnet.server
                             SendAndReset();
                         while (!RespWriteUtils.TryWriteInt32(replice.port, ref dcurr, dend))
                             SendAndReset();
-                        while (!RespWriteUtils.TryWriteInt64(replice.offset, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteInt64(replice.replication_offset, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -709,10 +709,10 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteAsciiBulkString("slave", ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(role.master_host, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(role.address, ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteInt32(role.master_port, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(role.port, ref dcurr, dend))
                         SendAndReset();
 
                     while (!RespWriteUtils.TryWriteAsciiBulkString(role.replication_state, ref dcurr, dend))

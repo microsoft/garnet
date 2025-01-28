@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server.ACL;
@@ -50,9 +49,17 @@ namespace Garnet.server
         /// <returns></returns>
         MetricsItem[] GetBufferPoolStats();
 
-        (long replication_offset, ReplicaInfo[] replicaInfo) GetMasterInfo();
+        /// <summary>
+        /// Get info on primary from replica perspective.
+        /// </summary>
+        /// <returns></returns>
+        (long replication_offset, RoleInfo[] replicaInfo) GetPrimaryInfo();
 
-        RoleReplicaInfo GetReplicaInfo();
+        /// <summary>
+        /// Get info on replicas from primary perspective.
+        /// </summary>
+        /// <returns></returns>
+        RoleInfo GetReplicaInfo();
 
         /// <summary>
         /// Purger buffer pool for provided manager
