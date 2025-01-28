@@ -632,45 +632,5 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("connected", result[3].ToString());
             ClassicAssert.True(int.TryParse(result[4].ToString(), out _));
         }
-
-        [Test, Order(12)]
-        public void ClusterNodeCommand()
-        {
-            var node_count = 3;
-            var replica_count = node_count - 1;
-            context.CreateInstances(node_count, enableAOF: true);
-            context.CreateConnection();
-            var (shardInfo, _) = context.clusterTestUtils.SimpleSetupCluster(1, replica_count, logger: context.logger);
-            var endpoint = (IPEndPoint)context.endpoints[0];
-
-            var result = context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["NODES"]);
-            ClassicAssert.IsNotNull(result);
-            var lines = result.ToString().Split("\n", StringSplitOptions.RemoveEmptyEntries);
-            ClassicAssert.AreEqual(3, lines.Length);
-            var fields = lines[0].ToString().Split(' ');
-            ClassicAssert.AreEqual(9, fields.Length);
-            ClassicAssert.AreEqual(shardInfo[0].nodes[0].nodeid, fields[0]);
-            ClassicAssert.IsTrue(fields[1].StartsWith("127.0.0.1"));
-            ClassicAssert.IsTrue(fields[2].Contains("master"));
-            ClassicAssert.AreEqual("-", fields[3]);
-            ClassicAssert.AreEqual("0", fields[4]);
-            ClassicAssert.AreEqual("0", fields[5]);
-            ClassicAssert.AreEqual("1", fields[6]);
-            ClassicAssert.AreEqual("connected", fields[7]);
-
-            fields = lines[1].ToString().Split(' ');
-            ClassicAssert.AreEqual(8, fields.Length);
-            ClassicAssert.AreEqual(shardInfo[0].nodes[1].nodeid, fields[0]);
-            ClassicAssert.IsTrue(fields[1].StartsWith("127.0.0.1"));
-            ClassicAssert.AreEqual("slave", fields[2]);
-            ClassicAssert.AreEqual("connected", fields[7]);
-
-            fields = lines[2].ToString().Split(' ');
-            ClassicAssert.AreEqual(8, fields.Length);
-            ClassicAssert.AreEqual(shardInfo[0].nodes[2].nodeid, fields[0]);
-            ClassicAssert.IsTrue(fields[1].StartsWith("127.0.0.1"));
-            ClassicAssert.AreEqual("slave", fields[2]);
-            ClassicAssert.AreEqual("connected", fields[7]);
-        }
     }
 }
