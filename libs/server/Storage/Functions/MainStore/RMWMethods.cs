@@ -930,7 +930,7 @@ namespace Garnet.server
             {
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
-                    shouldUpdateEtag = false;
+                    shouldUpdateEtag = true;
                     // Copy input to value
                     Span<byte> dest = newValue.AsSpan(EtagConstants.EtagSize);
                     ReadOnlySpan<byte> src = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
