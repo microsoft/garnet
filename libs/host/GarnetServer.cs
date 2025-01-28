@@ -295,15 +295,14 @@ namespace Garnet
             kvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
             kvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
-            var checkpointFactory = opts.DeviceFactoryCreator();
             if (opts.EnableCluster)
             {
-                kvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(checkpointFactory,
+                kvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator,
                     new DefaultCheckpointNamingScheme(checkpointDir + "/Store/checkpoints"), isMainStore: true, logger);
             }
             else
             {
-                kvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(checkpointFactory,
+                kvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator,
                     new DefaultCheckpointNamingScheme(checkpointDir + "/Store/checkpoints"), removeOutdated: true);
             }
 
@@ -326,11 +325,11 @@ namespace Garnet
 
                 if (opts.EnableCluster)
                     objKvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(
-                        opts.DeviceFactoryCreator(),
+                        opts.DeviceFactoryCreator,
                         new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"),
                         isMainStore: false, logger);
                 else
-                    objKvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator(),
+                    objKvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator,
                         new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"),
                         removeOutdated: true);
 
@@ -398,9 +397,8 @@ namespace Garnet
                 logFactory?.Delete(new FileDescriptor { directoryName = "" });
                 if (opts.CheckpointDir != opts.LogDir && !string.IsNullOrEmpty(opts.CheckpointDir))
                 {
-                    var ckptdir = opts.DeviceFactoryCreator();
-                    ckptdir.Initialize(opts.CheckpointDir);
-                    ckptdir.Delete(new FileDescriptor { directoryName = "" });
+                    var checkpointDeviceFactory = opts.DeviceFactoryCreator.Create(opts.CheckpointDir);
+                    checkpointDeviceFactory.Delete(new FileDescriptor { directoryName = "" });
                 }
             }
         }

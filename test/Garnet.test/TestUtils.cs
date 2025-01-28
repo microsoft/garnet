@@ -76,6 +76,8 @@ namespace Garnet.test
         }
         internal static string AzureTestDirectory => TestContext.CurrentContext.Test.MethodName;
         internal const string AzureEmulatedStorageString = "UseDevelopmentStorage=true;";
+        internal static AzureStorageNamedDeviceFactoryCreator AzureStorageNamedDeviceFactoryCreator =
+            IsRunningAzureTests ? new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, null) : null;
 
         public const string certFile = "testcert.pfx";
         public const string certPassword = "placeholder";
@@ -287,8 +289,8 @@ namespace Garnet.test
                 MetricsSamplingFrequency = metricsSamplingFreq,
                 LatencyMonitor = latencyMonitor,
                 DeviceFactoryCreator = UseAzureStorage ?
-                      () => new AzureStorageNamedDeviceFactory(AzureEmulatedStorageString, logger)
-                    : () => new LocalStorageNamedDeviceFactory(logger: logger),
+                        logger == null ? TestUtils.AzureStorageNamedDeviceFactoryCreator : new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, logger)
+                        : new LocalStorageNamedDeviceFactoryCreator(logger: logger),
                 AuthSettings = authenticationSettings,
                 ExtensionBinPaths = extensionBinPaths,
                 ExtensionAllowUnsignedAssemblies = extensionAllowUnsignedAssemblies,
@@ -569,8 +571,8 @@ namespace Garnet.test
                     logger: logger)
                 : null,
                 DeviceFactoryCreator = UseAzureStorage ?
-                    () => new AzureStorageNamedDeviceFactory(AzureEmulatedStorageString, logger)
-                    : () => new LocalStorageNamedDeviceFactory(logger: logger),
+                    logger == null ? TestUtils.AzureStorageNamedDeviceFactoryCreator : new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, logger)
+                    : new LocalStorageNamedDeviceFactoryCreator(logger: logger),
                 MainMemoryReplication = MainMemoryReplication,
                 AofMemorySize = AofMemorySize,
                 OnDemandCheckpoint = OnDemandCheckpoint,
