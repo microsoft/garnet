@@ -304,6 +304,13 @@ namespace Garnet.server
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
 
+            if (result.IsForceUnblocked)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             if (!result.Found)
             {
                 while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
@@ -978,6 +985,12 @@ namespace Garnet.server
                 throw new GarnetException("Object store is disabled");
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs).Result;
+
+            if (result.IsForceUnblocked)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
+                    SendAndReset();
+            }
 
             if (!result.Found)
             {

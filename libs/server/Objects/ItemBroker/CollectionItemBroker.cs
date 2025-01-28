@@ -47,6 +47,17 @@ namespace Garnet.server
         private bool isStarted = false;
 
         /// <summary>
+        /// Tries to get the observer associated with the given session ID.
+        /// </summary>
+        /// <param name="sessionId">The ID of the session to retrieve the observer for.</param>
+        /// <param name="observer">When this method returns, contains the observer associated with the specified session ID, if the session ID is found; otherwise, null. This parameter is passed uninitialized.</param>
+        /// <returns>true if the observer is found; otherwise, false.</returns>
+        internal bool TryGetObserver(int sessionId, out CollectionItemObserver observer)
+        {
+            return SessionIdToObserver.TryGetValue(sessionId, out observer);
+        }
+
+        /// <summary>
         /// Asynchronously wait for item from collection object
         /// </summary>
         /// <param name="command">RESP command</param>
@@ -125,6 +136,7 @@ namespace Garnet.server
             }
             catch (OperationCanceledException)
             {
+                // Session is disposed
             }
 
             SessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);

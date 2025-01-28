@@ -232,6 +232,7 @@ namespace Garnet.server
         CLIENT_GETNAME,
         CLIENT_SETNAME,
         CLIENT_SETINFO,
+        CLIENT_UNBLOCK,
 
         MONITOR,
         MODULE,
@@ -391,6 +392,7 @@ namespace Garnet.server
             RespCommand.CLIENT_GETNAME,
             RespCommand.CLIENT_SETNAME,
             RespCommand.CLIENT_SETINFO,
+            RespCommand.CLIENT_UNBLOCK,
             // Command
             RespCommand.COMMAND,
             RespCommand.COMMAND_COUNT,
@@ -1762,6 +1764,10 @@ namespace Garnet.server
                     else if (subCommand.SequenceEqual(CmdStrings.SETINFO))
                     {
                         return RespCommand.CLIENT_SETINFO;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.UNBLOCK))
+                    {
+                        return RespCommand.CLIENT_UNBLOCK;
                     }
                 }
             }
