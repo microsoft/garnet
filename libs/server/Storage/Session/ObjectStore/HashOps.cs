@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -14,6 +15,8 @@ namespace Garnet.server
     /// </summary>
     sealed partial class StorageSession : IDisposable
     {
+        private SingleWriterMultiReaderLock _hcollectTaskLock;
+
         /// <summary>
         /// HashSet: Sets the specified fields to their respective values in the hash stored at key.
         /// Values of specified fields that exist in the hash are overwritten.
@@ -155,7 +158,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGET };
             var input = new ObjectInput(header, ref parseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
@@ -190,7 +193,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HMGET };
             var input = new ObjectInput(header, ref parseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
@@ -222,7 +225,7 @@ namespace Garnet.server
             var inputArg = 2; // Default RESP protocol version
             var input = new ObjectInput(header, inputArg);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
@@ -314,7 +317,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };
             var input = new ObjectInput(header, 1 << 2, seed);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
@@ -353,7 +356,7 @@ namespace Garnet.server
             var inputArg = (((count << 1) | 1) << 1) | (withValues ? 1 : 0);
             var input = new ObjectInput(header, inputArg, seed);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
             fields = default;
@@ -537,5 +540,127 @@ namespace Garnet.server
         public GarnetStatus HashIncrement<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
             => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+
+        /// <summary>
+        /// Sets the expiration time for the specified key.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="key">The key for which to set the expiration time.</param>
+        /// <param name="expireAt">The expiration time in ticks.</param>
+        /// <param name="isMilliseconds">Indicates whether the expiration time is in milliseconds.</param>
+        /// <param name="expireOption">The expiration option to use.</param>
+        /// <param name="input">The input object containing the operation details.</param>
+        /// <param name="outputFooter">The output footer object to store the result.</param>
+        /// <param name="objectContext">The object context for the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        public GarnetStatus HashExpire<TObjectContext>(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            var expireAtUtc = isMilliseconds ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expireAt) : ConvertUtils.UnixTimestampInSecondsToTicks(expireAt);
+            var expiryLength = NumUtils.CountDigits(expireAtUtc);
+            var expirySlice = scratchBufferManager.CreateArgSlice(expiryLength);
+            var expirySpan = expirySlice.Span;
+            NumUtils.WriteInt64(expireAtUtc, expirySpan);
+
+            parseState.Initialize(1 + input.parseState.Count);
+            parseState.SetArgument(0, expirySlice);
+            parseState.SetArguments(1, input.parseState.Parameters);
+
+            var innerInput = new ObjectInput(input.header, ref parseState, startIdx: 0, arg1: (int)expireOption);
+
+            return RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref outputFooter);
+        }
+
+        /// <summary>
+        /// Returns the time-to-live (TTL) of a hash key.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="key">The key of the hash.</param>
+        /// <param name="isMilliseconds">Indicates whether the TTL is in milliseconds.</param>
+        /// <param name="isTimestamp">Indicates whether the TTL is a timestamp.</param>
+        /// <param name="input">The input object containing the operation details.</param>
+        /// <param name="outputFooter">The output footer object to store the result.</param>
+        /// <param name="objectContext">The object context for the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        public GarnetStatus HashTimeToLive<TObjectContext>(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            var innerInput = new ObjectInput(input.header, ref input.parseState, arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0);
+
+            return ReadObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref outputFooter);
+        }
+
+        /// <summary>
+        /// Removes the expiration time from a hash key, making it persistent.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="key">The key of the hash.</param>
+        /// <param name="input">The input object containing the operation details.</param>
+        /// <param name="outputFooter">The output footer object to store the result.</param>
+        /// <param name="objectContext">The object context for the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        public GarnetStatus HashPersist<TObjectContext>(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
+
+        /// <summary>
+        /// Collects hash keys and performs a specified operation on them.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="keys">The keys to collect.</param>
+        /// <param name="input">The input object containing the operation details.</param>
+        /// <param name="objectContext">The object context for the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        /// <remarks>
+        /// If the first key is "*", all hash keys are scanned in batches and the operation is performed on each key.
+        /// Otherwise, the operation is performed on the specified keys.
+        /// </remarks>
+        public GarnetStatus HashCollect<TObjectContext>(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            if (!_hcollectTaskLock.TryWriteLock())
+            {
+                return GarnetStatus.NOTFOUND;
+            }
+
+            try
+            {
+                if (keys[0].ReadOnlySpan.SequenceEqual("*"u8))
+                {
+                    long cursor = 0;
+                    long storeCursor = 0;
+
+                    // Scan all hash keys in batches
+                    do
+                    {
+                        if (!DbScan(keys[0], true, cursor, out storeCursor, out var hashKeys, 100, CmdStrings.HASH))
+                        {
+                            return GarnetStatus.OK;
+                        }
+
+                        // Process each hash key
+                        foreach (var hashKey in hashKeys)
+                        {
+                            RMWObjectStoreOperation(hashKey, ref input, out _, ref objectContext);
+                        }
+
+                        cursor = storeCursor;
+                    } while (storeCursor != 0);
+
+                    return GarnetStatus.OK;
+                }
+
+                foreach (var key in keys)
+                {
+                    RMWObjectStoreOperation(key.ToArray(), ref input, out _, ref objectContext);
+                }
+
+                return GarnetStatus.OK;
+            }
+            finally
+            {
+                _hcollectTaskLock.WriteUnlock();
+            }
+        }
     }
 }

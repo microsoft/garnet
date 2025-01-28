@@ -295,6 +295,20 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// This should be used for all RawSet into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void RawSet(int stackIndex)
+        {
+            AssertLuaStackIndexInBounds(stackIndex);
+
+            NativeMethods.RawSet(state, stackIndex);
+            UpdateStackTop(-2);
+        }
+
+        /// <summary>
         /// This should be used for all RawGetIntegers into Lua.
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.

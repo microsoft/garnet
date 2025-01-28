@@ -41,9 +41,11 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
             var input = new ObjectInput(header, ref parseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+            var keyBytes = key.ToArray();
+            var status = RMWObjectStoreOperationWithOutput(keyBytes, ref input, ref objectStoreContext, ref outputFooter);
+            itemBroker.HandleCollectionUpdate(keyBytes);
 
             if (status == GarnetStatus.OK)
             {
@@ -82,9 +84,11 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
             var input = new ObjectInput(header, ref parseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+            var keyBytes = key.ToArray();
+            var status = RMWObjectStoreOperationWithOutput(keyBytes, ref input, ref objectStoreContext, ref outputFooter);
+            itemBroker.HandleCollectionUpdate(keyBytes);
 
             if (status == GarnetStatus.OK)
             {
@@ -245,7 +249,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREMRANGEBYSCORE };
             var input = new ObjectInput(header, ref parseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext,
                 ref outputFooter);
@@ -284,8 +288,8 @@ namespace Garnet.server
 
             GarnetStatus status;
             // Get parameter lengths
-            var startLen = NumUtils.NumDigits(start);
-            var stopLen = NumUtils.NumDigits(stop);
+            var startLen = NumUtils.CountDigits(start);
+            var stopLen = NumUtils.CountDigits(stop);
 
             // Get buffer from scratch buffer manager
             var paramsSlice = scratchBufferManager.CreateArgSlice(startLen + stopLen);
@@ -293,11 +297,11 @@ namespace Garnet.server
 
             // Store parameters to buffer
             var startSpan = paramsSpan.Slice(0, startLen);
-            NumUtils.LongToSpanByte(start, startSpan);
+            NumUtils.WriteInt64(start, startSpan);
             var startSlice = ArgSlice.FromPinnedSpan(startSpan);
 
             var stopSpan = paramsSpan.Slice(startLen, stopLen);
-            NumUtils.LongToSpanByte(stop, stopSpan);
+            NumUtils.WriteInt64(stop, stopSpan);
             var stopSlice = ArgSlice.FromPinnedSpan(stopSpan);
 
             parseState.InitializeWithArguments(startSlice, stopSlice);
@@ -306,7 +310,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREMRANGEBYRANK };
             var input = new ObjectInput(header, ref parseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext,
                 ref outputFooter);
@@ -343,7 +347,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
             var input = new ObjectInput(header, count);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
@@ -387,7 +391,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZINCRBY };
             var input = new ObjectInput(header, ref parseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext,
                 ref outputFooter);
 
@@ -504,9 +508,9 @@ namespace Garnet.server
                 arguments.Add(scratchBufferManager.CreateArgSlice(limit.Item1));
 
                 // Count
-                var limitCountLength = NumUtils.NumDigitsInLong(limit.Item2);
+                var limitCountLength = NumUtils.CountDigits(limit.Item2);
                 var limitCountSlice = scratchBufferManager.CreateArgSlice(limitCountLength);
-                NumUtils.LongToSpanByte(limit.Item2, limitCountSlice.Span);
+                NumUtils.WriteInt64(limit.Item2, limitCountSlice.Span);
                 arguments.Add(limitCountSlice);
             }
 
@@ -517,7 +521,7 @@ namespace Garnet.server
             var inputArg = 2; // Default RESP server protocol version
             var input = new ObjectInput(header, ref parseState, arg1: inputArg);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
 
             for (var i = arguments.Count - 1; i > 1; i--)
@@ -608,7 +612,6 @@ namespace Garnet.server
                 }
 
                 count = pairs?.Count ?? 0;
-
                 if (count > 0)
                 {
                     SortedSetObject newSetObject = new();
@@ -616,7 +619,10 @@ namespace Garnet.server
                     {
                         newSetObject.Add(element, score);
                     }
-                    _ = SET(destinationKey.ToArray(), newSetObject, ref objectContext);
+
+                    var destinationKeyBytes = destinationKey.ToArray();
+                    _ = SET(destinationKeyBytes, newSetObject, ref objectContext);
+                    itemBroker.HandleCollectionUpdate(destinationKeyBytes);
                 }
                 else
                 {
@@ -658,7 +664,7 @@ namespace Garnet.server
 
             const int outputContainerSize = 32; // 3 for HEADER + CRLF + 20 for ascii long
             var outputContainer = stackalloc byte[outputContainerSize];
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(outputContainer, outputContainerSize) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(outputContainer, outputContainerSize) };
 
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
@@ -690,7 +696,11 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SortedSetAdd<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        => RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref output);
+        {
+            var status = RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref output);
+            itemBroker.HandleCollectionUpdate(key);
+            return status;
+        }
 
         /// <summary>
         /// ZRANGESTORE - Stores a range of sorted set elements into a destination key.
@@ -730,9 +740,9 @@ namespace Garnet.server
             try
             {
                 SpanByteAndMemory rangeOutputMem = default;
-                var rangeOutput = new GarnetObjectStoreOutput() { spanByteAndMemory = rangeOutputMem };
+                var rangeOutput = new GarnetObjectStoreOutput() { SpanByteAndMemory = rangeOutputMem };
                 var status = SortedSetRange(srcKey.ToArray(), ref input, ref rangeOutput, ref objectStoreLockableContext);
-                rangeOutputMem = rangeOutput.spanByteAndMemory;
+                rangeOutputMem = rangeOutput.SpanByteAndMemory;
 
                 if (status == GarnetStatus.WRONGTYPE)
                 {
@@ -758,7 +768,7 @@ namespace Garnet.server
                     var destinationKey = dstKey.ToArray();
                     objectStoreLockableContext.Delete(ref destinationKey);
 
-                    RespReadUtils.ReadUnsignedArrayLength(out var arrayLen, ref currOutPtr, endOutPtr);
+                    RespReadUtils.TryReadUnsignedArrayLength(out var arrayLen, ref currOutPtr, endOutPtr);
                     Debug.Assert(arrayLen % 2 == 0, "Should always contain element and its score");
                     result = arrayLen / 2;
 
@@ -780,8 +790,9 @@ namespace Garnet.server
                             SortedSetOp = SortedSetOperation.ZADD,
                         }, ref parseState);
 
-                        var zAddOutput = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+                        var zAddOutput = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
                         RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
+                        itemBroker.HandleCollectionUpdate(destinationKey);
                     }
                 }
                 finally
@@ -1061,7 +1072,10 @@ namespace Garnet.server
                     {
                         newSortedSetObject.Add(element, score);
                     }
-                    _ = SET(destinationKey.ToArray(), newSortedSetObject, ref objectContext);
+
+                    var destinationKeyBytes = destinationKey.ToArray();
+                    _ = SET(destinationKeyBytes, newSortedSetObject, ref objectContext);
+                    itemBroker.HandleCollectionUpdate(destinationKeyBytes);
                 }
                 else
                 {
@@ -1091,7 +1105,7 @@ namespace Garnet.server
             var status = GET(keys[0].ToArray(), out var firstObj, ref objectContext);
             if (status == GarnetStatus.OK)
             {
-                if (firstObj.garnetObject is not SortedSetObject firstSortedSet)
+                if (firstObj.GarnetObject is not SortedSetObject firstSortedSet)
                 {
                     return GarnetStatus.WRONGTYPE;
                 }
@@ -1117,7 +1131,7 @@ namespace Garnet.server
                     if (status != GarnetStatus.OK)
                         continue;
 
-                    if (nextObj.garnetObject is not SortedSetObject nextSortedSet)
+                    if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
                     {
                         pairs = default;
                         return GarnetStatus.WRONGTYPE;
@@ -1155,7 +1169,7 @@ namespace Garnet.server
             var statusOp = GET(keys[0].ToArray(), out var firstObj, ref objectContext);
             if (statusOp == GarnetStatus.OK)
             {
-                if (firstObj.garnetObject is not SortedSetObject firstSortedSet)
+                if (firstObj.GarnetObject is not SortedSetObject firstSortedSet)
                 {
                     return GarnetStatus.WRONGTYPE;
                 }
@@ -1173,7 +1187,7 @@ namespace Garnet.server
                     if (statusOp != GarnetStatus.OK)
                         continue;
 
-                    if (nextObj.garnetObject is not SortedSetObject nextSortedSet)
+                    if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
                     {
                         pairs = default;
                         return GarnetStatus.WRONGTYPE;
@@ -1303,7 +1317,10 @@ namespace Garnet.server
                     {
                         newSortedSetObject.Add(element, score);
                     }
-                    _ = SET(destinationKey.ToArray(), newSortedSetObject, ref objectContext);
+
+                    var destinationKeyBytes = destinationKey.ToArray();
+                    _ = SET(destinationKeyBytes, newSortedSetObject, ref objectContext);
+                    itemBroker.HandleCollectionUpdate(destinationKeyBytes);
                 }
                 else
                 {
@@ -1372,7 +1389,7 @@ namespace Garnet.server
             var statusOp = GET(keys[0].ToArray(), out var firstObj, ref objectContext);
             if (statusOp == GarnetStatus.OK)
             {
-                if (firstObj.garnetObject is not SortedSetObject firstSortedSet)
+                if (firstObj.GarnetObject is not SortedSetObject firstSortedSet)
                 {
                     return GarnetStatus.WRONGTYPE;
                 }
@@ -1407,7 +1424,7 @@ namespace Garnet.server
                         return statusOp;
                     }
 
-                    if (nextObj.garnetObject is not SortedSetObject nextSortedSet)
+                    if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
                     {
                         pairs = default;
                         return GarnetStatus.WRONGTYPE;
