@@ -1724,7 +1724,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Hash, Write, Admin, Garnet",
+    "AclCategories": "Admin, Hash, Write, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -3918,6 +3918,30 @@
           "Limit": 0
         },
         "Flags": "OW, Update"
+      }
+    ]
+  },
+  {
+    "Command": "SETIFGREATER",
+    "Name": "SETIFGREATER",
+    "Arity": -4,
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Access, Update, VariableFlags"
       }
     ]
   },

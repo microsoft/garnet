@@ -336,18 +336,19 @@ namespace Garnet.server
                     if (value.Length < inputValue.length + EtagConstants.EtagSize + metadataSize)
                         return false;
 
-                    if (input.arg1 != 0)
-                    {
-                        value.ExtraMetadata = input.arg1;
-                    }
-
                     recordInfo.SetHasETag();
 
                     long newEtag = cmd is RespCommand.SETIFMATCH ? (functionsState.etagState.etag + 1) :  (etagFromClient + 1);
 
+                    rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
+                    value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(metadataSize + inputValue.Length + EtagConstants.EtagSize);
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
-                    rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
+
+                    if (input.arg1 != 0)
+                    {
+                        value.ExtraMetadata = input.arg1;
+                    }
 
                     value.SetEtagInPayload(newEtag);
 

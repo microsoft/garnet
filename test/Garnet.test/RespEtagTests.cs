@@ -322,9 +322,94 @@ namespace Garnet.test
             ClassicAssert.AreEqual(2, etag7);
         }
 
+        [Test]
+        public void SetIfGreaterWorksWithInitialETag()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            var key = "meow-key";
+            var value = "m";
+
+            RedisResult res = db.Execute("SET", key, value, "WITHETAG");
+            ClassicAssert.AreEqual(1, (long)res);
+
+            // not greater etag sent so we expect a higher etag returned
+            RedisResult[] arrRes = (RedisResult[])db.Execute("SETIFGREATER", key, "diggity", 0);
+            ClassicAssert.AreEqual(1, (long)arrRes[0]);
+            ClassicAssert.AreEqual(value, arrRes[1].ToString());
+
+            // greater etag sent so we expect the same etag returned
+            var newValue = "meow";
+            arrRes = (RedisResult[])db.Execute("SETIFGREATER", key, newValue, 2);
+            ClassicAssert.AreEqual(3, (long)arrRes[0]);
+            ClassicAssert.IsTrue(arrRes[1].IsNull);
+
+            // shrink value size and send greater etag
+            newValue = "m";
+            arrRes = (RedisResult[])db.Execute("SETIFGREATER", key, newValue, 5);
+            ClassicAssert.AreEqual(6, (long)arrRes[0]);
+            ClassicAssert.IsTrue(arrRes[1].IsNull);
+        }
+
+        [Test]
+        public void SetIfGreaterWorksWithoutInitialETag()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            var key = "meow-key";
+            var value = "m";
+
+            RedisResult res = db.Execute("SET", key, value);
+            ClassicAssert.AreEqual("OK", res.ToString());
+
+            // not greater etag sent so we expect a higher etag returned
+            RedisResult[] arrRes = (RedisResult[])db.Execute("SETIFGREATER", key, "check", 0);
+            ClassicAssert.AreEqual(0, (long)arrRes[0]);
+            ClassicAssert.AreEqual(value, arrRes[1].ToString());
+
+            // greater etag sent so we expect the same etag returned
+            var newValue = "meow";
+            arrRes = (RedisResult[])db.Execute("SETIFGREATER", key, newValue, 2);
+            ClassicAssert.AreEqual(3, (long)arrRes[0]);
+            ClassicAssert.IsTrue(arrRes[1].IsNull);
+
+            // shrink value size and send greater etag
+            newValue = "m";
+            arrRes = (RedisResult[])db.Execute("SETIFGREATER", key, newValue, 5);
+            ClassicAssert.AreEqual(6, (long)arrRes[0]);
+            ClassicAssert.IsTrue(arrRes[1].IsNull);
+        }
+
         #endregion
 
         # region Edgecases
+
+        [Test]
+        public void SetIfGreaterReturnsNilOnNonExistingKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            RedisResult res = db.Execute("SETIFGREATER", "non-existing-key", "value", 0);
+            ClassicAssert.IsTrue(res.IsNull);
+
+            // add a key-value pair, call setifgreater with a greater etag, then expire it, and call setifgreater again
+            var key = "key";
+            var value = "value";
+            db.StringSet(key, value);
+
+            RedisResult[] result = (RedisResult[])db.Execute("SETIFGREATER", key, "valueanother", 1, "EX", 3);
+            ClassicAssert.AreEqual(2, (long)result[0]);
+            ClassicAssert.IsTrue(result[1].IsNull);
+
+            Thread.Sleep(4000);
+
+            // also nil on calling on expired key
+            res = db.Execute("SETIFGREATER", key, "value", 2);
+            ClassicAssert.IsTrue(res.IsNull);
+        }
 
         [Test]
         public void SETOnAlreadyExistingSETDataOverridesItWithInitialEtag()

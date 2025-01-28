@@ -159,7 +159,7 @@ namespace Garnet.server
 
             if (!errorMessage.IsEmpty)
             {
-                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
