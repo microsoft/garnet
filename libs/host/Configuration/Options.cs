@@ -525,6 +525,10 @@ namespace Garnet
         [Option("lua-script-memory-limit", Default = null, HelpText = "Memory limit for a Lua instances while running a script, lua-memory-management-mode must be set to something other than Native to use this flag")]
         public string LuaScriptMemoryLimit { get; set; }
 
+        [IntRangeValidation(1, 256, isRequired: false)]
+        [Option("max-databases", Required = false, HelpText = "Max number of logical databases allowed in a single Garnet server instance")]
+        public int MaxDatabases { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
