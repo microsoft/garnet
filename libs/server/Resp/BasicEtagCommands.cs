@@ -123,5 +123,52 @@ namespace Garnet.server
 
             return true;
         }
+
+        /// <summary>
+        /// SETIFGREATER key val etag [EX|PX] [expiry]
+        /// Sets a key value pair with the given ETag only if the already existing etag is less than the etag given in request.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private bool NetworkSETIFGREATER<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 3 || parseState.Count > 5)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETIFMATCH));
+            }
+
+            int expiry = 0;
+            ReadOnlySpan<byte> errorMessage = default;
+            var tokenIdx = 3;
+
+            ExpirationOption expOption = ExpirationOption.None;
+            if (tokenIdx < parseState.Count)
+            {
+                if (!parseState.TryGetExpirationOption(tokenIdx++, out expOption) || (expOption is not ExpirationOption.EX and not ExpirationOption.PX))
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                else
+                {
+                    if (!parseState.TryGetInt(tokenIdx++, out expiry))
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                    else if (expiry <= 0)
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET;
+                }
+            }
+
+            if (!errorMessage.IsEmpty)
+            {
+                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            SpanByte key = parseState.GetArgSliceByRef(0).SpanByte;
+
+            NetworkSET_Conditional(RespCommand.SETIFGREATER, expiry, ref key, getValue: true, highPrecision: expOption == ExpirationOption.PX, withEtag: true, ref storageApi);
+
+            return true;
+        }
     }
 }

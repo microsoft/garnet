@@ -779,6 +779,7 @@ namespace Garnet.server
                 RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
                 RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
                 RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
+                RespCommand.SETIFGREATER => NetworkSETIFGREATER(ref storageApi),
 
                 _ => Process(command)
             };
