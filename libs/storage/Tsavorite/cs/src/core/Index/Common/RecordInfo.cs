@@ -291,6 +291,24 @@ namespace Tsavorite.core
         public void SetHasExpiration() => word |= kHasExpirationBitMask;
         public void ClearHasExpiration() => word &= ~kHasExpirationBitMask;
 
+        internal bool KeyIsOverflow
+        {
+            readonly get => (word & kKeyIsOverflowBitMask) != 0;
+            set => word = value ? word | kKeyIsOverflowBitMask : word & ~kKeyIsOverflowBitMask;
+        }
+        public void SetKeyIsOverflow() => word |= kKeyIsOverflowBitMask;
+        public void ClearKeyIsOverflow() => word &= ~kKeyIsOverflowBitMask;
+
+        internal bool ValueIsOverflow
+        {
+            readonly get => (word & kValueIsOverflowBitMask) != 0;
+            set => word = value ? word | kValueIsOverflowBitMask : word & ~kValueIsOverflowBitMask;
+        }
+        public void SetValueIsOverflow() => word |= kValueIsOverflowBitMask;
+        public void ClearValueIsOverflow() => word &= ~kValueIsOverflowBitMask;
+
+        internal readonly bool HasOverflow => (word & (kKeyIsOverflowBitMask | kValueIsOverflowBitMask)) != 0;
+
         internal bool PreviousAddressIsOnDisk
         {
             readonly get => (word & kPreviousAddressIsOnDiskBitMask) != 0;
@@ -318,18 +336,6 @@ namespace Tsavorite.core
         {
             readonly get => (word & kUnused3BitMask) != 0;
             set => word = value ? word | kUnused3BitMask : word & ~kUnused3BitMask;
-        }
-
-        internal bool KeyIsOverflow
-        {
-            readonly get => (word & kKeyIsOverflowBitMask) != 0;
-            set => word = value ? word | kKeyIsOverflowBitMask : word & ~kKeyIsOverflowBitMask;
-        }
-
-        internal bool ValueIsOverflow
-        {
-            readonly get => (word & kValueIsOverflowBitMask) != 0;
-            set => word = value ? word | kValueIsOverflowBitMask : word & ~kValueIsOverflowBitMask;
         }
 
         public override readonly string ToString()

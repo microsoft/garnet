@@ -232,51 +232,38 @@ namespace Tsavorite.core
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 
-        private bool TryRevivifyInChain<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord<TValue> srcLogRecord, ref TInput input, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+        private bool TryRevivifyInChain<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
                         TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref RMWInfo rmwInfo, out OperationStatus status)
                     where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info))
+            if (IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, logRecord.Info))
                 goto NeedNewRecord;
 
             // This record is safe to revivify even if its PreviousAddress points to a valid record, because it is revivified for the same key.
-            var ok = true;
+            var ok = false;
             try
             {
-                if (srcLogRecord.Info.Tombstone)
+                var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord.Key, ref input, sessionFunctions);
+                if (logRecord.IsBigEnough(ref sizeInfo))
                 {
-                    srcLogRecord.InfoRef.ClearTombstone();
-
-                    if (RevivificationManager.IsFixedLength)    // TODO remove; there should be no more IsFixedLenReviv
-                        rmwInfo.UsedValueLength = rmwInfo.FullValueLength = RevivificationManager<TValue, TStoreFunctions, TAllocator>.FixedValueLength;
-                    else
-                    {
-                        var recordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo);
-                        rmwInfo.FullValueLength = recordLengths.fullValueLength;
-
-                        // RMW uses GetInitialRecordSize because it has only the initial Input, not a Value
-                        var (requiredSize, _, _) = hlog.GetRMWInitialRecordSize(ref key, ref input, sessionFunctions);
-                        (ok, rmwInfo.UsedValueLength) = TryReinitializeTombstonedValue<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions,
-                                ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths);
-                    }
-
-                    if (ok && sessionFunctions.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref rmwInfo, ref srcRecordInfo))
+                    logRecord.InfoRef.ClearTombstone();
+                    logRecord.ClearOptionals();
+                    if (sessionFunctions.InitialUpdater(ref logRecord, ref input, ref output, ref rmwInfo))
                     {
                         // Success
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        ok = true;
                         return true;
                     }
-
-                    // Did not revivify; restore the tombstone and leave the deleted record there.
-                    srcLogRecord.InfoRef.SetTombstone();
                 }
+                // Did not revivify; restore the tombstone in 'finally' and leave the deleted record there.
             }
             finally
             {
                 if (!ok)
-                    srcLogRecord.InfoRef.SetTombstone();
+                    logRecord.InfoRef.SetTombstone();
             }
 
         NeedNewRecord:
@@ -434,7 +421,7 @@ namespace Tsavorite.core
                 if (rmwInfo.Action == RMWAction.CancelOperation)
                 {
                     // Save allocation for revivification (not retry, because this is canceling of the current operation), or abandon it if that fails. TODO: overflow key/value in reviv
-                    if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, sizeInfo.AllocatedInlineRecordSize, ref sessionFunctions.Ctx.RevivificationStats))
+                    if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, ref newLogRecord, ref sessionFunctions.Ctx.RevivificationStats))
                         stackCtx.ClearNewRecord();
                     else
                         stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
@@ -458,7 +445,7 @@ namespace Tsavorite.core
                             return status;
 
                         // Save allocation for revivification (not retry, because this may have been false because the record was too small), or abandon it if that fails. TODO key/value overflow in reviv
-                        if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, sizeInfo.AllocatedInlineRecordSize, ref sessionFunctions.Ctx.RevivificationStats))
+                        if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, ref newLogRecord, ref sessionFunctions.Ctx.RevivificationStats))
                             stackCtx.ClearNewRecord();
                         else
                             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);

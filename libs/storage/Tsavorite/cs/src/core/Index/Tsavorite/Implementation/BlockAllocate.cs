@@ -70,7 +70,6 @@ namespace Tsavorite.core
                     if (fuzzyStartAddress > minRevivAddress)
                         minRevivAddress = fuzzyStartAddress;
                 }
-                // TODO: This must handle out-of-line allocations for key and value (get overflow allocator for logicalAddress' page
                 if (TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref sizeInfo, minRevivAddress, out newLogicalAddress, out newPhysicalAddress))
                     return true;
             }
@@ -88,11 +87,18 @@ namespace Tsavorite.core
                         return true;
 
                     // This allocation is below the necessary address so put it on the free list or abandon it, then repeat the loop.
-                    if (!RevivificationManager.UseFreeRecordPool || !RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, sizeInfo.AllocatedInlineRecordSize, ref sessionFunctions.Ctx.RevivificationStats))
-                    {
-                        // TODO: Return overflow allocations and DisposeRecord
-                        LogRecord.GetInfo(newPhysicalAddress).SetInvalid();  // Skip on log scan
+                    if (RevivificationManager.UseFreeRecordPool)
+                    { 
+                        // Set up a simple LogRecord with specified key size and value size taking the entire non-key space (we don't have optionals now)
+                        // so revivification can read the record size.
+                        var logRecord = hlog.CreateLogRecord(newLogicalAddress, newPhysicalAddress);
+                        SpanField.SetInlineLength(logRecord.KeyAddress, sizeInfo.KeyIsOverflow ? SpanField.OverflowInlineSize : sizeInfo.FieldInfo.KeySize);
+                        var valueSize = sizeInfo.AllocatedInlineRecordSize - (int)(logRecord.ValueAddress - newPhysicalAddress);
+                        SpanField.SetInlineLength(logRecord.ValueAddress, valueSize);
+                        if (RevivificationManager.TryAdd(newLogicalAddress, ref logRecord, ref sessionFunctions.Ctx.RevivificationStats))
+                            continue;
                     }
+                    LogRecord.GetInfo(newPhysicalAddress).SetInvalid();  // Skip on log scan
                     continue;
                 }
 

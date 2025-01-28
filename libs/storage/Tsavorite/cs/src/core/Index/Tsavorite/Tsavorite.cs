@@ -126,8 +126,6 @@ namespace Tsavorite.core
             if (ReadCopyOptions.CopyFrom == ReadCopyFrom.Inherit)
                 ReadCopyOptions.CopyFrom = ReadCopyFrom.Device;
 
-            bool isFixedLenReviv = hlog.IsFixedLength;
-
             // Create the allocator
             var allocatorSettings = new AllocatorSettings(logSettings, epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger(typeof(TAllocator).Name));
             hlog = allocatorFactory(allocatorSettings, storeFunctions);
@@ -158,7 +156,7 @@ namespace Tsavorite.core
             Initialize(kvSettings.GetIndexSizeCacheLines(), sectorSize);
 
             LockTable = new OverflowBucketLockTable<TValue, TStoreFunctions, TAllocator>(this);
-            RevivificationManager = new(this, isFixedLenReviv, kvSettings.RevivificationSettings, logSettings);
+            RevivificationManager = new(this, kvSettings.RevivificationSettings, logSettings);
 
             systemState = SystemState.Make(Phase.REST, 1);
 

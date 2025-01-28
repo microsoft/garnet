@@ -124,6 +124,10 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal long GetMinRevivifiableAddress()
+            => RevivificationManager.GetMinRevivifiableAddress(hlogBase.GetTailAddress(), hlogBase.ReadOnlyAddress);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private (bool elided, bool added) TryElideAndTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref LogRecord<TValue> logRecord)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -152,7 +156,28 @@ namespace Tsavorite.core
             if (stackCtx.recSrc.LogicalAddress < GetMinRevivifiableAddress())
                 return false;
 
-            return RevivificationManager.TryAdd(stackCtx.recSrc.LogicalAddress, logRecord.GetFullRecordSizes().allocatedSize, ref sessionFunctions.Ctx.RevivificationStats);
+            return RevivificationManager.TryAdd(stackCtx.recSrc.LogicalAddress, ref logRecord, ref sessionFunctions.Ctx.RevivificationStats);
+        }
+
+        // Do not try to inline this; it causes TryAllocateRecord to bloat and slow
+        bool TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref RecordSizeInfo sizeInfo, long minRevivAddress,
+                    out long logicalAddress, out long physicalAddress)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            // Caller checks for UseFreeRecordPool
+            if (RevivificationManager.TryTake(ref sizeInfo, minRevivAddress, out logicalAddress, ref sessionFunctions.Ctx.RevivificationStats))
+            {
+                var logRecord = hlog.CreateLogRecord(logicalAddress);
+                Debug.Assert(logRecord.Info.IsSealed, "TryTakeFreeRecord: recordInfo should still have the revivification Seal");
+
+                // Preserve the Sealed bit due to checkpoint/recovery; see RecordInfo.WriteInfo.
+                physicalAddress = logRecord.physicalAddress;
+                return true;
+            }
+
+            // No free record available.
+            logicalAddress = physicalAddress = default;
+            return false;
         }
 
         internal enum LatchOperation : byte

@@ -180,7 +180,7 @@ namespace Tsavorite.core
             if (valueSize > maxInlineValueSize)
             {
                 valueSize = SpanField.OverflowInlineSize;
-                sizeInfo.ValueSpanIsOverflow = true;
+                sizeInfo.ValueIsOverflow = true;
             }
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;
             sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);

@@ -71,6 +71,11 @@ namespace Tsavorite.core
             if (clearLength > 0)
                 ZeroInlineData(address, OverflowDataPtrSize, clearLength);
 
+            return SetOverflowAllocation(address, newLength, allocator);
+        }
+
+        internal static byte* SetOverflowAllocation(long address, int newLength, OverflowAllocator allocator)
+        {
             LengthRef(address) = sizeof(IntPtr);                        // actual length (i.e. the size of the out-of-line allocation)
             byte* ptr = allocator.Allocate(newLength, zeroInit: false);
             *(IntPtr*)(address + FieldLengthPrefixSize) = (IntPtr)ptr;  // out-of-line data pointer
@@ -89,6 +94,11 @@ namespace Tsavorite.core
                 ZeroInlineData(address, OverflowDataPtrSize - clearLength, clearLength);
 
             allocator.Free((byte*)address);
+            return SetInlineLength(address, newLength);
+        }
+
+        internal static byte* SetInlineLength(long address, int newLength)
+        {
             LengthRef(address) = newLength;                             // actual length (i.e. the inline data space used by this field)
             return (byte*)(address + FieldLengthPrefixSize);            // Data pointer
         }

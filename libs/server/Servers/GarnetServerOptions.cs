@@ -656,11 +656,10 @@ namespace Garnet.server
             }
             else if (UseRevivBinsPowerOf2 || RevivBinRecordSizes?.Length > 0)
             {
-                logger?.LogInformation("[Object Store] Using Revivification with a single fixed-size bin");
-                kvSettings.RevivificationSettings = RevivificationSettings.DefaultFixedLength.Clone();
+                logger?.LogInformation("[Store] Using Revivification with power-of-2 bins");
+                kvSettings.RevivificationSettings = RevivificationSettings.PowerOf2Bins.Clone();
+                kvSettings.RevivificationSettings.NumberOfBinsToSearch = RevivNumberOfBinsToSearch;
                 kvSettings.RevivificationSettings.RevivifiableFraction = RevivifiableFraction;
-                kvSettings.RevivificationSettings.FreeRecordBins[0].NumberOfRecords = RevivObjBinRecordCount;
-                kvSettings.RevivificationSettings.FreeRecordBins[0].BestFitScanLimit = RevivBinBestFitScanLimit;
             }
             else
             {

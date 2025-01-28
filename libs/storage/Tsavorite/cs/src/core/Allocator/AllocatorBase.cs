@@ -412,20 +412,16 @@ namespace Tsavorite.core
         public static SpanByte GetKey(long physicalAddress) => LogRecord<TValue>.GetKey(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<TValue> logRecord, int maxInlineKeySize)   // TODO remove
+        public unsafe void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<TValue> logRecord, int maxInlineKeySize)
         {
+            byte* keyPtr;
             if (key.Length <= maxInlineKeySize)
-            {
-                key.CopyTo(ref logRecord.KeyRef);
-                Debug.Assert(logRecord.KeyRef.Serialized, "inline key should be serialized");
-                return;
-            }
-
-            var overflowAllocator = _wrapper.GetOverflowAllocator(logicalAddress);
-            var overflowKey = overflowAllocator.Allocate(key.Length);
-            key.CopyTo(ref overflowKey);
-            logRecord.KeyRef = new(overflowKey.Length, (nint)overflowKey.ToPointer());
-            Debug.Assert(!logRecord.KeyRef.Serialized, "overflow key should not be serialized");
+                keyPtr = SpanField.SetInlineLength(logRecord.KeyAddress, key.Length);
+            else
+                keyPtr = logRecord.Info.KeyIsOverflow   // This may be true if it is a revivified record; we preserved the overflow allocation.
+                    ? SpanField.ReallocateOverflow(logRecord.KeyAddress, key.Length, _wrapper.GetOverflowAllocator(logicalAddress))
+                    : SpanField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, _wrapper.GetOverflowAllocator(logicalAddress));
+            key.AsReadOnlySpan().CopyTo(new Span<byte>(keyPtr, key.Length));
         }
 
         #endregion LogRecord functions

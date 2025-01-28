@@ -112,7 +112,7 @@ namespace Tsavorite.core
                         // If we're doing revivification and this is in the revivifiable range, try to revivify--otherwise we'll create a new record.
                         if (RevivificationManager.IsEnabled && stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
                         {
-                            if (TryRevivifyInChain(ref srcLogRecord, ref input, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref upsertInfo, out status)
+                            if (TryRevivifyInChain(ref srcLogRecord, ref input, value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref upsertInfo, out status)
                                     || status != OperationStatus.SUCCESS)
                                 goto LatchRelease;
                         }
@@ -201,51 +201,38 @@ namespace Tsavorite.core
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 
-        private bool TryRevivifyInChain<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord<TValue> srcLogRecord, ref TInput input, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+        private bool TryRevivifyInChain<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord<TValue> logRecord, ref TInput input, TValue value, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
                 TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref UpsertInfo upsertInfo, out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info))
+            if (IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, logRecord.Info))
                 goto NeedNewRecord;
 
             // This record is safe to revivify even if its PreviousAddress points to a valid record, because it is revivified for the same key.
-            var ok = true;
+            var ok = false;
             try
             {
-                if (srcLogRecord.Info.Tombstone)
+                var sizeInfo = hlog.GetUpsertRecordSize(logRecord.Key, value, ref input, sessionFunctions);
+                if (logRecord.IsBigEnough(ref sizeInfo))
                 {
-                    srcLogRecord.InfoRef.ClearTombstone();
-
-                    if (RevivificationManager.IsFixedLength)
-                        upsertInfo.UsedValueLength = upsertInfo.FullValueLength = RevivificationManager<TValue, TStoreFunctions, TAllocator>.FixedValueLength;
-                    else
-                    {
-                        var recordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo);
-                        upsertInfo.FullValueLength = recordLengths.fullValueLength;
-
-                        // Input is not included in record-length calculations for Upsert
-                        var (requiredSize, _, _) = hlog.GetRecordSize(ref key, ref value);
-                        (ok, upsertInfo.UsedValueLength) = TryReinitializeTombstonedValue<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions,
-                                ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths);
-                    }
-
-                    if (ok && sessionFunctions.SingleWriter(ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, WriteReason.Upsert, ref srcRecordInfo))
+                    logRecord.InfoRef.ClearTombstone();
+                    logRecord.ClearOptionals();
+                    if (sessionFunctions.SingleWriter(ref logRecord, ref input, value, ref output, ref upsertInfo, WriteReason.Upsert))
                     {
                         // Success
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        ok = true;
                         return true;
                     }
-
-                    // Did not revivify; restore the tombstone and leave the deleted record there.
-                    srcLogRecord.InfoRef.SetTombstone();
                 }
+                // Did not revivify; restore the tombstone and leave the deleted record there.
             }
             finally
             {
                 if (!ok)
-                    srcLogRecord.InfoRef.SetTombstone();
+                    logRecord.InfoRef.SetTombstone();
             }
 
         NeedNewRecord:
@@ -326,7 +313,7 @@ namespace Tsavorite.core
             if (!sessionFunctions.SingleWriter(ref srcLogRecord, ref input, value, ref output, ref upsertInfo, WriteReason.Upsert))
             {
                 // Save allocation for revivification (not retry, because these aren't retry status codes), or abandon it if that fails.
-                if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, sizeInfo.AllocatedInlineRecordSize, ref sessionFunctions.Ctx.RevivificationStats))
+                if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, ref newLogRecord, ref sessionFunctions.Ctx.RevivificationStats))
                     stackCtx.ClearNewRecord();
                 else
                     stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
