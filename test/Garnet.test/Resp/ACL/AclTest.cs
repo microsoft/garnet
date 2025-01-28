@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.IO;
+using System.Threading.Tasks;
 using NUnit.Framework;
 
 namespace Garnet.test.Resp.ACL
@@ -44,7 +45,7 @@ namespace Garnet.test.Resp.ACL
         /// <summary>
         /// Garnet server instance to use in the tests.
         /// </summary>
-        protected GarnetServer server = null;
+        protected GarnetApplication server = null;
 
         /// <summary>
         /// Creates working directory
@@ -60,10 +61,11 @@ namespace Garnet.test.Resp.ACL
         /// Cleans up any running working instances
         /// </summary>
         [TearDown]
-        public virtual void BaseTearDown()
+        public virtual async Task BaseTearDown()
         {
             if (server != null)
             {
+                await server.StopAsync();
                 server.Dispose();
                 server = null;
             }

@@ -13,29 +13,30 @@ namespace Garnet.test
     [TestFixture]
     public class TransactionTests
     {
-        GarnetServer server;
+        GarnetApplication server;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir);
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
+            await server.StopAsync();
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        public void SetUpWithLowMemory()
+        public async Task SetUpWithLowMemory()
         {
-            TearDown();
+            await TearDown();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true);
+            await server.RunAsync();
         }
 
         [Test]
@@ -323,7 +324,7 @@ namespace Garnet.test
         [Test]
         public async Task WatchKeyFromDisk()
         {
-            SetUpWithLowMemory();
+            await SetUpWithLowMemory();
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -12,19 +13,20 @@ namespace Garnet.test
     [TestFixture]
     public class RespTransactionProcTests
     {
-        GarnetServer server;
+        GarnetApplication server;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, disablePubSub: true);
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
+            await server.StopAsync();
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }

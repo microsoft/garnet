@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -15,22 +16,23 @@ namespace Garnet.test
     [TestFixture]
     public class RespScanCommandsTests
     {
-        GarnetServer server;
+        GarnetApplication server;
         private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
             ClassicAssert.IsNotNull(respCustomCommandsInfo);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir);
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
+            await server.StopAsync();
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }

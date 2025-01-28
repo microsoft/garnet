@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -12,7 +13,7 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test.cluster
 {
     [TestFixture, NonParallelizable]
-    public unsafe class ClusterRedirectTests
+    public class ClusterRedirectTests
     {
         ClusterTestContext context;
 
@@ -638,13 +639,13 @@ ClusterRedirectTests.TestFlags testFlags)
 
         [Test, Order(1)]
         [Category("CLUSTER")]
-        public void ClusterSingleKeyRedirectionTests()
+        public async Task ClusterSingleKeyRedirectionTests()
         {
             context.logger.LogDebug("0. ClusterSingleKeyRedirectionTests started");
             var Port = ClusterTestContext.Port;
             var Shards = context.defaultShards;
 
-            context.CreateInstances(Shards, cleanClusterConfig: true);
+            await context.CreateInstances(Shards, cleanClusterConfig: true);
             context.CreateConnection();
 
             var connections = ClusterTestUtils.CreateLightRequestConnections(Enumerable.Range(Port, Shards).ToArray());
@@ -703,13 +704,13 @@ ClusterRedirectTests.TestFlags testFlags)
 
         [Test, Order(2)]
         [Category("CLUSTER")]
-        public void ClusterMultiKeyRedirectionTests()
+        public async Task ClusterMultiKeyRedirectionTests()
         {
             context.logger.LogDebug("0. ClusterMultiKeyRedirectionTests started");
             var Port = ClusterTestContext.Port;
             var Shards = context.defaultShards;
 
-            context.CreateInstances(Shards, cleanClusterConfig: true);
+            await context.CreateInstances(Shards, cleanClusterConfig: true);
             context.CreateConnection();
 
             var connections = ClusterTestUtils.CreateLightRequestConnections(Enumerable.Range(Port, Shards).ToArray());

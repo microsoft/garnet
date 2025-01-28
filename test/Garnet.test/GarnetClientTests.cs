@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Microsoft.Extensions.Hosting;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -117,10 +118,10 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SetGetWithCallback([Values] bool useTLS)
+        public async Task SetGetWithCallback([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, EnableTLS: useTLS);
-            server.Start();
+            var server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, EnableTLS: useTLS);
+            await server.RunAsync();
 
             using var db = TestUtils.GetGarnetClient(useTLS);
             db.Connect();
@@ -142,13 +143,16 @@ namespace Garnet.test
                 e.Set();
             });
             e.Wait();
+
+            await server.StopAsync();
+            server.Dispose();
         }
 
         [Test]
-        public void SimpleMetricsTest([Values] bool recordLatency)
+        public async Task SimpleMetricsTest([Values] bool recordLatency)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-            server.Start();
+            var server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir);
+            await server.RunAsync();
 
             var db = TestUtils.GetGarnetClient(recordLatency: recordLatency);
             db.Connect();
@@ -174,13 +178,16 @@ namespace Garnet.test
             db.Dispose();
             metrics = db.GetLatencyMetrics();
             ClassicAssert.AreEqual(0, metrics.Length); // Should be 0 after dispose
+
+            await server.StopAsync();
+            server.Dispose();
         }
 
         [Test]
         public async Task SimpleStringArrayTest([Values] bool stringParams)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-            server.Start();
+            var server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir);
+            await server.RunAsync();
 
             var db = TestUtils.GetGarnetClient();
             db.Connect();
@@ -190,13 +197,16 @@ namespace Garnet.test
                 int.Parse(await db.ExecuteForStringResultAsync(Encoding.ASCII.GetBytes("$6\r\nINCRBY\r\n"), [Encoding.ASCII.GetBytes("myKey"), Encoding.ASCII.GetBytes("10")]));
 
             ClassicAssert.AreEqual(10, n);
+
+            await server.StopAsync();
+            server.Dispose();
         }
 
         [Test]
         public async Task SimpleNoArgsTest()
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-            server.Start();
+            var server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir);
+            await server.RunAsync();
 
             var db = TestUtils.GetGarnetClient();
             db.Connect();
@@ -206,14 +216,17 @@ namespace Garnet.test
 
             result = await db.ExecuteForStringResultAsync("ASKING");
             ClassicAssert.AreEqual("OK", result);
+
+            await server.StopAsync();
+            server.Dispose();
         }
 
         [Test]
         public async Task SimpleIncrTest([Values] bool stringParams)
         {
             ManualResetEventSlim e = new();
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-            server.Start();
+            var server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir);
+            await server.RunAsync();
 
             var key = "mykey";
             var db = TestUtils.GetGarnetClient();
@@ -268,14 +281,17 @@ namespace Garnet.test
                 });
             }
             WaitAndReset(e);
+
+            await server.StopAsync();
+            server.Dispose();
         }
 
         [Test]
         public async Task SimpleDecrTest([Values] bool stringParams)
         {
             ManualResetEventSlim e = new();
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-            server.Start();
+            var server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir);
+            await server.RunAsync();
 
             var key = "mykey";
             var db = TestUtils.GetGarnetClient();
@@ -330,13 +346,16 @@ namespace Garnet.test
                 });
             }
             WaitAndReset(e);
+
+            await server.StopAsync();
+            server.Dispose();
         }
 
         [Test]
         public async Task CanUseSetNxStringResultAsync()
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-            server.Start();
+            var server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir);
+            await server.RunAsync();
 
             var db = TestUtils.GetGarnetClient();
             db.Connect();
@@ -349,13 +368,16 @@ namespace Garnet.test
 
             var resultMykey = await db.StringGetAsync("mykey");
             ClassicAssert.AreEqual("Hello", resultMykey);
+
+            await server.StopAsync();
+            server.Dispose();
         }
 
         [Test]
         public async Task CanUseMGetTests([Values] bool disableObjectStore)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObjectStore);
-            server.Start();
+            var server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: disableObjectStore);
+            await server.RunAsync();
 
             var db = TestUtils.GetGarnetClient();
             db.Connect();
@@ -416,6 +438,9 @@ namespace Garnet.test
             }
 
             tokenSource.Dispose();
+
+            await server.StopAsync();
+            server.Dispose();
         }
 
         private async Task<int> ReadValuesMGet(string[] keys, CancellationToken t)
@@ -461,8 +486,8 @@ namespace Garnet.test
         public async Task CanDoBulkDeleteTests([Values] bool useStringType)
         {
             //KeyDeleteAsync
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-            server.Start();
+            var server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir);
+            await server.RunAsync();
 
             var db = TestUtils.GetGarnetClient();
             db.Connect();
@@ -552,6 +577,9 @@ namespace Garnet.test
                 var result = await db.ExecuteForStringResultAsync("EXISTS", [key]);
                 ClassicAssert.AreEqual("0", result);
             }
+
+            await server.StopAsync();
+            server.Dispose();
         }
 
         private static async Task<long> DeleteKeysWithCT(string[] keys, Memory<byte>[] keysMB, ManualResetEventSlim mreObj, CancellationToken t, bool useMemoryType = false)

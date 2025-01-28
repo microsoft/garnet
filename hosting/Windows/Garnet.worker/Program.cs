@@ -5,19 +5,12 @@ using Garnet;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-class Program
+var builder = GarnetApplication.CreateHostBuilder(args);
+
+builder.Services.AddWindowsService(options =>
 {
-    static void Main(string[] args)
-    {
-        var builder = Host.CreateApplicationBuilder(args);
-        builder.Services.AddHostedService(_ => new Worker(args));
+    options.ServiceName = "Microsoft Garnet Server";
+});
 
-        builder.Services.AddWindowsService(options =>
-        {
-            options.ServiceName = "Microsoft Garnet Server";
-        });
-
-        var host = builder.Build();
-        host.Run();
-    }
-}
+var app = builder.Build();
+app.Run();

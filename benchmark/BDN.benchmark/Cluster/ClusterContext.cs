@@ -10,9 +10,9 @@ using Garnet.server;
 
 namespace BDN.benchmark.Cluster
 {
-    unsafe class ClusterContext
+    class ClusterContext
     {
-        EmbeddedRespServer server;
+        GarnetEmbeddedApplication server;
         RespServerSession session;
         readonly BenchUtils benchUtils = new();
         readonly int port = 7000;
@@ -22,9 +22,11 @@ namespace BDN.benchmark.Cluster
         public Request[] singleMGetMSet;
         public Request singleCTXNSET;
 
-        public void Dispose()
+        public async Task Dispose()
         {
             session.Dispose();
+            await server.StopAsync();
+            server.Dispose();
             server.Dispose();
         }
 
@@ -39,12 +41,17 @@ namespace BDN.benchmark.Cluster
             };
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 opt.CheckpointDir = "/tmp";
-            server = new EmbeddedRespServer(opt);
+
+            var builder = GarnetEmbeddedApplication.CreateHostBuilder([], opt);
+
+            server = builder.Build();
+
             session = server.GetRespSession();
+
             _ = server.Register.NewTransactionProc(CustomTxnSet.CommandName, () => new CustomTxnSet(), new RespCommandsInfo { Arity = CustomTxnSet.Arity });
         }
 
-        public void AddSlotRange(List<(int, int)> slotRanges)
+        public unsafe void AddSlotRange(List<(int, int)> slotRanges)
         {
             foreach (var slotRange in slotRanges)
             {
@@ -56,7 +63,7 @@ namespace BDN.benchmark.Cluster
             }
         }
 
-        public void CreateGetSet(int keySize = 8, int valueSize = 32, int batchSize = 100)
+        public unsafe void CreateGetSet(int keySize = 8, int valueSize = 32, int batchSize = 100)
         {
             var pairs = new (byte[], byte[])[batchSize];
             for (var i = 0; i < batchSize; i++)
@@ -93,7 +100,7 @@ namespace BDN.benchmark.Cluster
             singleGetSet = [getReq, setReq];
         }
 
-        public void CreateMGetMSet(int keySize = 8, int valueSize = 32, int batchSize = 100)
+        public unsafe void CreateMGetMSet(int keySize = 8, int valueSize = 32, int batchSize = 100)
         {
             var pairs = new (byte[], byte[])[batchSize];
             for (var i = 0; i < batchSize; i++)
@@ -134,7 +141,7 @@ namespace BDN.benchmark.Cluster
             singleMGetMSet = [mGetReq, mSetReq];
         }
 
-        public void CreateCTXNSET(int keySize = 8, int batchSize = 100)
+        public unsafe void CreateCTXNSET(int keySize = 8, int batchSize = 100)
         {
             var keys = new byte[8][];
             for (var i = 0; i < 8; i++)
@@ -163,7 +170,7 @@ namespace BDN.benchmark.Cluster
             singleCTXNSET = ctxnsetReq;
         }
 
-        public void Consume(byte* ptr, int length)
+        public unsafe void Consume(byte* ptr, int length)
             => session.TryConsumeMessages(ptr, length);
     }
 

@@ -22,7 +22,7 @@ namespace Garnet.test.cluster
     {
         public CredentialManager credManager;
         public string TestFolder;
-        public GarnetServer[] nodes = null;
+        public GarnetApplication[] nodes = null;
         public EndPointCollection endpoints;
         public TextWriter logTextWriter = TestContext.Progress;
         public ILoggerFactory loggerFactory;
@@ -64,7 +64,7 @@ namespace Garnet.test.cluster
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
             loggerFactory?.Dispose();
-            if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(15)))
+            if (!Task.Run(async () => await DisposeCluster()).Wait(TimeSpan.FromSeconds(15)))
                 logger?.LogError("Timed out waiting for DisposeCluster");
             if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(15)))
                 logger?.LogError("Timed out waiting for DisposeCluster");
@@ -100,7 +100,7 @@ namespace Garnet.test.cluster
         /// <param name="timeout"></param>
         /// <param name="useTLS"></param>
         /// <param name="certificates"></param>
-        public void CreateInstances(
+        public async Task CreateInstances(
             int shards,
             bool cleanClusterConfig = true,
             bool tryRecover = false,
@@ -166,7 +166,7 @@ namespace Garnet.test.cluster
                 luaMemoryLimit: luaMemoryLimit);
 
             foreach (var node in nodes)
-                node.Start();
+                await node.RunAsync();
         }
 
         /// <summary>
@@ -195,7 +195,7 @@ namespace Garnet.test.cluster
         /// <param name="clusterCreds"></param>
         /// <param name="certificates"></param>
         /// <returns></returns>
-        public GarnetServer CreateInstance(
+        public GarnetApplication CreateInstance(
             int Port,
             bool cleanClusterConfig = true,
             bool disableEpochCollision = false,
@@ -252,14 +252,18 @@ namespace Garnet.test.cluster
                 authPassword: clusterCreds.password,
                 certificates: certificates);
 
-            return new GarnetServer(opts, loggerFactory);
+            var builder = GarnetApplication.CreateHostBuilder([], opts);
+
+            var app = builder.Build();
+
+            return app;
         }
 
 
         /// <summary>
         /// Dispose created instances
         /// </summary>
-        public void DisposeCluster()
+        public async Task DisposeCluster()
         {
             if (nodes != null)
             {
@@ -268,6 +272,7 @@ namespace Garnet.test.cluster
                     if (nodes[i] != null)
                     {
                         logger.LogDebug("\t a. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
+                        await nodes[i].StopAsync();
                         nodes[i].Dispose();
                         nodes[i] = null;
                         logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);

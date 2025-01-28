@@ -1,12 +1,13 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Threading.Tasks;
 using NUnit.Framework;
 
 namespace Garnet.test.cluster
 {
     [TestFixture, NonParallelizable]
-    public unsafe class ClusterTLSRT
+    public class ClusterTLSRT
     {
         ClusterReplicationTests tests;
 
@@ -26,47 +27,47 @@ namespace Garnet.test.cluster
 
         [Test, Order(1)]
         [Category("REPLICATION")]
-        public void ClusterTLSR([Values] bool disableObjects)
-            => tests.ClusterSRTest(disableObjects);
+        public async Task ClusterTLSR([Values] bool disableObjects)
+            => await tests.ClusterSRTest(disableObjects);
 
         [Test, Order(2)]
         [Category("REPLICATION")]
-        public void ClusterTLSRCheckpointRestartSecondary([Values] bool performRMW, [Values] bool disableObjects)
-            => tests.ClusterSRNoCheckpointRestartSecondary(performRMW, disableObjects);
+        public async Task ClusterTLSRCheckpointRestartSecondary([Values] bool performRMW, [Values] bool disableObjects)
+            => await tests.ClusterSRNoCheckpointRestartSecondary(performRMW, disableObjects);
 
         [Test, Order(3)]
         [Category("REPLICATION")]
-        public void ClusterTLSRPrimaryCheckpoint([Values] bool performRMW, [Values] bool disableObjects)
-            => tests.ClusterSRPrimaryCheckpoint(performRMW, disableObjects);
+        public async Task ClusterTLSRPrimaryCheckpoint([Values] bool performRMW, [Values] bool disableObjects)
+            => await tests.ClusterSRPrimaryCheckpoint(performRMW, disableObjects);
 
         [Test, Order(4)]
         [Category("REPLICATION")]
-        public void ClusterTLSRPrimaryCheckpointRetrieve([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory, [Values] bool manySegments)
-            => tests.ClusterSRPrimaryCheckpointRetrieve(performRMW, disableObjects, lowMemory, manySegments);
+        public async Task ClusterTLSRPrimaryCheckpointRetrieve([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory, [Values] bool manySegments)
+            => await tests.ClusterSRPrimaryCheckpointRetrieve(performRMW, disableObjects, lowMemory, manySegments);
 
         [Test, Order(5)]
         [Category("REPLICATION")]
-        public void ClusterTLSCheckpointRetrieveDisableStorageTier([Values] bool performRMW, [Values] bool disableObjects)
-            => tests.ClusterCheckpointRetrieveDisableStorageTier(performRMW, disableObjects);
+        public async Task ClusterTLSCheckpointRetrieveDisableStorageTier([Values] bool performRMW, [Values] bool disableObjects)
+            => await tests.ClusterCheckpointRetrieveDisableStorageTier(performRMW, disableObjects);
 
         [Test, Order(6)]
         [Category("REPLICATION")]
-        public void ClusterTLSRAddReplicaAfterPrimaryCheckpoint([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory)
-            => tests.ClusterSRAddReplicaAfterPrimaryCheckpoint(performRMW, disableObjects, lowMemory);
+        public async Task ClusterTLSRAddReplicaAfterPrimaryCheckpoint([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory)
+            => await tests.ClusterSRAddReplicaAfterPrimaryCheckpoint(performRMW, disableObjects, lowMemory);
 
         [Test, Order(7)]
         [Category("REPLICATION")]
-        public void ClusterTLSRPrimaryRestart([Values] bool performRMW, [Values] bool disableObjects)
-            => tests.ClusterSRPrimaryRestart(performRMW, disableObjects);
+        public async Task ClusterTLSRPrimaryRestart([Values] bool performRMW, [Values] bool disableObjects)
+            => await tests.ClusterSRPrimaryRestart(performRMW, disableObjects);
 
         [Test, Order(8)]
         [Category("REPLICATION")]
-        public void ClusterTLSRRedirectWrites()
-            => tests.ClusterSRRedirectWrites();
+        public async Task ClusterTLSRRedirectWrites()
+            => await tests.ClusterSRRedirectWrites();
 
         [Test, Order(9)]
         [Category("REPLICATION")]
-        public void ClusterTLSRReplicaOfTest([Values] bool performRMW)
-            => tests.ClusterSRReplicaOfTest(performRMW);
+        public async Task ClusterTLSRReplicaOfTest([Values] bool performRMW)
+            => await tests.ClusterSRReplicaOfTest(performRMW);
     }
 }

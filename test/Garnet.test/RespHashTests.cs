@@ -16,21 +16,22 @@ namespace Garnet.test
     [TestFixture]
     public class RespHashTests
     {
-        GarnetServer server;
+        GarnetApplication server;
 
         static readonly HashEntry[] entries = new HashEntry[100];
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, lowMemory: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, lowMemory: true);
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
+            await server.StopAsync();
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }

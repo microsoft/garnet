@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -15,14 +16,14 @@ namespace Garnet.test
     [TestFixture]
     public class RespMetricsTest
     {
-        GarnetServer server;
+        GarnetApplication server;
         ILoggerFactory loggerFactory;
         Random r;
 
-        private void StartServer(int metricsSamplingFreq = -1, bool latencyMonitor = false)
+        private async Task StartServer(int metricsSamplingFreq = -1, bool latencyMonitor = false)
         {
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, metricsSamplingFreq: metricsSamplingFreq, latencyMonitor: latencyMonitor);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, metricsSamplingFreq: metricsSamplingFreq, latencyMonitor: latencyMonitor);
+            await server.RunAsync();
         }
 
         [SetUp]
@@ -35,16 +36,20 @@ namespace Garnet.test
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server?.Dispose();
+            if (server != null)
+            {
+                await server.StopAsync();
+                server.Dispose();
+            }
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
         }
 
         [Test]
-        public void MetricsDisabledTest()
+        public async Task MetricsDisabledTest()
         {
-            StartServer();
+            await StartServer();
             var logger = loggerFactory.CreateLogger(TestContext.CurrentContext.Test.Name);
             var infoMetrics = server.Metrics.GetInfoMetrics().ToArray();
 
@@ -71,9 +76,9 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MetricsEnabledTest()
+        public async Task MetricsEnabledTest()
         {
-            StartServer(1, true);
+            await StartServer(1, true);
             var logger = loggerFactory.CreateLogger(TestContext.CurrentContext.Test.Name);
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

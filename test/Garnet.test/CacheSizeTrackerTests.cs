@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -17,24 +18,28 @@ namespace Garnet.test
     [TestFixture]
     public class CacheSizeTrackerTests
     {
-        GarnetServer server;
+        GarnetApplication server;
         TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objStore;
         CacheSizeTracker cacheSizeTracker;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, MemorySize: "2k", PageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreHeapMemorySize: "5k");
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, MemorySize: "2k", PageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreHeapMemorySize: "5k");
+            await server.RunAsync();
             objStore = server.Provider.StoreWrapper.objectStore;
             cacheSizeTracker = server.Provider.StoreWrapper.objectStoreSizeTracker;
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server?.Dispose();
+            if (server != null)
+            {
+                await server.StopAsync();
+                server.Dispose();
+            }
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
@@ -90,11 +95,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public void ReadCacheIncreaseEmptyPageCountTest()
+        public async Task ReadCacheIncreaseEmptyPageCountTest()
         {
-            server?.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, MemorySize: "1k", PageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreReadCacheHeapMemorySize: "1k", enableObjectStoreReadCache: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, MemorySize: "1k", PageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreReadCacheHeapMemorySize: "1k", enableObjectStoreReadCache: true);
+            await server.RunAsync();
             objStore = server.Provider.StoreWrapper.objectStore;
             cacheSizeTracker = server.Provider.StoreWrapper.objectStoreSizeTracker;
 

@@ -24,7 +24,7 @@ namespace Garnet.test
         private readonly LuaMemoryManagementMode allocMode;
         private readonly string limitBytes;
 
-        protected GarnetServer server;
+        protected GarnetApplication server;
 
         public LuaScriptTests(LuaMemoryManagementMode allocMode, string limitBytes)
         {
@@ -33,16 +33,17 @@ namespace Garnet.test
         }
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true, luaMemoryMode: allocMode, luaMemoryLimit: limitBytes);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableLua: true, luaMemoryMode: allocMode, luaMemoryLimit: limitBytes);
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
+            await server.StopAsync();
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }

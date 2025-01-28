@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
+using Microsoft.Extensions.Hosting;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -17,19 +18,20 @@ namespace Garnet.test
     [TestFixture]
     public class RespAdminCommandsTests
     {
-        GarnetServer server;
+        GarnetApplication server;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir);
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
+            await server.StopAsync();
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
@@ -157,13 +159,14 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SeSaveRecoverTest([Values] bool disableObj, [Values] bool useAzure)
+        public async Task SeSaveRecoverTest([Values] bool disableObj, [Values] bool useAzure)
         {
             if (useAzure)
                 TestUtils.IgnoreIfNotRunningAzureTests();
+            await server.StopAsync();
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, UseAzureStorage: useAzure);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: disableObj, UseAzureStorage: useAzure);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -176,9 +179,10 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, UseAzureStorage: useAzure);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, UseAzureStorage: useAzure);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -189,7 +193,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SeSaveRecoverObjectTest()
+        public async Task SeSaveRecoverObjectTest()
         {
             var key = "SeSaveRecoverTestObjectKey";
             var ldata = new RedisValue[] { "a", "b", "c", "d" };
@@ -208,9 +212,10 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -223,7 +228,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SeSaveRecoverCustomObjectTest()
+        public async Task SeSaveRecoverCustomObjectTest()
         {
             string key = "key";
             string field = "field1";
@@ -247,11 +252,12 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true);
             server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
             server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
-            server.Start();
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -262,7 +268,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SeSaveRecoverCustomScriptTest()
+        public async Task SeSaveRecoverCustomScriptTest()
         {
             static void ValidateServerData(IDatabase db, string strKey, string strValue, string listKey, string listValue)
             {
@@ -293,10 +299,11 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true);
             server.Register.NewProcedure("SETMAINANDOBJECT", () => new SetStringAndList());
-            server.Start();
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -309,13 +316,14 @@ namespace Garnet.test
         [TestCase(63, 2, 1)]
         [TestCase(16, 16, 1)]
         [TestCase(5, 64, 1)]
-        public void SeSaveRecoverMultipleObjectsTest(int memorySize, int recoveryMemorySize, int pageSize)
+        public async Task SeSaveRecoverMultipleObjectsTest(int memorySize, int recoveryMemorySize, int pageSize)
         {
             string sizeToString(int size) => size + "k";
 
+            await server.StopAsync();
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, MemorySize: sizeToString(memorySize), PageSize: sizeToString(pageSize));
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, MemorySize: sizeToString(memorySize), PageSize: sizeToString(pageSize));
+            await server.RunAsync();
 
             var ldata = new RedisValue[] { "a", "b", "c", "d" };
             var ldataArr = ldata.Select(x => x).Reverse().ToArray();
@@ -334,9 +342,10 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, MemorySize: sizeToString(recoveryMemorySize), PageSize: sizeToString(pageSize), objectStoreHeapMemorySize: "64k");
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, MemorySize: sizeToString(recoveryMemorySize), PageSize: sizeToString(pageSize), objectStoreHeapMemorySize: "64k");
+            await server.RunAsync();
 
             ClassicAssert.LessOrEqual(server.Provider.StoreWrapper.objectStore.MaxAllocatedPageCount, (recoveryMemorySize / pageSize) + 1);
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -358,13 +367,14 @@ namespace Garnet.test
         [TestCase("16k", "16k")]
         [TestCase("5k", "8k")]
         [TestCase("5k", "64k")]
-        public void SeSaveRecoverMultipleKeysTest(string memorySize, string recoveryMemorySize)
+        public async Task SeSaveRecoverMultipleKeysTest(string memorySize, string recoveryMemorySize)
         {
             bool disableObj = true;
 
+            await server.StopAsync();
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, lowMemory: true, MemorySize: memorySize, PageSize: "512", enableAOF: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: disableObj, lowMemory: true, MemorySize: memorySize, PageSize: "512", enableAOF: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -401,9 +411,10 @@ namespace Garnet.test
                 db.Execute("COMMITAOF");
             }
 
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, tryRecover: true, lowMemory: true, MemorySize: recoveryMemorySize, PageSize: "512", enableAOF: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, DisableObjects: disableObj, tryRecover: true, lowMemory: true, MemorySize: recoveryMemorySize, PageSize: "512", enableAOF: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -417,11 +428,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SeAofRecoverTest()
+        public async Task SeAofRecoverTest()
         {
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableAOF: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -431,9 +443,10 @@ namespace Garnet.test
                 db.Execute("COMMITAOF");
             }
 
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableAOF: true, tryRecover: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {

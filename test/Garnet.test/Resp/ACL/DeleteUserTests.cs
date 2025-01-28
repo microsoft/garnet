@@ -18,10 +18,10 @@ namespace Garnet.test.Resp.ACL
         /// Creates and starts the Garnet test server
         /// </summary>
         [SetUp]
-        public virtual void Setup()
+        public virtual async Task Setup()
         {
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, useAcl: true);
+            await server.RunAsync();
         }
 
         /// <summary>

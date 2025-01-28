@@ -4,8 +4,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.cluster;
 using Garnet.common;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Internal;
@@ -62,7 +64,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(2)]
         [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
-        public void ClusterForgetAfterNodeRestartTest()
+        public async Task ClusterForgetAfterNodeRestartTest()
         {
             int nbInstances = 4;
             context.CreateInstances(nbInstances);
@@ -70,9 +72,10 @@ namespace Garnet.test.cluster
             var (shards, slots) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
             // Restart node with new ACL file
-            context.nodes[0].Dispose(false);
+            await context.nodes[0].StopAsync();
+            context.nodes[0].Dispose(); ;
             context.nodes[0] = context.CreateInstance(context.clusterTestUtils.GetEndPoint(0).Port, useAcl: true, cleanClusterConfig: false);
-            context.nodes[0].Start();
+            await context.nodes[0].RunAsync();
             context.CreateConnection();
 
             var firstNode = context.nodes[0];

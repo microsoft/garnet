@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -12,7 +13,7 @@ namespace Garnet.test
     [TestFixture]
     public class IndexGrowthTests
     {
-        GarnetServer server;
+        GarnetApplication server;
         private int indexResizeTaskDelaySeconds = 10;
         private int indexResizeWaitCycles = 2;
 
@@ -23,17 +24,22 @@ namespace Garnet.test
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server?.Dispose();
+            if (server != null)
+            {
+                await server.StopAsync();
+                server.Dispose();
+            }
+
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]
-        public void IndexGrowthTest()
+        public async Task IndexGrowthTest()
         {
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, indexSize: "64", indexMaxSize: "128", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, indexSize: "64", indexMaxSize: "128", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
+            await server.RunAsync();
 
             var store = server.Provider.StoreWrapper.store;
 
@@ -68,10 +74,10 @@ namespace Garnet.test
         }
 
         [Test]
-        public void ObjectStoreIndexGrowthTest()
+        public async Task ObjectStoreIndexGrowthTest()
         {
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectStoreIndexSize: "64", objectStoreIndexMaxSize: "128", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, objectStoreIndexSize: "64", objectStoreIndexMaxSize: "128", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
+            await server.RunAsync();
 
             var objectStore = server.Provider.StoreWrapper.objectStore;
 
@@ -115,10 +121,10 @@ namespace Garnet.test
         }
 
         [Test]
-        public void IndexGrowthTestWithDiskReadAndCheckpoint()
+        public async Task IndexGrowthTestWithDiskReadAndCheckpoint()
         {
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, indexSize: "512", indexMaxSize: "1k", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, indexSize: "512", indexMaxSize: "1k", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
+            await server.RunAsync();
 
             var store = server.Provider.StoreWrapper.store;
 
@@ -166,9 +172,10 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, indexSize: "512", indexMaxSize: "1k");
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, indexSize: "512", indexMaxSize: "1k");
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -179,10 +186,10 @@ namespace Garnet.test
         }
 
         [Test]
-        public void ObjectStoreIndexGrowthTestWithDiskReadAndCheckpoint()
+        public async Task ObjectStoreIndexGrowthTestWithDiskReadAndCheckpoint()
         {
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectStoreIndexSize: "512", objectStoreIndexMaxSize: "1k", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, objectStoreIndexSize: "512", objectStoreIndexMaxSize: "1k", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
+            await server.RunAsync();
 
             var objectStore = server.Provider.StoreWrapper.objectStore;
 
@@ -230,9 +237,10 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
 
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, objectStoreIndexSize: "512", objectStoreIndexMaxSize: "1k");
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, objectStoreIndexSize: "512", objectStoreIndexMaxSize: "1k");
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {

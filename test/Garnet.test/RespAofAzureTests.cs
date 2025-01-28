@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -12,7 +13,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespAofAzureTests
     {
-        GarnetServer server;
+        GarnetApplication server;
         static readonly SortedSetEntry[] entries =
         [
             new SortedSetEntry("a", 1),
@@ -28,20 +29,24 @@ namespace Garnet.test
         ];
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, lowMemory: true, UseAzureStorage: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, enableAOF: true, lowMemory: true, UseAzureStorage: true);
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            server?.Dispose();
+            if (server != null)
+            {
+                await server.StopAsync();
+                server.Dispose();
+            }
         }
 
         [Test]
-        public void AofUpsertStoreRecoverTest()
+        public async Task AofUpsertStoreRecoverTest()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -51,9 +56,10 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -66,7 +72,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofUpsertStoreAutoCommitRecoverTest()
+        public async Task AofUpsertStoreAutoCommitRecoverTest()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -76,9 +82,10 @@ namespace Garnet.test
             }
 
             server.Store.WaitForCommit();
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -91,11 +98,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofUpsertStoreAutoCommitCommitWaitRecoverTest()
+        public async Task AofUpsertStoreAutoCommitCommitWaitRecoverTest()
         {
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: false, enableAOF: true, commitWait: true, UseAzureStorage: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: false, enableAOF: true, commitWait: true, UseAzureStorage: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -103,9 +111,10 @@ namespace Garnet.test
                 db.StringSet("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1");
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
             }
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -118,7 +127,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofUpsertStoreCkptRecoverTest()
+        public async Task AofUpsertStoreCkptRecoverTest()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -136,9 +145,10 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -153,7 +163,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofRMWStoreRecoverTest()
+        public async Task AofRMWStoreRecoverTest()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -163,9 +173,10 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -178,7 +189,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofDeleteStoreRecoverTest()
+        public async Task AofDeleteStoreRecoverTest()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -198,9 +209,10 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -215,7 +227,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofExpiryRMWStoreRecoverTest()
+        public async Task AofExpiryRMWStoreRecoverTest()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -233,9 +245,10 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -248,7 +261,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofRMWObjectStoreRecoverTest()
+        public async Task AofRMWObjectStoreRecoverTest()
         {
             var key = "AofRMWObjectStoreRecoverTestKey";
 
@@ -267,9 +280,10 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -285,7 +299,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofDeleteObjectStoreRecoverTest()
+        public async Task AofDeleteObjectStoreRecoverTest()
         {
             var key1 = "AofDeleteObjectStoreRecoverTestKey1";
             var key2 = "AofDeleteObjectStoreRecoverTestKey2";
@@ -313,9 +327,10 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -328,7 +343,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofRMWObjectStoreCopyUpdateRecoverTest()
+        public async Task AofRMWObjectStoreCopyUpdateRecoverTest()
         {
             var key = "AofRMWObjectStoreRecoverTestKey";
 
@@ -349,9 +364,10 @@ namespace Garnet.test
                 db.SortedSetAdd("AofRMWObjectStoreRecoverTestKey" + 1, newEntries);
             }
             server.Store.CommitAOF(true);
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -367,7 +383,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofMultiRMWStoreCkptRecoverTest()
+        public async Task AofMultiRMWStoreCkptRecoverTest()
         {
             long ret = 0;
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -404,9 +420,10 @@ namespace Garnet.test
             }
 
             server.Store.CommitAOF(true);
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
-            server.Start();
+            await server.StopAsync();
+            server.Dispose();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, UseAzureStorage: true);
+            await server.RunAsync();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {

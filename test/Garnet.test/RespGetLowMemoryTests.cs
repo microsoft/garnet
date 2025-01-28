@@ -14,21 +14,22 @@ namespace Garnet.test
     [TestFixture]
     public class RespGetLowMemoryTests
     {
-        GarnetServer server;
+        GarnetApplication server;
         Random r;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             r = new Random(335);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, getSG: true, disablePubSub: true);
-            server.Start();
+            server = TestUtils.CreateGarnetApplication(TestUtils.MethodTestDir, lowMemory: true, getSG: true, disablePubSub: true);
+            await server.RunAsync();
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
+            await server.StopAsync();
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
