@@ -2219,19 +2219,19 @@ namespace Garnet.server
                 Debug.Assert(currentCustomObjectCommand == null);
                 Debug.Assert(currentCustomProcedure == null);
 
-                if (storeWrapper.customCommandManager.Match(command, out currentCustomTransaction))
+                if (customCommandManagerSession.Match(command, out currentCustomTransaction))
                 {
                     return RespCommand.CustomTxn;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomRawStringCommand))
+                else if (customCommandManagerSession.Match(command, out currentCustomRawStringCommand))
                 {
                     return RespCommand.CustomRawStringCmd;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomObjectCommand))
+                else if (customCommandManagerSession.Match(command, out currentCustomObjectCommand))
                 {
                     return RespCommand.CustomObjCmd;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomProcedure))
+                else if (customCommandManagerSession.Match(command, out currentCustomProcedure))
                 {
                     return RespCommand.CustomProcedure;
                 }
@@ -2247,7 +2247,6 @@ namespace Garnet.server
                 {
                     return RespCommand.GETIFNOTMATCH;
                 }
-
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.
