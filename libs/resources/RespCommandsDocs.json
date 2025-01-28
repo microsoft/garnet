@@ -1132,6 +1132,43 @@
             "Type": "String"
           }
         ]
+      },
+      {
+        "Command": "CLIENT_UNBLOCK",
+        "Name": "CLIENT|UNBLOCK",
+        "Summary": "Unblocks a client blocked by a blocking command from a different connection.",
+        "Group": "Connection",
+        "Complexity": "O(log N) where N is the number of client connections",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CLIENT-ID",
+            "DisplayText": "client-id",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "UNBLOCK-TYPE",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "TIMEOUT",
+                "DisplayText": "timeout",
+                "Type": "PureToken",
+                "Token": "TIMEOUT"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ERROR",
+                "DisplayText": "error",
+                "Type": "PureToken",
+                "Token": "ERROR"
+              }
+            ]
+          }
+        ]
       }
     ]
   },
