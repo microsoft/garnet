@@ -100,6 +100,13 @@ namespace Garnet.test.cluster
         PRIMARY_FAILOVER_STATE,
     }
 
+    public enum StoreInfoItem
+    {
+        CurrentVersion,
+        LastCheckpointedVersion,
+        RecoveredVersion
+    }
+
     public static class EndpointExtensions
     {
         public static IPEndPoint ToIPEndPoint(this EndPoint endPoint)
@@ -2693,6 +2700,47 @@ namespace Garnet.test.cluster
             if (items.Count == 0) Assert.Fail($"Getting replication info for item {infoItem} \n {infoSection} \n");
             return items;
         }
+
+        public int GetStoreCurrentVersion(int nodeIndex, bool isMainStore, ILogger logger = null)
+        {
+            var result = GetStoreInfo(endpoints[nodeIndex].ToIPEndPoint(), [StoreInfoItem.CurrentVersion], isMainStore, logger);
+            ClassicAssert.AreEqual(1, result.Count);
+            return int.Parse(result[0].Item2);
+        }
+
+        public List<(StoreInfoItem, string)> GetStoreInfo(int nodeIndex, HashSet<StoreInfoItem> infoItems, bool isMainStore, ILogger logger = null)
+            => GetStoreInfo(endpoints[nodeIndex].ToIPEndPoint(), infoItems, isMainStore, logger);
+
+        private List<(StoreInfoItem, string)> GetStoreInfo(IPEndPoint endPoint, HashSet<StoreInfoItem> infoItems, bool isMainStore, ILogger logger = null)
+        {
+            var fields = new List<(StoreInfoItem, string)>();
+            try
+            {
+                var server = redis.GetServer(endPoint);
+                var result = server.InfoRawAsync(isMainStore ? "store" : "objectstore").Result;
+                var data = result.Split('\n');
+                foreach (var line in data)
+                {
+                    if (line.StartsWith('#'))
+                        continue;
+                    var field = line.Trim().Split(':');
+
+                    if (!Enum.TryParse(field[0], ignoreCase: true, out StoreInfoItem type))
+                        continue;
+
+                    if (infoItems.Contains(type))
+                        fields.Add((type, field[1]));
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occurred; GetReplicationInfo");
+                Assert.Fail(ex.Message);
+            }
+
+            return fields;
+        }
+
 
         public string GetInfo(int nodeIndex, string section, string segment, ILogger logger = null)
             => GetInfo(endpoints[nodeIndex].ToIPEndPoint(), section, segment, logger);
