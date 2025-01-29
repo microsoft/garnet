@@ -93,6 +93,15 @@ namespace Garnet.server
         public static unsafe void WriteError(ref (IMemoryOwner<byte>, int) output, string errorMessage)
         {
             var bytes = System.Text.Encoding.ASCII.GetBytes(errorMessage);
+            WriteError(ref output, bytes);
+        }
+
+        /// <summary>
+        /// Create output as error message, from given string
+        /// </summary>
+        public static unsafe void WriteError(ref (IMemoryOwner<byte>, int) output, ReadOnlySpan<byte> errorMessage)
+        {
+            var bytes = errorMessage;
             // Get space for error
             var len = 1 + bytes.Length + 2;
             output.Item1 = MemoryPool.Rent(len);
@@ -141,6 +150,19 @@ namespace Garnet.server
                 Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
             output.Item2 = len;
+        }
+
+        public static unsafe void WriteDirect(ref (IMemoryOwner<byte>, int) output, ReadOnlySpan<byte> bytes)
+        {
+            output.Item1 = MemoryPool.Rent(bytes.Length);
+            fixed (byte* ptr = output.Item1.Memory.Span)
+            {
+                var curr = ptr;
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.TryWriteDirect(bytes, ref curr, ptr + bytes.Length);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
+            }
+            output.Item2 = bytes.Length;
         }
     }
 }

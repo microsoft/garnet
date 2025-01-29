@@ -8,7 +8,7 @@ namespace GarnetJSON.JSONPath
     /// <summary>
     /// Represents a JSON Path expression.
     /// </summary>
-    public class JsonPath
+    internal class JsonPath
     {
         private static readonly char[] FloatCharacters = ['.', 'E', 'e'];
         private static readonly JsonValue TrueJsonValue = JsonValue.Create(true);
@@ -38,6 +38,61 @@ namespace GarnetJSON.JSONPath
             Filters = new List<PathFilter>();
 
             ParseMain();
+        }
+
+        /// <summary>
+        /// Determines whether the current JPath is a static path.
+        /// A static path is guaranteed to return at most one result.
+        /// </summary>
+        /// <returns>true if the path is static; otherwise, false.</returns>
+        internal bool IsStaticPath()
+        {
+            return Filters.All(filter => filter switch
+            {
+                FieldFilter fieldFilter => fieldFilter.Name is not null,
+                ArrayIndexFilter arrayFilter => arrayFilter.Index.HasValue,
+                RootFilter => true,
+                _ => false
+            });
+        }
+
+        /// <summary>
+        /// Evaluates the JSON Path expression against the provided JSON nodes.
+        /// </summary>
+        /// <param name="root">The root JSON node.</param>
+        /// <param name="t">The current JSON node.</param>
+        /// <param name="settings">The settings used for JSON selection.</param>
+        /// <returns>An enumerable of JSON nodes that match the JSON Path expression.</returns>
+        internal IEnumerable<JsonNode?> Evaluate(JsonNode root, JsonNode? t, JsonSelectSettings? settings)
+        {
+            return Evaluate(Filters, root, t, settings);
+        }
+
+        /// <summary>
+        /// Evaluates the JSON Path expression against the provided JSON nodes using the specified filters.
+        /// </summary>
+        /// <param name="filters">The list of path filters to apply.</param>
+        /// <param name="root">The root JSON node.</param>
+        /// <param name="t">The current JSON node.</param>
+        /// <param name="settings">The settings used for JSON selection.</param>
+        /// <returns>An enumerable of JSON nodes that match the JSON Path expression.</returns>
+        internal static IEnumerable<JsonNode?> Evaluate(List<PathFilter> filters, JsonNode root, JsonNode? t, JsonSelectSettings? settings)
+        {
+            if (filters.Count >= 1)
+            {
+                var firstFilter = filters[0];
+                var current = firstFilter.ExecuteFilter(root, t, settings);
+
+                for (int i = 1; i < filters.Count; i++)
+                {
+                    current = filters[i].ExecuteFilter(root, current, settings);
+                }
+                return current;
+            }
+            else
+            {
+                return new List<JsonNode?> { t };
+            }
         }
 
         private void ParseMain()
@@ -860,30 +915,6 @@ namespace GarnetJSON.JSONPath
             if (_currentIndex >= _expression.Length)
             {
                 throw new JsonException(message);
-            }
-        }
-
-        internal IEnumerable<JsonNode?> Evaluate(JsonNode root, JsonNode? t, JsonSelectSettings? settings)
-        {
-            return Evaluate(Filters, root, t, settings);
-        }
-
-        internal static IEnumerable<JsonNode?> Evaluate(List<PathFilter> filters, JsonNode root, JsonNode? t, JsonSelectSettings? settings)
-        {
-            if (filters.Count >= 1)
-            {
-                var firstFilter = filters[0];
-                var current = firstFilter.ExecuteFilter(root, t, settings);
-
-                for (int i = 1; i < filters.Count; i++)
-                {
-                    current = filters[i].ExecuteFilter(root, current, settings);
-                }
-                return current;
-            }
-            else
-            {
-                return [t];
             }
         }
     }

@@ -32,7 +32,7 @@ namespace GarnetJSON.JSONPath
                 }
             }
 
-            return Enumerable.Empty<JsonNode>();
+            return [];
         }
 
         public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
@@ -40,7 +40,7 @@ namespace GarnetJSON.JSONPath
             var hasCount = current.TryGetNonEnumeratedCount(out int count);
             if (hasCount && count == 0)
             {
-                return Enumerable.Empty<JsonNode>();
+                return [];
             }
             else if (count == 1)
             {

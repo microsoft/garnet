@@ -2,9 +2,10 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Garnet.server;
 using GarnetJSON.JSONPath;
 using Microsoft.Extensions.Logging;
@@ -39,10 +40,10 @@ namespace GarnetJSON
     /// </summary>
     public class GarnetJsonObject : CustomObjectBase
     {
-        private const string JsonPathPattern = @"(\.[^.\[]+)|(\['[^']+'\])|(\[\d+\])";
+        private static readonly JsonSerializerOptions DefaultJsonSerializerOptions = new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+        private static readonly JsonSerializerOptions IndentedJsonSerializerOptions = new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true };
 
-        // Root node
-        private JsonNode? jNode;
+        private JsonNode? rootNode;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="GarnetJsonObject"/> class with the specified type.
@@ -64,7 +65,7 @@ namespace GarnetJSON
             Debug.Assert(reader != null);
 
             var jsonString = reader.ReadString();
-            jNode = JsonNode.Parse(jsonString);
+            rootNode = JsonNode.Parse(jsonString);
         }
 
         /// <summary>
@@ -74,7 +75,7 @@ namespace GarnetJSON
         public GarnetJsonObject(GarnetJsonObject obj)
             : base(obj)
         {
-            jNode = obj.jNode;
+            rootNode = obj.rootNode;
         }
 
         /// <summary>
@@ -89,9 +90,9 @@ namespace GarnetJSON
         /// <param name="writer">The binary writer to serialize to.</param>
         public override void SerializeObject(BinaryWriter writer)
         {
-            if (jNode == null) return;
+            if (rootNode == null) return;
 
-            writer.Write(jNode.ToJsonString());
+            writer.Write(rootNode.ToJsonString());
         }
 
         /// <summary>
@@ -104,175 +105,228 @@ namespace GarnetJSON
             byte* pattern = default, int patternLength = 0, bool isNoValue = false) =>
             throw new NotImplementedException();
 
-        /// <summary>
-        /// Tries to get the value at the specified JSON path.
-        /// </summary>
-        /// <param name="path">The JSON path.</param>
-        /// <param name="jsonString">The JSON string value at the specified path, or <c>null</c> if the value is not found.</param>
-        /// <param name="logger">The logger to log any errors.</param>
-        /// <returns><c>true</c> if the value was successfully retrieved; otherwise, <c>false</c>.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> is <c>null</c>.</exception>
-        public bool TryGet(string path, out string? jsonString, ILogger? logger = null)
+        public bool TryGet(ReadOnlySpan<ArgSlice> paths, Stream output, out ReadOnlySpan<byte> errorMessage, string? indent = null, string? newLine = null, string? space = null)
         {
-            if (path == null)
-                throw new ArgumentNullException(nameof(path));
+            if (paths.Length == 1)
+            {
+                return TryGet(paths[0].ReadOnlySpan, output, out errorMessage, indent, newLine, space);
+            }
 
-            jsonString = null;
+            output.WriteByte((byte)'{');
+            var isFirst = true;
+            foreach (var item in paths)
+            {
+                if (!isFirst)
+                {
+                    output.WriteByte((byte)',');
+                }
+                isFirst = false;
 
+                output.WriteByte((byte)'"');
+                output.Write(item.ReadOnlySpan);
+                output.WriteByte((byte)'"');
+                output.WriteByte((byte)':');
+
+                if (!TryGet(item.ReadOnlySpan, output, out errorMessage, indent, newLine, space))
+                {
+                    return false;
+                }
+            }
+            output.WriteByte((byte)'}');
+
+            errorMessage = default;
+            return true;
+        }
+
+        public bool TryGet(ReadOnlySpan<byte> path, Stream output, out ReadOnlySpan<byte> errorMessage, string? indent = null, string? newLine = null, string? space = null)
+        {
             try
             {
-                if (jNode is null)
+                if (rootNode is null)
                 {
+                    errorMessage = default;
                     return true;
                 }
 
-                // Find all items matching JSON path
-                var result = jNode.SelectNodes(path);
+                if (path.Length == 0)
+                {
+                    // System.Text.Json doesn't support customizing indentation, new line, and space github/runtime#111899, so for now if any of these are set, we will use the default indented serializer options
+                    JsonSerializer.Serialize(output, rootNode, indent is null && newLine is null && space is null ? DefaultJsonSerializerOptions : IndentedJsonSerializerOptions);
+                    errorMessage = default;
+                    return true;
+                }
 
-                // Return matches in JSON array format
-                jsonString = $"[{string.Join(",", result.Select(m => m?.ToJsonString()))}]";
+                var pathStr = Encoding.UTF8.GetString(path);
+                var result = rootNode.SelectNodes(pathStr);
 
+                output.WriteByte((byte)'[');
+                var isFirst = true;
+                foreach (var item in result)
+                {
+                    if (!isFirst)
+                    {
+                        output.WriteByte((byte)',');
+                    }
+                    isFirst = false;
+
+                    // System.Text.Json doesn't support customizing indentation, new line, and space github/runtime#111899, so for now if any of these are set, we will use the default indented serializer options
+                    JsonSerializer.Serialize(output, item, indent is null && newLine is null && space is null ? DefaultJsonSerializerOptions : IndentedJsonSerializerOptions);
+                }
+                output.WriteByte((byte)']');
+                errorMessage = default;
                 return true;
             }
             catch (JsonException ex)
             {
-                logger?.LogError(ex, "Failed to get JSON value");
+                errorMessage = Encoding.UTF8.GetBytes(ex.Message);
                 return false;
             }
         }
 
         /// <summary>
-        /// Tries to set the value at the specified JSON path.
+        /// Sets the value at the specified JSON path.
         /// </summary>
         /// <param name="path">The JSON path.</param>
         /// <param name="value">The value to set.</param>
-        /// <param name="logger">The logger to log any errors.</param>
-        /// <returns><c>true</c> if the value was successfully set; otherwise, <c>false</c>.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> or <paramref name="value"/> is <c>null</c>.</exception>
-        public bool TrySet(string path, string value, ILogger? logger = null)
+        /// <param name="existOptions">The options for existence checks.</param>
+        /// <param name="errorMessage">The error message if the operation fails.</param>
+        /// <returns>The result of the set operation.</returns>
+        /// <exception cref="JsonException">Thrown when there is an error in JSON processing.</exception>
+        public SetResult Set(ReadOnlySpan<byte> path, ReadOnlySpan<byte> value, ExistOptions existOptions, out ReadOnlySpan<byte> errorMessage)
         {
-            if (path == null)
-                throw new ArgumentNullException(nameof(path));
-
-            if (value == null)
-                throw new ArgumentNullException(nameof(value));
-
             try
             {
-                Set(path, value);
-                return true;
+                var pathStr = Encoding.UTF8.GetString(path);
+
+                if (pathStr.Length == 1 && pathStr[0] == '$')
+                {
+                    rootNode = JsonNode.Parse(value);
+                    errorMessage = default;
+                    return SetResult.Success;
+                }
+
+                if (rootNode is null)
+                {
+                    errorMessage = JsonCmdStrings.RESP_NEW_OBJECT_AT_ROOT;
+                    return SetResult.Error;
+                }
+
+                // Need ToArray to avoid modifying collection while iterating
+                JsonPath jsonPath = new JsonPath(pathStr);
+                var result = jsonPath.Evaluate(rootNode, rootNode, null).ToArray();
+
+                if (!result.Any())
+                {
+                    if (existOptions == ExistOptions.XX)
+                    {
+                        errorMessage = default;
+                        return SetResult.ConditionNotMet;
+                    }
+
+                    if (!jsonPath.IsStaticPath())
+                    {
+                        errorMessage = JsonCmdStrings.RESP_WRONG_STATIC_PATH;
+                        return SetResult.Error;
+                    }
+
+                    // Find parent node using parent path
+                    var parentNode = rootNode.SelectNodes(GetParentPath(pathStr, out var pathParentOffset)).FirstOrDefault();
+                    if (result is null)
+                    {
+                        errorMessage = default;
+                        return SetResult.ConditionNotMet;
+                    }
+
+                    var childNode = JsonNode.Parse(value);
+                    var itemPropName = GetPropertyName(pathStr, pathParentOffset);
+
+                    if (parentNode is JsonObject matchObject)
+                    {
+                        matchObject.Add(itemPropName.ToString(), childNode);
+                    }
+                    else if (parentNode is JsonArray matchArray && int.TryParse(itemPropName, out var index))
+                    {
+                        matchArray.Insert(index, childNode);
+                    }
+                    else
+                    {
+                        errorMessage = default;
+                        return SetResult.ConditionNotMet;
+                    }
+
+                    errorMessage = default;
+                    return SetResult.Success;
+                }
+
+                if (existOptions == ExistOptions.NX)
+                {
+                    errorMessage = default;
+                    return SetResult.ConditionNotMet;
+                }
+
+                foreach (var match in result.ToList())
+                {
+                    var valNode = JsonNode.Parse(value);
+
+                    if (rootNode == match)
+                    {
+                        rootNode = valNode;
+                        break;
+                    }
+
+                    // Known issue: When the value to be replaced is null, replace won't work as there is no NullJsonValue, instead .net returns null
+                    match?.ReplaceWith(valNode);
+                }
+
+                errorMessage = default;
+                return SetResult.Success;
             }
             catch (JsonException ex)
             {
-                logger?.LogError(ex, "Failed to set JSON value");
-                return false;
+                errorMessage = Encoding.UTF8.GetBytes(ex.Message);
+                return SetResult.Error;
             }
         }
 
-        private void Set(string path, string value)
+        private static string GetParentPath(string path, out int pathOffset)
         {
-            if (jNode is null)
+            var pathSpan = path.AsSpan();
+            // Removed the last character from the path to remove the trailing ']' or '.', it shouldn't affect the result even if it doesn't have
+            pathOffset = pathSpan[..^1].LastIndexOfAny('.', ']');
+
+            if (pathOffset == -1)
             {
-                if (path == "$")
-                {
-                    jNode = JsonNode.Parse(value);
-                    return;
-                }
-                else
-                {
-                    throw new JsonException("ERR new objects must be created at the root");
-                }
+                return "$";
             }
 
-            // Find all items matching JSON path
-            var result = jNode.SelectNodes(path);
-
-            // No matched items
-            if (!result.Any())
+            if (pathSpan[pathOffset] == ']')
             {
-                // Find parent node path
-                result = jNode.SelectNodes(GetParentPathExt(path));
-                if (!result.Any())
-                    throw new JsonException("Unable to find parent node(s) for JSON path.");
-
-                // Get parent node from path & parse child node from input value
-                var parentNode = result.First();
-                var childNode = JsonNode.Parse(value);
-
-                // Check if parent node is a JsonObject
-                if (parentNode is JsonObject matchObject)
-                {
-                    // Get key name from JSON path
-                    var propName = GetPropertyName(path);
-
-                    // Add key & child node to the parent node
-                    matchObject.Add(propName, childNode);
-                }
-                // Check if parent node is a JsonArray
-                else if (parentNode is JsonArray matchArray)
-                {
-                    // Get child index in parent array
-                    var index = GetArrayIndex(path);
-
-                    // Add child node to parent array
-                    matchArray.Insert(index, childNode);
-                }
+                pathOffset++;
             }
-            // Matches found
-            else
-            {
-                // Need ToList to avoid modifying collection while iterating
-                foreach (var match in result.ToList())
-                {
-                    // Parse node from input value
-                    var valNode = JsonNode.Parse(value);
 
-                    // If matched node is root
-                    if (jNode == match)
-                    {
-                        // Set root node to parsed value node
-                        jNode = valNode;
-                        continue;
-                    }
-
-                    // Replace matched value with input value
-                    if (match is JsonValue matchValue)
-                    {
-                        matchValue.ReplaceWith(valNode);
-                    }
-                }
-            }
+            return path.Substring(0, pathOffset);
         }
 
-        private static string GetParentPathExt(string jsonPath)
+        private static ReadOnlySpan<char> GetPropertyName(string path, int pathOffset)
         {
-            var matches = Regex.Matches(jsonPath, JsonPathPattern);
-
-            if (matches.Count == 0) return "$";
-
-            return jsonPath.Substring(0, matches[^1].Index);
-        }
-
-        private static string GetPropertyName(string path)
-        {
-            var lastDotIndex = path.LastIndexOf('.');
-            return lastDotIndex >= 0 ? path.Substring(lastDotIndex + 1) : path;
-        }
-
-        private static int GetArrayIndex(string path)
-        {
-            var startIndex = path.LastIndexOf('[');
-            var endIndex = path.LastIndexOf(']');
-            if (startIndex >= 0 && endIndex >= 0 && endIndex > startIndex)
+            var pathSpan = path.AsSpan();
+            if (pathSpan[pathOffset] is '.')
             {
-                var indexString = path.Substring(startIndex + 1, endIndex - startIndex - 1);
-                if (int.TryParse(indexString, out var index))
-                {
-                    return index;
-                }
+                pathOffset++;
             }
 
-            throw new ArgumentException("Invalid array index in path");
+            var propertSpan = pathSpan[pathOffset..];
+            if (propertSpan[0] is '[')
+            {
+                propertSpan = propertSpan[1..^1];
+            }
+
+            if (propertSpan[0] is '"' or '\'')
+            {
+                propertSpan = propertSpan[1..^1];
+            }
+
+            return propertSpan;
         }
     }
 }
