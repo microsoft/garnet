@@ -174,8 +174,8 @@ namespace Garnet.server
             var disabledBroker = subscribeBroker == null;
             var header = cmd switch
             {
-                RespCommand.SUBSCRIBE => "subscribe"u8,
-                RespCommand.SSUBSCRIBE => "ssubscribe"u8,
+                RespCommand.SUBSCRIBE => CmdStrings.subscribe,
+                RespCommand.SSUBSCRIBE => CmdStrings.ssubscribe,
                 _ => throw new NotImplementedException()
             };
 

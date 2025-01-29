@@ -149,7 +149,7 @@ namespace Garnet.cluster
             var config = clusterProvider.clusterManager.CurrentConfig;
             var vres = MultiKeySlotVerify(config, ref parseState, ref csvi);
 
-            return vres.state == SlotVerifiedState.OK ? false : true;
+            return vres.state != SlotVerifiedState.OK;
         }
     }
 }

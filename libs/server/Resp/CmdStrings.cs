@@ -15,7 +15,9 @@ namespace Garnet.server
         /// </summary>
         public static ReadOnlySpan<byte> CLIENT => "CLIENT"u8;
         public static ReadOnlySpan<byte> SUBSCRIBE => "SUBSCRIBE"u8;
+        public static ReadOnlySpan<byte> subscribe => "subcribe"u8;
         public static ReadOnlySpan<byte> SSUBSCRIBE => "SSUBSCRIBE"u8;
+        public static ReadOnlySpan<byte> ssubscribe => "ssubcribe"u8;
         public static ReadOnlySpan<byte> RUNTXP => "RUNTXP"u8;
         public static ReadOnlySpan<byte> GET => "GET"u8;
         public static ReadOnlySpan<byte> get => "get"u8;
