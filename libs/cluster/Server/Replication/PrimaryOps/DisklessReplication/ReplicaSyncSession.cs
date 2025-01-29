@@ -16,7 +16,7 @@ namespace Garnet.cluster
         Task<bool> flushTask;
         bool sendMainStore = false;
         bool sendObjectStore = false;
-        bool truncatedAof = false;
+        bool outOfRangeAof = false;
         bool fullSync = false;
 
         /// <summary>
@@ -33,6 +33,11 @@ namespace Garnet.cluster
         public long currentStoreVersion;
 
         public long currentObjectStoreVersion;
+
+        /// <summary>
+        /// Pessimistic checkpoint covered AOF address
+        /// </summary>
+        public long checkpointCoveredAofAddress;
 
         /// <summary>
         /// LogError
@@ -215,14 +220,17 @@ namespace Garnet.cluster
                 var sameHistory = localPrimaryReplId.Equals(replicaSyncMetadata.currentPrimaryReplId, StringComparison.Ordinal);
                 sendMainStore = !sameHistory || replicaSyncMetadata.currentStoreVersion != currentStoreVersion;
                 sendObjectStore = !sameHistory || replicaSyncMetadata.currentObjectStoreVersion != currentObjectStoreVersion;
-                truncatedAof = replicaSyncMetadata.currentAofTailAddress < AofSyncTask.StartAddress;
+
+                var aofBeginAddress = clusterProvider.storeWrapper.appendOnlyFile.BeginAddress;
+                var aofTailAddress = clusterProvider.storeWrapper.appendOnlyFile.TailAddress;
+                outOfRangeAof = replicaSyncMetadata.currentAofTailAddress < aofBeginAddress || replicaSyncMetadata.currentAofTailAddress > aofTailAddress;
 
                 // We need to stream checkpoint if any of the following conditions are met:
                 // 1. Replica has different history than primary
                 // 2. Replica has different main store version than primary
                 // 3. Replica has different object store version than primary
                 // 4. Replica has truncated AOF
-                fullSync = sendMainStore || sendObjectStore || truncatedAof;
+                fullSync = sendMainStore || sendObjectStore || outOfRangeAof;
                 return fullSync;
             }
         }
@@ -238,20 +246,8 @@ namespace Garnet.cluster
                 var mmr = clusterProvider.serverOptions.MainMemoryReplication;
                 var aofNull = clusterProvider.serverOptions.UseAofNullDevice;
 
-                var canReplayFromAddress = aofSyncTask.StartAddress;
-                var replicaAofBeginAddress = replicaSyncMetadata.currentAofBeginAddress;
-                var replicaAofTailAddress = replicaSyncMetadata.currentAofTailAddress;
-
-                var currentAofBeginAddress = canReplayFromAddress;
-                var currentTailAofAddress = clusterProvider.storeWrapper.appendOnlyFile.TailAddress;
-
-                // TODO:
-                // If partial sync we need to calculate the beginAddress and endAddress of replica AOF
-                // to match the primary AOF
-                if (!fullSync)
-                {
-
-                }
+                var currentAofBeginAddress = fullSync ? checkpointCoveredAofAddress : aofSyncTask.StartAddress;
+                var currentAofTailAddress = clusterProvider.storeWrapper.appendOnlyFile.TailAddress;
 
                 var recoverSyncMetadata = new SyncMetadata(
                     fullSync: fullSync,
@@ -261,7 +257,7 @@ namespace Garnet.cluster
                     currentStoreVersion: currentStoreVersion,
                     currentObjectStoreVersion: currentObjectStoreVersion,
                     currentAofBeginAddress: currentAofBeginAddress,
-                    currentAofTailAddress: currentTailAofAddress,
+                    currentAofTailAddress: currentAofTailAddress,
                     currentReplicationOffset: clusterProvider.replicationManager.ReplicationOffset,
                     checkpointEntry: null);
 
