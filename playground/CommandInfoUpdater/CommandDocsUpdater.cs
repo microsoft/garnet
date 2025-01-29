@@ -45,7 +45,7 @@ namespace CommandInfoUpdater
                 if (ci.Value.SubCommands == null) continue;
                 var internalSubCmds =
                     ci.Value.SubCommands.Where(sc => sc.IsInternal).Select(sc => sc.Name).ToHashSet();
-                
+
                 if (internalSubCmds.Count > 0)
                     internalSubCommands.Add(ci.Key, internalSubCmds);
             }
