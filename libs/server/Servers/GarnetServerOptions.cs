@@ -204,7 +204,7 @@ namespace Garnet.server
         /// <summary>
         /// Slowlog log command if the request takes longer than this threshold
         /// </summary>
-        public int SlowlogLogSlowerThan = 10000;
+        public int SlowlogLogSlowerThan = -1;
 
         /// <summary>
         /// Maximum number of slowlog entries to keep
