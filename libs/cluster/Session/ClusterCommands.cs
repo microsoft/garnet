@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using Garnet.common;
 using Garnet.server;
 
 namespace Garnet.cluster
