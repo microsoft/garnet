@@ -16,6 +16,7 @@ using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
+    [NonParallelizable]
     public class ClusterReplicationBaseTests
     {
         public (Action, string)[] GetUnitTests()

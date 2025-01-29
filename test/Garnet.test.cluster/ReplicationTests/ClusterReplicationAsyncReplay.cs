@@ -5,6 +5,7 @@ using NUnit.Framework;
 
 namespace Garnet.test.cluster
 {
+    [NonParallelizable]
     public class ClusterReplicationAsyncReplay : ClusterReplicationBaseTests
     {
         [SetUp]
