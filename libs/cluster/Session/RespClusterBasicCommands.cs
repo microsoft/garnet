@@ -475,19 +475,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
-            var val = parseState.GetArgSliceByRef(1).SpanByte;
-
-            var keyPtr = key.ToPointer() - sizeof(int);
-            var valPtr = val.ToPointer() - sizeof(int);
-            var kSize = key.Length;
-            var vSize = val.Length;
-
-            *(int*)keyPtr = kSize;
-            *(int*)valPtr = vSize;
-
-            clusterProvider.storeWrapper.subscribeBroker.Publish(keyPtr, valPtr, vSize + sizeof(int), true);
-
+            clusterProvider.storeWrapper.subscribeBroker.Publish(ref parseState, true);
             return true;
         }
     }
