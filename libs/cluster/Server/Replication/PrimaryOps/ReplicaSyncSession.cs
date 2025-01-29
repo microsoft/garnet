@@ -19,6 +19,8 @@ namespace Garnet.cluster
         StoreWrapper storeWrapper,
         ClusterProvider clusterProvider,
         SyncMetadata replicaSyncMetadata = null,
+        TimeSpan timeout = default,
+        CancellationToken token = default,
         string replicaNodeId = null,
         string replicaAssignedPrimaryId = null,
         CheckpointEntry replicaCheckpointEntry = null,
@@ -29,6 +31,8 @@ namespace Garnet.cluster
         readonly StoreWrapper storeWrapper = storeWrapper;
         readonly ClusterProvider clusterProvider = clusterProvider;
         public readonly SyncMetadata replicaSyncMetadata = replicaSyncMetadata;
+        readonly TimeSpan timeout = timeout;
+        readonly CancellationToken token = token;
         readonly CancellationTokenSource cts = new();
         SectorAlignedBufferPool bufferPool = null;
         readonly SemaphoreSlim semaphore = new(0);

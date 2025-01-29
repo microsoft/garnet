@@ -48,7 +48,7 @@ namespace Garnet.cluster
             async Task TryBeginReplicaSync()
             {
                 var disklessSync = clusterProvider.serverOptions.ReplicaDisklessSync;
-                var dissableObjects = clusterProvider.serverOptions.DisableObjects;
+                var disableObjects = clusterProvider.serverOptions.DisableObjects;
                 GarnetClientSession gcs = null;
                 try
                 {
@@ -106,7 +106,7 @@ namespace Garnet.cluster
                         originNodeId: current.LocalNodeId,
                         currentPrimaryReplId: PrimaryReplId,
                         currentStoreVersion: storeWrapper.store.CurrentVersion,
-                        currentObjectStoreVersion: dissableObjects ? -1 : storeWrapper.objectStore.CurrentVersion,
+                        currentObjectStoreVersion: disableObjects ? -1 : storeWrapper.objectStore.CurrentVersion,
                         currentAofBeginAddress: storeWrapper.appendOnlyFile.BeginAddress,
                         currentAofTailAddress: storeWrapper.appendOnlyFile.TailAddress,
                         currentReplicationOffset: ReplicationOffset,
