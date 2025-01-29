@@ -23,7 +23,7 @@ namespace Garnet.server
         public string replication_state;
 
         /// <summary>
-        /// Address of instace. 
+        /// Address of instance. 
         /// </summary>
         public string address;
 

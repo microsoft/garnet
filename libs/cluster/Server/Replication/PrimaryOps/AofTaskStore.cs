@@ -64,36 +64,6 @@ namespace Garnet.cluster
             }
         }
 
-        public List<(string, string)> GetReplicaInfoMetrics(long PrimaryReplicationOffset)
-        {
-            // secondary0: ip=127.0.0.1,port=7001,state=online,offset=56,lag=0
-            List<(string, string)> replicaInfo = new List<(string, string)>();
-
-            _lock.ReadLock();
-            var current = clusterProvider.clusterManager.CurrentConfig;
-            try
-            {
-                if (_disposed) return replicaInfo;
-
-                for (int i = 0; i < numTasks; i++)
-                {
-                    var cr = tasks[i];
-                    var replicaId = cr.remoteNodeId;
-                    var (address, port) = current.GetWorkerAddressFromNodeId(replicaId);
-                    var state = cr.garnetClient.IsConnected ? "online" : "offline";
-                    long offset = cr.previousAddress;
-                    long lag = offset - PrimaryReplicationOffset;
-                    var count = replicaInfo.Count;
-                    replicaInfo.Add(($"slave{count}", $"ip={address},port={port},state={state},offset={offset},lag={lag}"));
-                }
-            }
-            finally
-            {
-                _lock.ReadUnlock();
-            }
-            return replicaInfo;
-        }
-
         public List<RoleInfo> GetReplicaInfo(long PrimaryReplicationOffset)
         {
             // secondary0: ip=127.0.0.1,port=7001,state=online,offset=56,lag=0

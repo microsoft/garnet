@@ -54,19 +54,13 @@ namespace Garnet.server
         /// Get info on primary from replica perspective.
         /// </summary>
         /// <returns></returns>
-        List<RoleInfo> GetPrimaryInfo();
+        (long replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo();
 
         /// <summary>
         /// Get info on replicas from primary perspective.
         /// </summary>
         /// <returns></returns>
         RoleInfo GetReplicaInfo();
-
-        /// <summary>
-        /// Get replication offset.
-        /// </summary>
-        /// <returns></returns>
-        long GetReplicationOffset();
 
         /// <summary>
         /// Purger buffer pool for provided manager

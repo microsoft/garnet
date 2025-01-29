@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -673,7 +672,7 @@ namespace Garnet.server
             {
                 if (storeWrapper.clusterProvider.IsPrimary())
                 {
-                    var replicaInfo = storeWrapper.clusterProvider.GetPrimaryInfo();
+                    var (replication_offset, replicaInfo) = storeWrapper.clusterProvider.GetPrimaryInfo();
 
                     while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
@@ -681,7 +680,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteAsciiBulkString("master", ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteInt64(storeWrapper.clusterProvider.GetReplicationOffset(), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt64(replication_offset, ref dcurr, dend))
                         SendAndReset();
 
                     while (!RespWriteUtils.TryWriteArrayLength(replicaInfo.Count, ref dcurr, dend))
