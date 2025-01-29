@@ -234,6 +234,7 @@ namespace Garnet.server
         CLIENT_GETNAME,
         CLIENT_SETNAME,
         CLIENT_SETINFO,
+        CLIENT_UNBLOCK,
 
         MONITOR,
         MODULE,
@@ -395,6 +396,7 @@ namespace Garnet.server
             RespCommand.CLIENT_GETNAME,
             RespCommand.CLIENT_SETNAME,
             RespCommand.CLIENT_SETINFO,
+            RespCommand.CLIENT_UNBLOCK,
             // Command
             RespCommand.COMMAND,
             RespCommand.COMMAND_COUNT,
@@ -1777,6 +1779,10 @@ namespace Garnet.server
                     {
                         return RespCommand.CLIENT_SETINFO;
                     }
+                    else if (subCommand.SequenceEqual(CmdStrings.UNBLOCK))
+                    {
+                        return RespCommand.CLIENT_UNBLOCK;
+                    }
                 }
             }
             else if (command.SequenceEqual(CmdStrings.AUTH))
@@ -2235,19 +2241,19 @@ namespace Garnet.server
                 Debug.Assert(currentCustomObjectCommand == null);
                 Debug.Assert(currentCustomProcedure == null);
 
-                if (storeWrapper.customCommandManager.Match(command, out currentCustomTransaction))
+                if (customCommandManagerSession.Match(command, out currentCustomTransaction))
                 {
                     return RespCommand.CustomTxn;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomRawStringCommand))
+                else if (customCommandManagerSession.Match(command, out currentCustomRawStringCommand))
                 {
                     return RespCommand.CustomRawStringCmd;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomObjectCommand))
+                else if (customCommandManagerSession.Match(command, out currentCustomObjectCommand))
                 {
                     return RespCommand.CustomObjCmd;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomProcedure))
+                else if (customCommandManagerSession.Match(command, out currentCustomProcedure))
                 {
                     return RespCommand.CustomProcedure;
                 }
@@ -2263,7 +2269,6 @@ namespace Garnet.server
                 {
                     return RespCommand.GETIFNOTMATCH;
                 }
-
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.
@@ -2383,7 +2388,7 @@ namespace Garnet.server
             }
 
             // Read the array length
-            if (!RespReadUtils.ReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.TryReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
             {
                 success = false;
                 return RespCommand.INVALID;
@@ -2405,13 +2410,13 @@ namespace Garnet.server
             {
                 if (!specificErrorMessage.IsEmpty)
                 {
-                    while (!RespWriteUtils.WriteError(specificErrorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(specificErrorMessage, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
                     // Return "Unknown RESP Command" message
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                         SendAndReset();
                 }
             }

@@ -169,12 +169,12 @@ namespace Resp.benchmark
             fixed (byte* buf = buffer)
             {
                 byte* ptr = buf;
-                RespReadUtils.ReadUnsignedArrayLength(out int count, ref ptr, buf + buffer.Length);
-                RespReadUtils.ReadStringWithLengthHeader(out var cmd, ref ptr, buf + buffer.Length);
+                RespReadUtils.TryReadUnsignedArrayLength(out int count, ref ptr, buf + buffer.Length);
+                RespReadUtils.TryReadStringWithLengthHeader(out var cmd, ref ptr, buf + buffer.Length);
 
                 for (int j = 0; j < count - 1; j++)
                 {
-                    RespReadUtils.ReadStringWithLengthHeader(out var arg, ref ptr, buf + buffer.Length);
+                    RespReadUtils.TryReadStringWithLengthHeader(out var arg, ref ptr, buf + buffer.Length);
                     flatRequestBuffer[i].Add(arg);
                 }
             }

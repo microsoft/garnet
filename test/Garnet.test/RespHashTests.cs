@@ -85,6 +85,22 @@ namespace Garnet.test
             ClassicAssert.AreEqual("Tsavorite", r);
         }
 
+        // Covers the fix of #954.
+        [Test]
+        public void CanFieldPersistAndGetTimeToLive()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "user:user1";
+            var field = "field1";
+
+            db.HashSet(key, [new HashEntry(field, "v1")]);
+            db.HashFieldExpire(key, [field], TimeSpan.FromHours(1));
+            db.HashFieldPersist(key, [field]);
+            var ttl = db.HashFieldGetTimeToLive(key, [field]);
+            ClassicAssert.AreEqual(-1, ttl[0]);
+        }
+
         [Test]
         public void CanSetAndGetOnePairLarge()
         {
@@ -1243,10 +1259,10 @@ namespace Garnet.test
 
             (var expireTimeField1, var expireTimeField3, var newExpireTimeField) = command switch
             {
-                "HEXPIRE" => ("1", "3", "2"),
-                "HPEXPIRE" => ("1000", "3000", "2000"),
-                "HEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeSeconds().ToString()),
-                "HPEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeMilliseconds().ToString()),
+                "HEXPIRE" => ("2", "6", "4"),
+                "HPEXPIRE" => ("2000", "6000", "4000"),
+                "HEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(6).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeSeconds().ToString()),
+                "HPEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(6).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeMilliseconds().ToString()),
                 _ => throw new ArgumentException("Invalid command")
             };
 
@@ -1286,6 +1302,7 @@ namespace Garnet.test
 
         #region LightClientTests
 
+
         /// <summary>
         /// HSET used explictly always returns the number of fields that were added.
         /// HSET can manage more than one field in the input
@@ -1300,7 +1317,6 @@ namespace Garnet.test
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
-
 
         [Test]
         [TestCase(30)]
@@ -1778,6 +1794,20 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
+        [Test]
+        public void CanIncrementBeyond32bits()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand($"HSET myhash int64 {1L + int.MaxValue}");
+            var expectedResponse = ":1\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("HINCRBY myhash int64 1");
+            expectedResponse = $":{2L + int.MaxValue}\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
         #endregion
 
         private static string FormatWrongNumOfArgsError(string commandName) => $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";

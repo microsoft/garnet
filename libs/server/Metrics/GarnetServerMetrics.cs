@@ -10,6 +10,7 @@ namespace Garnet.server
         /// </summary>
         public long total_connections_received;
         public long total_connections_disposed;
+        public long total_connections_active;
 
         /// <summary>
         /// Instantaneous metrics
@@ -38,6 +39,7 @@ namespace Garnet.server
         {
             total_connections_received = 0;
             total_connections_disposed = 0;
+            total_connections_active = 0;
 
             instantaneous_cmd_per_sec = 0;
             instantaneous_net_input_tpt = 0;

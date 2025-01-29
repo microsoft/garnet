@@ -21,7 +21,7 @@ namespace Garnet.server
 
             if (status.Found)
             {
-                if (output.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
+                if (output.HasWrongType)
                     return GarnetStatus.WRONGTYPE;
 
                 return GarnetStatus.OK;
@@ -40,7 +40,7 @@ namespace Garnet.server
 
             if (status.Found)
             {
-                if (output.OutputFlags.HasFlag(ObjectStoreOutputFlags.WrongType))
+                if (output.HasWrongType)
                     return GarnetStatus.WRONGTYPE;
 
                 return GarnetStatus.OK;

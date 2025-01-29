@@ -28,9 +28,10 @@ namespace Garnet.server
 
         public readonly string NameStr;
         public readonly byte Id;
+        public readonly int Arity;
         public readonly Func<CustomProcedure> CustomProcedureFactory;
 
-        internal CustomProcedureWrapper(string name, byte id, Func<CustomProcedure> customProcedureFactory, CustomCommandManager customCommandManager)
+        internal CustomProcedureWrapper(string name, byte id, int arity, Func<CustomProcedure> customProcedureFactory, CustomCommandManager customCommandManager)
         {
             if (string.IsNullOrEmpty(name))
                 throw new ArgumentNullException(nameof(name));
@@ -43,6 +44,7 @@ namespace Garnet.server
             NameStr = name.ToUpperInvariant();
             Name = System.Text.Encoding.ASCII.GetBytes(NameStr);
             Id = id;
+            Arity = arity;
             CustomProcedureFactory = customProcedureFactory;
         }
     }

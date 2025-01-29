@@ -13,7 +13,6 @@ using Garnet.server;
 using Garnet.server.ACL;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
-using StackExchange.Redis;
 
 namespace Garnet.test.Resp.ACL
 {
@@ -835,6 +834,21 @@ namespace Garnet.test.Resp.ACL
 
                     throw;
                 }
+            }
+        }
+
+        [Test]
+        public async Task ClientUnblockACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CLIENT UNBLOCK",
+                [DoClientUnblockAsync]
+            );
+
+            static async Task DoClientUnblockAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForLongResultAsync("CLIENT", ["UNBLOCK", "123"]);
+                ClassicAssert.AreEqual(0, count);
             }
         }
 
@@ -5485,8 +5499,8 @@ namespace Garnet.test.Resp.ACL
 
             async Task DoSetIfNotExistAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("SETNX", [$"foo-{keyIx++}", "bar"]);
-                ClassicAssert.AreEqual(val, "OK");
+                var val = await client.ExecuteForLongResultAsync("SETNX", [$"foo-{keyIx++}", "bar"]);
+                ClassicAssert.AreEqual(1, val);
             }
         }
 
