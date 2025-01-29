@@ -522,37 +522,6 @@ namespace Garnet.server
             }
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        void HandleSlowLog(RespCommand cmd)
-        {
-            long currentTime = Stopwatch.GetTimestamp();
-            long elapsed = currentTime - slowLogStartTime;
-            if (elapsed > slowLogThreshold)
-            {
-                var entry = new SlowLogEntry
-                {
-                    Timestamp = (int)(currentTime / OutputScalingFactor.TimeStampToSeconds),
-                    Command = cmd,
-                    Duration = (int)(elapsed / OutputScalingFactor.TimeStampToMicroseconds),
-                    ClientIpPort = networkSender.RemoteEndpointName,
-                    ClientName = clientName,
-                };
-                if (parseState.Count > 0)
-                {
-                    int len = parseState.GetSerializedLength();
-                    byte[] args = new byte[len];
-                    fixed (byte* argsPtr = args)
-                    {
-                        parseState.CopyTo(argsPtr, len);
-                    }
-                    entry.Arguments = args;
-                }
-                storeWrapper.slowLogContainer.Add(entry);
-            }
-            // Update slowLogStartTime so that we can track the next command in the batch
-            slowLogStartTime = currentTime;
-        }
-
         // Make first command in string as uppercase
         private bool MakeUpperCase(byte* ptr)
         {

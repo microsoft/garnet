@@ -2,7 +2,10 @@
 // Licensed under the MIT license.
 
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Garnet.common;
+using HdrHistogram;
 
 namespace Garnet.server
 {
@@ -130,6 +133,44 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void HandleSlowLog(RespCommand cmd)
+        {
+            long currentTime = Stopwatch.GetTimestamp();
+
+            // Only track valid commands in the slow log
+            if (cmd != RespCommand.INVALID)
+            {
+                long elapsed = currentTime - slowLogStartTime;
+                if (elapsed > slowLogThreshold)
+                {
+                    var entry = new SlowLogEntry
+                    {
+                        Timestamp = (int)(currentTime / OutputScalingFactor.TimeStampToSeconds),
+                        Command = cmd,
+                        Duration = (int)(elapsed / OutputScalingFactor.TimeStampToMicroseconds),
+                        ClientIpPort = networkSender.RemoteEndpointName,
+                        ClientName = clientName,
+                    };
+                    if (parseState.Count > 0)
+                    {
+                        // We store the parse state in serialized form, as a byte array
+                        int len = parseState.GetSerializedLength();
+                        byte[] args = new byte[len];
+                        fixed (byte* argsPtr = args)
+                        {
+                            parseState.CopyTo(argsPtr, len);
+                        }
+                        entry.Arguments = args;
+                    }
+                    storeWrapper.slowLogContainer.Add(entry);
+                }
+            }
+
+            // Update slowLogStartTime so that we can track the next command in the batch
+            slowLogStartTime = currentTime;
         }
     }
 }
