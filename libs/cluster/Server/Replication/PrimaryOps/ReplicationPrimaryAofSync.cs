@@ -18,7 +18,8 @@ namespace Garnet.cluster
 
         public int ConnectedReplicasCount => aofTaskStore.CountConnectedReplicas();
 
-        public List<(int count, RoleInfo roleInfo)> GetReplicaInfo() => aofTaskStore.GetReplicaInfo(ReplicationOffset);
+        public List<(string, string)> GetReplicaInfoMetrics() => aofTaskStore.GetReplicaInfoMetrics(ReplicationOffset);
+        public List<RoleInfo> GetReplicaInfo() => aofTaskStore.GetReplicaInfo(ReplicationOffset);
 
         public bool TryAddReplicationTask(string nodeid, long startAddress, out AofSyncTaskInfo aofSyncTaskInfo)
             => aofTaskStore.TryAddReplicationTask(nodeid, startAddress, out aofSyncTaskInfo);

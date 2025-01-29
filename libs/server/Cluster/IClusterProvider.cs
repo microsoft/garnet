@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server.ACL;
@@ -53,7 +54,7 @@ namespace Garnet.server
         /// Get info on primary from replica perspective.
         /// </summary>
         /// <returns></returns>
-        (long replication_offset, RoleInfo[] replicaInfo) GetPrimaryInfo();
+        List<RoleInfo> GetPrimaryInfo();
 
         /// <summary>
         /// Get info on replicas from primary perspective.

@@ -208,7 +208,7 @@ namespace Garnet.cluster
         {
             var clusterEnabled = serverOptions.EnableCluster;
             var config = clusterEnabled ? clusterManager.CurrentConfig : null;
-            var replicaInfo = clusterEnabled ? replicationManager.GetReplicaInfo() : null;
+            var replicaInfo = clusterEnabled ? replicationManager.GetReplicaInfoMetrics() : null;
             var role = clusterEnabled ? config.LocalNodeRole : NodeRole.PRIMARY;
             var replication_offset = !clusterEnabled ? "N/A" : replicationManager.ReplicationOffset.ToString();
             var replication_offset2 = !clusterEnabled ? "N/A" : replicationManager.ReplicationOffset2.ToString();
@@ -253,21 +253,21 @@ namespace Garnet.cluster
                 {
                     // replica0: ip=127.0.0.1,port=7001,state=online,offset=56,lag=0
                     foreach (var ri in replicaInfo)
-                        replicationInfo.Add(new($"slave{ri.count}", ri.roleInfo.ToString()));
+                        replicationInfo.Add(new(ri.Item2, ri.Item2));
                 }
             }
             return [.. replicationInfo];
         }
 
         /// <inheritdoc />
-        public (long replication_offset, RoleInfo[] replicaInfo) GetPrimaryInfo()
+        public List<RoleInfo> GetPrimaryInfo()
         {
             if (!serverOptions.EnableCluster)
             {
-                return (0, default);
+                return [];
             };
 
-            return (replicationManager.ReplicationOffset, replicationManager.GetReplicaInfo().Select(w => w.roleInfo).ToArray());
+            return replicationManager.GetReplicaInfo();
         }
 
         /// <inheritdoc />

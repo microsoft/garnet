@@ -673,7 +673,7 @@ namespace Garnet.server
             {
                 if (storeWrapper.clusterProvider.IsPrimary())
                 {
-                    var (replication_offset, replicaInfo) = storeWrapper.clusterProvider.GetPrimaryInfo();
+                    var replicaInfo = storeWrapper.clusterProvider.GetPrimaryInfo();
 
                     while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
@@ -681,10 +681,17 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteAsciiBulkString("master", ref dcurr, dend))
                         SendAndReset();
 
+                    long replication_offset = 0;
+                    if (replicaInfo.Count > 0)
+                    {
+                        var first = replicaInfo[0];
+                        replication_offset = first.replication_offset + first.replication_lag;
+                    }
+
                     while (!RespWriteUtils.TryWriteInt64(replication_offset, ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteArrayLength(replicaInfo.Length, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(replicaInfo.Count, ref dcurr, dend))
                         SendAndReset();
 
                     foreach (var replice in replicaInfo)
