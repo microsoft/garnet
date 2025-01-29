@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -128,10 +127,10 @@ namespace Garnet.cluster
         /// Send and reset iteration buffer
         /// </summary>
         /// <returns></returns>
-        public void SendAndResetIterationBuffer(TimeSpan timeout, CancellationToken token)
+        public void SendAndResetIterationBuffer()
         {
             WaitForFlush().GetAwaiter().GetResult();
-            SetFlushTask(AofSyncTask.garnetClient.SendAndResetIterationBuffer(), timeout: timeout, token: token);
+            SetFlushTask(AofSyncTask.garnetClient.SendAndResetIterationBuffer());
         }
         #endregion
 
@@ -157,9 +156,7 @@ namespace Garnet.cluster
         /// Set network flush task for checkpoint snapshot stream data
         /// </summary>
         /// <param name="task"></param>
-        /// <param name="timeout"></param>
-        /// <param name="token"></param>
-        public void SetFlushTask(Task<string> task, TimeSpan timeout, CancellationToken token)
+        public void SetFlushTask(Task<string> task)
         {
             if (task != null)
             {
@@ -200,8 +197,19 @@ namespace Garnet.cluster
         /// <returns></returns>
         public async Task WaitForSyncCompletion()
         {
-            while (ssInfo.syncStatus is not SyncStatus.SUCCESS and not SyncStatus.FAILED)
-                await Task.Yield();
+            try
+            {
+                while (ssInfo.syncStatus is not SyncStatus.SUCCESS and not SyncStatus.FAILED)
+                {
+                    token.ThrowIfCancellationRequested();
+                    await Task.Yield();
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "{method} failed waiting for sync", nameof(WaitForSyncCompletion));
+                SetStatus(SyncStatus.FAILED, "Wait for sync task faulted");
+            }
         }
 
         /// <summary>
