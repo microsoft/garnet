@@ -57,6 +57,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> TIME => "TIME"u8;
         public static ReadOnlySpan<byte> RESET => "RESET"u8;
         public static ReadOnlySpan<byte> reset => "reset"u8;
+        public static ReadOnlySpan<byte> ROLE => "ROLE"u8;
         public static ReadOnlySpan<byte> QUIT => "QUIT"u8;
         public static ReadOnlySpan<byte> SAVE => "SAVE"u8;
         public static ReadOnlySpan<byte> LASTSAVE => "LASTSAVE"u8;

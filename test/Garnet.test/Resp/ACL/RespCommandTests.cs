@@ -3814,6 +3814,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task RoleACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "ROLE",
+               [DoRoleAsync]
+            );
+
+            static async Task DoRoleAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("ROLE");
+                ClassicAssert.IsNotEmpty(val);
+            }
+        }
+
+        [Test]
         public async Task KeysACLsAsync()
         {
             await CheckCommandsAsync(

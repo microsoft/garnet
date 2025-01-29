@@ -287,7 +287,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | REPLCONF | ➖ |  |
 |  | [REPLICAOF](server.md#replicaof) | ➕ |  |
 |  | RESTORE-ASKING | ➖ |  |
-|  | ROLE | ➖ |  |
+|  | [ROLE](server.md#role) | ➕ |  |
 |  | [SAVE](checkpoint.md#save) | ➕ |  |
 |  | SHUTDOWN | ➖ |  |
 |  | [SLAVEOF](server.md#slaveof) | ➕ | (Deprecated) |

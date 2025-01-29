@@ -252,6 +252,7 @@ namespace Garnet.server
 
         INFO,
         TIME,
+        ROLE,
         SAVE,
         LASTSAVE,
         BGSAVE,
@@ -1790,6 +1791,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.INFO))
             {
                 return RespCommand.INFO;
+            }
+            else if (command.SequenceEqual(CmdStrings.ROLE))
+            {
+                return RespCommand.ROLE;
             }
             else if (command.SequenceEqual(CmdStrings.COMMAND))
             {
