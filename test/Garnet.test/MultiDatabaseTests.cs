@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Azure;
+﻿using System.Text;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -46,6 +41,25 @@ namespace Garnet.test
 
             ClassicAssert.IsFalse(db1.KeyExists(db2Key1));
             ClassicAssert.IsFalse(db1.KeyExists(db2Key2));
+        }
+
+        [Test]
+        public void MultiDatabaseSameKeyTestSE()
+        {
+            var key1 = "key1";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db1 = redis.GetDatabase(0);
+            db1.StringSet(key1, "db1:value1");
+
+            var db2 = redis.GetDatabase(1);
+            db2.SetAdd(key1, [new RedisValue("db2:val2"), new RedisValue("db2:val2")]);
+
+            var db1val = db1.StringGet(key1);
+            ClassicAssert.AreEqual("db1:value1", db1val.ToString());
+
+            var db2val = db2.SetPop(key1);
+            ClassicAssert.AreEqual("db2:val2", db2val.ToString());
         }
 
         [Test]
