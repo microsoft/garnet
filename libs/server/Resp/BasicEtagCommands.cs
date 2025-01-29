@@ -126,7 +126,8 @@ namespace Garnet.server
 
         /// <summary>
         /// SETIFGREATER key val etag [EX|PX] [expiry]
-        /// Sets a key value pair with the given ETag only if the already existing etag is less than the etag given in request.
+        /// Sets a key value pair using the given etag incremented only if (1) the etag given in the request is greater than the already existing etag ;
+        /// or (2) the existing value was not associated with any etag and the given etag is more than 0
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
