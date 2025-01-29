@@ -54,9 +54,14 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get a snapshot of all entries in the slow log
+        /// Get a snapshot of the latest count entries in the slow log (-1 returns all entries)
         /// </summary>
-        public List<SlowLogEntry> GetAllEntries()
-            => [.. logEntries];
+        public List<SlowLogEntry> GetEntries(int count)
+        {
+            List<SlowLogEntry> entries = [.. logEntries];
+            if (count < 0 || count >= entries.Count)
+                return entries;
+            return entries.GetRange(entries.Count - count, count);
+        }
     }
 }

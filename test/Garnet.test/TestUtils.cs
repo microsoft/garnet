@@ -219,7 +219,8 @@ namespace Garnet.test
             string pubSubPageSize = null,
             bool asyncReplay = false,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
-            string luaMemoryLimit = "")
+            string luaMemoryLimit = "",
+            int slowLogThreshold = 0)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -300,6 +301,7 @@ namespace Garnet.test
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, logger) : null,
+                SlowLogThreshold = slowLogThreshold,
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))

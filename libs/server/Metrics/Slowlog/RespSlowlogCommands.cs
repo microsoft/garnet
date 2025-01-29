@@ -42,11 +42,22 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkSlowLogGet()
         {
-            // No additional arguments
-            if (parseState.Count != 0)
+            // Check arguments
+            if (parseState.Count > 1)
             {
                 while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for SLOWLOG GET.", ref dcurr, dend))
                     SendAndReset();
+            }
+
+            int count = 10;
+            if (parseState.Count == 1)
+            {
+                if (!parseState.TryGetInt(0, out count))
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
             }
 
             if (storeWrapper.slowLogContainer == null)
@@ -55,7 +66,7 @@ namespace Garnet.server
                     SendAndReset();
                 return true;
             }
-            var entries = storeWrapper.slowLogContainer.GetAllEntries();
+            var entries = storeWrapper.slowLogContainer.GetEntries(count);
             while (!RespWriteUtils.TryWriteArrayLength(entries.Count, ref dcurr, dend))
                 SendAndReset();
             foreach (var entry in entries)
