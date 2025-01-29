@@ -312,7 +312,7 @@ namespace Garnet
         [Option("latency-monitor", Required = false, HelpText = "Track latency of various events.")]
         public bool? LatencyMonitor { get; set; }
 
-        [IntRangeValidation(10, int.MaxValue)]
+        [IntRangeValidation(100, int.MaxValue)]
         [Option("slowlog-log-slower-than", Required = false, Default = 10000, HelpText = "Slowlog log command if the request takes longer than this threshold (microseconds).")]
         public int SlowlogLogSlowerThan { get; set; }
 
