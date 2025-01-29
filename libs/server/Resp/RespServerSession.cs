@@ -531,8 +531,8 @@ namespace Garnet.server
             {
                 // TODO: this is not thread-safe!
                 if (storeWrapper.slowLog == null)
-                    storeWrapper.slowLog = new List<SlowlogEntry>();
-                var entry = new SlowlogEntry
+                    storeWrapper.slowLog = new List<SlowLogEntry>();
+                var entry = new SlowLogEntry
                 {
                     Timestamp = (int)(currentTime / OutputScalingFactor.TimeStampToSeconds),
                     Id = storeWrapper.slowLog.Count,

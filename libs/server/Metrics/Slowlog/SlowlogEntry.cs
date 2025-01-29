@@ -5,7 +5,7 @@ using System.Collections.Generic;
 
 namespace Garnet.server
 {
-    internal struct SlowlogEntry
+    internal struct SlowLogEntry
     {
         public int Id;
         public int Timestamp;

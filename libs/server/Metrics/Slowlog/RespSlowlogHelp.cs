@@ -6,15 +6,15 @@ using System.Collections.Generic;
 namespace Garnet.server
 {
     /// <summary>
-    /// Info on what slowlog commands are supported
+    /// Info on what slow log commands are supported
     /// </summary>
-    static class RespSlowlogHelp
+    static class RespSlowLogHelp
     {
         /// <summary>
         /// Get supported latency commands and a short description
         /// </summary>
         /// <returns></returns>
-        public static List<string> GetSlowlogCommands()
+        public static List<string> GetSlowLogCommands()
         {
             return new List<string>()
             {

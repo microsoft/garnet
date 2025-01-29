@@ -1,9 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
-using System.Linq;
 using Garnet.common;
 
 namespace Garnet.server
@@ -14,7 +12,7 @@ namespace Garnet.server
         /// Processes SLOWLOG HELP subcommand.
         /// </summary>
         /// <returns>true</returns>
-        private bool NetworkSlowlogHelp()
+        private bool NetworkSlowLogHelp()
         {
             // No additional arguments
             if (parseState.Count != 0)
@@ -23,11 +21,11 @@ namespace Garnet.server
                     SendAndReset();
             }
 
-            List<string> slowlogCommands = RespSlowlogHelp.GetSlowlogCommands();
-            while (!RespWriteUtils.TryWriteArrayLength(slowlogCommands.Count, ref dcurr, dend))
+            List<string> slowLogCommands = RespSlowLogHelp.GetSlowLogCommands();
+            while (!RespWriteUtils.TryWriteArrayLength(slowLogCommands.Count, ref dcurr, dend))
                 SendAndReset();
 
-            foreach (string command in slowlogCommands)
+            foreach (string command in slowLogCommands)
             {
                 while (!RespWriteUtils.TryWriteSimpleString(command, ref dcurr, dend))
                     SendAndReset();
@@ -39,7 +37,7 @@ namespace Garnet.server
         /// <summary>
         /// Processes SLOWLOG GET subcommand.
         /// </summary>
-        private bool NetworkSlowlogGet()
+        private bool NetworkSlowLogGet()
         {
             // No additional arguments
             if (parseState.Count != 0)
@@ -48,16 +46,16 @@ namespace Garnet.server
                     SendAndReset();
             }
 
-            var slowlogEntries = storeWrapper.slowLog;
-            if (slowlogEntries == null || slowlogEntries.Count == 0)
+            var slowLogEntries = storeWrapper.slowLog;
+            if (slowLogEntries == null || slowLogEntries.Count == 0)
             {
                 while (!RespWriteUtils.TryWriteArrayLength(0, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
-            while (!RespWriteUtils.TryWriteArrayLength(slowlogEntries.Count, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteArrayLength(slowLogEntries.Count, ref dcurr, dend))
                 SendAndReset();
-            foreach (var entry in slowlogEntries)
+            foreach (var entry in slowLogEntries)
             {
                 while (!RespWriteUtils.TryWriteArrayLength(6, ref dcurr, dend))
                     SendAndReset();
@@ -85,7 +83,7 @@ namespace Garnet.server
         /// <summary>
         /// Processes SLOWLOG LEN subcommand.
         /// </summary>
-        private bool NetworkSlowlogLen()
+        private bool NetworkSlowLogLen()
         {
             // No additional arguments
             if (parseState.Count != 0)
@@ -102,7 +100,7 @@ namespace Garnet.server
         /// <summary>
         /// Processes SLOWLOG RESET subcommand.
         /// </summary>
-        private bool NetworkSlowlogReset()
+        private bool NetworkSlowLogReset()
         {
             // No additional arguments
             if (parseState.Count != 0)

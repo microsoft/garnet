@@ -98,7 +98,7 @@ namespace Garnet.server
         // Standalone instance node_id
         internal readonly string run_id;
         private SingleWriterMultiReaderLock _checkpointTaskLock;
-        internal List<SlowlogEntry> slowLog;
+        internal List<SlowLogEntry> slowLog;
 
         /// <summary>
         /// Lua script cache
