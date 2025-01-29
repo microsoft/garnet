@@ -56,7 +56,6 @@ namespace Garnet.server
         /// <summary>
         /// Get a snapshot of all entries in the slow log
         /// </summary>
-        /// <param name="entries"></param>
         public List<SlowLogEntry> GetAllEntries()
             => [.. logEntries];
     }
