@@ -312,6 +312,14 @@ namespace Garnet
         [Option("latency-monitor", Required = false, HelpText = "Track latency of various events.")]
         public bool? LatencyMonitor { get; set; }
 
+        [IntRangeValidation(10, int.MaxValue)]
+        [Option("slowlog-log-slower-than", Required = false, Default = 10000, HelpText = "Slowlog log command if the request takes longer than this threshold (microseconds).")]
+        public int SlowlogLogSlowerThan { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("slowlog-max-len", Required = false, Default = 128, HelpText = "Maximum number of slowlog entries to keep.")]
+        public int SlowlogMaxEntries { get; set; }
+
         [IntRangeValidation(0, int.MaxValue)]
         [Option("metrics-sampling-freq", Required = false, HelpText = "Metrics sampling frequency in seconds. Value of 0 disables metrics monitor task.")]
         public int MetricsSamplingFrequency { get; set; }
@@ -700,6 +708,8 @@ namespace Garnet
                     ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
+                SlowlogLogSlowerThan = SlowlogLogSlowerThan,
+                SlowlogMaxEntries = SlowlogMaxEntries,
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
                 LogLevel = LogLevel,
                 LoggingFrequency = LoggingFrequency,

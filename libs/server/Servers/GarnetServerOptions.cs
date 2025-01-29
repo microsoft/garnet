@@ -202,6 +202,16 @@ namespace Garnet.server
         public bool LatencyMonitor = false;
 
         /// <summary>
+        /// Slowlog log command if the request takes longer than this threshold
+        /// </summary>
+        public int SlowlogLogSlowerThan = 10000;
+
+        /// <summary>
+        /// Maximum number of slowlog entries to keep
+        /// </summary>
+        public int SlowlogMaxEntries = 128;
+
+        /// <summary>
         /// Metrics sampling frequency
         /// </summary>
         public int MetricsSamplingFrequency = 0;
