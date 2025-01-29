@@ -19,6 +19,10 @@ namespace Garnet.cluster
 
         public ReplicaSyncSessionTaskStore GetSessionStore { get; }
 
+        public int NumSessions { get; private set; }
+
+        public ReplicaSyncSession[] Sessions { get; private set; }
+
         public ClusterProvider ClusterProvider { get; }
 
         public ReplicationSyncManager(ClusterProvider clusterProvider, ILogger logger = null)
@@ -60,6 +64,32 @@ namespace Garnet.cluster
             }
         }
 
+        public async Task WaitForFlush()
+        {
+            for (var i = 0; i < NumSessions; i++)
+            {
+                // Wait for network flush
+                await Sessions[i].WaitForFlush();
+                if (Sessions[i].Failed) Sessions[i] = null;
+            }
+        }
+
+        public bool IsActiveSyncSession(int offset)
+        {
+            // Check if session is null if an error occurred earlier and session was broken
+            if (Sessions[offset] == null)
+                return false;
+
+            // Check if connection is still healthy
+            if (!Sessions[offset].IsConnected)
+            {
+                Sessions[offset].SetStatus(SyncStatus.FAILED, "Connection broken");
+                Sessions[offset] = null;
+                return false;
+            }
+            return true;
+        }
+
         /// <summary>
         /// Start sync session
         /// </summary>
@@ -94,6 +124,7 @@ namespace Garnet.cluster
                     return replicaSyncSession.GetSyncStatusInfo;
                 }
 
+                // Start AOF sync background task for this replica
                 await replicaSyncSession.BeginAofSync();
 
                 return replicaSyncSession.GetSyncStatusInfo;
@@ -111,9 +142,8 @@ namespace Garnet.cluster
             var disklessRepl = ClusterProvider.serverOptions.ReplicaDisklessSync;
             var disableObjects = ClusterProvider.serverOptions.DisableObjects;
 
-            // Replica sync session
-            var numSessions = GetSessionStore.GetNumSessions();
-            var sessions = GetSessionStore.GetSessions();
+            NumSessions = GetSessionStore.GetNumSessions();
+            Sessions = GetSessionStore.GetSessions();
 
             try
             {
@@ -125,13 +155,30 @@ namespace Garnet.cluster
                 await PrepareForSync();
 
                 // Stream checkpoint to replicas
-                await StreamDisklessCheckpoint();
+                await TakeStreamingCheckpoint();
+
+                // Stream Diskless
+                async Task TakeStreamingCheckpoint()
+                {
+                    // Main snapshot iterator manager
+                    var manager = new SnapshotIteratorManager(this, clusterTimeout, cts.Token, logger);
+
+                    // Iterate through main store
+                    var mainStoreResult = await ClusterProvider.storeWrapper.store.
+                        TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.mainStoreSnapshotIterator);
+
+                    if (!ClusterProvider.serverOptions.DisableObjects)
+                    {
+                        // Iterate through object store
+                        var objectStoreResult = await ClusterProvider.storeWrapper.objectStore.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
+                    }
+                }
             }
             finally
             {
                 // Notify sync session of success success
-                for (var i = 0; i < numSessions; i++)
-                    sessions[i]?.SetStatus(SyncStatus.SUCCESS);
+                for (var i = 0; i < NumSessions; i++)
+                    Sessions[i]?.SetStatus(SyncStatus.SUCCESS);
 
                 // Clear array of sync sessions
                 GetSessionStore.Clear();
@@ -151,11 +198,11 @@ namespace Garnet.cluster
                     #region pauseAofTruncation
                     while (true)
                     {
-                        // Calculate minimum address from which replicas should start streaming from
-                        var syncFromAddress = ClusterProvider.storeWrapper.appendOnlyFile.TailAddress;
+                        // Minimum address that we can serve assuming aof-locking and no aof-null-device
+                        var minServiceableAofAddress = ClusterProvider.storeWrapper.appendOnlyFile.BeginAddress;
 
                         // Lock AOF address for sync streaming
-                        if (ClusterProvider.replicationManager.TryAddReplicationTasks(GetSessionStore.GetSessions(), syncFromAddress))
+                        if (ClusterProvider.replicationManager.TryAddReplicationTasks(GetSessionStore.GetSessions(), minServiceableAofAddress))
                             break;
 
                         // Retry if failed to lock AOF address because truncation occurred
@@ -164,57 +211,40 @@ namespace Garnet.cluster
                     #endregion
 
                     #region initializeConnection
-                    for (var i = 0; i < numSessions; i++)
+                    for (var i = 0; i < NumSessions; i++)
                     {
                         try
                         {
                             // Initialize connections
-                            sessions[i].Connect();
+                            Sessions[i].Connect();
 
                             // Set store version to operate on
-                            sessions[i].currentStoreVersion = ClusterProvider.storeWrapper.store.CurrentVersion;
-                            sessions[i].currentObjectStoreVersion = disableObjects ? -1 : ClusterProvider.storeWrapper.objectStore.CurrentVersion;
+                            Sessions[i].currentStoreVersion = ClusterProvider.storeWrapper.store.CurrentVersion;
+                            Sessions[i].currentObjectStoreVersion = disableObjects ? -1 : ClusterProvider.storeWrapper.objectStore.CurrentVersion;
 
                             // If checkpoint is not needed mark this sync session as complete
                             // to avoid waiting for other replicas which may need to receive the latest checkpoint
-                            if (!sessions[i].NeedToFullSync())
+                            if (!Sessions[i].NeedToFullSync())
                             {
-                                sessions[i]?.SetStatus(SyncStatus.SUCCESS, "Partial sync");
-                                sessions[i] = null;
+                                Sessions[i]?.SetStatus(SyncStatus.SUCCESS, "Partial sync");
+                                Sessions[i] = null;
                             }
                             else
                             {
                                 // Reset replica database in preparation for full sync
-                                sessions[i].SetFlushTask(sessions[i].ExecuteAsync(["FLUSHALL"]), timeout: clusterTimeout, cts.Token);
-                                await sessions[i].WaitForFlush();
-                                if (sessions[i].Failed) sessions[i] = null;
+                                Sessions[i].SetFlushTask(Sessions[i].ExecuteAsync(["FLUSHALL"]), timeout: clusterTimeout, cts.Token);
                             }
                         }
                         catch (Exception ex)
                         {
-                            sessions[i]?.SetStatus(SyncStatus.FAILED, ex.Message);
-                            sessions[i] = null;
+                            Sessions[i]?.SetStatus(SyncStatus.FAILED, ex.Message);
+                            Sessions[i] = null;
                         }
-
                     }
+
+                    await WaitForFlush();
                     #endregion
                 }
-            }
-        }
-
-        async Task StreamDisklessCheckpoint()
-        {
-            // Main snapshot iterator manager
-            var manager = new SnapshotIteratorManager(this, clusterTimeout, cts.Token, logger);
-
-            // Iterate through main store
-            var mainStoreResult = await ClusterProvider.storeWrapper.store.
-                TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.mainStoreSnapshotIterator);
-
-            if (!ClusterProvider.serverOptions.DisableObjects)
-            {
-                // Iterate through object store
-                var objectStoreResult = await ClusterProvider.storeWrapper.objectStore.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
             }
         }
     }

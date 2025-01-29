@@ -122,6 +122,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
+                    replicateLock.WriteUnlock();
                     gcs?.Dispose();
                     recvCheckpointHandler?.Dispose();
                 }
@@ -140,10 +141,12 @@ namespace Garnet.cluster
 
                 if (!primarySyncMetadata.fullSync)
                 {
-                    // TODO: replay local AOF
+                    // For diskless replication if we are performing a partial sync need to start streaming from replicationOffset
+                    // hence our tail needs to be reset to that point
+                    aofTailAddress = replicationOffset = ReplicationOffset;
                 }
 
-                storeWrapper.appendOnlyFile.Initialize(aofBeginAddress, aofBeginAddress);
+                storeWrapper.appendOnlyFile.Initialize(aofBeginAddress, aofTailAddress);
 
                 // Set DB version
                 storeWrapper.store.SetVersion(primarySyncMetadata.currentStoreVersion);

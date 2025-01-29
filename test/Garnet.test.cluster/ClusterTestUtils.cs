@@ -1276,6 +1276,14 @@ namespace Garnet.test.cluster
             }
         }
 
+        public bool IsKnown(int nodeIndex, int knownNodeIndex, ILogger logger = null)
+        {
+            var toKnowNodeId = ClusterNodes(knownNodeIndex).Nodes.First().NodeId;
+            var nodeConfig = ClusterNodes(nodeIndex);
+
+            return nodeConfig.Nodes.Any(x => x.NodeId.Equals(toKnowNodeId, StringComparison.OrdinalIgnoreCase));
+        }
+
         public void WaitUntilNodeIsKnown(int nodeIndex, int toKnowNode, ILogger logger = null)
         {
             var toKnowNodeId = ClusterNodes(toKnowNode).Nodes.First().NodeId;
