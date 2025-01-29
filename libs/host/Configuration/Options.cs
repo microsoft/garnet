@@ -312,13 +312,13 @@ namespace Garnet
         [Option("latency-monitor", Required = false, HelpText = "Track latency of various events.")]
         public bool? LatencyMonitor { get; set; }
 
-        [IntRangeValidation(-1, int.MaxValue)]
-        [Option("slowlog-log-slower-than", Required = false, Default = -1, HelpText = "Slowlog log command if the request takes longer than this threshold (microseconds). -1 to disable.")]
-        public int SlowlogLogSlowerThan { get; set; }
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("slowlog-log-slower-than", Required = false, Default = 0, HelpText = "Threshold (microseconds) for logging command in the slow log. 0 to disable.")]
+        public int SlowLogThreshold { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("slowlog-max-len", Required = false, Default = 128, HelpText = "Maximum number of slowlog entries to keep.")]
-        public int SlowlogMaxEntries { get; set; }
+        [Option("slowlog-max-len", Required = false, Default = 128, HelpText = "Maximum number of slow log entries to keep.")]
+        public int SlowLogMaxEntries { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("metrics-sampling-freq", Required = false, HelpText = "Metrics sampling frequency in seconds. Value of 0 disables metrics monitor task.")]
@@ -638,12 +638,10 @@ namespace Garnet
                 CompactionForceDelete = true;
             }
 
-            if (SlowlogLogSlowerThan != -1)
+            if (SlowLogThreshold > 0)
             {
-                if (!LatencyMonitor.GetValueOrDefault())
-                    throw new Exception("Slowlog requires LatencyMonitor to be enabled.");
-                if (SlowlogLogSlowerThan < 100)
-                    throw new Exception("SlowlogLogSlowerThan must be at least 100 microseconds.");
+                if (SlowLogThreshold < 100)
+                    throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
             }
             return new GarnetServerOptions(logger)
             {
@@ -715,8 +713,8 @@ namespace Garnet
                     ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
-                SlowlogLogSlowerThan = SlowlogLogSlowerThan,
-                SlowlogMaxEntries = SlowlogMaxEntries,
+                SlowLogThreshold = SlowLogThreshold,
+                SlowLogMaxEntries = SlowLogMaxEntries,
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
                 LogLevel = LogLevel,
                 LoggingFrequency = LoggingFrequency,

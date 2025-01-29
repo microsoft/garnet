@@ -187,9 +187,10 @@ namespace Garnet.server
         /// </summary>
         public long CreationTicks { get; }
 
-        // Slowlog trackers
-        long slowlogLastLatency;
-        readonly long slowlogThresholdTicks;
+        // Track start time (in ticks) of last command for slow log purposes
+        long slowLogStartTime;
+        // Threshold for slow log in ticks (0 means disabled)
+        readonly long slowLogThreshold;
 
         public RespServerSession(
             long id,
@@ -240,10 +241,8 @@ namespace Garnet.server
             readHead = 0;
             toDispose = false;
             SessionAsking = 0;
-            if (storeWrapper.serverOptions.SlowlogLogSlowerThan > 0)
-                slowlogThresholdTicks = (long)(((long)storeWrapper.serverOptions.SlowlogLogSlowerThan) * OutputScalingFactor.TimeStampToMicroseconds);
-            else
-                slowlogThresholdTicks = long.MaxValue;
+            if (storeWrapper.serverOptions.SlowLogThreshold > 0)
+                slowLogThreshold = (long)(((long)storeWrapper.serverOptions.SlowLogThreshold) * OutputScalingFactor.TimeStampToMicroseconds);
 
             // Reserve minimum 4 bytes to send pending sequence number as output
             if (this.networkSender != null)
@@ -324,11 +323,10 @@ namespace Garnet.server
                 readHead = 0;
             try
             {
-                if (latencyMetrics != null)
+                latencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
+                if (slowLogThreshold > 0)
                 {
-                    latencyMetrics.Start(LatencyMetricsType.NET_RS_LAT);
-                    if (slowlogThresholdTicks < long.MaxValue)
-                        slowlogLastLatency = latencyMetrics.Get(LatencyMetricsType.NET_RS_LAT);
+                    slowLogStartTime = latencyMetrics != null ? latencyMetrics.Get(LatencyMetricsType.NET_RS_LAT) : Stopwatch.GetTimestamp();
                 }
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
@@ -501,12 +499,8 @@ namespace Garnet.server
                 _origReadHead = readHead = endReadHead;
 
                 // Handle metrics and special cases
-                if (latencyMetrics != null)
-                {
-                    opCount++;
-                    if (slowlogThresholdTicks < long.MaxValue)
-                        HandleSlowlog(cmd);
-                }
+                if (latencyMetrics != null) opCount++;
+                if (slowLogThreshold > 0) HandleSlowLog(cmd);
                 if (sessionMetrics != null)
                 {
                     sessionMetrics.total_commands_processed++;
@@ -529,11 +523,11 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        void HandleSlowlog(RespCommand cmd)
+        void HandleSlowLog(RespCommand cmd)
         {
             long currentTime = Stopwatch.GetTimestamp();
-            long elapsed = currentTime - slowlogLastLatency;
-            if (elapsed > slowlogThresholdTicks)
+            long elapsed = currentTime - slowLogStartTime;
+            if (elapsed > slowLogThreshold)
             {
                 // TODO: this is not thread-safe!
                 if (storeWrapper.slowLog == null)
@@ -553,7 +547,8 @@ namespace Garnet.server
                 }
                 storeWrapper.slowLog.Add(entry);
             }
-            slowlogLastLatency = currentTime;
+            // Update slowLogLastLatency so that we can track the next command in the batch
+            slowLogStartTime = currentTime;
         }
 
         // Make first command in string as uppercase
