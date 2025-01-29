@@ -55,7 +55,7 @@ namespace Garnet.server
                     SendAndReset();
                 return true;
             }
-            storeWrapper.slowLogContainer.GetAllEntries(out var entries);
+            var entries = storeWrapper.slowLogContainer.GetAllEntries();
             while (!RespWriteUtils.TryWriteArrayLength(entries.Count, ref dcurr, dend))
                 SendAndReset();
             foreach (var entry in entries)
