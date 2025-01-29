@@ -212,6 +212,13 @@ namespace Garnet.server
             // Initialize session-local scratch buffer of size 64 bytes, used for constructing arguments in GarnetApi
             this.scratchBufferManager = new ScratchBufferManager();
 
+            this.storeWrapper = storeWrapper;
+            this.subscribeBroker = subscribeBroker;
+            this._authenticator = authenticator ?? storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
+
+            if (storeWrapper.serverOptions.EnableLua && enableScripts)
+                sessionScriptCache = new(storeWrapper, _authenticator, logger);
+
             var dbSession = CreateDatabaseSession(0);
             maxDbs = storeWrapper.serverOptions.MaxDatabases;
             activeDbId = 0;
@@ -225,13 +232,6 @@ namespace Garnet.server
             }
 
             SwitchActiveDatabaseSession(0, ref dbSession);
-
-            this.storeWrapper = storeWrapper;
-            this.subscribeBroker = subscribeBroker;
-            this._authenticator = authenticator ?? storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
-
-            if (storeWrapper.serverOptions.EnableLua && enableScripts)
-                sessionScriptCache = new(storeWrapper, _authenticator, logger);
 
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUser().Name));
@@ -1240,17 +1240,15 @@ namespace Garnet.server
 
             return header;
         }
-
-        private void SwitchActiveDatabaseSession(int dbId)
+        private bool TrySwitchActiveDatabaseSession(int dbId)
         {
-            if (!allowMultiDb) return;
+            if (!allowMultiDb) return false;
 
             if (!databaseSessions.TryGetOrSet(dbId, () => CreateDatabaseSession(dbId), out var db, out _))
-            {
-                throw new GarnetException($"Unable retrieve or add database session with ID {dbId} to the databaseSessions map");
-            }
+                return false;
 
             SwitchActiveDatabaseSession(dbId, ref db);
+            return true;
         }
 
         private void SwitchActiveDatabaseSession(int dbId, ref GarnetDatabaseSession dbSession)

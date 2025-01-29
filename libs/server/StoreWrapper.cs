@@ -265,7 +265,7 @@ namespace Garnet.server
             if (dbId == 0)
                 return new(appendOnlyFile, versionMap, customCommandManager, null, objectStoreSizeTracker, GarnetObjectSerializer);
             
-            if (!databases.TryGetValue(dbId, out var db))
+            if (!databases.TryGetOrSet(dbId, () => createDatabasesDelegate(dbId), out var db, out _))
                 throw new GarnetException($"Database with ID {dbId} was not found.");
             
             return new(db.AppendOnlyFile, db.VersionMap, customCommandManager, null, db.ObjectSizeTracker,

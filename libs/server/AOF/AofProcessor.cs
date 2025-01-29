@@ -74,7 +74,7 @@ namespace Garnet.server
                 null,
                 storeWrapper.createDatabasesDelegate,
                 storeWrapper.customCommandManager,
-                recordToAof ? storeWrapper.appendOnlyFile : null,
+                //recordToAof ? storeWrapper.appendOnlyFile : null,
                 storeWrapper.serverOptions,
                 accessControlList: storeWrapper.accessControlList,
                 loggerFactory: storeWrapper.loggerFactory);
