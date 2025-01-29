@@ -242,7 +242,7 @@ namespace Garnet.server
             toDispose = false;
             SessionAsking = 0;
             if (storeWrapper.serverOptions.SlowLogThreshold > 0)
-                slowLogThreshold = (long)(((long)storeWrapper.serverOptions.SlowLogThreshold) * OutputScalingFactor.TimeStampToMicroseconds);
+                slowLogThreshold = (long)(storeWrapper.serverOptions.SlowLogThreshold * OutputScalingFactor.TimeStampToMicroseconds);
 
             // Reserve minimum 4 bytes to send pending sequence number as output
             if (this.networkSender != null)
@@ -529,25 +529,27 @@ namespace Garnet.server
             long elapsed = currentTime - slowLogStartTime;
             if (elapsed > slowLogThreshold)
             {
-                // TODO: this is not thread-safe!
-                if (storeWrapper.slowLog == null)
-                    storeWrapper.slowLog = new List<SlowLogEntry>();
                 var entry = new SlowLogEntry
                 {
                     Timestamp = (int)(currentTime / OutputScalingFactor.TimeStampToSeconds),
-                    Id = storeWrapper.slowLog.Count,
-                    Arguments = [ cmd.ToString() ],
+                    Command = cmd,
                     Duration = (int)(elapsed / OutputScalingFactor.TimeStampToMicroseconds),
                     ClientIpPort = networkSender.RemoteEndpointName,
                     ClientName = clientName,
                 };
-                for (int i = 0; i < parseState.Count; i++)
+                if (parseState.Count > 0)
                 {
-                    entry.Arguments.Add(parseState.GetString(i));
+                    int len = parseState.GetSerializedLength();
+                    byte[] args = new byte[len];
+                    fixed (byte* argsPtr = args)
+                    {
+                        parseState.CopyTo(argsPtr, len);
+                    }
+                    entry.Arguments = args;
                 }
-                storeWrapper.slowLog.Add(entry);
+                storeWrapper.slowLogContainer.Add(entry);
             }
-            // Update slowLogLastLatency so that we can track the next command in the batch
+            // Update slowLogStartTime so that we can track the next command in the batch
             slowLogStartTime = currentTime;
         }
 

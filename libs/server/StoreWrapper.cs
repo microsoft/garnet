@@ -98,7 +98,7 @@ namespace Garnet.server
         // Standalone instance node_id
         internal readonly string run_id;
         private SingleWriterMultiReaderLock _checkpointTaskLock;
-        internal List<SlowLogEntry> slowLog;
+        internal readonly SlowLogContainer slowLogContainer;
 
         /// <summary>
         /// Lua script cache
@@ -151,6 +151,8 @@ namespace Garnet.server
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
             this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
 
+            if (serverOptions.SlowLogThreshold > 0)
+                this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
             if (!serverOptions.DisableObjects)
                 this.itemBroker = new CollectionItemBroker();
 
