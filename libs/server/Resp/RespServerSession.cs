@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -12,6 +13,7 @@ using Garnet.common.Parsing;
 using Garnet.networking;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
+using HdrHistogram;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -185,6 +187,10 @@ namespace Garnet.server
         /// </summary>
         public long CreationTicks { get; }
 
+        // Slowlog trackers
+        long slowlogLastLatency;
+        readonly long slowlogThresholdTicks;
+
         public RespServerSession(
             long id,
             INetworkSender networkSender,
@@ -234,6 +240,10 @@ namespace Garnet.server
             readHead = 0;
             toDispose = false;
             SessionAsking = 0;
+            if (storeWrapper.serverOptions.SlowlogLogSlowerThan > 0)
+                slowlogThresholdTicks = (long)(((long)storeWrapper.serverOptions.SlowlogLogSlowerThan) * OutputScalingFactor.TimeStampToMicroseconds);
+            else
+                slowlogThresholdTicks = long.MaxValue;
 
             // Reserve minimum 4 bytes to send pending sequence number as output
             if (this.networkSender != null)
@@ -314,7 +324,12 @@ namespace Garnet.server
                 readHead = 0;
             try
             {
-                latencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
+                if (latencyMetrics != null)
+                {
+                    latencyMetrics.Start(LatencyMetricsType.NET_RS_LAT);
+                    if (slowlogThresholdTicks < long.MaxValue)
+                        slowlogLastLatency = latencyMetrics.Get(LatencyMetricsType.NET_RS_LAT);
+                }
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
@@ -486,7 +501,12 @@ namespace Garnet.server
                 _origReadHead = readHead = endReadHead;
 
                 // Handle metrics and special cases
-                if (latencyMetrics != null) opCount++;
+                if (latencyMetrics != null)
+                {
+                    opCount++;
+                    if (slowlogThresholdTicks < long.MaxValue)
+                        HandleSlowlog(cmd);
+                }
                 if (sessionMetrics != null)
                 {
                     sessionMetrics.total_commands_processed++;
@@ -506,6 +526,34 @@ namespace Garnet.server
                     networkSender.DisposeNetworkSender(true);
                 }
             }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void HandleSlowlog(RespCommand cmd)
+        {
+            long currentTime = Stopwatch.GetTimestamp();
+            long elapsed = currentTime - slowlogLastLatency;
+            if (elapsed > slowlogThresholdTicks)
+            {
+                // TODO: this is not thread-safe!
+                if (storeWrapper.slowLog == null)
+                    storeWrapper.slowLog = new List<SlowlogEntry>();
+                var entry = new SlowlogEntry
+                {
+                    Timestamp = (int)(currentTime / OutputScalingFactor.TimeStampToSeconds),
+                    Id = storeWrapper.slowLog.Count,
+                    Arguments = [ cmd.ToString() ],
+                    Duration = (int)(elapsed / OutputScalingFactor.TimeStampToMicroseconds),
+                    ClientIpPort = networkSender.RemoteEndpointName,
+                    ClientName = clientName,
+                };
+                for (int i = 0; i < parseState.Count; i++)
+                {
+                    entry.Arguments.Add(parseState.GetString(i));
+                }
+                storeWrapper.slowLog.Add(entry);
+            }
+            slowlogLastLatency = currentTime;
         }
 
         // Make first command in string as uppercase
