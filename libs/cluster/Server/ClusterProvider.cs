@@ -297,6 +297,12 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
+        public long GetReplicationOffset()
+        {
+            return replicationManager.ReplicationOffset;
+        }
+
+        /// <inheritdoc />
         public MetricsItem[] GetGossipStats(bool metricsDisabled)
         {
             var gossipStats = clusterManager.gossipStats;

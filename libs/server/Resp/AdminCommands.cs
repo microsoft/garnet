@@ -681,14 +681,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteAsciiBulkString("master", ref dcurr, dend))
                         SendAndReset();
 
-                    long replication_offset = 0;
-                    if (replicaInfo.Count > 0)
-                    {
-                        var first = replicaInfo[0];
-                        replication_offset = first.replication_offset + first.replication_lag;
-                    }
-
-                    while (!RespWriteUtils.TryWriteInt64(replication_offset, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt64(storeWrapper.clusterProvider.GetReplicationOffset(), ref dcurr, dend))
                         SendAndReset();
 
                     while (!RespWriteUtils.TryWriteArrayLength(replicaInfo.Count, ref dcurr, dend))
