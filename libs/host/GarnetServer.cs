@@ -40,10 +40,6 @@ namespace Garnet
 
         private readonly GarnetServerOptions opts;
         private IGarnetServer server;
-        private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
-        private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
-        private IDevice aofDevice;
-        private TsavoriteLog appendOnlyFile;
         private SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
         private KVSettings<SpanByte, SpanByte> kvSettings;
         private KVSettings<byte[], IGarnetObject> objKvSettings;
@@ -224,29 +220,25 @@ namespace Garnet
             if (!setMax && !ThreadPool.SetMaxThreads(maxThreads, maxCPThreads))
                 throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {maxThreads}, {maxCPThreads}");
 
-            CreateMainStore(clusterFactory, out var checkpointDir);
-            CreateObjectStore(clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker);
+            var createDatabaseDelegate = (int dbId) =>
+            {
+                var store = CreateMainStore(dbId, clusterFactory, out var currCheckpointDir);
+                var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, currCheckpointDir,
+                    out var objectStoreSizeTracker);
+                var (aofDevice, aof) = CreateAOF(dbId);
+                return new GarnetDatabase(store, objectStore, objectStoreSizeTracker, aofDevice, aof);
+            };
 
             if (!opts.DisablePubSub)
                 subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true);
 
-            CreateAOF();
-
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
-
-            if (logger != null)
-            {
-                var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes + (store.ReadCache?.MaxMemorySizeBytes ?? 0) + (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
-                if (objectStore != null)
-                    configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes + (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) + (objectStoreSizeTracker?.TargetSize ?? 0) + (objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
-                logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
-            }
 
             // Create Garnet TCP server if none was provided.
             this.server ??= new GarnetServerTcp(opts.Address, opts.Port, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, logger);
 
-            storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore, objectStoreSizeTracker,
-                    customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
+            storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, createDatabaseDelegate,
+                    customCommandManager, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, subscribeBroker);
@@ -285,7 +277,7 @@ namespace Garnet
             }
         }
 
-        private void CreateMainStore(IClusterFactory clusterFactory, out string checkpointDir)
+        private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> CreateMainStore(int dbId, IClusterFactory clusterFactory, out string checkpointDir)
         {
             kvSettings = opts.GetSettings(loggerFactory, out logFactory);
 
@@ -296,74 +288,73 @@ namespace Garnet
             kvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
             var checkpointFactory = opts.DeviceFactoryCreator();
-            if (opts.EnableCluster)
-            {
-                kvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(checkpointFactory,
-                    new DefaultCheckpointNamingScheme(checkpointDir + "/Store/checkpoints"), isMainStore: true, logger);
-            }
-            else
-            {
-                kvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(checkpointFactory,
-                    new DefaultCheckpointNamingScheme(checkpointDir + "/Store/checkpoints"), removeOutdated: true);
-            }
+            var baseName = Path.Combine(checkpointDir, "Store", $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
+            var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
 
-            store = new(kvSettings
+            kvSettings.CheckpointManager = opts.EnableCluster ? 
+                clusterFactory.CreateCheckpointManager(checkpointFactory, defaultNamingScheme, isMainStore: true, logger) : 
+                new DeviceLogCommitCheckpointManager(checkpointFactory, defaultNamingScheme, removeOutdated: true);
+
+            return new TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator>(kvSettings
                 , StoreFunctions<SpanByte, SpanByte>.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
 
-        private void CreateObjectStore(IClusterFactory clusterFactory, CustomCommandManager customCommandManager, string CheckpointDir, out CacheSizeTracker objectStoreSizeTracker)
+        private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> CreateObjectStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager, string checkpointDir, out CacheSizeTracker objectStoreSizeTracker)
         {
             objectStoreSizeTracker = null;
-            if (!opts.DisableObjects)
-            {
-                objKvSettings = opts.GetObjectStoreSettings(this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"),
-                    out var objHeapMemorySize, out var objReadCacheHeapMemorySize);
+            if (opts.DisableObjects)
+                return null;
 
-                // Run checkpoint on its own thread to control p99
-                objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
-                objKvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
+            objKvSettings = opts.GetObjectStoreSettings(this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"),
+                out var objHeapMemorySize, out var objReadCacheHeapMemorySize);
 
-                if (opts.EnableCluster)
-                    objKvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(
-                        opts.DeviceFactoryCreator(),
-                        new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"),
-                        isMainStore: false, logger);
-                else
-                    objKvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator(),
-                        new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"),
-                        removeOutdated: true);
+            // Run checkpoint on its own thread to control p99
+            objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
+            objKvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
-                objectStore = new(objKvSettings
-                    , StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(),
-                        () => new ByteArrayBinaryObjectSerializer(),
-                        () => new GarnetObjectSerializer(customCommandManager))
-                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+            var checkpointFactory = opts.DeviceFactoryCreator();
+            var baseName = Path.Combine(checkpointDir, "ObjectStore", $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
+            var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
 
-                if (objHeapMemorySize > 0 || objReadCacheHeapMemorySize > 0)
-                    objectStoreSizeTracker = new CacheSizeTracker(objectStore, objKvSettings, objHeapMemorySize, objReadCacheHeapMemorySize,
-                        this.loggerFactory);
-            }
+            objKvSettings.CheckpointManager = opts.EnableCluster ? 
+                clusterFactory.CreateCheckpointManager(checkpointFactory, defaultNamingScheme, isMainStore: false, logger) :
+                new DeviceLogCommitCheckpointManager(checkpointFactory, defaultNamingScheme, removeOutdated: true);
+
+            var objStore = new TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator>(
+                objKvSettings,
+                StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(),
+                    () => new ByteArrayBinaryObjectSerializer(),
+                    () => new GarnetObjectSerializer(customCommandManager)),
+                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+            if (objHeapMemorySize > 0 || objReadCacheHeapMemorySize > 0)
+                objectStoreSizeTracker = new CacheSizeTracker(objStore, objKvSettings, objHeapMemorySize, objReadCacheHeapMemorySize,
+                    this.loggerFactory);
+
+            return objStore;
+
         }
 
-        private void CreateAOF()
+        private (IDevice, TsavoriteLog) CreateAOF(int dbId)
         {
             if (opts.EnableAOF)
             {
                 if (opts.MainMemoryReplication && opts.CommitFrequencyMs != -1)
                     throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with MainMemoryReplication");
 
-                opts.GetAofSettings(out var aofSettings);
-                aofDevice = aofSettings.LogDevice;
-                appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
+                opts.GetAofSettings(dbId, out var aofSettings);
+                var aofDevice = aofSettings.LogDevice;
+                var appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
 
                 if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)
                     throw new Exception("Cannot use CommitWait with manual commits");
-                return;
+                return (aofDevice, appendOnlyFile);
             }
 
             if (opts.CommitFrequencyMs != 0 || opts.WaitForCommit)
                 throw new Exception("Cannot use CommitFrequencyMs or CommitWait without EnableAOF");
+            return (null, null);
         }
 
         /// <summary>
@@ -410,13 +401,9 @@ namespace Garnet
             Provider?.Dispose();
             server.Dispose();
             subscribeBroker?.Dispose();
-            store.Dispose();
-            appendOnlyFile?.Dispose();
-            aofDevice?.Dispose();
             kvSettings.LogDevice?.Dispose();
             if (!opts.DisableObjects)
             {
-                objectStore.Dispose();
                 objKvSettings.LogDevice?.Dispose();
                 objKvSettings.ObjectLogDevice?.Dispose();
             }

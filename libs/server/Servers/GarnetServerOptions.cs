@@ -412,6 +412,11 @@ namespace Garnet.server
         public LuaOptions LuaOptions;
 
         /// <summary>
+        /// Max number of logical databases allowed
+        /// </summary>
+        public int MaxDatabases = 16;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public GarnetServerOptions(ILogger logger = null) : base(logger)
@@ -695,14 +700,15 @@ namespace Garnet.server
         /// <summary>
         /// Get AOF settings
         /// </summary>
-        /// <param name="tsavoriteLogSettings"></param>
-        public void GetAofSettings(out TsavoriteLogSettings tsavoriteLogSettings)
+        /// <param name="dbId">DB ID</param>
+        /// <param name="tsavoriteLogSettings">Tsavorite log settings</param>
+        public void GetAofSettings(int dbId, out TsavoriteLogSettings tsavoriteLogSettings)
         {
             tsavoriteLogSettings = new TsavoriteLogSettings
             {
                 MemorySizeBits = AofMemorySizeBits(),
                 PageSizeBits = AofPageSizeBits(),
-                LogDevice = GetAofDevice(),
+                LogDevice = GetAofDevice(dbId),
                 TryRecoverLatest = false,
                 SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
                 FastCommitMode = EnableFastCommit,
@@ -714,9 +720,10 @@ namespace Garnet.server
                 logger?.LogError("AOF Page size cannot be more than the AOF memory size.");
                 throw new Exception("AOF Page size cannot be more than the AOF memory size.");
             }
+
             tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
                 MainMemoryReplication ? new NullNamedDeviceFactory() : DeviceFactoryCreator(),
-                    new DefaultCheckpointNamingScheme(CheckpointDir + "/AOF"),
+                    new DefaultCheckpointNamingScheme(Path.Combine(CheckpointDir, $"AOF{(dbId == 0 ? string.Empty : $"_{dbId}")}")),
                     removeOutdated: true,
                     fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
         }
@@ -802,12 +809,14 @@ namespace Garnet.server
         /// Get device for AOF
         /// </summary>
         /// <returns></returns>
-        IDevice GetAofDevice()
+        IDevice GetAofDevice(int dbId)
         {
             if (UseAofNullDevice && EnableCluster && !MainMemoryReplication)
                 throw new Exception("Cannot use null device for AOF when cluster is enabled and you are not using main memory replication");
             if (UseAofNullDevice) return new NullDevice();
-            else return GetInitializedDeviceFactory(CheckpointDir).Get(new FileDescriptor("AOF", "aof.log"));
+
+            return GetInitializedDeviceFactory(CheckpointDir)
+                .Get(new FileDescriptor($"AOF{(dbId == 0 ? string.Empty : $"_{dbId}")}", "aof.log"));
         }
 
         /// <summary>

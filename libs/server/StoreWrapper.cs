@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -36,12 +37,12 @@ namespace Garnet.server
         /// <summary>
         /// Store
         /// </summary>
-        public readonly TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
+        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
 
         /// <summary>
         /// Object store
         /// </summary>
-        public readonly TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
+        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
 
         /// <summary>
         /// Server options
@@ -62,7 +63,7 @@ namespace Garnet.server
         /// <summary>
         /// AOF
         /// </summary>
-        public readonly TsavoriteLog appendOnlyFile;
+        public TsavoriteLog appendOnlyFile;
 
         /// <summary>
         /// Last save time
@@ -79,9 +80,9 @@ namespace Garnet.server
         internal readonly CollectionItemBroker itemBroker;
         internal readonly CustomCommandManager customCommandManager;
         internal readonly GarnetServerMonitor monitor;
-        internal readonly WatchVersionMap versionMap;
+        internal WatchVersionMap versionMap;
 
-        internal readonly CacheSizeTracker objectStoreSizeTracker;
+        internal CacheSizeTracker objectStoreSizeTracker;
 
         public readonly GarnetObjectSerializer GarnetObjectSerializer;
 
@@ -107,9 +108,17 @@ namespace Garnet.server
         public readonly TimeSpan loggingFrequncy;
 
         /// <summary>
-        /// NOTE: For now we support only a single database
+        /// Number of current logical databases
         /// </summary>
-        public readonly int databaseNum = 1;
+        public int databaseCount = 1;
+
+        /// <summary>
+        /// Delegate for creating a new logical database
+        /// </summary>
+        internal readonly Func<int, GarnetDatabase> createDatabasesDelegate;
+
+        readonly bool allowMultiDb;
+        internal ExpandableMap<GarnetDatabase> databases;
 
         /// <summary>
         /// Constructor
@@ -118,37 +127,64 @@ namespace Garnet.server
             string version,
             string redisProtocolVersion,
             IGarnetServer server,
-            TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,
-            TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
-            CacheSizeTracker objectStoreSizeTracker,
+            Func<int, GarnetDatabase> createsDatabaseDelegate,
             CustomCommandManager customCommandManager,
-            TsavoriteLog appendOnlyFile,
             GarnetServerOptions serverOptions,
             AccessControlList accessControlList = null,
             IClusterFactory clusterFactory = null,
-            ILoggerFactory loggerFactory = null
-            )
+            ILoggerFactory loggerFactory = null)
         {
             this.version = version;
             this.redisProtocolVersion = redisProtocolVersion;
             this.server = server;
             this.startupTime = DateTimeOffset.UtcNow.Ticks;
-            this.store = store;
-            this.objectStore = objectStore;
-            this.appendOnlyFile = appendOnlyFile;
+            this.createDatabasesDelegate = createsDatabaseDelegate;
             this.serverOptions = serverOptions;
             lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
             this.customCommandManager = customCommandManager;
-            this.monitor = serverOptions.MetricsSamplingFrequency > 0 ? new GarnetServerMonitor(this, serverOptions, server, loggerFactory?.CreateLogger("GarnetServerMonitor")) : null;
-            this.objectStoreSizeTracker = objectStoreSizeTracker;
+            this.monitor = serverOptions.MetricsSamplingFrequency > 0
+                ? new GarnetServerMonitor(this, serverOptions, server,
+                    loggerFactory?.CreateLogger("GarnetServerMonitor"))
+                : null;
             this.loggerFactory = loggerFactory;
             this.logger = loggerFactory?.CreateLogger("StoreWrapper");
             this.sessionLogger = loggerFactory?.CreateLogger("Session");
-            // TODO Change map size to a reasonable number
-            this.versionMap = new WatchVersionMap(1 << 16);
             this.accessControlList = accessControlList;
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
             this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
+
+            // Create initial stores for default database of index 0
+            var db = createDatabasesDelegate(0);
+
+            this.allowMultiDb = this.serverOptions.MaxDatabases > 1;
+
+            // If multiple databases are allowed, create databases map and set initial database
+            if (this.allowMultiDb)
+            {
+                databases = new ExpandableMap<GarnetDatabase>(1, 0, this.serverOptions.MaxDatabases - 1);
+                if (!databases.TrySetValue(0, ref db))
+                    throw new GarnetException("Failed to set initial database in databases map");
+            }
+
+            // Set fields to default database
+            this.store = db.MainStore;
+            this.objectStore = db.ObjectStore;
+            this.objectStoreSizeTracker = db.ObjectSizeTracker;
+            this.appendOnlyFile = db.AppendOnlyFile;
+            this.versionMap = db.VersionMap;
+
+            if (logger != null)
+            {
+                var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes +
+                                        (store.ReadCache?.MaxMemorySizeBytes ?? 0) +
+                                        (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
+                if (objectStore != null)
+                    configMemoryLimit += (objectStore.IndexSize * 64) + objectStore.Log.MaxMemorySizeBytes +
+                                         (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) +
+                                         (objectStoreSizeTracker?.TargetSize ?? 0) +
+                                         (objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
+                logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
+            }
 
             if (!serverOptions.DisableObjects)
                 this.itemBroker = new CollectionItemBroker();
@@ -162,15 +198,19 @@ namespace Garnet.server
                 // If ACL authentication is enabled, initiate access control list
                 // NOTE: This is a temporary workflow. ACL should always be initiated and authenticator
                 //       should become a parameter of AccessControlList.
-                if ((this.serverOptions.AuthSettings != null) && (this.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings)))
+                if ((this.serverOptions.AuthSettings != null) && (this.serverOptions.AuthSettings.GetType().BaseType ==
+                                                                  typeof(AclAuthenticationSettings)))
                 {
                     // Create a new access control list and register it with the authentication settings
-                    AclAuthenticationSettings aclAuthenticationSettings = (AclAuthenticationSettings)this.serverOptions.AuthSettings;
+                    AclAuthenticationSettings aclAuthenticationSettings =
+                        (AclAuthenticationSettings)this.serverOptions.AuthSettings;
 
                     if (!string.IsNullOrEmpty(aclAuthenticationSettings.AclConfigurationFile))
                     {
-                        logger?.LogInformation("Reading ACL configuration file '{filepath}'", aclAuthenticationSettings.AclConfigurationFile);
-                        this.accessControlList = new AccessControlList(aclAuthenticationSettings.DefaultPassword, aclAuthenticationSettings.AclConfigurationFile);
+                        logger?.LogInformation("Reading ACL configuration file '{filepath}'",
+                            aclAuthenticationSettings.AclConfigurationFile);
+                        this.accessControlList = new AccessControlList(aclAuthenticationSettings.DefaultPassword,
+                            aclAuthenticationSettings.AclConfigurationFile);
                     }
                     else
                     {
@@ -218,8 +258,19 @@ namespace Garnet.server
             return localEndpoint.Address.ToString();
         }
 
-        internal FunctionsState CreateFunctionsState()
-            => new(appendOnlyFile, versionMap, customCommandManager, null, objectStoreSizeTracker, GarnetObjectSerializer);
+        internal FunctionsState CreateFunctionsState(int dbId = 0)
+        {
+            Debug.Assert(dbId == 0 || allowMultiDb);
+
+            if (dbId == 0)
+                return new(appendOnlyFile, versionMap, customCommandManager, null, objectStoreSizeTracker, GarnetObjectSerializer);
+            
+            if (!databases.TryGetValue(dbId, out var db))
+                throw new GarnetException($"Database with ID {dbId} was not found.");
+            
+            return new(db.AppendOnlyFile, db.VersionMap, customCommandManager, null, db.ObjectSizeTracker,
+                GarnetObjectSerializer);
+        }
 
         internal void Recover()
         {
@@ -687,8 +738,13 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            //Wait for checkpoints to complete and disable checkpointing
+            // Wait for checkpoints to complete and disable checkpointing
             _checkpointTaskLock.WriteLock();
+
+            // Disable changes to databases map and dispose all databases
+            databases.mapLock.WriteLock();
+            foreach (var db in databases.Map)
+                db.Dispose();
 
             itemBroker?.Dispose();
             monitor?.Dispose();
@@ -897,6 +953,37 @@ namespace Garnet.server
             }
 
             return false;
+        }
+
+        public void GetDatabaseStores(int dbId,
+            out TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
+            out TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objStore)
+        {
+            if (dbId == 0)
+            {
+                mainStore = this.store;
+                objStore = this.objectStore;
+            }
+            else
+            {
+                var dbFound = this.TryGetOrSetDatabase(dbId, out var db);
+                Debug.Assert(dbFound);
+                mainStore = db.MainStore;
+                objStore = db.ObjectStore;
+            }
+        }
+
+        public bool TryGetOrSetDatabase(int dbId, out GarnetDatabase db)
+        {
+            db = default;
+
+            if (!allowMultiDb || !databases.TryGetOrSet(dbId, () => createDatabasesDelegate(dbId), out db, out var added))
+                return false;
+
+            if (added)
+                Interlocked.Increment(ref databaseCount);
+            
+            return true;
         }
     }
 }

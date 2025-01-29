@@ -235,7 +235,7 @@ namespace Garnet.server
                 return true;
             }
 
-            if (index < storeWrapper.databaseNum)
+            if (index < storeWrapper.databaseCount)
             {
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();

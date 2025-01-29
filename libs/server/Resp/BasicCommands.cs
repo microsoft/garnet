@@ -13,6 +13,11 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
     /// <summary>
     /// Server session for RESP protocol - basic commands are in this file
     /// </summary>
@@ -1663,8 +1668,9 @@ namespace Garnet.server
 
         void ExecuteFlushDb(bool unsafeTruncateLog)
         {
-            storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            storeWrapper.GetDatabaseStores(activeDbId, out var mainStore, out var objStore);
+            mainStore.Log.ShiftBeginAddress(mainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            objStore?.Log.ShiftBeginAddress(objStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
 
         /// <summary>

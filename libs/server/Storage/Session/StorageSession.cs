@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -57,7 +58,8 @@ namespace Garnet.server
             ScratchBufferManager scratchBufferManager,
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
-            ILogger logger = null)
+            ILogger logger = null,
+            int dbId = 0)
         {
             this.sessionMetrics = sessionMetrics;
             this.LatencyMetrics = LatencyMetrics;
@@ -67,13 +69,15 @@ namespace Garnet.server
 
             parseState.Initialize();
 
-            functionsState = storeWrapper.CreateFunctionsState();
+            functionsState = storeWrapper.CreateFunctionsState(dbId);
 
             var functions = new MainSessionFunctions(functionsState);
-            var session = storeWrapper.store.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
 
-            var objstorefunctions = new ObjectSessionFunctions(functionsState);
-            var objectStoreSession = storeWrapper.objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
+            storeWrapper.GetDatabaseStores(dbId, out var mainStore, out var objStore);
+            var session = mainStore.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
+
+            var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
+            var objectStoreSession = objStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
 
             basicContext = session.BasicContext;
             lockableContext = session.LockableContext;
@@ -83,7 +87,7 @@ namespace Garnet.server
                 objectStoreLockableContext = objectStoreSession.LockableContext;
             }
 
-            HeadAddress = storeWrapper.store.Log.HeadAddress;
+            HeadAddress = mainStore.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
         }
 
