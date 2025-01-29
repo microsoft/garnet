@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test.cluster
 {
@@ -65,6 +66,19 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex: replicaIndex, primaryIndex: primaryIndex);
             if (disableObjects)
                 context.ValidateNodeObjects(ref context.kvPairsObj, replicaIndex);
+        }
+
+        void ResetAndReAttach(int replicaIndex, int primaryIndex, bool soft)
+        {
+            // Soft reset replica
+            _ = context.clusterTestUtils.ClusterReset(replicaIndex, soft: soft, expiry: 1, logger: context.logger);
+            context.clusterTestUtils.BumpEpoch(replicaIndex, logger: context.logger);
+            // Re-introduce node after reset
+            while (!context.clusterTestUtils.IsKnown(replicaIndex, primaryIndex, logger: context.logger))
+            {
+                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token);
+                context.clusterTestUtils.Meet(replicaIndex, primaryIndex, logger: context.logger);
+            }
         }
 
         /// <summary>
@@ -142,15 +156,8 @@ namespace Garnet.test.cluster
             // Validate replica data
             Validate(primaryIndex, replicaIndex, disableObjects);
 
-            // Soft reset replica
-            _ = context.clusterTestUtils.ClusterReset(replicaIndex, soft: true, expiry: 1, logger: context.logger);
-            context.clusterTestUtils.BumpEpoch(replicaIndex, logger: context.logger);
-            // Re-introduce node after reset
-            while (!context.clusterTestUtils.IsKnown(replicaIndex, primaryIndex, logger: context.logger))
-            {
-                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token);
-                context.clusterTestUtils.Meet(replicaIndex, primaryIndex, logger: context.logger);
-            }
+            // Reset and re-attach replica as primary
+            ResetAndReAttach(replicaIndex, primaryIndex, soft: true);
 
             // Populate Primary (ahead of replica)
             PopulatePrimary(primaryIndex, disableObjects, performRMW);
@@ -174,9 +181,74 @@ namespace Garnet.test.cluster
         /// <param name="performRMW"></param>
         [Test, Order(3)]
         [Category("REPLICATION")]
-        public void ClusterDBVersionAligmentDisklessSync([Values] bool disableObjects, [Values] bool performRMW)
+        public void ClusterDBVersionAlignmentDisklessSync([Values] bool disableObjects, [Values] bool performRMW)
         {
+            var nodes_count = 3;
+            var primaryIndex = 0;
+            var replicaOneIndex = 1;
+            var replicaTwoIndex = 2;
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true);
+            context.CreateConnection(useTLS: useTLS);
 
+            // Setup primary and introduce it to future replica
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaOneIndex, replicaOneIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaTwoIndex, replicaTwoIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaOneIndex, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaTwoIndex, logger: context.logger);
+
+            // Ensure node everybody knowns everybody
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaOneIndex, primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaTwoIndex, primaryIndex, logger: context.logger);
+
+            // Populate Primary
+            PopulatePrimary(primaryIndex, disableObjects, performRMW);
+
+            // Attach first replica
+            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaOneIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+
+            // Validate first replica data
+            Validate(primaryIndex, replicaOneIndex, disableObjects);
+
+            // Validate db version
+            var primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger: context.logger);
+            var replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, isMainStore: true, logger: context.logger);
+            ClassicAssert.AreEqual(2, primaryVersion);
+            ClassicAssert.AreEqual(primaryVersion, replicaOneVersion);
+
+            // Reset and re-attach replica as primary
+            ResetAndReAttach(replicaOneIndex, primaryIndex, soft: true);
+
+            // Attach second replica
+            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaTwoIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+
+            // Populate primary with more data
+            PopulatePrimary(primaryIndex, disableObjects, performRMW);
+
+            // Validate second replica data
+            Validate(primaryIndex, replicaTwoIndex, disableObjects);
+
+            // Validate db version
+            primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger: context.logger);
+            replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, isMainStore: true, logger: context.logger);
+            var replicaTwoVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaTwoIndex, isMainStore: true, logger: context.logger);
+            ClassicAssert.AreEqual(3, primaryVersion);
+            ClassicAssert.AreEqual(primaryVersion, replicaTwoVersion);
+            ClassicAssert.AreEqual(2, replicaOneVersion);
+
+            // Re-attach first replica
+            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaOneIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+
+            // Validate second replica data
+            Validate(primaryIndex, replicaOneIndex, disableObjects);
+
+            primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger: context.logger);
+            replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, isMainStore: true, logger: context.logger);
+            replicaTwoVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaTwoIndex, isMainStore: true, logger: context.logger);
+            ClassicAssert.AreEqual(4, primaryVersion);
+            ClassicAssert.AreEqual(primaryVersion, replicaOneVersion);
+            ClassicAssert.AreEqual(primaryVersion, replicaTwoVersion);
         }
     }
 }
