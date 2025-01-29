@@ -3672,6 +3672,17 @@ namespace Garnet.test
         }
 
         [Test]
+        public void GetRole()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var server = redis.GetServers()[0];
+            var role = server.Role();
+            ClassicAssert.True(role is Role.Master);
+            var master = role as Role.Master;
+            ClassicAssert.AreEqual("master", master.Value);
+        }
+
+        [Test]
         public void AppendTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
