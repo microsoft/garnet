@@ -80,7 +80,7 @@ namespace Garnet.cluster
 
         public bool TryAddReplicaSyncSession(string replicaNodeId, string replicaAssignedPrimaryId, CheckpointEntry replicaCheckpointEntry, long replicaAofBeginAddress, long replicaAofTailAddress)
         {
-            var retSession = new ReplicaSyncSession(storeWrapper, clusterProvider, replicaSyncMetadata: null, replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress, logger);
+            var retSession = new ReplicaSyncSession(storeWrapper, clusterProvider, replicaSyncMetadata: null, timeout: default, token: default, replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress, logger);
             var success = false;
             try
             {

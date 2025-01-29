@@ -22,10 +22,9 @@ namespace Garnet.cluster
         readonly ReplicaSyncSession[] sessions;
         readonly int numSessions;
 
-        public SnapshotIteratorManager(ReplicationSyncManager replicationSyncManager, TimeSpan timeout, CancellationToken cancellationToken, ILogger logger = null)
+        public SnapshotIteratorManager(ReplicationSyncManager replicationSyncManager, CancellationToken cancellationToken, ILogger logger = null)
         {
             this.replicationSyncManager = replicationSyncManager;
-            this.timeout = timeout;
             this.cancellationToken = cancellationToken;
             this.logger = logger;
 
@@ -95,7 +94,7 @@ namespace Garnet.cluster
                     // Try to write to network buffer. If failed we need to retry
                     if (!sessions[i].TryWriteKeyValueSpanByte(ref key, ref value, out var task))
                     {
-                        sessions[i].SetFlushTask(task, timeout, cancellationToken);
+                        sessions[i].SetFlushTask(task);
                         needToFlush = true;
                     }
                 }
@@ -130,7 +129,7 @@ namespace Garnet.cluster
                     // Try to write to network buffer. If failed we need to retry
                     if (!sessions[i].TryWriteKeyValueByteArray(key, objectData, value.Expiration, out var task))
                     {
-                        sessions[i].SetFlushTask(task, timeout, cancellationToken);
+                        sessions[i].SetFlushTask(task);
                         needToFlush = true;
                     }
                 }
@@ -150,7 +149,7 @@ namespace Garnet.cluster
             for (var i = 0; i < numSessions; i++)
             {
                 if (!replicationSyncManager.IsActiveSyncSession(i)) continue;
-                sessions[i].SendAndResetIterationBuffer(timeout, cancellationToken);
+                sessions[i].SendAndResetIterationBuffer();
             }
 
             // Wait for flush and response to complete

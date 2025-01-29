@@ -51,7 +51,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool AddSyncSession(SyncMetadata replicaSyncMetadata, out ReplicaSyncSession replicaSyncSession)
         {
-            replicaSyncSession = new ReplicaSyncSession(ClusterProvider.storeWrapper, ClusterProvider, replicaSyncMetadata, logger: logger);
+            replicaSyncSession = new ReplicaSyncSession(ClusterProvider.storeWrapper, ClusterProvider, replicaSyncMetadata, clusterTimeout, cts.Token, logger: logger);
             replicaSyncSession.SetStatus(SyncStatus.INITIALIZING);
             try
             {
@@ -161,7 +161,7 @@ namespace Garnet.cluster
                 async Task TakeStreamingCheckpoint()
                 {
                     // Main snapshot iterator manager
-                    var manager = new SnapshotIteratorManager(this, clusterTimeout, cts.Token, logger);
+                    var manager = new SnapshotIteratorManager(this, cts.Token, logger);
 
                     // Iterate through main store
                     var mainStoreResult = await ClusterProvider.storeWrapper.store.
@@ -173,6 +173,10 @@ namespace Garnet.cluster
                         var objectStoreResult = await ClusterProvider.storeWrapper.objectStore.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "{method} faulted", nameof(StreamingSnapshotSync));
             }
             finally
             {
@@ -232,7 +236,7 @@ namespace Garnet.cluster
                             else
                             {
                                 // Reset replica database in preparation for full sync
-                                Sessions[i].SetFlushTask(Sessions[i].ExecuteAsync(["FLUSHALL"]), timeout: clusterTimeout, cts.Token);
+                                Sessions[i].SetFlushTask(Sessions[i].ExecuteAsync(["FLUSHALL"]));
                             }
                         }
                         catch (Exception ex)
