@@ -6161,6 +6161,56 @@
     ]
   },
   {
+    "Command": "SETIFGREATER",
+    "Name": "SETIFGREATER",
+    "Summary": "Sets the string value of a key, ignoring its type, if the key\u0027s current etag is strictly less than the given etag.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
+          }
+        ]
+      }
+    ]
+  }
+  {
     "Command": "SETIFMATCH",
     "Name": "SETIFMATCH",
     "Summary": "Sets the string value of a key, ignoring its type, if the key\u0027s current etag matches the given etag.",
