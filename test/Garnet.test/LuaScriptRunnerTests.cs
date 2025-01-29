@@ -11,6 +11,7 @@ using System.Text;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
+using Garnet.server.Lua;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -152,8 +153,11 @@ end
 return count
 ";
 
+            using var timeoutManager = new LuaTimeoutManager(TimeSpan.FromMilliseconds(10));
+            timeoutManager.Start();
+
             // Should never timeout, but has limit
-            using (var runner = new LuaRunner(LuaMemoryManagementMode.Native, null, TimeSpan.FromMilliseconds(10), Encoding.UTF8.GetBytes(FastScript)))
+            using (var runner = new LuaRunner(LuaMemoryManagementMode.Native, null, Encoding.UTF8.GetBytes(FastScript), timeoutManager))
             {
                 runner.CompileForRunner();
                 var res = (string)runner.RunForRunner();
@@ -161,7 +165,7 @@ return count
             }
 
             // Should always timeout
-            using (var runner = new LuaRunner(LuaMemoryManagementMode.Native, null, TimeSpan.FromMilliseconds(10), Encoding.UTF8.GetBytes(DoesNotReturnScript)))
+            using (var runner = new LuaRunner(LuaMemoryManagementMode.Native, null, Encoding.UTF8.GetBytes(DoesNotReturnScript), timeoutManager))
             {
                 runner.CompileForRunner();
                 var exc = ClassicAssert.Throws<GarnetException>(() => runner.RunForRunner());

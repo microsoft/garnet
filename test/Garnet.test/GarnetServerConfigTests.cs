@@ -400,81 +400,141 @@ namespace Garnet.test
                     ClassicAssert.IsFalse(parseSuccessful);
                 }
             }
-
-            // Import a garnet.conf file with the given contents
-            static bool TryParseGarnetConfOptions(string json, out Options options, out List<string> invalidOptions, out bool exitGracefully)
-            {
-                var tempPath = Path.GetTempFileName();
-                try
-                {
-                    File.WriteAllText(tempPath, json);
-
-                    return ServerSettingsManager.TryParseCommandLineArguments(["--config-import-path", tempPath], out options, out invalidOptions, out exitGracefully);
-                }
-                finally
-                {
-                    try
-                    {
-                        File.Delete(tempPath);
-                    }
-                    catch
-                    {
-                        // Best effort
-                    }
-                }
-            }
         }
 
         [Test]
         public void LuaTimeoutOptions()
         {
-            // No value is accepted
+            // Command line args
             {
-                var args = new[] { "--lua" };
-                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
-                ClassicAssert.IsTrue(parseSuccessful);
-                ClassicAssert.IsTrue(options.EnableLua);
-                ClassicAssert.IsNull(options.LuaScriptTimeout);
-            }
-
-            // Positive accepted
-            {
-                var args = new[] { "--lua", "--lua-script-timeout", "00:00:00.1" };
-                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
-                ClassicAssert.IsTrue(parseSuccessful);
-                ClassicAssert.IsTrue(options.EnableLua);
-                ClassicAssert.AreEqual("00:00:00.1", options.LuaScriptTimeout);
-            }
-
-            // Zero rejected
-            {
-                var args = new[] { "--lua", "--lua-script-timeout", "00:00:00" };
-                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
-                ClassicAssert.IsFalse(parseSuccessful);
-            }
-
-            // Negative rejected
-            {
-                var args = new[] { "--lua", "--lua-script-timeout", "-00:00:00.1" };
-                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
-                ClassicAssert.IsFalse(parseSuccessful);
-            }
-
-            // Non-"c" rejected
-            {
-                var currentThread = Thread.CurrentThread;
-                var oldCulture = currentThread.CurrentCulture;
-                try
+                // No value is accepted
                 {
-                    currentThread.CurrentCulture = new CultureInfo("fr-FR");
+                    var args = new[] { "--lua" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.IsNull(options.LuaScriptTimeout);
+                }
 
-                    var args = new[] { "--lua", "--lua-script-timeout", new TimeSpan(0, 0, 0, 0, 1).ToString("G") };
+                // Positive accepted
+                {
+                    var args = new[] { "--lua", "--lua-script-timeout", "00:00:00.1" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual("00:00:00.1", options.LuaScriptTimeout);
+                }
+
+                // Zero rejected
+                {
+                    var args = new[] { "--lua", "--lua-script-timeout", "00:00:00" };
                     var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }
-                finally
+
+                // Negative rejected
                 {
-                    currentThread.CurrentCulture = oldCulture;
+                    var args = new[] { "--lua", "--lua-script-timeout", "-00:00:00.1" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Non-"c" rejected
+                {
+                    var currentThread = Thread.CurrentThread;
+                    var oldCulture = currentThread.CurrentCulture;
+                    try
+                    {
+                        currentThread.CurrentCulture = new CultureInfo("fr-FR");
+
+                        var args = new[] { "--lua", "--lua-script-timeout", new TimeSpan(0, 0, 0, 0, 1).ToString("G") };
+                        var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                        ClassicAssert.IsFalse(parseSuccessful);
+                    }
+                    finally
+                    {
+                        currentThread.CurrentCulture = oldCulture;
+                    }
+                }
+            }
+
+            // Garnet.conf
+            {
+                // No value is accepted
+                {
+                    const string JSON = @"{ ""EnableLua"": true }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.IsNull(options.LuaScriptTimeout);
+                }
+
+                // Positive accepted
+                {
+                    const string JSON = @"{ ""EnableLua"": true, ""LuaScriptTimeout"": ""00:00:00.1"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual("00:00:00.1", options.LuaScriptTimeout);
+                }
+
+                // Zero rejected
+                {
+                    const string JSON = @"{ ""EnableLua"": true, ""LuaScriptTimeout"": ""00:00:00"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Negative rejected
+                {
+                    const string JSON = @"{ ""EnableLua"": true, ""LuaScriptTimeout"": ""-00:00:00.1"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Non-"c" rejected
+                {
+                    var currentThread = Thread.CurrentThread;
+                    var oldCulture = currentThread.CurrentCulture;
+                    try
+                    {
+                        currentThread.CurrentCulture = new CultureInfo("fr-FR");
+
+                        var json = @$"{{ ""EnableLua"": true, ""LuaScriptTimeout"": ""{new TimeSpan(0, 0, 0, 0, 1):G}"" }}";
+                        var parseSuccessful = TryParseGarnetConfOptions(json, out var options, out var invalidOptions, out var exitGracefully);
+                        ClassicAssert.IsFalse(parseSuccessful);
+                    }
+                    finally
+                    {
+                        currentThread.CurrentCulture = oldCulture;
+                    }
+                }
+            }
+        }
+
+
+
+        /// <summary>
+        /// Import a garnet.conf file with the given contents
+        /// </summary>
+        private static bool TryParseGarnetConfOptions(string json, out Options options, out List<string> invalidOptions, out bool exitGracefully)
+        {
+            var tempPath = Path.GetTempFileName();
+            try
+            {
+                File.WriteAllText(tempPath, json);
+
+                return ServerSettingsManager.TryParseCommandLineArguments(["--config-import-path", tempPath], out options, out invalidOptions, out exitGracefully);
+            }
+            finally
+            {
+                try
+                {
+                    File.Delete(tempPath);
+                }
+                catch
+                {
+                    // Best effort
                 }
             }
         }

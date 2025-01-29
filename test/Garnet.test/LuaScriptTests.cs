@@ -2,12 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
-using Microsoft.Extensions.Azure;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -15,29 +14,35 @@ using StackExchange.Redis;
 namespace Garnet.test
 {
     // Limits chosen here to allow completion - if you have to bump them up, consider that you might have introduced a regression
-    [TestFixture(LuaMemoryManagementMode.Native, "")]
-    [TestFixture(LuaMemoryManagementMode.Tracked, "")]
-    [TestFixture(LuaMemoryManagementMode.Tracked, "13m")]
-    [TestFixture(LuaMemoryManagementMode.Managed, "")]
-    [TestFixture(LuaMemoryManagementMode.Managed, "15m")]
+    [TestFixture(LuaMemoryManagementMode.Native, "", "")]
+    [TestFixture(LuaMemoryManagementMode.Native, "", "00:00:02")]
+    [TestFixture(LuaMemoryManagementMode.Tracked, "", "")]
+    [TestFixture(LuaMemoryManagementMode.Tracked, "13m", "")]
+    [TestFixture(LuaMemoryManagementMode.Managed, "", "")]
+    [TestFixture(LuaMemoryManagementMode.Managed, "15m", "")]
     public class LuaScriptTests
     {
         private readonly LuaMemoryManagementMode allocMode;
         private readonly string limitBytes;
+        private readonly string limitTimeout;
 
         protected GarnetServer server;
 
-        public LuaScriptTests(LuaMemoryManagementMode allocMode, string limitBytes)
+        public LuaScriptTests(LuaMemoryManagementMode allocMode, string limitBytes, string limitTimeout)
         {
             this.allocMode = allocMode;
             this.limitBytes = limitBytes;
+            this.limitTimeout = limitTimeout;
         }
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true, luaMemoryMode: allocMode, luaMemoryLimit: limitBytes, luaTimeout: TimeSpan.FromMilliseconds(500));
+
+            TimeSpan? timeout = string.IsNullOrEmpty(limitTimeout) ? null : TimeSpan.ParseExact(limitTimeout, "c", CultureInfo.InvariantCulture);
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true, luaMemoryMode: allocMode, luaMemoryLimit: limitBytes, luaTimeout: timeout);
             server.Start();
         }
 
@@ -1060,6 +1065,12 @@ if @Ctrl == 'Timeout' then
 end
 
 return count";
+
+            if (string.IsNullOrEmpty(limitTimeout))
+            {
+                ClassicAssert.Ignore("No timeout enabled");
+                return;
+            }
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
             var db = redis.GetDatabase();

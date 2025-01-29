@@ -5,9 +5,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Security.Cryptography;
-using System.Threading;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
+using Garnet.server.Lua;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -29,11 +29,12 @@ namespace Garnet.server
 
         readonly LuaMemoryManagementMode memoryManagementMode;
         readonly int? memoryLimitBytes;
-        readonly TimeSpan timeout;
+        readonly LuaTimeoutManager timeoutManager;
 
-        public SessionScriptCache(StoreWrapper storeWrapper, IGarnetAuthenticator authenticator, ILogger logger = null)
+        public SessionScriptCache(StoreWrapper storeWrapper, IGarnetAuthenticator authenticator, LuaTimeoutManager timeoutManager, ILogger logger = null)
         {
             this.storeWrapper = storeWrapper;
+            this.timeoutManager = timeoutManager;
             this.logger = logger;
 
             scratchBufferNetworkSender = new ScratchBufferNetworkSender();
@@ -42,7 +43,6 @@ namespace Garnet.server
             // There's some parsing involved in these, so save them off per-session
             memoryManagementMode = storeWrapper.serverOptions.LuaOptions.MemoryManagementMode;
             memoryLimitBytes = storeWrapper.serverOptions.LuaOptions.GetMemoryLimitBytes();
-            timeout = storeWrapper.serverOptions.LuaOptions.Timeout;
         }
 
         public void Dispose()
@@ -82,7 +82,7 @@ namespace Garnet.server
             {
                 var sourceOnHeap = source.ToArray();
 
-                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, timeout, sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
+                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, sourceOnHeap, timeoutManager, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
 
                 // If compilation fails, an error is written out
                 if (runner.CompileForSession(session))

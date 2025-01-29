@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 
@@ -20,7 +19,16 @@ namespace Garnet.server.Lua
         private readonly TimeSpan frequency;
         private readonly long timeoutTimestampTicks;
 
+        // Shared timer for all timeouts
         private Timer timer;
+
+        // Head of the intrusive linked list of active runners
+        private LuaRunner activeRunners;
+
+        // Provides unique values for timer registrations
+        private long globalRegistrationCookie;
+
+        private int processingTimeouts;
 
         internal LuaTimeoutManager(TimeSpan timeout)
         {
@@ -34,7 +42,7 @@ namespace Garnet.server.Lua
             frequency = TimeSpan.FromTicks(timeout.Ticks / 10);
             if (frequency == TimeSpan.Zero)
             {
-                frequency = TimeSpan.FromMicroseconds(1);
+                frequency = timeout;
             }
         }
 
@@ -53,23 +61,41 @@ namespace Garnet.server.Lua
         /// <summary>
         /// Register the given <see cref="LuaRunner"/> for a timeout notification.
         /// 
-        /// A runner can only be registered a single time, it should be unregistered
-        /// before being registered again.
+        /// A runner can only be registered a single time.
+        /// 
+        /// No two threads should be trying to register the same <see cref="LuaRunner"/>
+        /// at the same time.
         /// </summary>
-        internal void RegisterForTimeout(LuaRunner runner)
+        internal long RegisterForTimeout(LuaRunner runner)
         {
             var now = Stopwatch.GetTimestamp();
             var timeoutAt = now + timeoutTimestampTicks;
 
-        }
+            var curHead = Volatile.Read(ref activeRunners);
 
-        /// <summary>
-        /// Remove the given <see cref="LuaRunner"/> from timeout notifications.
-        /// 
-        /// This should always be paired with a single <see cref="RegisterForTimeout(LuaRunner)"/> call.
-        /// </summary>
-        internal void UnregisterForTimeout(LuaRunner runner)
-        {
+            var cookie = Interlocked.Increment(ref globalRegistrationCookie);
+
+            // Special value, so we know to skip the runner if we read into it
+            _ = Interlocked.Exchange(ref runner.currentTimeoutTicks, -1);
+            _ = Interlocked.Exchange(ref runner.currentTimeoutToken, -1);
+
+        tryAgain:
+            _ = Interlocked.Exchange(ref runner.nextRunnerTimeoutChain, curHead);
+
+            LuaRunner newCurHead;
+            if ((newCurHead = Interlocked.CompareExchange(ref activeRunners, runner, curHead)) != curHead)
+            {
+                curHead = newCurHead;
+                goto tryAgain;
+            }
+
+            var cookieRes = Interlocked.Exchange(ref runner.currentTimeoutToken, cookie);
+            Debug.Assert(cookieRes == -1, "Nothing else should have updated cookie value");
+
+            var timeoutRes = Interlocked.Exchange(ref runner.currentTimeoutTicks, timeoutAt);
+            Debug.Assert(timeoutRes == -1, "Nothing else should have updated timeout value");
+
+            return cookie;
         }
 
         /// <summary>
@@ -79,9 +105,71 @@ namespace Garnet.server.Lua
         /// </summary>
         private void OnFrequency(object state)
         {
-            var now = Stopwatch.GetTimestamp();
+            // Timer will keep firing even if this callback hasn't finished, so force an at-most-once behavior
+            if (Interlocked.CompareExchange(ref processingTimeouts, 1, 0) != 0)
+            {
+                return;
+            }
 
-            
+            try
+            {
+                var now = Stopwatch.GetTimestamp();
+
+                var head = Volatile.Read(ref activeRunners);
+
+            restart:
+                LuaRunner prev = null;
+                var cur = head;
+                while (cur != null)
+                {
+                    var timeout = Interlocked.CompareExchange(ref cur.currentTimeoutTicks, 0, 0);
+                    var cookie = Interlocked.CompareExchange(ref cur.currentTimeoutToken, 0, 0);
+
+                    // Check to see if the timeout has occurred
+                    if (timeout != -1 && cookie != -1 && timeout < now)
+                    {
+                        // Remove the runner first...
+
+                        if (prev == null)
+                        {
+                            // Head of list
+
+                            LuaRunner newHead;
+                            if ((newHead = Interlocked.CompareExchange(ref activeRunners, cur.nextRunnerTimeoutChain, head)) != head)
+                            {
+                                // If contended, just start over - we will eventually succeed
+                                head = newHead;
+                                goto restart;
+                            }
+                        }
+                        else
+                        {
+                            // Interior to list, shouldn't fail as no other thread should modify these
+
+                            var exchangeRes = Interlocked.CompareExchange(ref prev.nextRunnerTimeoutChain, cur.nextRunnerTimeoutChain, cur);
+                            Debug.Assert(exchangeRes == cur, "Should never fail, exchanges should order visibility of runners in chain");
+                        }
+
+                        // Actually request the timeout
+                        cur.RequestTimeout(cookie);
+
+                        // Do not update prev, it stays the same
+                        cur = cur.nextRunnerTimeoutChain;
+                    }
+                    else
+                    {
+                        // No timeout, move on to next item
+
+                        prev = cur;
+                        cur = cur.nextRunnerTimeoutChain;
+                    }
+                }
+            }
+            finally
+            {
+                var unlockRes = Interlocked.Exchange(ref processingTimeouts, 0);
+                Debug.Assert(unlockRes == 1, "No other thread should have modified this");
+            }
         }
     }
 }

@@ -4,6 +4,7 @@
 using System.Text;
 using BenchmarkDotNet.Attributes;
 using Garnet.server;
+using Garnet.server.Lua;
 
 namespace BDN.benchmark.Lua
 {
@@ -35,6 +36,8 @@ return counter";
             new(LuaMemoryManagementMode.Native, false)
         ];
 
+        private LuaTimeoutManager timeoutManager;
+
         private LuaRunner withTimeout;
         private LuaRunner noTimeout;
 
@@ -43,8 +46,11 @@ return counter";
         {
             var opts = Params.CreateOptions();
 
-            noTimeout = new LuaRunner(opts.MemoryManagementMode, opts.GetMemoryLimitBytes(), Timeout.InfiniteTimeSpan, Encoding.UTF8.GetBytes(Script));
-            withTimeout = new LuaRunner(opts.MemoryManagementMode, opts.GetMemoryLimitBytes(), TimeSpan.FromMilliseconds(5), Encoding.UTF8.GetBytes(Script));
+            timeoutManager = new LuaTimeoutManager(TimeSpan.FromMilliseconds(5));
+            timeoutManager.Start();
+
+            noTimeout = new LuaRunner(opts.MemoryManagementMode, opts.GetMemoryLimitBytes(), Encoding.UTF8.GetBytes(Script));
+            withTimeout = new LuaRunner(opts.MemoryManagementMode, opts.GetMemoryLimitBytes(), Encoding.UTF8.GetBytes(Script), timeoutManager);
 
             noTimeout.CompileForRunner();
             withTimeout.CompileForRunner();
@@ -55,6 +61,7 @@ return counter";
         {
             noTimeout.Dispose();
             withTimeout.Dispose();
+            timeoutManager.Dispose();
         }
 
         [Benchmark(Baseline = true)]

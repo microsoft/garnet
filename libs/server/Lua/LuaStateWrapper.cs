@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,8 @@ namespace Garnet.server
     internal struct LuaStateWrapper : IDisposable
     {
         private const int LUA_MINSTACK = 20;
+
+        private readonly object hookLock;
 
         private GCHandle customAllocatorHandle;
 
@@ -50,6 +53,8 @@ namespace Garnet.server
                     _ => throw new InvalidOperationException($"Unexpected mode/limit combination: {memMode}/{memLimitBytes}")
                 };
 
+            hookLock = new();
+
             if (customAllocator != null)
             {
                 customAllocatorHandle = GCHandle.Alloc(customAllocator, GCHandleType.Normal);
@@ -75,10 +80,16 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void Dispose()
         {
-            if (state != 0)
+            // Make sure we only close once
+            var toClose = Interlocked.Exchange(ref state, 0);
+
+            if (toClose != 0)
             {
-                NativeMethods.Close(state);
-                state = 0;
+                // Synchronize with respect to hook'ing
+                lock (hookLock)
+                {
+                    NativeMethods.Close(toClose);
+                }
             }
 
             if (customAllocatorHandle.IsAllocated)
@@ -501,11 +512,33 @@ namespace Garnet.server
         // Rarely used
 
         /// <summary>
-        /// This should be used to set all debug hooks for Lua.
+        /// This should be used to set all debug hooks for Lua when we know no other thread will be executing.
         /// </summary>
         internal unsafe void SetHook(delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
         {
             NativeMethods.SetHook(state, hook, mask, count);
+        }
+
+        /// <summary>
+        /// This should be used to set all debug hooks for Lua when multiple threads are involved.
+        /// 
+        /// This can fail if there's a thread race to close the state.
+        /// 
+        /// This is the ONLY thread-safe method on <see cref="LuaStateWrapper"/>.
+        /// </summary>
+        internal unsafe bool TrySetHook(delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
+        {
+            lock (hookLock)
+            {
+                if (state == 0)
+                {
+                    return false;
+                }
+
+                NativeMethods.SetHook(state, hook, mask, count);
+            }
+
+            return true;
         }
 
         /// <summary>
