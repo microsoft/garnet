@@ -72,7 +72,7 @@ namespace Garnet.cluster
 
             // Dispose only if AOF sync has not started
             // otherwise sync task will dispose the client
-            if (aofSyncInProgress.OneWriteLock())
+            if (aofSyncInProgress.TryWriteLock())
                 garnetClient?.Dispose();
         }
 
@@ -111,7 +111,7 @@ namespace Garnet.cluster
             var failedToStart = false;
             try
             {
-                if (!aofSyncInProgress.OneWriteLock())
+                if (!aofSyncInProgress.TryWriteLock())
                 {
                     logger?.LogWarning("{method} AOF sync for {remoteNodeId} failed to start", nameof(ReplicaSyncTask), remoteNodeId);
                     failedToStart = true;
