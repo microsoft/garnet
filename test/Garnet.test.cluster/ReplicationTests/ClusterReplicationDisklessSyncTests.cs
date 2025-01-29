@@ -67,6 +67,11 @@ namespace Garnet.test.cluster
                 context.ValidateNodeObjects(ref context.kvPairsObj, replicaIndex);
         }
 
+        /// <summary>
+        /// Attach empty replica after primary has been populated with some data
+        /// </summary>
+        /// <param name="disableObjects"></param>
+        /// <param name="performRMW"></param>
         [Test, Order(1)]
         [Category("REPLICATION")]
         public void ClusterEmptyReplicaDisklessSync([Values] bool disableObjects, [Values] bool performRMW)
@@ -100,7 +105,13 @@ namespace Garnet.test.cluster
         }
 
 
-        [Test, Order(1)]
+        /// <summary>
+        /// Re-attach replica on disconnect after it has received some amount of data.
+        /// The replica should replay only the portion it missed without doing a full sync
+        /// </summary>
+        /// <param name="disableObjects"></param>
+        /// <param name="performRMW"></param>
+        [Test, Order(2)]
         [Category("REPLICATION")]
         public void ClusterAofReplayDisklessSync([Values] bool disableObjects, [Values] bool performRMW)
         {
@@ -149,6 +160,23 @@ namespace Garnet.test.cluster
 
             // Validate replica data
             Validate(primaryIndex, replicaIndex, disableObjects);
+        }
+
+        /// <summary>
+        /// Attach one replica and populate it with data through primary.
+        /// Disconnect replica and attach a new empty replica.
+        /// Populate new replica with more data
+        /// Re-attach disconnected replica.
+        /// This should perform a full sync when the old replica is attach because primary will be in version v
+        /// (because of syncing with new empty replica) and old replica will be in version v - 1.
+        /// </summary>
+        /// <param name="disableObjects"></param>
+        /// <param name="performRMW"></param>
+        [Test, Order(3)]
+        [Category("REPLICATION")]
+        public void ClusterDBVersionAligmentDisklessSync([Values] bool disableObjects, [Values] bool performRMW)
+        {
+
         }
     }
 }
