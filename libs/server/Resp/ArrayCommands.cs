@@ -157,6 +157,11 @@ namespace Garnet.server
         private bool NetworkMSET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (parseState.Count == 0 || parseState.Count % 2 != 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSET));
+            }
+
             for (int c = 0; c < parseState.Count; c += 2)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
