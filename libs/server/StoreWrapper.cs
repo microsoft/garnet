@@ -5,7 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -70,8 +70,6 @@ namespace Garnet.server
         /// Last save time
         /// </summary>
         public DateTimeOffset lastSaveTime;
-        internal long lastSaveStoreTailAddress;
-        internal long lastSaveObjectStoreTailAddress;
 
         /// <summary>
         /// Logger factory
@@ -121,6 +119,8 @@ namespace Garnet.server
         readonly bool allowMultiDb;
         internal ExpandableMap<GarnetDatabase> databases;
 
+        string activeDbIdsPath;
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -154,18 +154,18 @@ namespace Garnet.server
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
             this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
 
+            var checkpointDir = serverOptions.CheckpointDir ?? serverOptions.LogDir;
+            activeDbIdsPath = Path.Combine(checkpointDir, "activeDbIds.dat");
+
             // Create initial stores for default database of index 0
             var db = createDatabasesDelegate(0);
 
             this.allowMultiDb = this.serverOptions.MaxDatabases > 1;
 
-            // If multiple databases are allowed, create databases map and set initial database
-            if (this.allowMultiDb)
-            {
-                databases = new ExpandableMap<GarnetDatabase>(1, 0, this.serverOptions.MaxDatabases - 1);
-                if (!databases.TrySetValue(0, ref db))
-                    throw new GarnetException("Failed to set initial database in databases map");
-            }
+            // Create databases map and set initial database
+            databases = new ExpandableMap<GarnetDatabase>(1, 0, this.serverOptions.MaxDatabases - 1);
+            if (!databases.TrySetValue(0, ref db))
+                throw new GarnetException("Failed to set initial database in databases map");
 
             // Set fields to default database
             this.store = db.MainStore;
@@ -318,8 +318,26 @@ namespace Garnet.server
                 }
                 else
                 {
-                    storeVersion = store.Recover();
-                    if (objectStore != null) objectStoreVersion = objectStore.Recover();
+                    using (var reader = new BinaryReader(File.Open(activeDbIdsPath, FileMode.Open)))
+                    {
+                        while (reader.BaseStream.Position < reader.BaseStream.Length)
+                        {
+                            var dbId = reader.ReadInt32();
+                            if (dbId == 0) continue;
+
+                            var db = createDatabasesDelegate(dbId);
+                            databases.TrySetValue(dbId, ref db);
+                        }
+                    }
+
+                    var databasesMapSize = databases.ActualSize;
+                    var databasesMapSnapshot = databases.Map;
+                    for (var i = 0; i < databasesMapSize; i++)
+                    {
+                        var db = databasesMapSnapshot[i];
+                        storeVersion = db.MainStore.Recover();
+                        if (db.ObjectStore != null) objectStoreVersion = db.ObjectStore.Recover();
+                    }
                 }
                 if (storeVersion > 0 || objectStoreVersion > 0)
                     lastSaveTime = DateTimeOffset.UtcNow;
@@ -584,7 +602,7 @@ namespace Garnet.server
                 long readOnlyAddress = mainStoreLog.ReadOnlyAddress;
                 long compactLength = (1L << serverOptions.SegmentSizeBits()) * (mainStoreMaxSegments - numSegmentsToCompact);
                 long untilAddress = readOnlyAddress - compactLength;
-                logger?.LogInformation("Begin main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, store.Log.BeginAddress, readOnlyAddress, store.Log.TailAddress);
+                logger?.LogInformation("Begin main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, mainStoreLog.BeginAddress, readOnlyAddress, mainStoreLog.TailAddress);
 
                 switch (compactionType)
                 {
@@ -593,7 +611,7 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Scan:
-                        store.Log.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Scan);
+                        mainStoreLog.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Scan);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof();
@@ -614,7 +632,7 @@ namespace Garnet.server
                         break;
                 }
 
-                logger?.LogInformation("End main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, store.Log.BeginAddress, readOnlyAddress, store.Log.TailAddress);
+                logger?.LogInformation("End main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, mainStoreLog.BeginAddress, readOnlyAddress, mainStoreLog.TailAddress);
             }
 
             if (db.ObjectStore == null) return;
@@ -660,7 +678,7 @@ namespace Garnet.server
                         break;
                 }
 
-                logger?.LogInformation("End object store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, store.Log.BeginAddress, readOnlyAddress, store.Log.TailAddress);
+                logger?.LogInformation("End object store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, mainStoreLog.BeginAddress, readOnlyAddress, mainStoreLog.TailAddress);
             }
         }
 
@@ -896,37 +914,46 @@ namespace Garnet.server
                 var databasesMapSize = databases.ActualSize;
                 var databasesMapSnapshot = databases.Map;
 
-                for (var i = 0; i < databasesMapSize; i++)
+                var activeDbIds = new List<int>();
+                for (var dbId = 0; dbId < databasesMapSize; dbId++)
                 {
-                    var db = databasesMapSnapshot[i];
+                    var db = databasesMapSnapshot[dbId];
                     if (db.Equals(default(GarnetDatabase))) continue;
 
                     DoCompaction(ref db);
-                    var lastSaveStoreTailAddress = store.Log.TailAddress;
-                    var lastSaveObjectStoreTailAddress = (objectStore?.Log.TailAddress).GetValueOrDefault();
+                    var lastSaveStoreTailAddress = db.MainStore.Log.TailAddress;
+                    var lastSaveObjectStoreTailAddress = (db.ObjectStore?.Log.TailAddress).GetValueOrDefault();
 
-                    var full = this.lastSaveStoreTailAddress == 0 ||
-                               lastSaveStoreTailAddress - this.lastSaveStoreTailAddress >= serverOptions.FullCheckpointLogInterval || 
-                               (objectStore != null && (this.lastSaveObjectStoreTailAddress == 0 ||
-                                    lastSaveObjectStoreTailAddress - this.lastSaveObjectStoreTailAddress >= serverOptions.FullCheckpointLogInterval));
+                    var full = db.LastSaveStoreTailAddress == 0 ||
+                               lastSaveStoreTailAddress - db.LastSaveStoreTailAddress >= serverOptions.FullCheckpointLogInterval || 
+                               (db.ObjectStore != null && (db.LastSaveObjectStoreTailAddress == 0 ||
+                                    lastSaveObjectStoreTailAddress - db.LastSaveObjectStoreTailAddress >= serverOptions.FullCheckpointLogInterval));
 
                     var tryIncremental = serverOptions.EnableIncrementalSnapshots;
-                    if (store.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
+                    if (db.MainStore.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
                         tryIncremental = false;
-                    if (objectStore?.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
+                    if (db.ObjectStore?.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
                         tryIncremental = false;
 
                     var checkpointType = serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
-                    await InitiateCheckpoint(i, db, full, checkpointType, tryIncremental, storeType, logger);
+                    await InitiateCheckpoint(dbId, db, full, checkpointType, tryIncremental, storeType, logger);
                     if (full)
                     {
                         if (storeType is StoreType.Main or StoreType.All)
-                            this.lastSaveStoreTailAddress = lastSaveStoreTailAddress;
+                            db.LastSaveStoreTailAddress = lastSaveStoreTailAddress;
                         if (storeType is StoreType.Object or StoreType.All)
-                            this.lastSaveObjectStoreTailAddress = lastSaveObjectStoreTailAddress;
+                            db.LastSaveObjectStoreTailAddress = lastSaveObjectStoreTailAddress;
                     }
+
+                    activeDbIds.Add(dbId);
                 }
-                
+
+                await using (var bw = new BinaryWriter(File.Open(activeDbIdsPath, FileMode.Create)))
+                {
+                    foreach (var dbIds in activeDbIds)
+                        bw.Write(dbIds);
+                }
+
                 lastSaveTime = DateTimeOffset.UtcNow;
             }
             catch (Exception ex)

@@ -50,6 +50,16 @@ namespace Garnet.server
         /// </summary>
         public WatchVersionMap VersionMap;
 
+        /// <summary>
+        /// Tail address of main store log at last save
+        /// </summary>
+        public long LastSaveStoreTailAddress;
+
+        /// <summary>
+        /// Tail address of object store log at last save
+        /// </summary>
+        public long LastSaveObjectStoreTailAddress;
+
         bool disposed = false;
 
         public GarnetDatabase(TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
@@ -62,6 +72,8 @@ namespace Garnet.server
             AofDevice = aofDevice;
             AppendOnlyFile = appendOnlyFile;
             VersionMap = new WatchVersionMap(DefaultVersionMapSize);
+            LastSaveStoreTailAddress = 0;
+            LastSaveObjectStoreTailAddress = 0;
         }
 
         public void Dispose()
