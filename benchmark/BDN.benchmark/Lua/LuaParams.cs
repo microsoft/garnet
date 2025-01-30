@@ -13,12 +13,12 @@ namespace BDN.benchmark.Lua
         public readonly LuaMemoryManagementMode Mode { get; }
         public readonly bool MemoryLimit { get; }
 
-        public readonly TimeSpan Timeout { get; }
+        public readonly TimeSpan? Timeout { get; }
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public LuaParams(LuaMemoryManagementMode mode, bool memoryLimit, TimeSpan timeout)
+        public LuaParams(LuaMemoryManagementMode mode, bool memoryLimit, TimeSpan? timeout = null)
         {
             Mode = mode;
             MemoryLimit = memoryLimit;
@@ -29,12 +29,22 @@ namespace BDN.benchmark.Lua
         /// Get the equivalent <see cref="LuaOptions"/>.
         /// </summary>
         public LuaOptions CreateOptions()
-        => new(Mode, MemoryLimit ? "2m" : "", Timeout);
+        => new(Mode, MemoryLimit ? "2m" : "", Timeout ?? System.Threading.Timeout.InfiniteTimeSpan);
 
         /// <summary>
         /// String representation
         /// </summary>
         public override string ToString()
-        => $"{Mode},{(MemoryLimit ? "Limit" : "None")},{(Timeout == System.Threading.Timeout.InfiniteTimeSpan ? "-" : Timeout.ToString())}";
+        {
+            if (Timeout != null)
+            {
+                return $"{Mode},{(MemoryLimit ? "Limit" : "None")},{(Timeout == System.Threading.Timeout.InfiniteTimeSpan ? "-" : Timeout.ToString())}";
+            }
+            else
+            {
+                // Keep old format for benchmarks that don't care about timeouts
+                return $"{Mode},{(MemoryLimit ? "Limit" : "None")}";
+            }
+        }
     }
 }

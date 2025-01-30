@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Net;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -14,18 +13,22 @@ namespace Garnet.server.Lua
     /// 
     /// We use this because each <see cref="LuaRunner"/> starting it's own timer
     /// or similar has substantial overhead.
+    /// 
+    /// Timeouts are explicitly best effort, there's no guarantee we'll time something out _exactly_
+    /// when it runs too long.  We will time it out _eventually_ once it has run too long.
     /// </summary>
     /// <remarks>
     /// This is complex functionality.
     /// 
     /// Complications are:
     ///  1. Timeouts are _rare_, so significant overhead must be avoided
+    ///     - We cannot afford to allocate timers/tasks/etc. per-invocation due to this
     ///  2. Scripts can be active on many threads
-    ///     - We cannot afford to allocate timers/tasks/etc. per-invocation due to #1
+    ///     - However, only 1 script will be active PER thread
     ///  3. Scripts can complete after we've decided to "time them out", so there's a natural race
     ///  
     /// The rough design is:
-    ///  - <see cref="SessionScriptCache"/>s are registered with the <see cref="LuaTimeoutManager"/> on creation
+    ///  - <see cref="SessionScriptCache"/>s are registered with the <see cref="LuaTimeoutManager"/>
     ///  - <see cref="SessionScriptCache"/>s now track the active <see cref="LuaRunner"/> (if any)
     ///  - When a script starts, we get a unique token so we can distinguish the natural race
     ///  - A dedicate thread is ticking periodically, walking the <see cref="SessionScriptCache"/>s and triggering timeouts

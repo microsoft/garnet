@@ -140,11 +140,11 @@ return returnValue
         /// </summary>
         public IEnumerable<LuaParams> LuaParamsProvider()
         => [
-            new(LuaMemoryManagementMode.Native, false, Timeout.InfiniteTimeSpan),
-            new(LuaMemoryManagementMode.Tracked, false, Timeout.InfiniteTimeSpan),
-            new(LuaMemoryManagementMode.Tracked, true, Timeout.InfiniteTimeSpan),
-            new(LuaMemoryManagementMode.Managed, false, Timeout.InfiniteTimeSpan),
-            new(LuaMemoryManagementMode.Managed, true, Timeout.InfiniteTimeSpan),
+            new(LuaMemoryManagementMode.Native, false),
+            new(LuaMemoryManagementMode.Tracked, false),
+            new(LuaMemoryManagementMode.Tracked, true),
+            new(LuaMemoryManagementMode.Managed, false),
+            new(LuaMemoryManagementMode.Managed, true),
         ];
 
         private EmbeddedRespServer server;

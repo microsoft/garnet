@@ -184,7 +184,7 @@ namespace Garnet.server
             }
             else if (parseState.Count == 1)
             {
-                // we ignore this, but should validate it
+                // We ignore this, but should validate it
                 ref var arg = ref parseState.GetArgSliceByRef(0);
 
                 AsciiUtils.ToUpperInPlace(arg.Span);

@@ -1096,7 +1096,7 @@ return count";
             // Psuedo-repeatably random
             const int SEED = 2025_01_30_00;
 
-            const int DurationMS = 10 * 60 * 1_000;
+            const int DurationMS = 60 * 60 * 1_000;
             const int ThreadCount = 16;
             const string TimeoutScript = @"
 local count = 0
@@ -1127,7 +1127,7 @@ return count";
                     new Thread(
                         () =>
                         {
-                            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+                            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
                             var db = redis.GetDatabase();
 
                             var scriptTimeout = LuaScript.Prepare(TimeoutScript);
@@ -1146,9 +1146,19 @@ return count";
                                 var roll = rand.Next(10);
                                 if (roll == 0)
                                 {
-                                    // Periodically cause a timeout
-                                    var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(loadedScriptTimeout, timeout));
-                                    ClassicAssert.AreEqual("ERR Lua script exceeded configured timeout", exc.Message);
+                                    var subRoll = rand.Next(5);
+                                    if (subRoll == 0)
+                                    {
+                                        // Even more rarely, flush the script cache
+                                        var res = db.Execute("SCRIPT", "FLUSH");
+                                        ClassicAssert.AreEqual("OK", (string)res);
+                                    }
+                                    else
+                                    {
+                                        // Periodically cause a timeout
+                                        var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(loadedScriptTimeout, timeout));
+                                        ClassicAssert.AreEqual("ERR Lua script exceeded configured timeout", exc.Message);
+                                    }
                                 }
                                 else
                                 {

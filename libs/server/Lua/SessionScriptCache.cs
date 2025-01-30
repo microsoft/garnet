@@ -25,8 +25,7 @@ namespace Garnet.server
         //
         // It's OK if this wraps around, because ~4 billion invocations are unlikely
         // to race.
-        [ThreadStatic]
-        private static uint TimeoutCookie;
+        private uint nextTimeoutCookie;
 
         // Important to keep the hash length to this value 
         // for compatibility
@@ -62,8 +61,6 @@ namespace Garnet.server
 
         public void Dispose()
         {
-            timeoutRegistration?.Dispose();
-
             Clear();
             scratchBufferNetworkSender.Dispose();
             processor.Dispose();
@@ -85,9 +82,9 @@ namespace Garnet.server
         {
             if (timeoutManager != null)
             {
-                TimeoutCookie++;
+                nextTimeoutCookie++;
 
-                _ = Interlocked.Exchange(ref timeoutRunningCookie, TimeoutCookie);
+                _ = Interlocked.Exchange(ref timeoutRunningCookie, nextTimeoutCookie);
 
                 var oldScript = Interlocked.Exchange(ref timeoutRunningScript, script);
                 Debug.Assert(oldScript == null, "Shouldn't have two running scripts at once");
@@ -200,6 +197,9 @@ namespace Garnet.server
         /// </summary>
         public void Clear()
         {
+            timeoutRegistration?.Dispose();
+            timeoutRegistration = null;
+
             foreach (var runner in scriptCache.Values)
             {
                 runner.Dispose();
