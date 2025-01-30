@@ -170,11 +170,11 @@ return returnValue
         /// </summary>
         public static IEnumerable<LuaParams> LuaParamsProvider()
         => [
-            new(LuaMemoryManagementMode.Native, false),
-            new(LuaMemoryManagementMode.Tracked, false),
-            new(LuaMemoryManagementMode.Tracked, true),
-            new(LuaMemoryManagementMode.Managed, false),
-            new(LuaMemoryManagementMode.Managed, true),
+            new(LuaMemoryManagementMode.Native, false, Timeout.InfiniteTimeSpan),
+            new(LuaMemoryManagementMode.Tracked, false, Timeout.InfiniteTimeSpan),
+            new(LuaMemoryManagementMode.Tracked, true, Timeout.InfiniteTimeSpan),
+            new(LuaMemoryManagementMode.Managed, false, Timeout.InfiniteTimeSpan),
+            new(LuaMemoryManagementMode.Managed, true, Timeout.InfiniteTimeSpan),
         ];
 
         /// <summary>
@@ -322,11 +322,12 @@ return returnValue
         }
 
         private void Send(Request request)
-        {
-            _ = session.TryConsumeMessages(request.bufferPtr, request.buffer.Length);
-        }
+        => Send(session, request);
 
-        private unsafe void SetupOperation(ref Request request, ReadOnlySpan<byte> operation, int batchSize = batchSize)
+        internal static void Send(RespServerSession session, Request request)
+        => session.TryConsumeMessages(request.bufferPtr, request.buffer.Length);
+
+        internal static unsafe void SetupOperation(ref Request request, ReadOnlySpan<byte> operation, int batchSize = batchSize)
         {
             request.buffer = GC.AllocateArray<byte>(operation.Length * batchSize, pinned: true);
             request.bufferPtr = (byte*)Unsafe.AsPointer(ref request.buffer[0]);
@@ -334,7 +335,7 @@ return returnValue
                 operation.CopyTo(new Span<byte>(request.buffer).Slice(i * operation.Length));
         }
 
-        private unsafe void SetupOperation(ref Request request, string operation, int batchSize = batchSize)
+        internal static unsafe void SetupOperation(ref Request request, string operation, int batchSize = batchSize)
         {
             request.buffer = GC.AllocateUninitializedArray<byte>(operation.Length * batchSize, pinned: true);
             for (var i = 0; i < batchSize; i++)
@@ -345,7 +346,7 @@ return returnValue
             request.bufferPtr = (byte*)Unsafe.AsPointer(ref request.buffer[0]);
         }
 
-        private unsafe void SetupOperation(ref Request request, List<byte> operationBytes)
+        internal static unsafe void SetupOperation(ref Request request, List<byte> operationBytes)
         {
             request.buffer = GC.AllocateUninitializedArray<byte>(operationBytes.Count, pinned: true);
             operationBytes.CopyTo(request.buffer);

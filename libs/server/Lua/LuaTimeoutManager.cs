@@ -170,12 +170,6 @@ namespace Garnet.server.Lua
                 new Thread(
                     () =>
                     {
-                        var frequencyMs = (int)frequency.TotalMilliseconds;
-                        if (frequencyMs == 0)
-                        {
-                            frequencyMs = 1;
-                        }
-
                         var token = timerThreadCts.Token;
 
                         while (!token.IsCancellationRequested)
@@ -185,7 +179,8 @@ namespace Garnet.server.Lua
                                 return;
                             }
 
-                            TickTimeouts(1);
+                            // We will slip a bit here, but timeouts are a best effort thing anyway
+                            TickTimeouts();
                         }
                     }
                 )
@@ -276,11 +271,11 @@ namespace Garnet.server.Lua
         /// <summary>
         /// Start a timeout for a cache previously registered with <see cref="RegisterForTimeout(SessionScriptCache)"/>.
         /// 
-        /// <paramref name="cookie"/> must be greater than 0
+        /// <paramref name="cookie"/> must be greater than 0.
         /// </summary>
         internal void StartTimeout(IDisposable registration, uint cookie)
         {
-            Debug.Assert(cookie > 0, "Cookie shouldn't be negative");
+            Debug.Assert(cookie > 0, "Cookie must be > 0");
 
             ((Registration)registration).SetCookie(cookie);
         }
@@ -322,7 +317,7 @@ namespace Garnet.server.Lua
             Registration[] updatedRegistrations;
             if ((updatedRegistrations = Interlocked.CompareExchange(ref registrations, null, null)) != curRegistrations)
             {
-                // Some other thread modified registrations, we need to try
+                // Some other thread modified registrations, we need to try again
                 curRegistrations = updatedRegistrations;
                 goto tryAgain;
             }
@@ -331,7 +326,7 @@ namespace Garnet.server.Lua
         /// <summary>
         /// Invoked periodically to check timeouts on active registrations.
         /// </summary>
-        private void TickTimeouts(int tickCount)
+        private void TickTimeouts()
         {
             var curRegistrations = Volatile.Read(ref registrations);
 
@@ -343,13 +338,10 @@ namespace Garnet.server.Lua
                     continue;
                 }
 
-                for (var tick = 0; tick < tickCount; tick++)
+                if (reg.AdvanceTimeout(out var cookie))
                 {
-                    if (reg.AdvanceTimeout(out var cookie))
-                    {
-                        reg.ScriptCache.RequestTimeout(cookie);
-                        break;
-                    }
+                    reg.ScriptCache.RequestTimeout(cookie);
+                    break;
                 }
             }
         }

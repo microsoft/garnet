@@ -1,10 +1,12 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Security.Cryptography;
 using System.Text;
+using BDN.benchmark.Operations;
 using BenchmarkDotNet.Attributes;
+using Embedded.server;
 using Garnet.server;
-using Garnet.server.Lua;
 
 namespace BDN.benchmark.Lua
 {
@@ -13,7 +15,7 @@ namespace BDN.benchmark.Lua
     /// </summary>
     public class LuaTimeouts
     {
-        const string Script = @"
+        private const string Script = @"
 local counter = 7
 for i = 1, 5 do
     counter = counter + 1
@@ -21,11 +23,16 @@ end
 
 return counter";
 
+        private const int batchSize = 100;
+
         /// <summary>
         /// Lua parameters
         /// </summary>
         [ParamsSource(nameof(LuaParamsProvider))]
         public LuaParams Params { get; set; }
+
+        internal EmbeddedRespServer server;
+        internal RespServerSession session;
 
         /// <summary>
         /// Lua parameters provider
@@ -33,48 +40,50 @@ return counter";
         public IEnumerable<LuaParams> LuaParamsProvider()
         => [
             // We don't expect this to vary by allocator
-            new(LuaMemoryManagementMode.Native, false)
+            new(LuaMemoryManagementMode.Native, false, Timeout.InfiniteTimeSpan),
+            new(LuaMemoryManagementMode.Native, false, TimeSpan.FromSeconds(1)),
+            new(LuaMemoryManagementMode.Native, false, TimeSpan.FromMinutes(1)),
         ];
 
-        private LuaTimeoutManager timeoutManager;
-
-        private LuaRunner withTimeout;
-        private LuaRunner noTimeout;
+        private Request evalShaRequest;
 
         [GlobalSetup]
         public void GlobalSetup()
         {
-            var opts = Params.CreateOptions();
+            var opts = new GarnetServerOptions
+            {
+                QuietMode = true,
+                EnableLua = true,
+                LuaOptions = Params.CreateOptions(),
+            };
 
-            timeoutManager = new LuaTimeoutManager(TimeSpan.FromMilliseconds(5));
-            timeoutManager.Start();
+            server = new EmbeddedRespServer(opts);
 
-            noTimeout = new LuaRunner(opts.MemoryManagementMode, opts.GetMemoryLimitBytes(), Encoding.UTF8.GetBytes(Script));
-            withTimeout = new LuaRunner(opts.MemoryManagementMode, opts.GetMemoryLimitBytes(), Encoding.UTF8.GetBytes(Script), timeoutManager);
+            session = server.GetRespSession();
 
-            noTimeout.CompileForRunner();
-            withTimeout.CompileForRunner();
+            var scriptLoadStr = $"*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n${Script.Length}\r\n{Script}\r\n";
+            Request scriptLoad = default;
+
+            ScriptOperations.SetupOperation(ref scriptLoad, scriptLoadStr, 1);
+            ScriptOperations.Send(session, scriptLoad);
+
+            var scriptHash = string.Join("", SHA1.HashData(Encoding.UTF8.GetBytes(Script)).Select(static x => x.ToString("x2")));
+
+            var evalShaStr = $"*3\r\n$7\r\nEVALSHA\r\n$40\r\n{scriptHash}\r\n$1\r\n0\r\n";
+            ScriptOperations.SetupOperation(ref evalShaRequest, evalShaStr);
         }
 
         [GlobalCleanup]
-        public void GlobalCleanup()
+        public virtual void GlobalCleanup()
         {
-            noTimeout.Dispose();
-            withTimeout.Dispose();
-            timeoutManager.Dispose();
-        }
-
-        [Benchmark(Baseline = true)]
-        public void NoTimeout()
-        {
-            _ = noTimeout.RunForRunner();
+            session.Dispose();
+            server.Dispose();
         }
 
         [Benchmark]
-        public void WithTimeout()
+        public void RunScript()
         {
-            _ = withTimeout.RunForRunner();
+            ScriptOperations.Send(session, evalShaRequest);
         }
-
     }
 }
