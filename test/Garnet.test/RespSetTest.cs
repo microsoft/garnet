@@ -1389,7 +1389,6 @@ namespace Garnet.test
             expectedResponse = ":0\r\n";
             ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
-
         #endregion
 
 

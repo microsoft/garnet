@@ -45,7 +45,7 @@ namespace CommandInfoUpdater
             }
 
             var (commandsToAdd, commandsToRemove) =
-                CommonUtils.GetCommandsToAddAndRemove(existingCommandsInfo, ignoreCommands);
+                CommonUtils.GetCommandsToAddAndRemove(existingCommandsInfo, ignoreCommands, null);
 
             if (!CommonUtils.GetUserConfirmation(commandsToAdd, commandsToRemove, logger))
             {
@@ -186,7 +186,7 @@ namespace CommandInfoUpdater
                 var end = ptr + response.Length;
 
                 // Read the array length (# of commands info returned)
-                if (!RespReadUtils.ReadUnsignedArrayLength(out var cmdCount, ref ptr, end))
+                if (!RespReadUtils.TryReadUnsignedArrayLength(out var cmdCount, ref ptr, end))
                 {
                     logger.LogError("Unable to read RESP command info count from server");
                     return false;

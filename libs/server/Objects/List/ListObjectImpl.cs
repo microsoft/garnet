@@ -92,7 +92,7 @@ namespace Garnet.server
                 // get the string to INSERT into the list
                 var item = input.parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
 
-                var insertBefore = position.SequenceEqual(CmdStrings.BEFORE);
+                var insertBefore = position.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BEFORE);
 
                 _output->result1 = -1;
 
@@ -136,14 +136,14 @@ namespace Garnet.server
                 var item = list.ElementAtOrDefault(index);
                 if (item != default)
                 {
-                    while (!RespWriteUtils.WriteBulkString(item, ref curr, end))
+                    while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     _output.result1 = 1;
                 }
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -169,7 +169,7 @@ namespace Garnet.server
                 if (0 == list.Count)
                 {
                     // write empty list
-                    while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
+                    while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 else
@@ -183,13 +183,13 @@ namespace Garnet.server
 
                     if (start > stop || 0 == list.Count)
                     {
-                        while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
+                        while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
                     {
                         var count = stop - start + 1;
-                        while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
+                        while (!RespWriteUtils.TryWriteArrayLength(count, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                         var i = -1;
@@ -200,7 +200,7 @@ namespace Garnet.server
                                 continue;
                             if (i > stop)
                                 break;
-                            while (!RespWriteUtils.WriteBulkString(bytes, ref curr, end))
+                            while (!RespWriteUtils.TryWriteBulkString(bytes, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
                         _output.result1 = count;
@@ -209,7 +209,7 @@ namespace Garnet.server
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -314,13 +314,13 @@ namespace Garnet.server
             {
                 if (list.Count == 0)
                 {
-                    while (!RespWriteUtils.WriteNull(ref curr, end))
+                    while (!RespWriteUtils.TryWriteNull(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     count = 0;
                 }
                 else if (count > 1)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
+                    while (!RespWriteUtils.TryWriteArrayLength(count, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
 
@@ -339,7 +339,7 @@ namespace Garnet.server
                     }
 
                     UpdateSize(node.Value, false);
-                    while (!RespWriteUtils.WriteBulkString(node.Value, ref curr, end))
+                    while (!RespWriteUtils.TryWriteBulkString(node.Value, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     count--;
@@ -348,7 +348,7 @@ namespace Garnet.server
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -369,7 +369,7 @@ namespace Garnet.server
             {
                 if (list.Count == 0)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref output_currptr, output_end))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
                     return;
                 }
@@ -377,7 +377,7 @@ namespace Garnet.server
                 // index
                 if (!input.parseState.TryGetInt(0, out var index))
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
                     return;
                 }
@@ -386,7 +386,7 @@ namespace Garnet.server
 
                 if (index > list.Count - 1 || index < 0)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_INDEX_OUT_RANGE, ref output_currptr, output_end))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_INDEX_OUT_RANGE, ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
                     return;
                 }
@@ -402,14 +402,14 @@ namespace Garnet.server
                 targetNode.Value = element;
                 UpdateSize(targetNode.Value);
 
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref output_currptr, output_end))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref output_currptr, output_end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
 
                 _output.result1 = 1;
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref output_currptr, output_end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref output_currptr, output_end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -434,28 +434,28 @@ namespace Garnet.server
             {
                 if (!ReadListPositionInput(ref input, out var rank, out count, out isDefaultCount, out var maxlen, out var error))
                 {
-                    while (!RespWriteUtils.WriteError(error, ref output_currptr, output_end))
+                    while (!RespWriteUtils.TryWriteError(error, ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
                     return;
                 }
 
                 if (count < 0)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
                     return;
                 }
 
                 if (maxlen < 0)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
                     return;
                 }
 
                 if (rank == 0)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
                     return;
                 }
@@ -466,7 +466,7 @@ namespace Garnet.server
 
                 if (!isDefaultCount)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(count, ref output_currptr, output_end, out var _, out totalArrayHeaderLen))
+                    while (!RespWriteUtils.TryWriteArrayLength(count, ref output_currptr, output_end, out var _, out totalArrayHeaderLen))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
                 }
 
@@ -484,7 +484,7 @@ namespace Garnet.server
                             if (rank == 1)
                             {
                                 lastFoundItemIndex = currentIndex;
-                                while (!RespWriteUtils.WriteInteger(currentIndex, ref output_currptr, output_end))
+                                while (!RespWriteUtils.TryWriteInt32(currentIndex, ref output_currptr, output_end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
 
                                 noOfFoundItem++;
@@ -516,7 +516,7 @@ namespace Garnet.server
                             if (rank == -1)
                             {
                                 lastFoundItemIndex = currentIndex;
-                                while (!RespWriteUtils.WriteInteger(currentIndex, ref output_currptr, output_end))
+                                while (!RespWriteUtils.TryWriteInt32(currentIndex, ref output_currptr, output_end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
 
                                 noOfFoundItem++;
@@ -539,20 +539,20 @@ namespace Garnet.server
                 if (isDefaultCount && noOfFoundItem == 0)
                 {
                     output_currptr = output_startptr;
-                    while (!RespWriteUtils.WriteNull(ref output_currptr, output_end))
+                    while (!RespWriteUtils.TryWriteNull(ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
                 }
                 else if (!isDefaultCount && noOfFoundItem == 0)
                 {
                     output_currptr = output_startptr;
-                    while (!RespWriteUtils.WriteNullArray(ref output_currptr, output_end))
+                    while (!RespWriteUtils.TryWriteNullArray(ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
                 }
                 else if (!isDefaultCount && noOfFoundItem != count)
                 {
                     var newTotalArrayHeaderLen = 0;
                     var startOutputStartptr = output_startptr;
-                    RespWriteUtils.WriteArrayLength(noOfFoundItem, ref startOutputStartptr, output_end, out var _, out newTotalArrayHeaderLen);  // ReallocateOutput is not needed here as there should be always be available space in the output buffer as we have already written the max array length
+                    RespWriteUtils.TryWriteArrayLength(noOfFoundItem, ref startOutputStartptr, output_end, out var _, out newTotalArrayHeaderLen);  // ReallocateOutput is not needed here as there should be always be available space in the output buffer as we have already written the max array length
                     Debug.Assert(totalArrayHeaderLen >= newTotalArrayHeaderLen, "newTotalArrayHeaderLen can't be bigger than totalArrayHeaderLen as we have already written max array lenght in the buffer");
 
                     if (totalArrayHeaderLen != newTotalArrayHeaderLen)
@@ -567,7 +567,7 @@ namespace Garnet.server
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref outputHeader, ref output_currptr, output_end))
+                while (!RespWriteUtils.TryWriteDirect(ref outputHeader, ref output_currptr, output_end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
 
                 if (isMemory)

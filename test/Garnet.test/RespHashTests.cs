@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Interfaces;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
@@ -23,7 +24,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, lowMemory: true);
             server.Start();
         }
 
@@ -55,6 +56,49 @@ namespace Garnet.test
             db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite")]);
             string r = db.HashGet("user:user1", "Title");
             ClassicAssert.AreEqual("Tsavorite", r);
+        }
+
+        [Test]
+        public async Task CanSetAndGetOnePairWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite")]);
+            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+            string r = db.HashGet("user:user1", "Title");
+            ClassicAssert.AreEqual("Tsavorite", r);
+            await Task.Delay(200);
+            r = db.HashGet("user:user1", "Title");
+            ClassicAssert.IsNull(r);
+        }
+
+        [Test]
+        public async Task CanSetWithExpireAndRemoveExpireByCallingSetAgain()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite")]);
+            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite")]);
+            await Task.Delay(200);
+            string r = db.HashGet("user:user1", "Title");
+            ClassicAssert.AreEqual("Tsavorite", r);
+        }
+
+        // Covers the fix of #954.
+        [Test]
+        public void CanFieldPersistAndGetTimeToLive()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "user:user1";
+            var field = "field1";
+
+            db.HashSet(key, [new HashEntry(field, "v1")]);
+            db.HashFieldExpire(key, [field], TimeSpan.FromHours(1));
+            db.HashFieldPersist(key, [field]);
+            var ttl = db.HashFieldGetTimeToLive(key, [field]);
+            ClassicAssert.AreEqual(-1, ttl[0]);
         }
 
         [Test]
@@ -102,14 +146,25 @@ namespace Garnet.test
             ClassicAssert.AreEqual("2021", result[1].ToString());
         }
 
-
-
         [Test]
         public void CanDelSingleField()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021")]);
+            var result = db.HashDelete(new RedisKey("user:user1"), new RedisValue("Title"));
+            ClassicAssert.AreEqual(true, result);
+            string resultGet = db.HashGet("user:user1", "Year");
+            ClassicAssert.AreEqual("2021", resultGet);
+        }
+
+        [Test]
+        public void CanDelWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021")]);
+            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
             var result = db.HashDelete(new RedisKey("user:user1"), new RedisValue("Title"));
             ClassicAssert.AreEqual(true, result);
             string resultGet = db.HashGet("user:user1", "Year");
@@ -154,6 +209,23 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task CanDoHLenWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")]);
+            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+            var result = db.HashLength("user:user1");
+            ClassicAssert.AreEqual(3, result);
+            await Task.Delay(150);
+            result = db.HashLength("user:user1");
+            ClassicAssert.AreEqual(2, result);
+            db.HashSet("user:user1", [new HashEntry("Year", "new2021")]);  // Trigger deletion of expired field
+            result = db.HashLength("user:user1");
+            ClassicAssert.AreEqual(2, result);
+        }
+
+        [Test]
         public void CanDoGetAll()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -168,6 +240,33 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task CanDoGetAllWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            HashEntry[] hashEntries =
+                [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")];
+            db.HashSet("user:user1", hashEntries);
+            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+
+            var result = db.HashGetAll("user:user1");
+            ClassicAssert.AreEqual(hashEntries.Length, result.Length);
+            ClassicAssert.AreEqual(hashEntries.Length, result.Select(r => r.Name).Distinct().Count());
+            ClassicAssert.IsTrue(hashEntries.OrderBy(e => e.Name).SequenceEqual(result.OrderBy(r => r.Name)));
+
+            await Task.Delay(200);
+
+            result = db.HashGetAll("user:user1");
+            ClassicAssert.AreEqual(hashEntries.Length - 1, result.Length);
+            ClassicAssert.IsTrue(hashEntries.Skip(1).OrderBy(e => e.Name).SequenceEqual(result.OrderBy(r => r.Name)));
+
+            db.HashSet("user:user1", [new HashEntry("Year", "new2021")]);  // Trigger deletion of expired field
+            result = db.HashGetAll("user:user1");
+            ClassicAssert.AreEqual(hashEntries.Length - 1, result.Length);
+            ClassicAssert.IsTrue(hashEntries.Skip(1).Select(x => x.Value == "2021" ? new HashEntry(x.Name, "new2021") : x).OrderBy(e => e.Name).SequenceEqual(result.OrderBy(r => r.Name)));
+        }
+
+        [Test]
         public void CanDoHExists()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -178,6 +277,27 @@ namespace Garnet.test
 
             result = db.HashExists(new RedisKey("user:userfoo"), "Title");
             ClassicAssert.AreEqual(false, result);
+        }
+
+        [Test]
+        public async Task CanDoHExistsWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")]);
+            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+
+            var result = db.HashExists(new RedisKey("user:user1"), "Title");
+            ClassicAssert.IsTrue(result);
+
+            await Task.Delay(200);
+
+            result = db.HashExists(new RedisKey("user:user1"), "Title");
+            ClassicAssert.IsFalse(result);
+
+            db.HashSet("user:user1", [new HashEntry("Year", "new2021")]);  // Trigger deletion of expired field
+            result = db.HashExists(new RedisKey("user:user1"), "Title");
+            ClassicAssert.IsFalse(result);
         }
 
         [Test]
@@ -195,6 +315,27 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task CanDoHStrLenWithExire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite")]);
+            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+
+            long r = db.HashStringLength("user:user1", "Title");
+            ClassicAssert.AreEqual(9, r);
+
+            await Task.Delay(200);
+
+            r = db.HashStringLength("user:user1", "Title");
+            ClassicAssert.AreEqual(0, r);
+
+            db.HashSet("user:user1", [new HashEntry("Year", "new2021")]);  // Trigger deletion of expired field
+            r = db.HashStringLength("user:user1", "Title");
+            ClassicAssert.AreEqual(0, r);
+        }
+
+        [Test]
         public void CanDoHKeys()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -204,6 +345,34 @@ namespace Garnet.test
             ClassicAssert.AreEqual(3, result.Length);
 
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Title")));
+            ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Year")));
+            ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Company")));
+        }
+
+        [Test]
+        public async Task CanDoHKeysWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")]);
+            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+            var result = db.HashKeys("user:user1");
+            ClassicAssert.AreEqual(3, result.Length);
+            ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Title")));
+            ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Year")));
+            ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Company")));
+
+            await Task.Delay(200);
+
+            result = db.HashKeys("user:user1");
+            ClassicAssert.AreEqual(2, result.Length);
+            ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Year")));
+            ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Company")));
+
+            db.HashSet("user:user1", [new HashEntry("Year", "new2021")]);  // Trigger deletion of expired field
+
+            result = db.HashKeys("user:user1");
+            ClassicAssert.AreEqual(2, result.Length);
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Year")));
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Company")));
         }
@@ -223,6 +392,34 @@ namespace Garnet.test
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Acme")));
         }
 
+        [Test]
+        public async Task CanDoHValsWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")]);
+            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+            var result = db.HashValues("user:user1");
+            ClassicAssert.AreEqual(3, result.Length);
+            ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Tsavorite")));
+            ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("2021")));
+            ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Acme")));
+
+            await Task.Delay(200);
+
+            result = db.HashValues("user:user1");
+            ClassicAssert.AreEqual(2, result.Length);
+            ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("2021")));
+            ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Acme")));
+
+            db.HashSet("user:user1", [new HashEntry("Year", "new2021")]);  // Trigger deletion of expired field
+
+            result = db.HashValues("user:user1");
+            ClassicAssert.AreEqual(2, result.Length);
+            ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("new2021")));
+            ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Acme")));
+        }
+
 
         [Test]
         public void CanDoHIncrBy()
@@ -239,6 +436,22 @@ namespace Garnet.test
             // make sure the new hash object was created
             var getResult = db.HashGet("user:user2", "Field2");
             ClassicAssert.AreEqual(4, ((int?)getResult));
+        }
+
+        [Test]
+        public async Task CanDoHIncrByWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("user:user1", [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
+            db.HashFieldExpire("user:user1", ["Field2"], TimeSpan.FromMilliseconds(100));
+            var result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field2"), -4);
+            ClassicAssert.AreEqual(-3, result);
+
+            await Task.Delay(200);
+
+            result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field2"), -4);
+            ClassicAssert.AreEqual(-4, result);
         }
 
         [Test]
@@ -284,6 +497,22 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task CheckHashIncrementDoublePrecisionWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("user:user1", [new HashEntry("Field1", "1.1111111111")]);
+            db.HashFieldExpire("user:user1", ["Field1"], TimeSpan.FromMilliseconds(100));
+            var result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field1"), 2.2222222222);
+            ClassicAssert.AreEqual(3.3333333333, result, 1e-15);
+
+            await Task.Delay(200);
+
+            result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field1"), 2.2222222222);
+            ClassicAssert.AreEqual(2.2222222222, result, 1e-15);
+        }
+
+        [Test]
         public void CanDoHSETNXCommand()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -294,6 +523,21 @@ namespace Garnet.test
             db.HashSet(new RedisKey("user:user1"), new RedisValue("Field"), new RedisValue("World"), When.NotExists);
             result = db.HashGet("user:user1", "Field");
             ClassicAssert.AreEqual("Hello", result);
+        }
+
+        [Test]
+        public async Task CanDoHSETNXCommandWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet(new RedisKey("user:user1"), new RedisValue("Field"), new RedisValue("Hello"));
+            db.HashFieldExpire("user:user1", ["Field"], TimeSpan.FromMilliseconds(100));
+            db.HashSet(new RedisKey("user:user1"), new RedisValue("Field"), new RedisValue("Hello"), When.NotExists);
+
+            await Task.Delay(200);
+
+            string result = db.HashGet("user:user1", "Field");
+            ClassicAssert.IsNull(result); // SetNX should not reset the expiration
         }
 
         [Test]
@@ -360,6 +604,45 @@ namespace Garnet.test
             ClassicAssert.AreEqual(8, fieldsWithValues.Length);
             ClassicAssert.GreaterOrEqual(3, fieldsWithValues.Select(e => e.Name).Distinct().Count());
             ClassicAssert.IsTrue(fieldsWithValues.All(e => hashDict.ContainsKey(e.Name) && hashDict[e.Name] == e.Value));
+        }
+
+        [Test]
+        public async Task CanDoRandomFieldWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var hashKey = new RedisKey("user:user1");
+            HashEntry[] hashEntries = [new HashEntry("Title", "Tsavorite")];
+            db.HashSet(hashKey, hashEntries);
+            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+            string field = db.HashRandomField(hashKey);
+            ClassicAssert.AreEqual(field, "Title");
+
+            await Task.Delay(200);
+
+            field = db.HashRandomField(hashKey);
+            ClassicAssert.IsNull(field);
+        }
+
+        [Test]
+        public async Task CanDoRandomFieldsWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var hashKey = new RedisKey("user:user1");
+            HashEntry[] hashEntries = [new HashEntry("Title", "Tsavorite")];
+            db.HashSet(hashKey, hashEntries);
+            db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
+            var field = db.HashRandomFields(hashKey, 10).Select(x => (string)x).ToArray();
+            ClassicAssert.AreEqual(field.Length, 1);
+            ClassicAssert.AreEqual("Title", field[0]);
+
+            await Task.Delay(200);
+
+            field = db.HashRandomFields(hashKey, 10).Select(x => (string)x).ToArray();
+            ClassicAssert.AreEqual(field.Length, 0);
         }
 
         [Test]
@@ -433,6 +716,27 @@ namespace Garnet.test
             var fieldsStr = ((RedisResult[])result[1]).Select(x => (string)x).ToArray();
             ClassicAssert.IsTrue(fieldsStr.Length == 2, "HSCAN with MATCH failed.");
             CollectionAssert.AreEquivalent(new[] { "email", "email1" }, fieldsStr);
+        }
+
+        [Test]
+        public async Task CanDoHashScanWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.HashSet("user:user789", [new HashEntry("email", "email@example.com"), new HashEntry("email1", "email1@example.com"), new HashEntry("email2", "email2@example.com"), new HashEntry("email3", "email3@example.com"), new HashEntry("age", "25")]);
+            db.HashFieldExpire("user:user789", ["email"], TimeSpan.FromMilliseconds(100));
+
+            var members = db.HashScan("user:user789", "email*");
+            ClassicAssert.IsTrue(((IScanningCursor)members).Cursor == 0);
+            ClassicAssert.IsTrue(members.Count() == 4, "HSCAN with MATCH failed.");
+
+            await Task.Delay(200);
+
+            // HSCAN with match
+            members = db.HashScan("user:user789", "email*");
+            ClassicAssert.IsTrue(((IScanningCursor)members).Cursor == 0);
+            ClassicAssert.IsTrue(members.Count() == 3, "HSCAN with MATCH failed.");
         }
 
 
@@ -515,6 +819,32 @@ namespace Garnet.test
             ClassicAssert.AreEqual("def", (string?)arr2[1]);
             ClassicAssert.Null((string?)arr2[2]);
 #nullable disable
+        }
+
+        [Test]
+        public async Task CanDoHMGETWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.HashSet("user:user789", [new HashEntry("email", "email@example.com"), new HashEntry("email1", "email1@example.com"), new HashEntry("email2", "email2@example.com"), new HashEntry("email3", "email3@example.com"), new HashEntry("age", "25")]);
+            db.HashFieldExpire("user:user789", ["email"], TimeSpan.FromMilliseconds(100));
+
+            var members = (string[])db.Execute("HMGET", "user:user789", "email", "email1");
+            ClassicAssert.AreEqual("email@example.com", members[0]);
+            ClassicAssert.AreEqual("email1@example.com", members[1]);
+
+            await Task.Delay(200);
+
+            members = (string[])db.Execute("HMGET", "user:user789", "email", "email1");
+            ClassicAssert.IsNull(members[0]);
+            ClassicAssert.AreEqual("email1@example.com", members[1]);
+
+            db.HashSet("user:user789", [new HashEntry("email2", "newemail2@example.com")]);  // Trigger deletion of expired field
+
+            members = (string[])db.Execute("HMGET", "user:user789", "email", "email1");
+            ClassicAssert.IsNull(members[0]);
+            ClassicAssert.AreEqual("email1@example.com", members[1]);
         }
 
 
@@ -693,9 +1023,285 @@ namespace Garnet.test
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashStringLength(keys[0], hashFields[0][0]));
         }
 
-        #endregion
+        [Test]
+        public async Task CanDoHashExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "value3"), new HashEntry("field4", "value4"), new HashEntry("field5", "value5"), new HashEntry("field6", "value6")]);
+
+            var result = db.Execute("HEXPIRE", "myhash", "3", "FIELDS", "3", "field1", "field5", "nonexistfield");
+            var results = (RedisResult[])result;
+            ClassicAssert.AreEqual(3, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(1, (long)results[1]);
+            ClassicAssert.AreEqual(-2, (long)results[2]);
+
+            result = db.Execute("HPEXPIRE", "myhash", "3000", "FIELDS", "2", "field2", "nonexistfield");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(-2, (long)results[1]);
+
+            result = db.Execute("HEXPIREAT", "myhash", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds().ToString(), "FIELDS", "2", "field3", "nonexistfield");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(-2, (long)results[1]);
+
+            result = db.Execute("HPEXPIREAT", "myhash", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds().ToString(), "FIELDS", "2", "field4", "nonexistfield");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(-2, (long)results[1]);
+
+            var ttl = (RedisResult[])db.Execute("HTTL", "myhash", "FIELDS", "2", "field1", "nonexistfield");
+            ClassicAssert.AreEqual(2, ttl.Length);
+            ClassicAssert.LessOrEqual((long)ttl[0], 3);
+            ClassicAssert.Greater((long)ttl[0], 1);
+            ClassicAssert.AreEqual(-2, (long)results[1]);
+
+            ttl = (RedisResult[])db.Execute("HPTTL", "myhash", "FIELDS", "2", "field1", "nonexistfield");
+            ClassicAssert.AreEqual(2, ttl.Length);
+            ClassicAssert.LessOrEqual((long)ttl[0], 3000);
+            ClassicAssert.Greater((long)ttl[0], 1000);
+            ClassicAssert.AreEqual(-2, (long)results[1]);
+
+            ttl = (RedisResult[])db.Execute("HEXPIRETIME", "myhash", "FIELDS", "2", "field1", "nonexistfield");
+            ClassicAssert.AreEqual(2, ttl.Length);
+            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds());
+            ClassicAssert.Greater((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeSeconds());
+            ClassicAssert.AreEqual(-2, (long)results[1]);
+
+            ttl = (RedisResult[])db.Execute("HPEXPIRETIME", "myhash", "FIELDS", "2", "field1", "nonexistfield");
+            ClassicAssert.AreEqual(2, ttl.Length);
+            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds());
+            ClassicAssert.Greater((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeMilliseconds());
+            ClassicAssert.AreEqual(-2, (long)results[1]);
+
+            results = (RedisResult[])db.Execute("HPERSIST", "myhash", "FIELDS", "3", "field5", "field6", "nonexistfield");
+            ClassicAssert.AreEqual(3, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);  // 1 the expiration was removed.
+            ClassicAssert.AreEqual(-1, (long)results[1]); // -1 if the field exists but has no associated expiration set.
+            ClassicAssert.AreEqual(-2, (long)results[2]);
+
+            await Task.Delay(3500);
+
+            var items = db.HashGetAll("myhash");
+            ClassicAssert.AreEqual(2, items.Length);
+            ClassicAssert.AreEqual("field5", items[0].Name.ToString());
+            ClassicAssert.AreEqual("value5", items[0].Value.ToString());
+            ClassicAssert.AreEqual("field6", items[1].Name.ToString());
+            ClassicAssert.AreEqual("value6", items[1].Value.ToString());
+
+            result = db.Execute("HEXPIRE", "myhash", "0", "FIELDS", "1", "field5");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(1, results.Length);
+            ClassicAssert.AreEqual(2, (long)results[0]);
+
+            result = db.Execute("HEXPIREAT", "myhash", DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeSeconds().ToString(), "FIELDS", "1", "field6");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(1, results.Length);
+            ClassicAssert.AreEqual(2, (long)results[0]);
+
+            items = db.HashGetAll("myhash");
+            ClassicAssert.AreEqual(0, items.Length);
+        }
+
+        [Test]
+        public async Task CanDoHashExpireLTM()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var server = redis.GetServer(TestUtils.Address, TestUtils.Port);
+
+            string[] smallExpireKeys = ["user:user0", "user:user1"];
+            string[] largeExpireKeys = ["user:user2", "user:user3"];
+
+            foreach (var key in smallExpireKeys)
+            {
+                db.HashSet(key, [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
+                db.Execute("HEXPIRE", key, "2", "FIELDS", "1", "Field1");
+            }
+
+            foreach (var key in largeExpireKeys)
+            {
+                db.HashSet(key, [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
+                db.Execute("HEXPIRE", key, "4", "FIELDS", "1", "Field1");
+            }
+
+            // Create LTM (larger than memory) DB by inserting 100 keys
+            for (int i = 4; i < 100; i++)
+            {
+                var key = "user:user" + i;
+                db.HashSet(key, [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
+            }
+
+            var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true, isObjectStore: true);
+            // Ensure data has spilled to disk
+            ClassicAssert.Greater(info.HeadAddress, info.BeginAddress);
+
+            await Task.Delay(2000);
+
+            var result = db.HashExists(smallExpireKeys[0], "Field1");
+            ClassicAssert.IsFalse(result);
+            result = db.HashExists(smallExpireKeys[1], "Field1");
+            ClassicAssert.IsFalse(result);
+            result = db.HashExists(largeExpireKeys[0], "Field1");
+            ClassicAssert.IsTrue(result);
+            result = db.HashExists(largeExpireKeys[1], "Field1");
+            ClassicAssert.IsTrue(result);
+            var ttl = db.HashFieldGetTimeToLive(largeExpireKeys[0], ["Field1"]);
+            ClassicAssert.AreEqual(ttl.Length, 1);
+            ClassicAssert.Greater(ttl[0], 0);
+            ClassicAssert.LessOrEqual(ttl[0], 2000);
+            ttl = db.HashFieldGetTimeToLive(largeExpireKeys[1], ["Field1"]);
+            ClassicAssert.AreEqual(ttl.Length, 1);
+            ClassicAssert.Greater(ttl[0], 0);
+            ClassicAssert.LessOrEqual(ttl[0], 2000);
+
+            await Task.Delay(2000);
+
+            result = db.HashExists(largeExpireKeys[0], "Field1");
+            ClassicAssert.IsFalse(result);
+            result = db.HashExists(largeExpireKeys[1], "Field1");
+            ClassicAssert.IsFalse(result);
+
+            var data = db.HashGetAll("user:user4");
+            ClassicAssert.AreEqual(2, data.Length);
+            ClassicAssert.AreEqual("Field1", data[0].Name.ToString());
+            ClassicAssert.AreEqual("StringValue", data[0].Value.ToString());
+            ClassicAssert.AreEqual("Field2", data[1].Name.ToString());
+            ClassicAssert.AreEqual("1", data[1].Value.ToString());
+        }
+
+        [Test]
+        public void CanDoHashExpireWithNonExistKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = db.Execute("HEXPIRE", "myhash", "3", "FIELDS", "1", "field1");
+            var results = (RedisResult[])result;
+            ClassicAssert.AreEqual(1, results.Length);
+            ClassicAssert.AreEqual(-2, (long)results[0]);
+        }
+
+        [Test]
+        public async Task CanDoHashCollect()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var server = redis.GetServers().First();
+            db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "value3"), new HashEntry("field4", "value4"), new HashEntry("field5", "value5"), new HashEntry("field6", "value6")]);
+
+            var result = db.Execute("HEXPIRE", "myhash", "1", "FIELDS", "2", "field1", "field2");
+            var results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(1, (long)results[1]);
+
+            result = db.Execute("HEXPIRE", "myhash", "3", "FIELDS", "2", "field3", "field4");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(1, (long)results[1]);
+
+            var orginalMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
+
+            await Task.Delay(1200);
+
+            var newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
+            ClassicAssert.AreEqual(newMemory, orginalMemory);
+
+            var collectResult = (string)db.Execute("HCOLLECT", "myhash");
+            ClassicAssert.AreEqual("OK", collectResult);
+
+            newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
+            ClassicAssert.Less(newMemory, orginalMemory);
+            orginalMemory = newMemory;
+
+            await Task.Delay(2200);
+
+            newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
+            ClassicAssert.AreEqual(newMemory, orginalMemory);
+
+            collectResult = (string)db.Execute("HCOLLECT", "*");
+            ClassicAssert.AreEqual("OK", collectResult);
+
+            newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
+            ClassicAssert.Less(newMemory, orginalMemory);
+        }
+
+        [Test]
+        [TestCase("HEXPIRE", "NX", Description = "Set expiry only when no expiration exists")]
+        [TestCase("HEXPIRE", "XX", Description = "Set expiry only when expiration exists")]
+        [TestCase("HEXPIRE", "GT", Description = "Set expiry only when new TTL is greater")]
+        [TestCase("HEXPIRE", "LT", Description = "Set expiry only when new TTL is less")]
+        [TestCase("HPEXPIRE", "NX", Description = "Set expiry only when no expiration exists")]
+        [TestCase("HPEXPIRE", "XX", Description = "Set expiry only when expiration exists")]
+        [TestCase("HPEXPIRE", "GT", Description = "Set expiry only when new TTL is greater")]
+        [TestCase("HPEXPIRE", "LT", Description = "Set expiry only when new TTL is less")]
+        [TestCase("HEXPIREAT", "NX", Description = "Set expiry only when no expiration exists")]
+        [TestCase("HEXPIREAT", "XX", Description = "Set expiry only when expiration exists")]
+        [TestCase("HEXPIREAT", "GT", Description = "Set expiry only when new TTL is greater")]
+        [TestCase("HEXPIREAT", "LT", Description = "Set expiry only when new TTL is less")]
+        [TestCase("HPEXPIREAT", "NX", Description = "Set expiry only when no expiration exists")]
+        [TestCase("HPEXPIREAT", "XX", Description = "Set expiry only when expiration exists")]
+        [TestCase("HPEXPIREAT", "GT", Description = "Set expiry only when new TTL is greater")]
+        [TestCase("HPEXPIREAT", "LT", Description = "Set expiry only when new TTL is less")]
+        public void CanDoHashExpireWithOptions(string command, string option)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "welcome"), new HashEntry("field4", "back")]);
+
+            (var expireTimeField1, var expireTimeField3, var newExpireTimeField) = command switch
+            {
+                "HEXPIRE" => ("2", "6", "4"),
+                "HPEXPIRE" => ("2000", "6000", "4000"),
+                "HEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(6).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeSeconds().ToString()),
+                "HPEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(6).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeMilliseconds().ToString()),
+                _ => throw new ArgumentException("Invalid command")
+            };
+
+            // First set TTL for field1 only
+            db.Execute(command, "myhash", expireTimeField1, "FIELDS", "1", "field1");
+            db.Execute(command, "myhash", expireTimeField3, "FIELDS", "1", "field3");
+
+            // Try setting TTL with option
+            var result = (RedisResult[])db.Execute(command, "myhash", newExpireTimeField, option, "FIELDS", "3", "field1", "field2", "field3");
+
+            switch (option)
+            {
+                case "NX":
+                    ClassicAssert.AreEqual(0, (long)result[0]); // field1 has TTL
+                    ClassicAssert.AreEqual(1, (long)result[1]); // field2 no TTL
+                    ClassicAssert.AreEqual(0, (long)result[2]); // field1 has TTL
+                    break;
+                case "XX":
+                    ClassicAssert.AreEqual(1, (long)result[0]); // field1 has TTL
+                    ClassicAssert.AreEqual(0, (long)result[1]); // field2 no TTL
+                    ClassicAssert.AreEqual(1, (long)result[2]); // field1 has TTL
+                    break;
+                case "GT":
+                    ClassicAssert.AreEqual(1, (long)result[0]); // 20 > 10
+                    ClassicAssert.AreEqual(0, (long)result[1]); // no TTL = infinite
+                    ClassicAssert.AreEqual(0, (long)result[2]); // 20 !> 30
+                    break;
+                case "LT":
+                    ClassicAssert.AreEqual(0, (long)result[0]); // 20 !< 10
+                    ClassicAssert.AreEqual(1, (long)result[1]); // no TTL = infinite
+                    ClassicAssert.AreEqual(1, (long)result[2]); // 20 < 30
+                    break;
+            }
+        }
+
+        #endregion 
 
         #region LightClientTests
+
 
         /// <summary>
         /// HSET used explictly always returns the number of fields that were added.
@@ -711,7 +1317,6 @@ namespace Garnet.test
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
-
 
         [Test]
         [TestCase(30)]
@@ -1189,6 +1794,20 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
+        [Test]
+        public void CanIncrementBeyond32bits()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand($"HSET myhash int64 {1L + int.MaxValue}");
+            var expectedResponse = ":1\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("HINCRBY myhash int64 1");
+            expectedResponse = $":{2L + int.MaxValue}\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
         #endregion
 
         private static string FormatWrongNumOfArgsError(string commandName) => $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";

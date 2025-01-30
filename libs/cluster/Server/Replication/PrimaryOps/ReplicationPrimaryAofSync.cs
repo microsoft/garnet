@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -17,7 +18,7 @@ namespace Garnet.cluster
 
         public int ConnectedReplicasCount => aofTaskStore.CountConnectedReplicas();
 
-        public List<(string, string)> GetReplicaInfo() => aofTaskStore.GetReplicaInfo(ReplicationOffset);
+        public List<RoleInfo> GetReplicaInfo() => aofTaskStore.GetReplicaInfo(ReplicationOffset);
 
         public bool TryAddReplicationTask(string nodeid, long startAddress, out AofSyncTaskInfo aofSyncTaskInfo)
             => aofTaskStore.TryAddReplicationTask(nodeid, startAddress, out aofSyncTaskInfo);

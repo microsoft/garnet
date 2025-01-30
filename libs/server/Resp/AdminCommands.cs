@@ -18,7 +18,10 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private void ProcessAdminCommands(RespCommand command)
+        internal int noScriptStart;
+        internal ulong[] noScriptBitmap;
+
+        private void ProcessAdminCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi) where TGarnetApi : IGarnetApi
         {
             /*
              * WARNING: Here is safe to add @slow commands (check how containsSlowCommand is used).
@@ -27,7 +30,7 @@ namespace Garnet.server
             if (_authenticator.CanAuthenticate && !_authenticator.IsAuthenticated)
             {
                 // If the current session is unauthenticated, we stop parsing, because no other commands are allowed
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -44,11 +47,13 @@ namespace Garnet.server
                 RespCommand.LATENCY_HELP => NetworkLatencyHelp(),
                 RespCommand.LATENCY_HISTOGRAM => NetworkLatencyHistogram(),
                 RespCommand.LATENCY_RESET => NetworkLatencyReset(),
+                RespCommand.ROLE => NetworkROLE(),
                 RespCommand.SAVE => NetworkSAVE(),
                 RespCommand.LASTSAVE => NetworkLASTSAVE(),
                 RespCommand.BGSAVE => NetworkBGSAVE(),
                 RespCommand.COMMITAOF => NetworkCOMMITAOF(),
                 RespCommand.FORCEGC => NetworkFORCEGC(),
+                RespCommand.HCOLLECT => NetworkHCOLLECT(ref storageApi),
                 RespCommand.MONITOR => NetworkMonitor(),
                 RespCommand.ACL_DELUSER => NetworkAclDelUser(),
                 RespCommand.ACL_LIST => NetworkAclList(),
@@ -70,8 +75,34 @@ namespace Garnet.server
                 return;
             }
 
-            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                 SendAndReset();
+        }
+
+        /// <summary>
+        /// For sessions that are hosting scripting calls, checks that the parsed command is runnable.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool CheckScriptPermissions(RespCommand cmd)
+        {
+            if (noScriptBitmap != null)
+            {
+                var ix = (int)cmd - noScriptStart;
+                var ulongIndex = ix / sizeof(ulong);
+                if (ulongIndex >= 0 && ulongIndex < noScriptBitmap.Length)
+                {
+                    var bitmapIndex = ix % sizeof(ulong);
+                    var mask = 1UL << bitmapIndex;
+
+                    if ((noScriptBitmap[ulongIndex] & mask) != 0)
+                    {
+                        OnACLOrNoScriptFailure(this, cmd);
+                        return false;
+                    }
+                }
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -87,33 +118,39 @@ namespace Garnet.server
 
             if ((!_authenticator.IsAuthenticated || !_user.CanAccessCommand(cmd)) && !cmd.IsNoAuth())
             {
-                OnACLFailure(this, cmd);
+                OnACLOrNoScriptFailure(this, cmd);
                 return false;
             }
             return true;
+        }
 
-            // Failing should be rare, and is not important for performance so hide this behind
-            // a method call to keep icache pressure down
-            [MethodImpl(MethodImplOptions.NoInlining)]
-            static void OnACLFailure(RespServerSession self, RespCommand cmd)
+        /// <summary>
+        /// Handle ACL or NoScript failures.
+        /// 
+        /// Failing should be rare, and is not important for performance so hide this behind
+        /// a method call to keep icache pressure down
+        /// </summary>
+        /// <param name="self"></param>
+        /// <param name="cmd"></param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void OnACLOrNoScriptFailure(RespServerSession self, RespCommand cmd)
+        {
+            // If we're rejecting a command, we may need to cleanup some ambient state too
+            if (cmd == RespCommand.CustomRawStringCmd)
             {
-                // If we're rejecting a command, we may need to cleanup some ambient state too
-                if (cmd == RespCommand.CustomRawStringCmd)
-                {
-                    self.currentCustomRawStringCommand = null;
-                }
-                else if (cmd == RespCommand.CustomObjCmd)
-                {
-                    self.currentCustomObjectCommand = null;
-                }
-                else if (cmd == RespCommand.CustomTxn)
-                {
-                    self.currentCustomTransaction = null;
-                }
-                else if (cmd == RespCommand.CustomProcedure)
-                {
-                    self.currentCustomProcedure = null;
-                }
+                self.currentCustomRawStringCommand = null;
+            }
+            else if (cmd == RespCommand.CustomObjCmd)
+            {
+                self.currentCustomObjectCommand = null;
+            }
+            else if (cmd == RespCommand.CustomTxn)
+            {
+                self.currentCustomTransaction = null;
+            }
+            else if (cmd == RespCommand.CustomProcedure)
+            {
+                self.currentCustomProcedure = null;
             }
         }
 
@@ -129,7 +166,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MONITOR));
             }
 
-            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -401,7 +438,7 @@ namespace Garnet.server
                     // Check optional parameters for previous sub-command
                     if (optionalParamsRead < 2 && args is RegisterCmdArgs cmdArgs)
                     {
-                        if (NumUtils.TryBytesToLong(token, out var expTicks))
+                        if (NumUtils.TryReadInt64(token, out var expTicks))
                         {
                             cmdArgs.ExpirationTicks = expTicks;
                             optionalParamsRead++;
@@ -456,12 +493,12 @@ namespace Garnet.server
             if (errorMsg.IsEmpty &&
                 TryRegisterCustomCommands(binaryPaths, cmdInfoPath, cmdDocsPath, classNameToRegisterArgs, customCommandManager, out errorMsg))
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -497,7 +534,7 @@ namespace Garnet.server
             {
                 if (!errorMsg.IsEmpty)
                 {
-                    while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
                         SendAndReset();
                 }
 
@@ -514,14 +551,14 @@ namespace Garnet.server
 
                 if (ModuleRegistrar.Instance.LoadModule(customCommandManager, assembliesList[0], moduleArgs, logger, out errorMsg))
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
             }
 
             if (!errorMsg.IsEmpty)
             {
-                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -536,7 +573,7 @@ namespace Garnet.server
             }
 
             CommitAof();
-            while (!RespWriteUtils.WriteSimpleString("AOF file committed"u8, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteSimpleString("AOF file committed"u8, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -554,15 +591,45 @@ namespace Garnet.server
             {
                 if (!parseState.TryGetInt(0, out generation) || generation < 0 || generation > GC.MaxGeneration)
                 {
-                    while (!RespWriteUtils.WriteError("ERR Invalid GC generation."u8, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError("ERR Invalid GC generation."u8, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
             }
 
             GC.Collect(generation, GCCollectionMode.Forced, true);
-            while (!RespWriteUtils.WriteSimpleString("GC completed"u8, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteSimpleString("GC completed"u8, ref dcurr, dend))
                 SendAndReset();
+
+            return true;
+        }
+
+        private bool NetworkHCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.HCOLLECT));
+            }
+
+            var keys = parseState.Parameters;
+
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
+            var input = new ObjectInput(header);
+
+            var status = storageApi.HashCollect(keys, ref input);
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
 
             return true;
         }
@@ -571,12 +638,90 @@ namespace Garnet.server
         {
             if (clusterSession == null)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
             clusterSession.ProcessClusterCommands(command, ref parseState, ref dcurr, ref dend);
+            return true;
+        }
+
+        private bool NetworkROLE()
+        {
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ROLE));
+            }
+
+            if (!storeWrapper.serverOptions.EnableCluster)
+            {
+                while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.TryWriteAsciiBulkString("master", ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                if (storeWrapper.clusterProvider.IsPrimary())
+                {
+                    var (replication_offset, replicaInfo) = storeWrapper.clusterProvider.GetPrimaryInfo();
+
+                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString("master", ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteInt64(replication_offset, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteArrayLength(replicaInfo.Count, ref dcurr, dend))
+                        SendAndReset();
+
+                    foreach (var replice in replicaInfo)
+                    {
+                        while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
+                            SendAndReset();
+                        while (!RespWriteUtils.TryWriteAsciiBulkString(replice.address, ref dcurr, dend))
+                            SendAndReset();
+                        while (!RespWriteUtils.TryWriteInt32(replice.port, ref dcurr, dend))
+                            SendAndReset();
+                        while (!RespWriteUtils.TryWriteInt64(replice.replication_offset, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                }
+                else
+                {
+                    var role = storeWrapper.clusterProvider.GetReplicaInfo();
+
+                    while (!RespWriteUtils.TryWriteArrayLength(5, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString("slave", ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(role.address, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteInt32(role.port, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(role.replication_state, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteInt64(role.replication_offset, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+
             return true;
         }
 
@@ -589,12 +734,12 @@ namespace Garnet.server
 
             if (!storeWrapper.TakeCheckpoint(false, StoreType.All, logger))
             {
-                while (!RespWriteUtils.WriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -609,7 +754,7 @@ namespace Garnet.server
             }
 
             var seconds = storeWrapper.lastSaveTime.ToUnixTimeSeconds();
-            while (!RespWriteUtils.WriteInteger(seconds, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteInt64(seconds, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -625,12 +770,12 @@ namespace Garnet.server
             var success = storeWrapper.TakeCheckpoint(true, StoreType.All, logger);
             if (success)
             {
-                while (!RespWriteUtils.WriteSimpleString("Background saving started"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteSimpleString("Background saving started"u8, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
                     SendAndReset();
             }
 

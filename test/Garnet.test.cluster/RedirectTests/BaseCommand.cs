@@ -663,6 +663,53 @@ namespace Garnet.test.cluster
         public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
     }
 
+    internal class DUMP : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(DUMP);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0]];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class RESTORE : BaseCommand
+    {
+        private int counter = -1;
+
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(RESTORE);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            counter += 1;
+
+            var payload = new byte[]
+            {
+                0x00, // value type
+                0x03, // length of payload
+                0x76, 0x61, 0x6C,       // 'v', 'a', 'l'
+                0x0B, 0x00, // RDB version
+                0xDB, 0x82, 0x3C, 0x30, 0x38, 0x78, 0x5A, 0x99 // Crc64
+            };
+
+            var ssk = GetSingleSlotKeys;
+            return [$"{ssk[0]}-{counter}", "0", Encoding.ASCII.GetString(payload)];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
     internal class WATCH : BaseCommand
     {
         public override bool IsArrayCommand => true;
@@ -2470,5 +2517,184 @@ namespace Garnet.test.cluster
 
         public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
     }
+
+    internal class HEXPIRE : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(HEXPIRE);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "3", "FIELDS", "1", "field1"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class HPEXPIRE : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(HPEXPIRE);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "3000", "FIELDS", "1", "field1"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class HEXPIREAT : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(HEXPIREAT);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var timestamp = DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds().ToString();
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], timestamp, "FIELDS", "1", "field1"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class HPEXPIREAT : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(HPEXPIREAT);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var timestamp = DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds().ToString();
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], timestamp, "FIELDS", "1", "field1"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class HTTL : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(HTTL);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "FIELDS", "1", "field1"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class HPTTL : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(HPTTL);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "FIELDS", "1", "field1"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class HEXPIRETIME : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(HEXPIRETIME);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "FIELDS", "1", "field1"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class HPEXPIRETIME : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(HPEXPIRETIME);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "FIELDS", "1", "field1"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class HPERSIST : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(HPERSIST);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "FIELDS", "1", "field1"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class HCOLLECT : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(HCOLLECT);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0]];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[1];
+            setup[0] = new ArraySegment<string>(["HSET", ssk[0], "a", "1", "b", "2", "c", "3"]);
+            return setup;
+        }
+    }
+
     #endregion
 }

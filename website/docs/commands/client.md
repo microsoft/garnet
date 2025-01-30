@@ -144,3 +144,25 @@ You can use one of the optional subcommands to filter the list. The TYPE type su
 Bulk string reply: information and statistics about client connections.
 
 ---
+
+### CLIENT UNBLOCK
+
+#### Syntax
+
+```bash
+    CLIENT UNBLOCK <client-id> [TIMEOUT | ERROR]
+```
+
+The command unblocks a client blocked by a blocking command such as BRPOP, XREAD, or BLPOP.
+
+The optional argument specifies how to unblock the client:
+* TIMEOUT - Unblock the client as if a timeout occurred (default)
+* ERROR - Unblock the client returning an error
+
+#### Resp Reply
+
+Integer reply: 
+* 1 if the client was unblocked
+* 0 if the client wasn't blocked
+
+---

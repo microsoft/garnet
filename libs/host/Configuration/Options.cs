@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -234,6 +234,9 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-freq", Required = false, HelpText = "Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead)")]
         public int CompactionFrequencySecs { get; set; }
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("hcollect-freq", Required = false, HelpText = "Frequency in seconds for the background task to perform Hash collection. 0 = disabled. Hash collect is used to delete expired fields from hash without waiting for a write operation. Use the HCOLLECT API to collect on-demand.")]
+        public int HashCollectFrequencySecs { get; set; }
 
         [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Scan - scan old pages and move live records to tail (no data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss)")]
         public LogCompactionType CompactionType { get; set; }
@@ -509,7 +512,12 @@ namespace Garnet
         [Option("fail-on-recovery-error", Default = false, Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
         public bool? FailOnRecoveryError { get; set; }
 
-        [Option("lua-memory-management-mode", Default = LuaMemoryManagementMode.Native, Required = false, HelpText = "Memory management mode for Lua scripts, must be set to LimittedNative or Managed to impose script limits")]
+        [OptionValidation]
+        [Option("skip-rdb-restore-checksum-validation", Default = false, Required = false, HelpText = "Skip RDB restore checksum validation")]
+        public bool? SkipRDBRestoreChecksumValidation { get; set; }
+
+        [OptionValidation]
+        [Option("lua-memory-management-mode", Required = false, HelpText = "Memory management mode for Lua scripts, must be set to Tracked or Managed to impose script limits")]
         public LuaMemoryManagementMode LuaMemoryManagementMode { get; set; }
 
         [MemorySizeValidation(false)]
@@ -669,6 +677,7 @@ namespace Garnet
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
                 AofSizeLimit = AofSizeLimit,
                 CompactionFrequencySecs = CompactionFrequencySecs,
+                HashCollectFrequencySecs = HashCollectFrequencySecs,
                 CompactionType = CompactionType,
                 CompactionForceDelete = CompactionForceDelete.GetValueOrDefault(),
                 CompactionMaxSegments = CompactionMaxSegments,
@@ -728,6 +737,7 @@ namespace Garnet
                 IndexResizeThreshold = IndexResizeThreshold,
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
+                SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
                 LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, logger) : null,
             };
         }

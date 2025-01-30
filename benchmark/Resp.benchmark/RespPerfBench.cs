@@ -96,7 +96,7 @@ namespace Resp.benchmark
                 fixed (byte* buf = client.ResponseBuffer)
                 {
                     byte* ptr = buf;
-                    RespReadResponseUtils.ReadIntegerAsString(out dbSize, ref ptr, ptr + client.ResponseBuffer.Length);
+                    RespReadResponseUtils.TryReadIntegerAsString(out dbSize, ref ptr, ptr + client.ResponseBuffer.Length);
                 }
             }
             else

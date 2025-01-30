@@ -774,6 +774,110 @@
     ]
   },
   {
+    "Command": "BZMPOP",
+    "Name": "BZMPOP",
+    "Summary": "Removes and returns a member by score from one or more sorted sets. Blocks until a member is available otherwise. Deletes the sorted set if the last element was popped.",
+    "Group": "SortedSet",
+    "Complexity": "O(K) \u002B O(M*log(N)) where K is the number of provided keys, N being the number of elements in the sorted set, and M being the number of elements popped.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "WHERE",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIN",
+            "DisplayText": "min",
+            "Type": "PureToken",
+            "Token": "MIN"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MAX",
+            "DisplayText": "max",
+            "Type": "PureToken",
+            "Token": "MAX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "BZPOPMAX",
+    "Name": "BZPOPMAX",
+    "Summary": "Removes and returns the member with the highest score from one or more sorted sets. Blocks until a member available otherwise.  Deletes the sorted set if the last element was popped.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)) with N being the number of elements in the sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      }
+    ]
+  },
+  {
+    "Command": "BZPOPMIN",
+    "Name": "BZPOPMIN",
+    "Summary": "Removes and returns the member with the lowest score from one or more sorted sets. Blocks until a member is available otherwise. Deletes the sorted set if the last element was popped.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)) with N being the number of elements in the sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      }
+    ]
+  },
+  {
     "Command": "CLIENT",
     "Name": "CLIENT",
     "Summary": "A container for client connection commands.",
@@ -1026,6 +1130,43 @@
             "Name": "CONNECTION-NAME",
             "DisplayText": "connection-name",
             "Type": "String"
+          }
+        ]
+      },
+      {
+        "Command": "CLIENT_UNBLOCK",
+        "Name": "CLIENT|UNBLOCK",
+        "Summary": "Unblocks a client blocked by a blocking command from a different connection.",
+        "Group": "Connection",
+        "Complexity": "O(log N) where N is the number of client connections",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CLIENT-ID",
+            "DisplayText": "client-id",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "UNBLOCK-TYPE",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "TIMEOUT",
+                "DisplayText": "timeout",
+                "Type": "PureToken",
+                "Token": "TIMEOUT"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ERROR",
+                "DisplayText": "error",
+                "Type": "PureToken",
+                "Token": "ERROR"
+              }
+            ]
           }
         ]
       }
@@ -1477,6 +1618,50 @@
             "ArgumentFlags": "Optional, Multiple"
           }
         ]
+      },
+      {
+        "Command": "COMMAND_GETKEYS",
+        "Name": "COMMAND|GETKEYS",
+        "Summary": "Extracts the key names from an arbitrary command.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of arguments to the command",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COMMAND",
+            "DisplayText": "command",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ARG",
+            "DisplayText": "arg",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "COMMAND_GETKEYSANDFLAGS",
+        "Name": "COMMAND|GETKEYSANDFLAGS",
+        "Summary": "Extracts the key names and access flags for an arbitrary command.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of arguments to the command",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COMMAND",
+            "DisplayText": "command",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ARG",
+            "DisplayText": "arg",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
       }
     ]
   },
@@ -1653,6 +1838,22 @@
     "Summary": "Discards a transaction.",
     "Group": "Transactions",
     "Complexity": "O(N), when N is the number of queued commands"
+  },
+  {
+    "Command": "DUMP",
+    "Name": "DUMP",
+    "Summary": "Returns a serialized representation of the value stored at a key.",
+    "Group": "Generic",
+    "Complexity": "O(1) to access the key and additional O(N*M) to serialize it, where N is the number of Redis objects composing the value and M their average size. For small string values the time complexity is thus O(1)\u002BO(1*M) where M is small, so simply O(1).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
   },
   {
     "Command": "ECHO",
@@ -2856,6 +3057,12 @@
     ]
   },
   {
+    "Command": "HCOLLECT",
+    "Name": "HCOLLECT",
+    "Summary": "Manually trigger deletion of expired fields from memory",
+    "Group": "Hash"
+  },
+  {
     "Command": "HDEL",
     "Name": "HDEL",
     "Summary": "Deletes one or more fields and their values from a hash. Deletes the hash if no fields remain.",
@@ -2949,6 +3156,201 @@
         "Name": "FIELD",
         "DisplayText": "field",
         "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "HEXPIRE",
+    "Name": "HEXPIRE",
+    "Summary": "Set expiry for hash field using relative time to expire (seconds)",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SECONDS",
+        "DisplayText": "seconds",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HEXPIREAT",
+    "Name": "HEXPIREAT",
+    "Summary": "Set expiry for hash field using an absolute Unix timestamp (seconds)",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "UNIX-TIME-SECONDS",
+        "DisplayText": "unix-time-seconds",
+        "Type": "UnixTime"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HEXPIRETIME",
+    "Name": "HEXPIRETIME",
+    "Summary": "Returns the expiration time of a hash field as a Unix timestamp, in seconds.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
       }
     ]
   },
@@ -3140,6 +3542,275 @@
     ]
   },
   {
+    "Command": "HPERSIST",
+    "Name": "HPERSIST",
+    "Summary": "Removes the expiration time for each specified field",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HPEXPIRE",
+    "Name": "HPEXPIRE",
+    "Summary": "Set expiry for hash field using relative time to expire (milliseconds)",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MILLISECONDS",
+        "DisplayText": "milliseconds",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HPEXPIREAT",
+    "Name": "HPEXPIREAT",
+    "Summary": "Set expiry for hash field using an absolute Unix timestamp (milliseconds)",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "UNIX-TIME-MILLISECONDS",
+        "DisplayText": "unix-time-milliseconds",
+        "Type": "UnixTime"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HPEXPIRETIME",
+    "Name": "HPEXPIRETIME",
+    "Summary": "Returns the expiration time of a hash field as a Unix timestamp, in msec.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HPTTL",
+    "Name": "HPTTL",
+    "Summary": "Returns the TTL in milliseconds of a hash field.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "HRANDFIELD",
     "Name": "HRANDFIELD",
     "Summary": "Returns one or more random fields from a hash.",
@@ -3298,6 +3969,43 @@
         "Name": "FIELD",
         "DisplayText": "field",
         "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "HTTL",
+    "Name": "HTTL",
+    "Summary": "Returns the TTL in seconds of a hash field.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
       }
     ]
   },
@@ -4879,6 +5587,34 @@
     ]
   },
   {
+    "Command": "RESTORE",
+    "Name": "RESTORE",
+    "Summary": "Creates a key from the serialized representation of a value.",
+    "Group": "Generic",
+    "Complexity": "O(1) to create the new key and additional O(N*M) to reconstruct the serialized value, where N is the number of Redis objects composing the value and M their average size. For small string values the time complexity is thus O(1)\u002BO(1*M) where M is small, so simply O(1). However for sorted set values the complexity is O(N*M*log(N)) because inserting values into sorted sets is O(log(N)).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TTL",
+        "DisplayText": "ttl",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SERIALIZEDVALUE",
+        "DisplayText": "serialized-value",
+        "Type": "String"
+      }
+    ]
+  },
+  {
     "Command": "RPOP",
     "Name": "RPOP",
     "Summary": "Returns and removes the last elements of a list. Deletes the list if the last element was popped.",
@@ -5994,6 +6730,13 @@
         "KeySpecIndex": 0
       }
     ]
+  },
+  {
+    "Command": "ROLE",
+    "Name": "ROLE",
+    "Summary": "Returns the replication role.",
+    "Group": "Server",
+    "Complexity": "O(1)"
   },
   {
     "Command": "UNLINK",
