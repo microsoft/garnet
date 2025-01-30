@@ -6732,6 +6732,13 @@
     ]
   },
   {
+    "Command": "ROLE",
+    "Name": "ROLE",
+    "Summary": "Returns the replication role.",
+    "Group": "Server",
+    "Complexity": "O(1)"
+  },
+  {
     "Command": "UNLINK",
     "Name": "UNLINK",
     "Summary": "Asynchronously deletes one or more keys.",

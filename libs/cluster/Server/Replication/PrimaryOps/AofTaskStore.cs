@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -63,10 +64,10 @@ namespace Garnet.cluster
             }
         }
 
-        public List<(string, string)> GetReplicaInfo(long PrimaryReplicationOffset)
+        public List<RoleInfo> GetReplicaInfo(long PrimaryReplicationOffset)
         {
             // secondary0: ip=127.0.0.1,port=7001,state=online,offset=56,lag=0
-            List<(string, string)> replicaInfo = new List<(string, string)>();
+            List<RoleInfo> replicaInfo = new(numTasks);
 
             _lock.ReadLock();
             var current = clusterProvider.clusterManager.CurrentConfig;
@@ -74,16 +75,19 @@ namespace Garnet.cluster
             {
                 if (_disposed) return replicaInfo;
 
-                for (int i = 0; i < numTasks; i++)
+                for (int i = 0; i < numTasks; ++i)
                 {
                     var cr = tasks[i];
-                    var replicaId = cr.remoteNodeId;
-                    var (address, port) = current.GetWorkerAddressFromNodeId(replicaId);
-                    var state = cr.garnetClient.IsConnected ? "online" : "offline";
-                    long offset = cr.previousAddress;
-                    long lag = offset - PrimaryReplicationOffset;
-                    var count = replicaInfo.Count;
-                    replicaInfo.Add(($"slave{count}", $"ip={address},port={port},state={state},offset={offset},lag={lag}"));
+                    var (address, port) = current.GetWorkerAddressFromNodeId(cr.remoteNodeId);
+
+                    replicaInfo.Add(new()
+                    {
+                        address = address,
+                        port = port,
+                        replication_state = cr.garnetClient.IsConnected ? "online" : "offline",
+                        replication_offset = cr.previousAddress,
+                        replication_lag = cr.previousAddress - PrimaryReplicationOffset
+                    });
                 }
             }
             finally
