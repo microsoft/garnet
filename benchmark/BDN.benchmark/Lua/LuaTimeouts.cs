@@ -74,7 +74,7 @@ return counter";
         }
 
         [GlobalCleanup]
-        public virtual void GlobalCleanup()
+        public void GlobalCleanup()
         {
             session.Dispose();
             server.Dispose();
