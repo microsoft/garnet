@@ -115,6 +115,8 @@ namespace Garnet.cluster
             migrationManager?.Dispose();
         }
 
+        public bool IsPrimary() => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.PRIMARY;
+
         /// <inheritdoc />
         public bool IsReplica()
             => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.REPLICA || replicationManager?.Recovering == true;
@@ -248,11 +250,54 @@ namespace Garnet.cluster
                 else
                 {
                     // replica0: ip=127.0.0.1,port=7001,state=online,offset=56,lag=0
-                    foreach (var ri in replicaInfo)
-                        replicationInfo.Add(new(ri.Item1, ri.Item2));
+                    for (var i = 0; i < replicaInfo.Count; i++)
+                        replicationInfo.Add(new($"slave{i}", replicaInfo[i].ToString()));
                 }
             }
             return [.. replicationInfo];
+        }
+
+        /// <inheritdoc />
+        public (long replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo()
+        {
+            if (!serverOptions.EnableCluster)
+            {
+                return (replicationManager.ReplicationOffset, default);
+            };
+
+            return (replicationManager.ReplicationOffset, replicationManager.GetReplicaInfo());
+        }
+
+        /// <inheritdoc />
+        public RoleInfo GetReplicaInfo()
+        {
+            if (!serverOptions.EnableCluster)
+            {
+                return new RoleInfo()
+                {
+                };
+            }
+
+            var config = clusterManager.CurrentConfig;
+            clusterManager.GetConnectionInfo(config.LocalNodePrimaryId, out var connection);
+
+            var (address, port) = config.GetLocalNodePrimaryAddress();
+            var info = new RoleInfo()
+            {
+                address = address,
+                port = port,
+                replication_offset = replicationManager.ReplicationOffset,
+                replication_state = replicationManager.Recovering ? "sync" :
+                        connection.connected ? "connected" : "connect"
+            };
+
+            return info;
+        }
+
+        /// <inheritdoc />
+        public long GetReplicationOffset()
+        {
+            return replicationManager.ReplicationOffset;
         }
 
         /// <inheritdoc />
