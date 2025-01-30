@@ -423,7 +423,7 @@ namespace Garnet.server
                     break;
 
                 var srcKey = input.parseState.GetArgSliceByRef(i);
-                var srcVal = input.parseState.GetArgSliceByRef(i+1);
+                var srcVal = input.parseState.GetArgSliceByRef(i + 1);
                 var status = SET(srcKey, srcVal, ref context);
                 if (status != GarnetStatus.OK)
                 {
