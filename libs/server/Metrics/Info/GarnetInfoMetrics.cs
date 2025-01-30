@@ -12,7 +12,7 @@ namespace Garnet.server
 {
     class GarnetInfoMetrics
     {
-        public static readonly InfoMetricsType[] defaultInfo = Enum.GetValues<InfoMetricsType>()
+        public static readonly InfoMetricsType[] defaultInfo = [.. Enum.GetValues<InfoMetricsType>()
             .Where(e => e switch
             {
                 InfoMetricsType.STOREHASHTABLE => false,
@@ -20,8 +20,7 @@ namespace Garnet.server
                 InfoMetricsType.STOREREVIV => false,
                 InfoMetricsType.OBJECTSTOREREVIV => false,
                 _ => true
-            })
-            .ToArray();
+            })];
 
         MetricsItem[] serverInfo = null;
         MetricsItem[] memoryInfo = null;
@@ -212,7 +211,6 @@ namespace Garnet.server
                     new("Log.BeginAddress", storeWrapper.store.Log.BeginAddress.ToString()),
                     new("Log.BufferSize", storeWrapper.store.Log.BufferSize.ToString()),
                     new("Log.EmptyPageCount", storeWrapper.store.Log.EmptyPageCount.ToString()),
-                    new("Log.FixedRecordSize", storeWrapper.store.Log.FixedRecordSize.ToString()),
                     new("Log.HeadAddress", storeWrapper.store.Log.HeadAddress.ToString()),
                     new("Log.MemorySizeBytes", storeWrapper.store.Log.MemorySizeBytes.ToString()),
                     new("Log.SafeReadOnlyAddress", storeWrapper.store.Log.SafeReadOnlyAddress.ToString()),
@@ -239,7 +237,6 @@ namespace Garnet.server
                     new("Log.BeginAddress", storeWrapper.objectStore.Log.BeginAddress.ToString()),
                     new("Log.BufferSize", storeWrapper.objectStore.Log.BufferSize.ToString()),
                     new("Log.EmptyPageCount", storeWrapper.objectStore.Log.EmptyPageCount.ToString()),
-                    new("Log.FixedRecordSize", storeWrapper.objectStore.Log.FixedRecordSize.ToString()),
                     new("Log.HeadAddress", storeWrapper.objectStore.Log.HeadAddress.ToString()),
                     new("Log.MemorySizeBytes", storeWrapper.objectStore.Log.MemorySizeBytes.ToString()),
                     new("Log.SafeReadOnlyAddress", storeWrapper.objectStore.Log.SafeReadOnlyAddress.ToString()),

@@ -26,41 +26,41 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
-            => CopyWithHeaderTo(ref value, ref dst, memoryPool);
+        public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref SpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
+            => CopyTo(srcLogRecord.ValueSpan, ref output, memoryPool);
 
         /// <inheritdoc />
-        public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-            => CopyWithHeaderTo(ref value, ref dst, memoryPool);
+        public override bool ConcurrentReader(ref LogRecord<SpanByte> logRecord, ref SpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
+            => CopyTo(logRecord.ValueSpan, ref output, memoryPool);
 
         /// <summary>
         /// Copy to given SpanByteAndMemory (header length and payload copied to actual span/memory)
         /// </summary>
         /// <param name="src"></param>
-        /// <param name="dst"></param>
+        /// <param name="output"></param>
         /// <param name="memoryPool"></param>
-        private static unsafe bool CopyWithHeaderTo(ref SpanByte src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
+        private static unsafe bool CopyTo(SpanByte src, ref SpanByteAndMemory output, MemoryPool<byte> memoryPool)
         {
-            if (dst.IsSpanByte)
+            if (output.IsSpanByte)
             {
-                if (dst.Length >= src.TotalSize)
+                if (output.Length >= src.TotalSize)
                 {
-                    dst.Length = src.TotalSize;
-                    var span = dst.SpanByte.AsSpan();
+                    output.Length = src.TotalSize;
+                    var span = output.SpanByte.AsSpan();
                     fixed (byte* ptr = span)
                         *(int*)ptr = src.Length;
                     src.AsReadOnlySpan().CopyTo(span.Slice(sizeof(int)));
                     return true;
                 }
-                dst.ConvertToHeap();
+                output.ConvertToHeap();
             }
 
-            dst.Length = src.TotalSize;
-            dst.Memory = memoryPool.Rent(src.TotalSize);
-            dst.Length = src.TotalSize;
-            fixed (byte* ptr = dst.Memory.Memory.Span)
+            output.Length = src.TotalSize;
+            output.Memory = memoryPool.Rent(src.TotalSize);
+            output.Length = src.TotalSize;
+            fixed (byte* ptr = output.Memory.Memory.Span)
                 *(int*)ptr = src.Length;
-            src.AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span.Slice(sizeof(int)));
+            src.AsReadOnlySpan().CopyTo(output.Memory.Memory.Span.Slice(sizeof(int)));
             return true;
         }
     }

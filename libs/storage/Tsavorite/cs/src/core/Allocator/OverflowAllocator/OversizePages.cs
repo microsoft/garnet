@@ -19,9 +19,6 @@ namespace Tsavorite.core
         internal partial struct OversizePages
         {
             /// <summary>The pages allocated by this allocator.</summary>
-            private NativePageVector oversizePages;
-
-            /// <summary>The pages allocated by this allocator.</summary>
             internal NativePageVector PageVector;
 
             private const int InvalidSlot = -1;
@@ -50,7 +47,7 @@ namespace Tsavorite.core
                         localPageOffset.PageAndOffset = PageVector.TailPageOffset.PageAndOffset;
                     }
                 }
-                return OversizePageHeader.Initialize(blockPtr, size, zeroInit, pageSlot);
+                return OversizePageHeader.Initialize((OversizePageHeader*)blockPtr, size, zeroInit, pageSlot);
             }
 
             private bool PopFreeSlot(int size, out int slot)

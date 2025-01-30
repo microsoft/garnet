@@ -11,7 +11,7 @@ namespace Tsavorite.core
     public interface IRecordDisposer<TValue>
     {
         /// <summary>
-        /// If true, <see cref="DisposeValueObject(IHeapObject, DisposeReason)"/> with <see cref="DisposeReason.PageEviction"/> 
+        /// If true, <see cref="DisposeValueObject(TValue, DisposeReason)"/> with <see cref="DisposeReason.PageEviction"/> 
         /// is called on page evictions from both readcache and main log. Otherwise, the user can register an Observer and do any needed disposal there.
         /// </summary>
         public bool DisposeOnPageEviction { get; }

@@ -138,7 +138,7 @@ namespace Tsavorite.core
                 allocatorSettings.LogSettings = new()
                 {
                     LogDevice = new NullDevice(),
-                    ObjectLogDevice = hlog.HasObjectLog ? new NullDevice() : null,
+                    ObjectLogDevice = null, // TODO remove hlog.HasObjectLog ? new NullDevice() : null,
                     PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                     MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                     SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
@@ -289,7 +289,7 @@ namespace Tsavorite.core
                 backend = new FoldOverCheckpointTask<TValue, TStoreFunctions, TAllocator>();
             else if (checkpointType == CheckpointType.Snapshot)
             {
-                if (tryIncremental && _lastSnapshotCheckpoint.info.guid != default && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress && !hlog.HasObjectLog)
+                if (tryIncremental && _lastSnapshotCheckpoint.info.guid != default && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress) // TODO remove:  && !hlog.HasObjectLog)
                     backend = new IncrementalSnapshotCheckpointTask<TValue, TStoreFunctions, TAllocator>();
                 else
                     backend = new SnapshotCheckpointTask<TValue, TStoreFunctions, TAllocator>();

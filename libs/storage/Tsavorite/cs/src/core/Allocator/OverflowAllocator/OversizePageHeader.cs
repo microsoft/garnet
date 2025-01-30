@@ -22,10 +22,9 @@ namespace Tsavorite.core
             internal static int PromoteSize(int size) => BlockHeader.PromoteSize(size) + sizeof(int);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal static byte* Initialize(BlockHeader* blockPtr, int size, bool zeroInit, int pageSlot)
+            internal static byte* Initialize(OversizePageHeader* pageHeader, int size, bool zeroInit, int pageSlot)
             {
-                BlockHeader.Initialize(blockPtr, size, zeroInit);
-                var pageHeader = (OversizePageHeader*)blockPtr;
+                BlockHeader.Initialize(&pageHeader->blockHeader, size, zeroInit);
                 pageHeader->slot = pageSlot;
                 return (byte*)(pageHeader + 1);
             }

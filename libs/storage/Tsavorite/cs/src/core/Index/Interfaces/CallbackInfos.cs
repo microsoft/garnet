@@ -20,7 +20,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{TValue, TInput, TOutput, TContext}"/> record-update callbacks. 
     /// </summary>
     public struct UpsertInfo
     {
@@ -89,7 +89,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{TValue, TInput, TOutput, TContext}"/> record-update callbacks. 
     /// </summary>
     public struct RMWInfo
     {
@@ -146,7 +146,7 @@ namespace Tsavorite.core
         CancelOperation
     }
     /// <summary>
-    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{TValue, TInput, TOutput, TContext}"/> record-update callbacks. 
     /// </summary>
     public struct DeleteInfo
     {
@@ -198,7 +198,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-read callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{TValue, TInput, TOutput, TContext}"/> record-read callbacks. 
     /// </summary>
     public struct ReadInfo
     {
