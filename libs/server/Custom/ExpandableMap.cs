@@ -232,13 +232,6 @@ namespace Garnet.server
             TryUpdateActualSize(id);
             return true;
         }
-
-        public void Clear()
-        {
-            if (Map is not null)
-                Array.Clear(Map);
-            ActualSize = 0;
-        }
     }
 
     /// <summary>
