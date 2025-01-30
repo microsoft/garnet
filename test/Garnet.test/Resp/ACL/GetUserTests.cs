@@ -21,24 +21,6 @@ namespace Garnet.test.Resp.ACL
 
         private const string MultiCommandList = "+get +set +setex +decr +decrby +incr +incrby +del +unlink +flushdb +latency";
 
-        private const int CommandResultArrayLength = 6;
-
-        /*
-         * Use ordinal values when retrieving command results to ensure consistency of client contract.
-         * Changes requiring modifications to these ordinal values are likely breaking for clients.
-        */
-        private const int FlagsPropertyNameIndex = 0;
-
-        private const int FlagsPropertyValueIndex = 1;
-
-        private const int PasswordPropertyNameIndex = 2;
-
-        private const int PasswordPropertyValueIndex = 3;
-
-        private const int CommandsPropertyNameIndex = 4;
-
-        private const int CommandsPropertyValueIndex = 5;
-
         /// <summary>
         /// Tests that ACL GETUSER shows the default user.
         /// </summary>
@@ -51,19 +33,13 @@ namespace Garnet.test.Resp.ACL
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            RedisResult commandResult = await db.ExecuteAsync("ACL", "GETUSER", DefaultUserName);
+            UserAclResult commandResult = new UserAclResult(await db.ExecuteAsync("ACL", "GETUSER", DefaultUserName));
 
             ClassicAssert.NotNull(commandResult);
-            ClassicAssert.AreEqual(CommandResultArrayLength, commandResult.Length);
-
-            ClassicAssert.AreEqual("flags", commandResult[FlagsPropertyNameIndex].ToString());
-            ClassicAssert.AreEqual("on", commandResult[FlagsPropertyValueIndex][0].ToString());
-
-            ClassicAssert.AreEqual("passwords", commandResult[PasswordPropertyNameIndex].ToString());
-            ClassicAssert.AreEqual(0, commandResult[PasswordPropertyValueIndex].Length);
-
-            ClassicAssert.AreEqual("commands", commandResult[CommandsPropertyNameIndex].ToString());
-            ClassicAssert.AreEqual("+@all", commandResult[CommandsPropertyValueIndex].ToString());
+            ClassicAssert.IsTrue(commandResult.IsWellStructured());
+            ClassicAssert.IsTrue(commandResult.IsEnabled);
+            ClassicAssert.AreEqual(0, commandResult.PasswordResult.Length);
+            ClassicAssert.AreEqual("+@all", commandResult.PermittedCommands);
         }
 
         /// <summary>
@@ -77,7 +53,6 @@ namespace Garnet.test.Resp.ACL
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-
 
             ClassicAssert.IsTrue((await db.ExecuteAsync("ACL", "GETUSER", $"!{DefaultUserName}")).IsNull);
         }
@@ -117,31 +92,17 @@ namespace Garnet.test.Resp.ACL
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(authUsername: DefaultUserName));
             var db = redis.GetDatabase(0);
 
-            RedisResult commandResult = await db.ExecuteAsync("ACL", "GETUSER", userName);
+            UserAclResult commandResult = new UserAclResult(await db.ExecuteAsync("ACL", "GETUSER", userName));
 
             ClassicAssert.NotNull(commandResult);
-            ClassicAssert.AreEqual(CommandResultArrayLength, commandResult.Length);
+            ClassicAssert.IsTrue(commandResult.IsWellStructured());
 
-            ClassicAssert.AreEqual("flags", commandResult[FlagsPropertyNameIndex].ToString());
+            ClassicAssert.AreEqual(enabled == "on", commandResult.IsEnabled);
 
-            if (string.IsNullOrWhiteSpace(enabled))
-            {
-                enabled = "off";
-            }
+            bool expectPasswordMatch = !string.IsNullOrWhiteSpace(credential) && credential != "nopass";
+            ClassicAssert.AreEqual(expectPasswordMatch, commandResult.ContainsPasswordHash($"#{DummyPasswordHash}"));
 
-            ClassicAssert.AreEqual(enabled, commandResult[FlagsPropertyValueIndex][0].ToString());
-
-            ClassicAssert.AreEqual("passwords", commandResult[PasswordPropertyNameIndex].ToString());
-
-            bool found = ContainsDefaultPassword(commandResult);
-
-            if (!found && !string.IsNullOrWhiteSpace(credential) && credential != "nopass")
-            {
-                ClassicAssert.Fail("Credential not found");
-            }
-
-            ClassicAssert.AreEqual("commands", commandResult[CommandsPropertyNameIndex].ToString());
-            ClassicAssert.AreEqual(expectedCommands, commandResult[CommandsPropertyValueIndex].ToString());
+            ClassicAssert.AreEqual(expectedCommands, commandResult.PermittedCommands);
         }
 
         /// <summary>
@@ -166,39 +127,13 @@ namespace Garnet.test.Resp.ACL
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(authUsername: DefaultUserName));
             var db = redis.GetDatabase(0);
 
-            RedisResult commandResult = await db.ExecuteAsync("ACL", "GETUSER", TestUserA);
+            UserAclResult commandResult = new UserAclResult(await db.ExecuteAsync("ACL", "GETUSER", TestUserA));
 
             ClassicAssert.NotNull(commandResult);
-            ClassicAssert.AreEqual(CommandResultArrayLength, commandResult.Length);
-
-            ClassicAssert.AreEqual("flags", commandResult[FlagsPropertyNameIndex].ToString());
-
-            ClassicAssert.AreEqual("on", commandResult[FlagsPropertyValueIndex][0].ToString());
-
-            ClassicAssert.AreEqual("passwords", commandResult[PasswordPropertyNameIndex].ToString());
-            var found = ContainsDefaultPassword(commandResult);
-
-            if (!found)
-            {
-                ClassicAssert.Fail("Credential not found");
-            }
-
-            ClassicAssert.AreEqual("commands", commandResult[CommandsPropertyNameIndex].ToString());
-            ClassicAssert.AreEqual(MultiCommandList, commandResult[CommandsPropertyValueIndex].ToString());
-        }
-
-        private static bool ContainsDefaultPassword(RedisResult commandResult)
-        {
-            bool found = false;
-            foreach (RedisResult hash in (RedisResult[])commandResult[PasswordPropertyValueIndex])
-            {
-                if (hash.ToString() == $"#{DummyPasswordHash}")
-                {
-                    found = true;
-                }
-            }
-
-            return found;
+            ClassicAssert.IsTrue(commandResult.IsWellStructured());
+            ClassicAssert.IsTrue(commandResult.IsEnabled);
+            ClassicAssert.IsTrue(commandResult.ContainsPasswordHash($"#{DummyPasswordHash}"));
+            ClassicAssert.AreEqual(MultiCommandList, commandResult.PermittedCommands);
         }
     }
 }
