@@ -242,6 +242,7 @@ namespace CommandInfoUpdater
             new("RESTORE", RespCommand.RESTORE),
             new("RENAMENX", RespCommand.RENAMENX),
             new("REPLICAOF", RespCommand.REPLICAOF),
+            new("ROLE", RespCommand.ROLE),
             new("RPOP", RespCommand.RPOP),
             new("RPOPLPUSH", RespCommand.RPOPLPUSH),
             new("RPUSH", RespCommand.RPUSH),

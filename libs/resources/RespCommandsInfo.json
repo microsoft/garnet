@@ -4589,6 +4589,13 @@
     ]
   },
   {
+    "Command": "ROLE",
+    "Name": "ROLE",
+    "Arity": 1,
+    "Flags": "NoScript, Loading, Stale, Fast",
+    "AclCategories": "Admin, Fast, Dangerous"
+  },
+  {
     "Command": "UNLINK",
     "Name": "UNLINK",
     "Arity": -2,

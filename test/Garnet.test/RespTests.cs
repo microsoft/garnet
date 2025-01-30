@@ -2578,7 +2578,7 @@ namespace Garnet.test
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp); // LT return false new expiry > current expiry
 
-            args[1] = 15;
+            args[1] = 500;
             args[2] = testCaseSensitivity ? "lT" : "LT";// LT -- Set expiry only when the new expiry is less than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp); // LT return true new expiry < current expiry
@@ -3669,6 +3669,17 @@ namespace Garnet.test
             // Try retrieving already deleted key with metadata
             retval = db.StringGetDelete(key);
             ClassicAssert.AreEqual(string.Empty, retval.ToString());
+        }
+
+        [Test]
+        public void GetRole()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var server = redis.GetServers()[0];
+            var role = server.Role();
+            ClassicAssert.True(role is Role.Master);
+            var master = role as Role.Master;
+            ClassicAssert.AreEqual("master", master.Value);
         }
 
         [Test]
