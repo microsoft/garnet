@@ -91,7 +91,7 @@ namespace Tsavorite.core
         /// Size of the page used for in-memory Keys larger than <see cref="MaxInlineKeySizeBits"/>, or for <see cref="SpanByteAllocator{TStoreFunctions}"/>,
         /// values larger than <see cref="MaxInlineValueSizeBits"/>
         /// </summary>
-        public int OverflowPageSizeBits = 20;
+        public int OverflowFixedPageSizeBits = 20;
 
         /// <summary>
         /// Maximum size of a key stored inline in the in-memory portion of the main log for both allocators.

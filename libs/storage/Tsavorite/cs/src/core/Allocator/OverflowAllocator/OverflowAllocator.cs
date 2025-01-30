@@ -8,55 +8,35 @@ using System.Threading;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// A class to manage Keys (and SpanByte values) that are too large to be inline in the main log page.
+    /// A class to manage Keys (and SpanByte values) that are too large to be inline in the hlog page. Each hlog page has its own instance.
     /// </summary>
-    /// <param name="pageSize">The size of a page in this allocator</param>
-    /// <param name="oversizeLimit">If an allocation request is greater than this, an individual allocation is made for it. Must be less than or equal to pageSize.</param>
-    public unsafe class OverflowAllocator(int pageSize, int oversizeLimit)
+    /// <remarks>This has two regions:
+    ///     <list type="bullet">
+    ///         <item>Fixed size: these are a set of bins in powers of 2 up to <see cref="FixedSizePages.PageSize"/>. See <see cref="FixedSizePages"/>.</item>
+    ///         <item>Oversize: these are allocations greater than <see cref="FixedSizePages.MaxBlockSize"/>. Each allocation is a separate page. See <see cref="OversizePages"/></item>
+    ///     </list>
+    /// </remarks>
+    internal unsafe partial class OverflowAllocator
     {
-        /// <summary>
-        /// A page header in the oversize list
-        /// </summary>
-        internal struct OversizePageHeader
-        {
-            /// <summary>The next page in the Oversize linked list.</summary>
-            internal nuint NextPage;
-
-            /// <summary>The header for the single block in this oversize allocation.</summary>
-            internal BlockHeader BlockHeader;
-        }
+        private FixedSizePages fixedSizePages;
+        private OversizePages oversizePages;
 
         /// <summary>
-        /// A header for an individual block of memory
+        /// Constructor for the allocator
         /// </summary>
-        internal struct BlockHeader
+        /// <param name="fixedPageSize">The size of a page for fixed-size allocations in this allocator</param>
+        internal OverflowAllocator(int fixedPageSize)
         {
-            /// <summary>Full size of this block. Actual used size is kept by LogRecord{TValue} in the key or value Span length.</summary>
-            internal int Size;
+            System.Diagnostics.Debug.Assert(fixedPageSize >= FixedSizePages.MaxBlockSize && Utility.IsPowerOfTwo(fixedPageSize), "PageSize must be > FixedSizeLimit and a power of 2");
+            fixedSizePages = new(fixedPageSize);
+            oversizePages = new();
         }
-
-        private const int InitialPageCount = 1024;
-
-        private readonly int pageSize = pageSize;
-        private readonly int oversizeLimit = oversizeLimit;
-
-        // We use a separate array so we do not take cacheline space for a linked-list pointer (as oversizeList does).
-        // The pages array itself does not need to be cache-aligned because only the intra-page pointers are accessed.
-        private byte*[] pages;
-        private int pageCount = 0;
-
-        // The linked list of oversize allocations.
-        private nuint oversizeList;
-
-        // We advance the tail only; no deallocations until the main log page is deallocated.
-        private PageOffset tailPageOffset = new() { Page = -1, Offset = pageSize + 1 };
 
         public byte* Allocate(int size, bool zeroInit)
         {
             System.Diagnostics.Debug.Assert(size > 0, "Cannot have negative allocation size");
-            System.Diagnostics.Debug.Assert(oversizeLimit > 0 && pageSize >= oversizeLimit, "OversizeLimit must be greater than zero and within pageSize");
 
-            if (size > oversizeLimit)
+            if (size > FixedSizePages.MaxBlockSize)
                 return AllocateOversize(size, zeroInit);
 
             while (true)
@@ -66,7 +46,7 @@ namespace Tsavorite.core
                 var sizeWithHeader = size + sizeof(BlockHeader);
 
                 // See if it fits on the current last page. This also applies to the "no pages allocated" case, because we initialize tailPageOffset.Offset to out-of-range
-                while (localPageOffset.Offset + sizeWithHeader < pageSize)
+                while (localPageOffset.Offset + sizeWithHeader < fixedPageSize)
                 {
                     // Fast path; simple offset pointer advance
                     if (Interlocked.CompareExchange(ref tailPageOffset.PageAndOffset, localPageOffset.PageAndOffset + sizeWithHeader, localPageOffset.PageAndOffset) == localPageOffset.PageAndOffset)
@@ -81,7 +61,7 @@ namespace Tsavorite.core
                     localPageOffset.PageAndOffset = tailPageOffset.PageAndOffset;
                 }
 
-                // We need to allocate a new (possibly oversize) page. Increment the page index to "claim the lock".
+                // We need to allocate a new page. Increment the page index to "claim the lock".
                 PageOffset newPageOffset = new() { Page = localPageOffset.Page + 1, Offset = 0 };
                 tailPageOffset.PageAndOffset = Interlocked.CompareExchange(ref tailPageOffset.PageAndOffset, newPageOffset.PageAndOffset, localPageOffset.PageAndOffset);
                 if (tailPageOffset.PageAndOffset != localPageOffset.PageAndOffset)
@@ -105,10 +85,9 @@ namespace Tsavorite.core
                     pages = newPages;
                 }
 
-                // Allocate the new page. Always zeroinit these
-                var pagePtr = (byte*)NativeMemory.AlignedAlloc((nuint)pageSize, Constants.kCacheLineBytes);
+                // Allocate the new page. Defer zeroinit until the actual allocation.
+                var pagePtr = (byte*)NativeMemory.AlignedAlloc((nuint)fixedPageSize, Constants.kCacheLineBytes);
                 pages[newPageOffset.Page] = pagePtr;
-                NativeMemory.Clear(pagePtr, (nuint)size);
 
                 // Update tailPageOffset and retry.
                 tailPageOffset.PageAndOffset = newPageOffset.PageAndOffset;
@@ -153,6 +132,7 @@ namespace Tsavorite.core
             }
             oversizeList = default;
 
+            // Free the fixed-size list
             for (var ii = 0; ii < tailPageOffset.Page; ++ii)
             { 
                 NativeMemory.AlignedFree((nuint*)pages[ii]);
@@ -160,7 +140,7 @@ namespace Tsavorite.core
             }
 
             // Prep for reuse
-            tailPageOffset = new() { Page = -1, Offset = pageSize + 1 };
+            tailPageOffset = new() { Page = -1, Offset = fixedPageSize + 1 };
         }
     }
 }

@@ -1677,7 +1677,7 @@ namespace Garnet.server
             outputArr[c - firstPending] = (status, output);
         }
 
-        static long NextPowerOf2(long v)
+        static long NextPowerOf2(long v)    // TODO: consolidate this and other Tsavorite.core.Utility method clones
         {
             v--;
             v |= v >> 1;

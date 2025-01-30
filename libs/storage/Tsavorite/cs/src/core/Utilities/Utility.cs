@@ -75,8 +75,6 @@ namespace Tsavorite.core
         /// <summary>
         /// Previous power of 2
         /// </summary>
-        /// <param name="v"></param>
-        /// <returns></returns>
         internal static long PreviousPowerOf2(long v)
         {
             v |= v >> 1;
@@ -86,6 +84,21 @@ namespace Tsavorite.core
             v |= v >> 16;
             v |= v >> 32;
             return v - (v >> 1);
+        }
+
+        /// <summary>
+        /// Next power of 2
+        /// </summary>
+        internal static long NextPowerOf2(long v)
+        {
+            v--;
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            v |= v >> 32;
+            return v + 1;
         }
 
         /// <summary>

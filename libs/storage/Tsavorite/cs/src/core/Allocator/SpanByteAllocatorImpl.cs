@@ -35,7 +35,7 @@ namespace Tsavorite.core
             // TODO: Verify LogSettings.MaxInlineKeySizeBits, .MaxInlineValueSizeBits, and .OverflowPageSizeBits are in range. Do we need config for OversizeLimit?
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
             maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
-            overflowAllocatorPageSize = 1 << settings.LogSettings.OverflowPageSizeBits;
+            overflowAllocatorPageSize = 1 << settings.LogSettings.OverflowFixedPageSizeBits;
             overflowAllocatorOversizeLimit = overflowAllocatorPageSize - maxInlineKeySize * 4;  // TODO should this be adjusted for the Key vs. Value space?
 
             freePagePool = new OverflowPool<PageUnit<OverflowAllocator>>(4, p => { });
