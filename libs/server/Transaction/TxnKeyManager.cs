@@ -90,6 +90,7 @@ namespace Garnet.server
                 RespCommand.ZINCRBY => SortedSetObjectKeys(SortedSetOperation.ZINCRBY, inputCount),
                 RespCommand.ZRANK => SortedSetObjectKeys(SortedSetOperation.ZRANK, inputCount),
                 RespCommand.ZRANGE => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
+                RespCommand.ZRANGEBYLEX => SortedSetObjectKeys(SortedSetOperation.ZRANGEBYLEX, inputCount),
                 RespCommand.ZRANGEBYSCORE => SortedSetObjectKeys(SortedSetOperation.ZRANGEBYSCORE, inputCount),
                 RespCommand.ZREVRANK => SortedSetObjectKeys(SortedSetOperation.ZREVRANK, inputCount),
                 RespCommand.ZREMRANGEBYLEX => SortedSetObjectKeys(SortedSetOperation.ZREMRANGEBYLEX, inputCount),
