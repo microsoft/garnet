@@ -412,15 +412,15 @@ namespace Tsavorite.core
         public static SpanByte GetKey(long physicalAddress) => LogRecord<TValue>.GetKey(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<TValue> logRecord, int maxInlineKeySize)
+        internal unsafe void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<TValue> logRecord, int maxInlineKeySize, OverflowAllocator overflowAllocator)
         {
             byte* keyPtr;
             if (key.Length <= maxInlineKeySize)
                 keyPtr = SpanField.SetInlineLength(logRecord.KeyAddress, key.Length);
             else
                 keyPtr = logRecord.Info.KeyIsOverflow   // This may be true if it is a revivified record; we preserved the overflow allocation.
-                    ? SpanField.ReallocateOverflow(logRecord.KeyAddress, key.Length, _wrapper.GetOverflowAllocator(logicalAddress))
-                    : SpanField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, _wrapper.GetOverflowAllocator(logicalAddress));
+                    ? SpanField.ReallocateOverflow(logRecord.KeyAddress, key.Length, overflowAllocator)
+                    : SpanField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, overflowAllocator);
             key.AsReadOnlySpan().CopyTo(new Span<byte>(keyPtr, key.Length));
         }
 

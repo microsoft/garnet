@@ -190,10 +190,6 @@ namespace Tsavorite.core
         public readonly LogRecord<AofValue> CreateLogRecord(long logicalAddress, long physicalAddress) => throw new NotImplementedException("Not implemented for AofAllocator");
 
         /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly OverflowAllocator GetOverflowAllocator(long logicalAddress) => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
         public readonly int GetInitialRecordIOSize() => throw new NotImplementedException("Not implemented for AofAllocator");
     }
 }

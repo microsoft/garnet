@@ -40,7 +40,6 @@ namespace Tsavorite.core
 
         readonly int maxInlineKeySize;
         readonly int overflowAllocatorPageSize;
-        readonly int overflowAllocatorOversizeLimit;
 
         // Size of object chunks being written to storage
         private readonly int objectBlockSize = 100 * (1 << 20);
@@ -61,7 +60,6 @@ namespace Tsavorite.core
             // TODO: Verify LogSettings.MaxInlineKeySizeBits and .OverflowPageSizeBits are in range. Do we need config for OversizeLimit?
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
             overflowAllocatorPageSize = 1 << settings.LogSettings.OverflowFixedPageSizeBits;
-            overflowAllocatorOversizeLimit = overflowAllocatorPageSize - maxInlineKeySize * 4;
 
             freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, p => { });
 
@@ -98,7 +96,7 @@ namespace Tsavorite.core
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
             values[index] = new()
             {
-                overflowAllocator = new (overflowAllocatorPageSize, overflowAllocatorOversizeLimit),
+                overflowAllocator = new(overflowAllocatorPageSize),
                 objectIdMap = new (PageSize / MinRecordSize)
             };
         }
@@ -131,7 +129,7 @@ namespace Tsavorite.core
         internal OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)].overflowAllocator;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<TValue> logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize);
+        internal void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<TValue> logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize, GetOverflowAllocator(logicalAddress));
 
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 

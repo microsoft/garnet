@@ -14,16 +14,12 @@ namespace Tsavorite.core
     [StructLayout(LayoutKind.Explicit, Size = sizeof(long))]
     internal struct FreeRecord
     {
-        internal const int kSizeBits = 64 - RecordInfo.kPreviousAddressBits;        // Currently 17, minus 1 for hasOverflow. This 'size' is the inline record size
-        internal const int kHasOverflowBits = 1;                                    // Reuse ReadCache bit for HasOverflow
+        internal const int kSizeBits = 64 - RecordInfo.kPreviousAddressBits;        // 16
 
         const int kSizeShiftInWord = RecordInfo.kPreviousAddressBits;
-        const int kHasOverflowShiftInWord = RecordInfo.kPreviousAddressBits - 1;    // ReadCache bit space
 
         const long kSizeMask = RevivificationBin.MaxInlineRecordSize - 1;
         const long kSizeMaskInWord = kSizeMask << kSizeShiftInWord;
-
-        const long kHasOverflowMaskInWord = 1L << kSizeShiftInWord;
 
         // This is the empty word we replace the current word with on Reads.
         private const long emptyWord = 0;
@@ -44,16 +40,13 @@ namespace Tsavorite.core
         /// <summary>Inline size of the record. May contain overflow allocations.</summary>
         public readonly int Size => (int)((word & kSizeMaskInWord) >> kSizeShiftInWord);
 
-        /// <summary>Whether the record contains overflow allocations.</summary>
-        public readonly bool HasOverflow => (word & kHasOverflowMaskInWord) == kHasOverflowMaskInWord;
-
         /// <inheritdoc/>
         public override readonly string ToString() => $"address {Address}, size {Size}";
 
         internal readonly bool IsSet => word != emptyWord;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool Set(long address, long recordSize, bool hasOverflow, long minAddress)
+        internal bool Set(long address, long recordSize, long minAddress)
         {
             // If the record is empty or the address is below minAddress, set the new address into it.
             var oldRecord = this;
@@ -61,8 +54,6 @@ namespace Tsavorite.core
                 return false;
 
             long newWord = (recordSize << kSizeShiftInWord) | (address & RecordInfo.kPreviousAddressMaskInWord);
-            if (hasOverflow)
-                word |= kHasOverflowMaskInWord;
             return Interlocked.CompareExchange(ref word, newWord, oldRecord.word) == oldRecord.word;
         }
 
@@ -295,7 +286,7 @@ namespace Tsavorite.core
         private FreeRecord* GetRecord(int recordIndex) => records + (recordIndex >= recordCount ? recordIndex - recordCount : recordIndex);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryAdd<TValue, TStoreFunctions, TAllocator>(long logicalAddress, int recordSize, bool hasOverflow, TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, long minAddress, ref RevivificationStats revivStats)
+        public bool TryAdd<TValue, TStoreFunctions, TAllocator>(long logicalAddress, int recordSize, TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, long minAddress, ref RevivificationStats revivStats)
             where TStoreFunctions : IStoreFunctions<TValue>
             where TAllocator : IAllocator<TValue, TStoreFunctions>
         {
@@ -304,7 +295,7 @@ namespace Tsavorite.core
             for (var ii = 0; ii < recordCount; ++ii)
             {
                 FreeRecord* record = GetRecord(segmentStart + ii);
-                if (record->Set(logicalAddress, recordSize, hasOverflow, minAddress))
+                if (record->Set(logicalAddress, recordSize, minAddress))
                 {
                     ++revivStats.successfulAdds;
                     isEmpty = false;
@@ -526,7 +517,7 @@ namespace Tsavorite.core
             var recordSize = logRecord.GetFullRecordSizes().allocatedSize;
             if (logicalAddress < minAddress)
                 return false;
-            if (!bins[binIndex].TryAdd(logicalAddress, recordSize, logRecord.Info.HasOverflow, store, minAddress, ref revivStats))
+            if (!bins[binIndex].TryAdd(logicalAddress, recordSize, store, minAddress, ref revivStats))
                 return false;
 
             // We've added a record, so now start the worker thread that periodically checks to see if Take() has emptied the bins.

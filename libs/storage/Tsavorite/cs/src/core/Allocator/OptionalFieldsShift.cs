@@ -8,7 +8,10 @@ namespace Tsavorite.core
         internal long ETag;
         internal long Expiration;
 
-        internal OptionalFieldsShift(long address, ref RecordInfo recordInfo) => GetAndZero(address, ref recordInfo);
+        internal static OptionalFieldsShift SaveAndClear(long address, ref RecordInfo recordInfo) 
+            => new OptionalFieldsShift(address, ref recordInfo);
+
+        private OptionalFieldsShift(long address, ref RecordInfo recordInfo) => GetAndZero(address, ref recordInfo);
 
         internal void GetAndZero(long address, ref RecordInfo recordInfo)
         {

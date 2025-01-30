@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.Utility;
 
@@ -252,7 +253,7 @@ namespace Tsavorite.core
                     if (growth <= fillerLen)
                     {
                         // There is enough space to stay inline and adjust filler.
-                        var optionalFields = new OptionalFieldsShift(optionalStartAddress, ref InfoRef);
+                        var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
                         SpanField.LengthRef(ValueAddress) = newValueLength; // growing into zero-init'd space
                         optionalStartAddress += growth;
                         optionalFields.Restore(optionalStartAddress, ref InfoRef, fillerLen - growth);
@@ -264,18 +265,18 @@ namespace Tsavorite.core
                             return false;
 
                         // Convert to overflow
-                        var optionalFields = new OptionalFieldsShift(optionalStartAddress, ref InfoRef);
+                        var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
                         growth = currentInlineSize - SpanField.OverflowInlineSize;
-                        SpanField.ConvertToOverflow(ValueAddress, newValueLength, overflowAllocator);   // zeroes any "extra" space if there was shrinkage
+                        _ = SpanField.ConvertToOverflow(ValueAddress, newValueLength, overflowAllocator);   // zeroes any "extra" space if there was shrinkage
                         optionalStartAddress = valueAddress + SpanField.OverflowInlineSize;
                         optionalFields.Restore(optionalStartAddress, ref InfoRef, fillerLen - growth);
                     }
                     return true;
                 }
-                else    // currently isOverflow
+                else    // We are growing and currently isOverflow
                 {
                     // Growing and already oversize. SpanField will handle this either in-place (shrinking, or growth within the already-allocated size) or by free/alloc.
-                    SpanField.ReallocateOverflow(address, newValueLength, overflowAllocator);
+                    _ = SpanField.ReallocateOverflow(address, newValueLength, overflowAllocator);
                 }
             }
             else
@@ -284,15 +285,27 @@ namespace Tsavorite.core
                 if (!isOverflow)
                 {
                     // Stay inline and adjust filler
-                    var optionalFields = new OptionalFieldsShift(optionalStartAddress, ref InfoRef);
-                    SpanField.ShrinkInline(address, newValueLength);
+                    var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
+                    _ = SpanField.ShrinkInline(address, newValueLength);
                     optionalStartAddress += growth;
                     optionalFields.Restore(optionalStartAddress, ref InfoRef, fillerLen - growth);
                 }
                 else
                 {
-                    // We are in overflow and shrinking. Do so in-place; we do not need to zero-init in overflow space.
-                    SpanField.LengthRef(address) = newValueLength;
+                    // We are in overflow and shrinking. See if we can free the allocation and convert to inline.
+                    if (growth <= fillerLen)
+                    {
+                        // There is enough space to convert to inline.
+                        var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
+                        _ = SpanField.ConvertToInline(address, newValueLength, overflowAllocator);
+                        optionalStartAddress += growth;
+                        optionalFields.Restore(optionalStartAddress, ref InfoRef, fillerLen - growth);
+                    }
+                    else
+                    {
+                        // Too big to convert to inline so shrink the overflow allocation in-place; we do not need to zero-init in overflow space.
+                        SpanField.LengthRef(address) = newValueLength;
+                    }
                 }
             }
             return true;
@@ -588,12 +601,12 @@ namespace Tsavorite.core
 
             // Copy optionals
             if (!recordInfo.HasETag)
-                RemoveETag();
+                _ = RemoveETag();
             else if (!TrySetETag(srcLogRecord.ETag))
                 return false;
 
             if (!recordInfo.HasExpiration)
-                RemoveExpiration();
+                _ = RemoveExpiration();
             else if (!TrySetExpiration(srcLogRecord.Expiration))
                 return false;
             return true;
@@ -603,12 +616,12 @@ namespace Tsavorite.core
         private bool SetOptionals(long? eTag, long? expiration)
         {
             if (!eTag.HasValue)
-                RemoveETag();
+                _ = RemoveETag();
             else if (!TrySetETag(eTag.Value))
                 return false;
 
             if (!expiration.HasValue)
-                RemoveExpiration();
+                _ = RemoveExpiration();
             else if (!TrySetExpiration(expiration.Value))
                 return false;
             return true;
@@ -617,8 +630,26 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void ClearOptionals()
         {
-            RemoveExpiration();
-            RemoveETag();
+            _ = RemoveExpiration();
+            _ = RemoveETag();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void FreeKeyOverflow()
+        {
+            if (!Info.KeyIsOverflow)
+                return;
+            overflowAllocator.Free(KeyAddress);
+            InfoRef.ClearKeyIsOverflow();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void FreeValueOverflow()
+        {
+            if (!Info.ValueIsOverflow)
+                return;
+            overflowAllocator.Free(ValueAddress);
+            InfoRef.ClearValueIsOverflow();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

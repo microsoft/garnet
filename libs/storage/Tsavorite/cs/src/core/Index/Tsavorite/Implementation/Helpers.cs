@@ -1,8 +1,10 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
@@ -31,9 +33,12 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void DisposeRecord(ref LogRecord<TValue> logRecord, DisposeReason disposeReason)
         {
+            // Release any overflow allocations for Key and possibly Value spans.
+            logRecord.FreeKeyOverflow();
+
             if (logRecord.ValueObjectId != ObjectIdMap.InvalidObjectId)
             {
-                // Clear the IHeapObject, but leave the ObjectId in the record, along with any overflow Key and possibly Value spans.
+                // Clear the IHeapObject, but leave the ObjectId in the record
                 ref var heapObj = ref logRecord.ObjectRef;
                 if (heapObj is not null)
                 {
@@ -41,6 +46,8 @@ namespace Tsavorite.core
                     heapObj = default;
                 }
             }
+            else
+                logRecord.FreeValueOverflow();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

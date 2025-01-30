@@ -27,7 +27,6 @@ namespace Tsavorite.core
         readonly int maxInlineKeySize;
         readonly int maxInlineValueSize;
         readonly int overflowAllocatorPageSize;
-        readonly int overflowAllocatorOversizeLimit;
 
         public SpanByteAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, SpanByteAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
@@ -36,7 +35,6 @@ namespace Tsavorite.core
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
             maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
             overflowAllocatorPageSize = 1 << settings.LogSettings.OverflowFixedPageSizeBits;
-            overflowAllocatorOversizeLimit = overflowAllocatorPageSize - maxInlineKeySize * 4;  // TODO should this be adjusted for the Key vs. Value space?
 
             freePagePool = new OverflowPool<PageUnit<OverflowAllocator>>(4, p => { });
 
@@ -76,7 +74,7 @@ namespace Tsavorite.core
             }
 
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
-            values[index] = new(overflowAllocatorPageSize, overflowAllocatorOversizeLimit);
+            values[index] = new(overflowAllocatorPageSize);
         }
 
         void ReturnPage(int index)
@@ -107,7 +105,7 @@ namespace Tsavorite.core
         internal OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)];
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<SpanByte> logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize);
+        internal void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<SpanByte> logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize, GetOverflowAllocator(logicalAddress));
 
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 

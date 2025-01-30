@@ -93,7 +93,7 @@ namespace Tsavorite.core
             if (clearLength > 0)
                 ZeroInlineData(address, OverflowDataPtrSize - clearLength, clearLength);
 
-            allocator.Free((byte*)address);
+            allocator.Free(address);
             return SetInlineLength(address, newLength);
         }
 
@@ -131,7 +131,7 @@ namespace Tsavorite.core
             }
 
             // Free the current allocation then insert a new one
-            allocator.Free((byte*)address);
+            allocator.Free(address);
             return ConvertToOverflow(address, newLength, allocator);
         }
     }

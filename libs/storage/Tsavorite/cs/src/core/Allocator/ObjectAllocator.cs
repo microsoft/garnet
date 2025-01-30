@@ -155,10 +155,6 @@ namespace Tsavorite.core
         public readonly LogRecord<TValue> CreateLogRecord(long logicalAddress, long physicalAddress) => _this.CreateLogRecord(logicalAddress, physicalAddress);
 
         /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly OverflowAllocator GetOverflowAllocator(long logicalAddress) => _this.GetOverflowAllocator(logicalAddress);
-
-        /// <inheritdoc/>
         public readonly int GetInitialRecordIOSize() => RecordInfo.GetLength()
             + (1 << LogSettings.kMaxInlineKeySizeBits)
             + ObjectIdMap.ObjectIdSize

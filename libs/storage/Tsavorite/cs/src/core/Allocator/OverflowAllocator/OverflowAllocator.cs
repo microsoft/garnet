@@ -1,10 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Runtime.InteropServices;
-using System.Threading;
-
 namespace Tsavorite.core
 {
     /// <summary>
