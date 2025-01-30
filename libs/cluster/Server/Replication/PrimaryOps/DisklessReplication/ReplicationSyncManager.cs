@@ -106,8 +106,9 @@ namespace Garnet.cluster
                 // Started syncing
                 replicaSyncSession.SetStatus(SyncStatus.INPROGRESS);
 
+                var isLeader = GetSessionStore.GetSessions()[0] == replicaSyncSession;
                 // Only one thread will acquire this lock
-                if (syncInProgress.OneWriteLock())
+                if (isLeader)
                 {
                     // Launch a background task to sync the attached replicas using streaming snapshot
                     _ = Task.Run(() => StreamingSnapshotSync());
@@ -147,6 +148,9 @@ namespace Garnet.cluster
 
             try
             {
+                // Lock to avoid the addition of new replica sync sessions while sync is in progress
+                syncInProgress.WriteLock();
+
                 // Take lock to ensure no other task will be taking a checkpoint
                 while (!ClusterProvider.storeWrapper.TryPauseCheckpoints())
                     await Task.Yield();
@@ -173,17 +177,19 @@ namespace Garnet.cluster
                         var objectStoreResult = await ClusterProvider.storeWrapper.objectStore.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
                     }
                 }
+
+                // Notify sync session of success success
+                for (var i = 0; i < NumSessions; i++)
+                    Sessions[i]?.SetStatus(SyncStatus.SUCCESS);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "{method} faulted", nameof(StreamingSnapshotSync));
+                for (var i = 0; i < NumSessions; i++)
+                    Sessions[i]?.SetStatus(SyncStatus.FAILED, ex.Message);
             }
             finally
             {
-                // Notify sync session of success success
-                for (var i = 0; i < NumSessions; i++)
-                    Sessions[i]?.SetStatus(SyncStatus.SUCCESS);
-
                 // Clear array of sync sessions
                 GetSessionStore.Clear();
 
