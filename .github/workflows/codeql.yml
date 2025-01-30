@@ -81,11 +81,11 @@ jobs:
       with:
         dotnet-version: 8.0.x
 
-    #- name: Setup .NET 9.0
-    #  if: ${{ matrix.build-mode == 'manual' }}
-    #  uses: actions/setup-dotnet@v4
-    #  with:
-    #    dotnet-version: 9.0.x
+    - name: Setup .NET 9.0
+      if: ${{ matrix.build-mode == 'manual' }}
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 9.0.x
 
     - name: Install dependencies
       if: ${{ matrix.build-mode == 'manual' }}
@@ -95,9 +95,9 @@ jobs:
       if: ${{ matrix.build-mode == 'manual' }}
       run: dotnet build -f net8.0
 
-    # - name: Build Garnet net90
-    #  if: ${{ matrix.build-mode == 'manual' }}
-    #  run: dotnet build -f net9.0
+    - name: Build Garnet net90
+      if: ${{ matrix.build-mode == 'manual' }}
+      run: dotnet build -f net9.0
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
