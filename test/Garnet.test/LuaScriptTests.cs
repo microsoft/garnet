@@ -2,9 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
@@ -1085,6 +1087,93 @@ return count";
             // We can still run the script without issue (with non-crashing args) afterwards
             var res = db.ScriptEvaluate(loadedScriptTimeout, new { Ctrl = "Safe" });
             ClassicAssert.AreEqual(0, (int)res);
+        }
+
+        [Test]
+        [Ignore("Long running, disabled by default")]
+        public void StressTimeouts()
+        {
+            // Psuedo-repeatably random
+            const int SEED = 2025_01_30_00;
+
+            const int DurationMS = 10 * 60 * 1_000;
+            const int ThreadCount = 16;
+            const string TimeoutScript = @"
+local count = 0
+
+if @Ctrl == 'Timeout' then
+    while true do
+        count = count + 1
+    end
+end
+
+return count";
+
+            if (string.IsNullOrEmpty(limitTimeout))
+            {
+                ClassicAssert.Ignore("No timeout enabled");
+                return;
+            }
+
+            using var startStress = new SemaphoreSlim(0, ThreadCount);
+
+            var threads = new Thread[ThreadCount];
+            for (var i = 0; i < threads.Length; i++)
+            {
+                using var threadStarted = new SemaphoreSlim(0, 1);
+
+                var rand = new Random(SEED + i);
+                threads[i] =
+                    new Thread(
+                        () =>
+                        {
+                            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+                            var db = redis.GetDatabase();
+
+                            var scriptTimeout = LuaScript.Prepare(TimeoutScript);
+                            var loadedScriptTimeout = scriptTimeout.Load(redis.GetServers()[0]);
+
+                            var timeout = new { Ctrl = "Timeout" };
+                            var safe = new { Ctrl = "Safe" };
+
+                            _ = threadStarted.Release();
+
+                            startStress.Wait();
+
+                            var sw = Stopwatch.StartNew();
+                            while (sw.ElapsedMilliseconds < DurationMS)
+                            {
+                                var roll = rand.Next(10);
+                                if (roll == 0)
+                                {
+                                    // Periodically cause a timeout
+                                    var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(loadedScriptTimeout, timeout));
+                                    ClassicAssert.AreEqual("ERR Lua script exceeded configured timeout", exc.Message);
+                                }
+                                else
+                                {
+                                    // ... but most of time, succeed
+                                    var res = db.ScriptEvaluate(loadedScriptTimeout, safe);
+                                    ClassicAssert.AreEqual(0, (int)res);
+                                }
+                            }
+                        }
+                    )
+                    {
+                        Name = $"{nameof(StressTimeouts)} #{i}",
+                        IsBackground = true,
+                    };
+
+                threads[i].Start();
+                threadStarted.Wait();
+            }
+
+            // Start threads, and wait from them to complete
+            _ = startStress.Release(ThreadCount);
+            foreach (var thread in threads)
+            {
+                thread.Join();
+            }
         }
     }
 }
