@@ -401,6 +401,39 @@ namespace Garnet.server
             }
         }
 
+        internal GarnetStatus MSET_Conditional<TContext>(ref RawStringInput input, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            var error = false;
+
+            for (var i = 0; i < input.parseState.Count; i += 2)
+            {
+                var srcKey = input.parseState.GetArgSliceByRef(i);
+                var status = GET(srcKey, out ArgSlice _, ref context);
+                if (status != GarnetStatus.NOTFOUND)
+                {
+                    error = true;
+                    break;
+                }
+            }
+
+            for (var i = 0; i < input.parseState.Count; i += 2)
+            {
+                if (error)
+                    break;
+
+                var srcKey = input.parseState.GetArgSliceByRef(i);
+                var srcVal = input.parseState.GetArgSliceByRef(i+1);
+                var status = SET(srcKey, srcVal, ref context);
+                if (status != GarnetStatus.OK)
+                {
+                    error = true;
+                }
+            }
+
+            return error ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+        }
+
         public GarnetStatus SET<TContext>(ArgSlice key, ArgSlice value, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {

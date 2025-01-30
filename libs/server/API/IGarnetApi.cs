@@ -102,6 +102,15 @@ namespace Garnet.server
 
         #endregion
 
+        #region MSETNX
+        /// <summary>
+        /// MSETNX
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        GarnetStatus MSET_Conditional(ref RawStringInput input);
+        #endregion
+
         #region APPEND
 
         /// <summary>
@@ -1112,7 +1121,6 @@ namespace Garnet.server
         /// <param name="error"></param>
         /// <returns></returns>
         GarnetStatus HyperLogLogMerge(ref RawStringInput input, out bool error);
-
         #endregion
     }
 
