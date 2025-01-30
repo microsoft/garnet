@@ -21,7 +21,7 @@ namespace TstRunner
             while (true)
             {
                 var clusterMigrateTests = new ClusterMigrateTests(false);
-                var clusterReplicationTests = new ClusterReplicationTests(false);
+                var clusterReplicationTests = new ClusterReplicationBaseTests();
                 Console.WriteLine($">>>>>>>>>> run: {i} StartedOn: {DateTime.Now}");
                 swatch.Start();
 
