@@ -1141,6 +1141,25 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SortedSetCountTxn()
+        {
+            server.Register.NewTransactionProc("SORTEDSETCOUNT", () => new SortedSetCountTxn(), new RespCommandsInfo { Arity = 4 });
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add entries to sorted set
+            for (var i = 1; i < 10; i++)
+            {
+                db.SortedSetAdd("key1", $"field{i}", i);
+            }
+
+            // Run transaction to get count of elements in given range of sorted set
+            var result = db.Execute("SORTEDSETCOUNT", "key1", 5, 10);
+            ClassicAssert.AreEqual(5, (int)result);
+        }
+
+        [Test]
         public void CustomProcInvokingCustomCmdTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
