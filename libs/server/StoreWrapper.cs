@@ -166,7 +166,7 @@ namespace Garnet.server
 
                 if (serverOptions.LuaOptions.Timeout != Timeout.InfiniteTimeSpan)
                 {
-                    this.luaTimeoutManager = new(serverOptions.LuaOptions.Timeout);
+                    this.luaTimeoutManager = new(serverOptions.LuaOptions.Timeout, loggerFactory?.CreateLogger<LuaTimeoutManager>());
                 }
             }
 

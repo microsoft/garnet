@@ -61,7 +61,15 @@ namespace Garnet.server
             }
             else
             {
-                ExecuteScript(count - 1, runner);
+                sessionScriptCache.StartRunningScript(runner);
+                try
+                {
+                    ExecuteScript(count - 1, runner);
+                }
+                finally
+                {
+                    sessionScriptCache.StopRunningScript();
+                }
             }
 
             return true;
@@ -104,7 +112,15 @@ namespace Garnet.server
             }
             else
             {
-                ExecuteScript(count - 1, runner);
+                sessionScriptCache.StartRunningScript(runner);
+                try
+                {
+                    ExecuteScript(count - 1, runner);
+                }
+                finally
+                {
+                    sessionScriptCache.StopRunningScript();
+                }
             }
 
             return true;

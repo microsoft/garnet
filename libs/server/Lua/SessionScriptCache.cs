@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Security.Cryptography;
+using System.Threading;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Garnet.server.Lua;
@@ -17,6 +18,16 @@ namespace Garnet.server
     /// </summary>
     internal sealed class SessionScriptCache : IDisposable
     {
+        // Provides a unique value for script invocations
+        //
+        // It doesn't need to be globally unique, it just needs to be able
+        // distiguish two different runs of some script on the same session.
+        //
+        // It's OK if this wraps around, because ~4 billion invocations are unlikely
+        // to race.
+        [ThreadStatic]
+        private static uint TimeoutCookie;
+
         // Important to keep the hash length to this value 
         // for compatibility
         internal const int SHA1Len = 40;
@@ -30,6 +41,10 @@ namespace Garnet.server
         readonly LuaMemoryManagementMode memoryManagementMode;
         readonly int? memoryLimitBytes;
         readonly LuaTimeoutManager timeoutManager;
+
+        LuaRunner timeoutRunningScript;
+        IDisposable timeoutRegistration;
+        uint timeoutRunningCookie;
 
         public SessionScriptCache(StoreWrapper storeWrapper, IGarnetAuthenticator authenticator, LuaTimeoutManager timeoutManager, ILogger logger = null)
         {
@@ -47,6 +62,8 @@ namespace Garnet.server
 
         public void Dispose()
         {
+            timeoutRegistration?.Dispose();
+
             Clear();
             scratchBufferNetworkSender.Dispose();
             processor.Dispose();
@@ -55,6 +72,58 @@ namespace Garnet.server
         public void SetUser(User user)
         {
             processor.SetUser(user);
+        }
+
+        /// <summary>
+        /// Indicate that at a script is about to run.
+        /// 
+        /// Enables timeouts, if they are configured.
+        /// 
+        /// Should always be paired with a call to <see cref="StopRunningScript"/>.
+        /// </summary>
+        public void StartRunningScript(LuaRunner script)
+        {
+            if (timeoutManager != null)
+            {
+                TimeoutCookie++;
+
+                _ = Interlocked.Exchange(ref timeoutRunningCookie, TimeoutCookie);
+
+                var oldScript = Interlocked.Exchange(ref timeoutRunningScript, script);
+                Debug.Assert(oldScript == null, "Shouldn't have two running scripts at once");
+
+                timeoutManager.StartTimeout(timeoutRegistration, timeoutRunningCookie);
+            }
+        }
+
+        /// <summary>
+        /// Indicate that a script has stopped running.
+        /// 
+        /// Should always be paired with a call to <see cref="StartRunningScript"/>.
+        /// </summary>
+        public void StopRunningScript()
+        {
+            if (timeoutManager != null)
+            {
+                timeoutManager?.ClearTimeout(timeoutRegistration);
+
+                var oldScript = Interlocked.Exchange(ref timeoutRunningScript, null);
+                Debug.Assert(oldScript != null, "Shouldn't stop when no script is running");
+            }
+        }
+
+        /// <summary>
+        /// Request that the currently running script timeout.
+        /// </summary>
+        public void RequestTimeout(uint cookie)
+        {
+            if (cookie != Interlocked.CompareExchange(ref timeoutRunningCookie, 0, 0))
+            {
+                // There was a race, ignore this timeout
+                return;
+            }
+
+            Interlocked.CompareExchange(ref timeoutRunningScript, null, null)?.RequestTimeout();
         }
 
         /// <summary>
@@ -82,7 +151,7 @@ namespace Garnet.server
             {
                 var sourceOnHeap = source.ToArray();
 
-                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, sourceOnHeap, timeoutManager, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
+                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
 
                 // If compilation fails, an error is written out
                 if (runner.CompileForSession(session))
@@ -98,7 +167,15 @@ namespace Garnet.server
                     ScriptHashKey storeKeyDigest = new(into);
                     digestOnHeap = storeKeyDigest;
 
-                    _ = scriptCache.TryAdd(storeKeyDigest, runner);
+                    var addRes = scriptCache.TryAdd(storeKeyDigest, runner);
+
+                    // On first script load, register for timeout notifications
+                    //
+                    // We don't do this for every session because not every session will run scripts
+                    if (timeoutManager != null && addRes && timeoutRegistration == null)
+                    {
+                        timeoutRegistration = timeoutManager.RegisterForTimeout(this);
+                    }
                 }
                 else
                 {

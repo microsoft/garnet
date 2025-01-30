@@ -213,13 +213,6 @@ end
 
         private static (int Start, ulong[] ByteMask) NoScriptDetails = InitializeNoScriptDetails();
 
-        // Intrusive linked list details
-        //
-        // These 3 fields are managed via LuaTimeoutManager, do not touch them directly
-        internal LuaRunner nextRunnerTimeoutChain;
-        internal long currentTimeoutTicks;
-        internal long currentTimeoutToken;
-
         // References into Registry on the Lua side
         //
         // These are mix of objects we regularly update,
@@ -254,8 +247,6 @@ end
         LuaStateWrapper state;
 
         // Timeout details
-        LuaTimeoutManager timeoutManager;
-        long lastTimeoutCookie;
         bool timeoutRequested;
 
         // We need to temporarily store these for P/Invoke reasons
@@ -278,7 +269,6 @@ end
             LuaMemoryManagementMode memMode,
             int? memLimitBytes,
             ReadOnlyMemory<byte> source,
-            LuaTimeoutManager timeoutManager = null,
             bool txnMode = false,
             RespServerSession respServerSession = null,
             ScratchBufferNetworkSender scratchBufferNetworkSender = null,
@@ -290,10 +280,8 @@ end
             this.respServerSession = respServerSession;
             this.scratchBufferNetworkSender = scratchBufferNetworkSender;
             this.logger = logger;
-            this.timeoutManager = timeoutManager;
 
             scratchBufferManager = respServerSession?.scratchBufferManager ?? new();
-            lastTimeoutCookie = -1;
 
             // Explicitly force to RESP2 for now
             if (respServerSession != null)
@@ -391,8 +379,8 @@ end
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public LuaRunner(LuaOptions options, string source, LuaTimeoutManager timeoutManager = null, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
-            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), Encoding.UTF8.GetBytes(source), timeoutManager, txnMode, respServerSession, scratchBufferNetworkSender, logger)
+        public LuaRunner(LuaOptions options, string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
+            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, logger)
         {
         }
 
@@ -890,7 +878,7 @@ end
             try
             {
                 LuaRunnerTrampolines.SetCallbackContext(this);
-                SetupTimeout();
+                ResetTimeout();
 
                 try
                 {
@@ -1012,7 +1000,7 @@ end
             try
             {
                 LuaRunnerTrampolines.SetCallbackContext(this);
-                SetupTimeout();
+                ResetTimeout();
 
                 try
                 {
@@ -1166,34 +1154,19 @@ end
         }
 
         /// <summary>
-        /// Setup any timeout state prior to running a script.
+        /// Clear timeout state before running.
         /// </summary>
-        private unsafe void SetupTimeout()
+        private unsafe void ResetTimeout()
         {
-            if (timeoutManager != null)
-            {
-                // Prevent any pending timeouts from executing
-                timeoutRequested = false;
-                state.SetHook(null, 0, 0);
-
-                // (Re-)register the runner for another timeout
-                lastTimeoutCookie = timeoutManager?.RegisterForTimeout(this) ?? -1;
-            }
+            timeoutRequested = false;
+            _ = state.TrySetHook(null, 0, 0);
         }
 
         /// <summary>
-        /// Request that the current execution of this <see cref="LuaRunner"/> timeout
-        /// if (and only if) <paramref name="cookie"/> matches the last value obtained
-        /// from <see cref="LuaTimeoutManager.RegisterForTimeout(LuaRunner)"/>.
+        /// Request that the current execution of this <see cref="LuaRunner"/> timeout.
         /// </summary>
-        internal unsafe void RequestTimeout(long cookie)
+        internal unsafe void RequestTimeout()
         {
-            if (cookie != lastTimeoutCookie)
-            {
-                // This timeout was requested for a previous execution that has completed
-                return;
-            }
-
             timeoutRequested = true;
             _ = state.TrySetHook(&LuaRunnerTrampolines.ForceTimeout, LuaHookMask.Count, 1);
         }

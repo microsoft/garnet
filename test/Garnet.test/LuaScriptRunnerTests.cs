@@ -141,39 +141,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void Timeouts()
-        {
-            const string FastScript = "return 'hello'";
-            const string DoesNotReturnScript = @"
-local count = 0
-while true do
-    count = count + 1
-end
-
-return count
-";
-
-            using var timeoutManager = new LuaTimeoutManager(TimeSpan.FromMilliseconds(10));
-            timeoutManager.Start();
-
-            // Should never timeout, but has limit
-            using (var runner = new LuaRunner(LuaMemoryManagementMode.Native, null, Encoding.UTF8.GetBytes(FastScript), timeoutManager))
-            {
-                runner.CompileForRunner();
-                var res = (string)runner.RunForRunner();
-                ClassicAssert.AreEqual("hello", res);
-            }
-
-            // Should always timeout
-            using (var runner = new LuaRunner(LuaMemoryManagementMode.Native, null, Encoding.UTF8.GetBytes(DoesNotReturnScript), timeoutManager))
-            {
-                runner.CompileForRunner();
-                var exc = ClassicAssert.Throws<GarnetException>(() => runner.RunForRunner());
-                ClassicAssert.AreEqual("ERR Lua script exceeded configured timeout", exc.Message);
-            }
-        }
-
-        [Test]
         public unsafe void LuaLimittedManaged()
         {
             const int Iters = 20;
