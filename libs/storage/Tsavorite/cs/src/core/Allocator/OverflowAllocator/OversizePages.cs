@@ -90,6 +90,13 @@ namespace Tsavorite.core
                 var pageHeader = (OversizePageHeader*)block - 1;
                 PushFreeSlot(pageHeader);
             }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void Clear()
+            {
+                PageVector.Clear();
+                freeList = default;
+            }
         }
     }
 }
