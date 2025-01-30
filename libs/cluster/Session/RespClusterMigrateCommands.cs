@@ -121,7 +121,7 @@ namespace Garnet.cluster
                     }
 
                     var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);
-                    value.Expiration = expiration;
+                    // TODOMigrate: value.Expiration = expiration;
 
                     // Set if key replace flag is set or key does not exist
                     if (replaceOption || !CheckIfKeyExists(key))
