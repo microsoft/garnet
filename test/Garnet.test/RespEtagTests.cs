@@ -539,16 +539,34 @@ namespace Garnet.test
 
 
         [Test]
-        public void SetIfMatchOnNonEtagDataReturnsNewEtagAndValue()
+        public void SetIfMatchOnNonEtagDataReturnsNewEtagAndNoValue()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
 
             var _ = db.StringSet("h", "k");
 
-            var res = (RedisResult[])db.Execute("SETIFMATCH", ["h", "t", "2"]);
-            ClassicAssert.AreEqual("0", res[0].ToString());
-            ClassicAssert.AreEqual("k", res[1].ToString());
+            var res = (RedisResult[])db.Execute("SETIFMATCH", ["h", "t", "0"]);
+            ClassicAssert.AreEqual("1", res[0].ToString());
+            ClassicAssert.IsTrue(res[1].IsNull);
+        }
+
+        [Test]
+        public void SetIfMatchReturnsNewEtagButNoValueWhenUsingNoGet()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            var _ = db.StringSet("h", "k");
+
+            var res = (RedisResult[])db.Execute("SETIFMATCH", "h", "t", "0", "NOGET");
+            ClassicAssert.AreEqual("1", res[0].ToString());
+            ClassicAssert.IsTrue(res[1].IsNull);
+
+            // ETag mismatch
+            res = (RedisResult[])db.Execute("SETIFMATCH", "h", "t", "2", "NOGET");
+            ClassicAssert.AreEqual("1", res[0].ToString());
+            ClassicAssert.IsTrue(res[1].IsNull);
         }
 
         [Test]

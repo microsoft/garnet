@@ -140,6 +140,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
         public static ReadOnlySpan<byte> TIMEOUT => "TIMEOUT"u8;
         public static ReadOnlySpan<byte> ERROR => "ERROR"u8;
+        public static ReadOnlySpan<byte> NOGET => "NOGET"u8;
 
         /// <summary>
         /// Response strings

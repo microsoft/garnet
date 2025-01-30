@@ -6207,6 +6207,13 @@
             "Token": "PX"
           }
         ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOGET",
+        "DisplayText": "noget",
+        "Type": "PureToken",
+        "Token": "NOGET"
       }
     ]
   },
@@ -6257,6 +6264,13 @@
             "Token": "PX"
           }
         ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOGET",
+        "DisplayText": "noget",
+        "Type": "PureToken",
+        "Token": "NOGET"
       }
     ]
   },

@@ -761,6 +761,14 @@
             "Token": "PX"
           }
         ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOGET",
+        "DisplayText": "noget",
+        "Type": "PureToken",
+        "Token": "NOGET",
+        "ArgumentFlags": "Optional"
       }
     ]
   },
@@ -811,6 +819,14 @@
             "Token": "PX"
           }
         ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOGET",
+        "DisplayText": "noget",
+        "Type": "PureToken",
+        "Token": "NOGET",
+        "ArgumentFlags": "Optional"
       }
     ]
   }

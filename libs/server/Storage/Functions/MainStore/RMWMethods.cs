@@ -321,7 +321,24 @@ namespace Garnet.server
 
                     if (comparisonResult != expectedResult)
                     {
-                        CopyRespWithEtagData(ref value, ref output, shouldUpdateEtag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
+                        if (input.header.CheckSetGetFlag())
+                        {
+                            CopyRespWithEtagData(ref value, ref output, shouldUpdateEtag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
+                        }
+                        else
+                        {
+                            // write back array of the format [etag, nil]
+                            var nilResponse = CmdStrings.RESP_ERRNOTFOUND;
+                            // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
+                            WriteValAndEtagToDst(
+                                4 + 1 + NumUtils.CountDigits(functionsState.etagState.etag) + 2 + nilResponse.Length,
+                                ref nilResponse,
+                                functionsState.etagState.etag,
+                                ref output,
+                                functionsState.memoryPool,
+                                writeDirect: true
+                            );
+                        }
                         // reset etag state after done using
                         EtagState.ResetState(ref functionsState.etagState);
                         return true;
@@ -831,13 +848,29 @@ namespace Garnet.server
                     {
                         return true;
                     }
+
+                    if (input.header.CheckSetGetFlag())
+                    {
+                        // Copy value to output for the GET part of the command.
+                        CopyRespWithEtagData(ref oldValue, ref output, hasEtagInVal: rmwInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
+                    }
                     else
                     {
-                        CopyRespWithEtagData(ref oldValue, ref output, hasEtagInVal: rmwInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
-                        // reset etag state that may have been initialized earlier
-                        EtagState.ResetState(ref functionsState.etagState);
-                        return false;
+                        // write back array of the format [etag, nil]
+                        var nilResponse = CmdStrings.RESP_ERRNOTFOUND;
+                        // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
+                        WriteValAndEtagToDst(
+                            4 + 1 + NumUtils.CountDigits(functionsState.etagState.etag) + 2 + nilResponse.Length,
+                            ref nilResponse,
+                            functionsState.etagState.etag,
+                            ref output,
+                            functionsState.memoryPool,
+                            writeDirect: true
+                        );
                     }
+
+                    EtagState.ResetState(ref functionsState.etagState);
+                    return false;
 
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
@@ -930,6 +963,8 @@ namespace Garnet.server
             {
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
+                    // By now the comparison for etag against existing etag has already been done in NeedCopyUpdate
+
                     shouldUpdateEtag = true;
                     // Copy input to value
                     Span<byte> dest = newValue.AsSpan(EtagConstants.EtagSize);
