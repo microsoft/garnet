@@ -23,8 +23,6 @@ end
 
 return counter";
 
-        private const int batchSize = 100;
-
         /// <summary>
         /// Lua parameters
         /// </summary>
@@ -64,13 +62,15 @@ return counter";
             var scriptLoadStr = $"*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n${Script.Length}\r\n{Script}\r\n";
             Request scriptLoad = default;
 
-            ScriptOperations.SetupOperation(ref scriptLoad, scriptLoadStr, 1);
+            ScriptOperations.SetupOperation(ref scriptLoad, scriptLoadStr, batchSize: 1);
             ScriptOperations.Send(session, scriptLoad);
 
             var scriptHash = string.Join("", SHA1.HashData(Encoding.UTF8.GetBytes(Script)).Select(static x => x.ToString("x2")));
 
             var evalShaStr = $"*3\r\n$7\r\nEVALSHA\r\n$40\r\n{scriptHash}\r\n$1\r\n0\r\n";
-            ScriptOperations.SetupOperation(ref evalShaRequest, evalShaStr);
+
+            // Use a batchSize that gets us up around ~100ms
+            ScriptOperations.SetupOperation(ref evalShaRequest, evalShaStr, batchSize: 500 * 1_000);
         }
 
         [GlobalCleanup]
