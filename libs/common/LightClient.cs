@@ -40,6 +40,7 @@ namespace Garnet.common
         LightClientTcpNetworkHandler networkHandler;
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
+        readonly ILogger logger;
 
         /// <summary>
         /// Create client instance to connect to specfied destination
@@ -54,7 +55,8 @@ namespace Garnet.common
             int opType,
             OnResponseDelegateUnsafe onResponseDelegateUnsafe = null,
             int BufferSize = 1 << 18,
-            SslClientAuthenticationOptions sslOptions = null)
+            SslClientAuthenticationOptions sslOptions = null,
+            ILogger logger = null)
             : base(endpoint, BufferSize)
         {
             this.networkBufferSettings = new NetworkBufferSettings(BufferSize, BufferSize);
@@ -63,6 +65,7 @@ namespace Garnet.common
             this.opType = opType;
             this.BufferSize = BufferSize;
             this.sslOptions = sslOptions;
+            this.logger = logger;
         }
 
         /// <summary>
@@ -146,6 +149,7 @@ namespace Garnet.common
                     return socket;
             }
 
+            logger?.LogWarning("Failed to connect at {endpoint}", endpoint);
             throw new Exception($"Failed to connect at {endpoint}");
         }
 
