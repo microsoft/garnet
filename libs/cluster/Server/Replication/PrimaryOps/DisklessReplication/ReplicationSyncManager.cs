@@ -176,6 +176,8 @@ namespace Garnet.cluster
                         // Iterate through object store
                         var objectStoreResult = await ClusterProvider.storeWrapper.objectStore.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
                     }
+
+                    ClusterProvider.replicationManager.SafeTruncateAof(manager.CheckpointCoveredAddress);
                 }
 
                 // Notify sync session of success success

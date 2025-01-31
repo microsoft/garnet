@@ -22,6 +22,8 @@ namespace Garnet.cluster
         readonly ReplicaSyncSession[] sessions;
         readonly int numSessions;
 
+        public long CheckpointCoveredAddress { get; private set; }
+
         public SnapshotIteratorManager(ReplicationSyncManager replicationSyncManager, CancellationToken cancellationToken, ILogger logger = null)
         {
             this.replicationSyncManager = replicationSyncManager;
@@ -31,11 +33,11 @@ namespace Garnet.cluster
             sessions = replicationSyncManager.Sessions;
             numSessions = replicationSyncManager.NumSessions;
 
-            var checkpointCoveredAofAddress = replicationSyncManager.ClusterProvider.storeWrapper.appendOnlyFile.TailAddress;
+            CheckpointCoveredAddress = replicationSyncManager.ClusterProvider.storeWrapper.appendOnlyFile.TailAddress;
             for (var i = 0; i < numSessions; i++)
             {
                 if (!replicationSyncManager.IsActiveSyncSession(i)) continue;
-                sessions[i].checkpointCoveredAofAddress = checkpointCoveredAofAddress;
+                sessions[i].checkpointCoveredAofAddress = CheckpointCoveredAddress;
             }
 
             mainStoreSnapshotIterator = new MainStoreSnapshotIterator(this);
