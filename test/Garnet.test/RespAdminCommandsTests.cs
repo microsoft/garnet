@@ -162,7 +162,7 @@ namespace Garnet.test
             if (useAzure)
                 TestUtils.IgnoreIfNotRunningAzureTests();
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, UseAzureStorage: useAzure);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObj, useAzureStorage: useAzure);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -177,7 +177,7 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, UseAzureStorage: useAzure);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, useAzureStorage: useAzure);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -363,7 +363,7 @@ namespace Garnet.test
             bool disableObj = true;
 
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, lowMemory: true, MemorySize: memorySize, PageSize: "512", enableAOF: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObj, lowMemory: true, MemorySize: memorySize, PageSize: "512", enableAOF: true);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -402,7 +402,7 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, tryRecover: true, lowMemory: true, MemorySize: recoveryMemorySize, PageSize: "512", enableAOF: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObj, tryRecover: true, lowMemory: true, MemorySize: recoveryMemorySize, PageSize: "512", enableAOF: true);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))

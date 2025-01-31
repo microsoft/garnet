@@ -122,7 +122,7 @@ namespace Garnet.test
         [Test]
         public void SetGetWithCallback([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, EnableTLS: useTLS);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
             server.Start();
 
             using var db = TestUtils.GetGarnetClient(useTLS: useTLS);
@@ -357,7 +357,7 @@ namespace Garnet.test
         [Test]
         public async Task CanUseMGetTests([Values] bool disableObjectStore)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObjectStore);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObjectStore);
             server.Start();
 
             using var db = TestUtils.GetGarnetClient();
@@ -580,15 +580,15 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task UnixSocketServer_Ping()
+        public async Task UnixSocketServer_Ping([Values] bool useTls)
         {
             var unixSocketPath = "./unix-socket-ping-test.sock";
             var unixSocketEndpoint = new UnixDomainSocketEndPoint(unixSocketPath);
 
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, unixSocketEndpoint, unixSocketPath: unixSocketPath);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, unixSocketEndpoint, enableTLS: useTls, unixSocketPath: unixSocketPath);
             server.Start();
 
-            using var db = TestUtils.GetGarnetClient(unixSocketEndpoint);
+            using var db = TestUtils.GetGarnetClient(unixSocketEndpoint, useTLS: useTls);
             await db.ConnectAsync();
 
             var result = await db.ExecuteForStringResultAsync("PING");

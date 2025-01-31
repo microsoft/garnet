@@ -187,13 +187,13 @@ namespace Garnet.test
             string MemorySize = default,
             string PageSize = default,
             bool enableAOF = false,
-            bool EnableTLS = false,
-            bool DisableObjects = false,
+            bool enableTLS = false,
+            bool disableObjects = false,
             int metricsSamplingFreq = -1,
             bool latencyMonitor = false,
             int commitFrequencyMs = 0,
             bool commitWait = false,
-            bool UseAzureStorage = false,
+            bool useAzureStorage = false,
             string defaultPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
@@ -219,19 +219,19 @@ namespace Garnet.test
             string luaMemoryLimit = "",
             string unixSocketPath = null)
         {
-            if (UseAzureStorage)
+            if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
             var logDir = logCheckpointDir;
-            if (UseAzureStorage)
+            if (useAzureStorage)
                 logDir = $"{AzureTestContainer}/{AzureTestDirectory}";
 
-            if (logCheckpointDir != null && !UseAzureStorage) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
+            if (logCheckpointDir != null && !useAzureStorage) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
 
             var checkpointDir = logCheckpointDir;
-            if (UseAzureStorage)
+            if (useAzureStorage)
                 checkpointDir = $"{AzureTestContainer}/{AzureTestDirectory}";
 
-            if (logCheckpointDir != null && !UseAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? "." : checkpointDir).FullName;
+            if (logCheckpointDir != null && !useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? "." : checkpointDir).FullName;
 
             if (useAcl)
             {
@@ -271,7 +271,7 @@ namespace Garnet.test
                 EnableLua = enableLua,
                 CommitFrequencyMs = commitFrequencyMs,
                 WaitForCommit = commitWait,
-                TlsOptions = EnableTLS ? new GarnetTlsOptions(
+                TlsOptions = enableTLS ? new GarnetTlsOptions(
                     certFileName: certFile,
                     certPassword: certPassword,
                     clientCertificateRequired: true,
@@ -279,11 +279,11 @@ namespace Garnet.test
                     issuerCertificatePath: null,
                     null, 0, false, null, logger: logger)
                 : null,
-                DisableObjects = DisableObjects,
+                DisableObjects = disableObjects,
                 QuietMode = true,
                 MetricsSamplingFrequency = metricsSamplingFreq,
                 LatencyMonitor = latencyMonitor,
-                DeviceFactoryCreator = UseAzureStorage ?
+                DeviceFactoryCreator = useAzureStorage ?
                       () => new AzureStorageNamedDeviceFactory(AzureEmulatedStorageString, logger)
                     : () => new LocalStorageNamedDeviceFactory(logger: logger),
                 AuthSettings = authenticationSettings,
