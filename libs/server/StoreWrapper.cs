@@ -197,7 +197,7 @@ namespace Garnet.server
         public string GetIp()
         {
             if (TcpServer.EndPoint is not IPEndPoint localEndpoint)
-                throw new NotImplementedException();
+                throw new NotImplementedException("Cluster mode for unix domain sockets has not been implemented");
 
             if (localEndpoint.Address.Equals(IPAddress.Any))
             {
