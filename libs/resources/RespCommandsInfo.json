@@ -5180,8 +5180,8 @@
     ]
   },
   {
-    "Command": "ZRANGEBYSCORE",
-    "Name": "ZRANGEBYSCORE",
+    "Command": "ZRANGEBYLEX",
+    "Name": "ZRANGEBYLEX",
     "Arity": -4,
     "Flags": "ReadOnly",
     "FirstKey": 1,
@@ -5205,8 +5205,8 @@
     ]
   },
   {
-    "Command": "ZRANGEBYLEX",
-    "Name": "ZRANGEBYLEX",
+    "Command": "ZRANGEBYSCORE",
+    "Name": "ZRANGEBYSCORE",
     "Arity": -4,
     "Flags": "ReadOnly",
     "FirstKey": 1,
