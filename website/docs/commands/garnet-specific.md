@@ -148,7 +148,32 @@ Garnet provides support for ETags on raw strings. By using the ETag-related comm
 
 Compatibility with non-ETag commands and the behavior of data inserted with ETags are detailed at the end of this document.
 
-To initialize a key value pair with an ETag you can use either the SET command with the newly added "WITHETAG" optional flag, or you can take any existing Key value pair and call SETIFMATCH with the ETag argument as 0 (Any key value pair without an explicit ETag has an ETag of 0 implicitly). You can read more about setting an initial ETag via SET [here](../commands/raw-string#set)
+To initialize a key value pair with an ETag you can use either the SET command with the newly added "WITHETAG" optional flag, or you can take any existing Key value pair and call SETIFMATCH with the ETag argument as 0 (Any key value pair without an explicit ETag has an ETag of 0 implicitly). **You can read more about setting an initial ETag via SET [here](../commands/raw-string#set)**
+---
+
+### **SET (WITHETAG)**
+
+#### **Syntax**
+
+```bash
+    SET key value [NX | XX] [EX seconds | PX milliseconds] [KEEPTTL] WITHETAG
+```
+
+Set **key** to hold the string value along with an ETag. If key already holds a value, it is overwritten, regardless of its type. Any previous time to live associated with the **key** is discarded on successful SET operation.
+
+**Options:**
+
+* EX seconds -- Set the specified expire time, in seconds (a positive integer).
+* PX milliseconds -- Set the specified expire time, in milliseconds (a positive integer).
+* NX -- Only set the key if it does not already exist.
+* XX -- Only set the key if it already exists.
+* KEEPTTL -- Retain the time to live associated with the key.
+* WITHETAG -- **Adding this sets the Key Value pair with an initial ETag**, if called on an existing key value pair with an ETag, this command will update the ETag transparently.
+
+#### Resp Reply
+
+* Integer reply: WITHETAG given: The ETag associated with the value.
+
 
 ---
 
@@ -189,7 +214,29 @@ Updates the value of a key if the provided ETag matches the current ETag of the 
 
 One of the following:
 
-- **Array reply**: If etags match an array where the first item is the updated etag, and the second value is nil. If the etags do not match the array will hold the latest etag, and the latest value in order.
+- **Array reply**: If the sent etag matches the existing etag the reponse will be an array where the first item is the updated etag, and the second value is nil. If the etags do not match then the response array will hold the latest etag, and the latest value in order.
+- **Nil reply**: If the key does not exist.
+
+---
+
+### **SETIFGREATER**
+
+#### **Syntax**
+
+```bash
+SETIFGREATER key value etag [EX seconds | PX milliseconds]
+```
+Sets a key value pair using the given etag incremented only if (1) the etag given in the request is greater than the already existing etag ; or (2) the existing value was not associated with any etag and the given etag is more than 0.
+
+**Options:**
+* EX seconds -- Set the specified expire time, in seconds (a positive integer).
+* PX milliseconds -- Set the specified expire time, in milliseconds (a positive integer).
+
+#### **Response**
+
+One of the following:
+
+- **Array reply**: If the sent etag is greater than the existing etag then an array where the first item is the updated etag, and the second value is nil is returned. If the sentEtag is less than or equal to the existing etag then the response array will hold the latest etag, and the latest value in order.
 - **Nil reply**: If the key does not exist.
 
 ---

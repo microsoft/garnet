@@ -140,9 +140,11 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> GETWITHETAG => "GETWITHETAG"u8;
         public static ReadOnlySpan<byte> GETIFNOTMATCH => "GETIFNOTMATCH"u8;
         public static ReadOnlySpan<byte> SETIFMATCH => "SETIFMATCH"u8;
+        public static ReadOnlySpan<byte> SETIFGREATER => "SETIFGREATER"u8;
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
         public static ReadOnlySpan<byte> TIMEOUT => "TIMEOUT"u8;
         public static ReadOnlySpan<byte> ERROR => "ERROR"u8;
+        public static ReadOnlySpan<byte> NOGET => "NOGET"u8;
 
         /// <summary>
         /// Response strings

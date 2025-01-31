@@ -761,6 +761,72 @@
             "Token": "PX"
           }
         ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOGET",
+        "DisplayText": "noget",
+        "Type": "PureToken",
+        "Token": "NOGET",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "SETIFGREATER",
+    "Name": "SETIFGREATER",
+    "Summary": "Sets a key value pair using the given etag incremented only if (1) the etag given in the request is greater than the already existing etag ; or (2) the existing value was not associated with any etag and the given etag is more than 0",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOGET",
+        "DisplayText": "noget",
+        "Type": "PureToken",
+        "Token": "NOGET",
+        "ArgumentFlags": "Optional"
       }
     ]
   },

@@ -78,7 +78,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// SETIFMATCH key val etag [EX|PX] [expiry]
+        /// SETIFMATCH key val etag [EX|PX] [expiry] [NOGET]
         /// Sets a key value pair only if the already existing etag matches the etag sent as a part of the request.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
@@ -87,9 +87,32 @@ namespace Garnet.server
         private bool NetworkSETIFMATCH<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.Count < 3 || parseState.Count > 5)
+            return NetworkSEtETagConditional(RespCommand.SETIFMATCH, ref storageApi);
+        }
+
+        /// <summary>
+        /// SETIFGREATER key val etag [EX|PX] [expiry] [NOGET]
+        /// Sets a key value pair using the given etag incremented only if (1) the etag given in the request is greater than the already existing etag ;
+        /// or (2) the existing value was not associated with any etag and the given etag is more than 0
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private bool NetworkSETIFGREATER<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            return NetworkSEtETagConditional(RespCommand.SETIFGREATER, ref storageApi);
+        }
+
+        private bool NetworkSEtETagConditional<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            // Currently only supports these two commands
+            Debug.Assert(cmd is RespCommand.SETIFMATCH or RespCommand.SETIFGREATER);
+
+            if (parseState.Count < 3 || parseState.Count > 6)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETIFMATCH));
+                return AbortWithWrongNumberOfArguments(nameof(cmd));
             }
 
             int expiry = 0;
@@ -97,17 +120,53 @@ namespace Garnet.server
             var tokenIdx = 3;
 
             ExpirationOption expOption = ExpirationOption.None;
-            if (tokenIdx < parseState.Count)
+            bool noGet = false;
+
+            while (tokenIdx < parseState.Count)
             {
-                if (!parseState.TryGetExpirationOption(tokenIdx++, out expOption) || (expOption is not ExpirationOption.EX and not ExpirationOption.PX))
-                    errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
-                else
+                // Parse NOGET option
+                if (parseState.GetArgSliceByRef(tokenIdx).Span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.NOGET))
                 {
-                    if (!parseState.TryGetInt(tokenIdx++, out expiry))
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
-                    else if (expiry <= 0)
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET;
+                    if (noGet)
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                        break;
+                    }
+
+                    noGet = true;
+                    tokenIdx++;
+                    continue;
                 }
+
+                // Parse EX | PX expiry combination
+                if (parseState.TryGetExpirationOption(tokenIdx, out expOption))
+                {
+                    if (expOption is not ExpirationOption.EX and not ExpirationOption.PX)
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                        break;
+                    }
+
+                    // we know that the token is either EX or PX from above and the next value should be the expiry
+                    tokenIdx++;
+                    if (!parseState.TryGetInt(tokenIdx, out expiry))
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        break;
+                    }
+                    else if (expiry <= 0)
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET;
+                        break;
+                    }
+
+                    tokenIdx++;
+                    continue;
+                }
+
+                // neither NOGET nor EX|PX expiry combination
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                break;
             }
 
             if (!errorMessage.IsEmpty)
@@ -119,7 +178,7 @@ namespace Garnet.server
 
             SpanByte key = parseState.GetArgSliceByRef(0).SpanByte;
 
-            NetworkSET_Conditional(RespCommand.SETIFMATCH, expiry, ref key, getValue: true, highPrecision: expOption == ExpirationOption.PX, withEtag: true, ref storageApi);
+            NetworkSET_Conditional(cmd, expiry, ref key, getValue: !noGet, highPrecision: expOption == ExpirationOption.PX, withEtag: true, ref storageApi);
 
             return true;
         }
