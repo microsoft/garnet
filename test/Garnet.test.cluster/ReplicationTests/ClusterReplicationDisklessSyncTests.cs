@@ -48,8 +48,6 @@ namespace Garnet.test.cluster
             var addCount = 5;
             var keyLength = 16;
             var kvpairCount = keyCount;
-            context.kvPairs = [];
-            context.kvPairsObj = [];
             // New insert
             if (!performRMW)
                 context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex: primaryIndex);
@@ -57,7 +55,7 @@ namespace Garnet.test.cluster
                 context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, primaryIndex: 0, addCount);
 
             if (!disableObjects)
-                context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, primaryIndex: 0);
+                context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, primaryIndex: primaryIndex);
         }
 
         void Validate(int primaryIndex, int replicaIndex, bool disableObjects)
@@ -81,6 +79,18 @@ namespace Garnet.test.cluster
             }
         }
 
+        void Failover(int replicaIndex, string option = null)
+        {
+            _ = context.clusterTestUtils.ClusterFailover(replicaIndex, option, logger: context.logger);
+            var role = context.clusterTestUtils.RoleCommand(replicaIndex, logger: context.logger);
+            while (!role.Value.Equals("master"))
+            {
+                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token);
+                role = context.clusterTestUtils.RoleCommand(replicaIndex, logger: context.logger);
+            }
+
+        }
+
         /// <summary>
         /// Attach empty replica after primary has been populated with some data
         /// </summary>
@@ -88,7 +98,7 @@ namespace Garnet.test.cluster
         /// <param name="performRMW"></param>
         [Test, Order(1)]
         [Category("REPLICATION")]
-        public void ClusterEmptyReplicaDisklessSync([Values] bool disableObjects, [Values] bool performRMW)
+        public void ClusterEmptyReplicaDisklessSync([Values] bool disableObjects, [Values] bool performRMW, [Values] bool prePopulate)
         {
             var nodes_count = 2;
             var primaryIndex = 0;
@@ -106,10 +116,13 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
 
             // Populate Primary
-            PopulatePrimary(primaryIndex, disableObjects, performRMW);
+            if (prePopulate) PopulatePrimary(primaryIndex, disableObjects, performRMW);
 
             // Attach sync session
             _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+
+            // Populate Primary
+            if (!prePopulate) PopulatePrimary(primaryIndex, disableObjects, performRMW);
 
             // Wait for replica to catch up
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
@@ -117,7 +130,6 @@ namespace Garnet.test.cluster
             // Validate replica data
             Validate(primaryIndex, replicaIndex, disableObjects);
         }
-
 
         /// <summary>
         /// Re-attach replica on disconnect after it has received some amount of data.
@@ -201,6 +213,7 @@ namespace Garnet.test.cluster
             // Ensure node everybody knowns everybody
             context.clusterTestUtils.WaitUntilNodeIsKnown(replicaOneIndex, primaryIndex, logger: context.logger);
             context.clusterTestUtils.WaitUntilNodeIsKnown(replicaTwoIndex, primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaTwoIndex, replicaOneIndex, logger: context.logger);
 
             // Populate Primary
             PopulatePrimary(primaryIndex, disableObjects, performRMW);
@@ -249,6 +262,110 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(4, primaryVersion);
             ClassicAssert.AreEqual(primaryVersion, replicaOneVersion);
             ClassicAssert.AreEqual(primaryVersion, replicaTwoVersion);
+        }
+
+        [Test, Order(4)]
+        [Category("REPLICATION")]
+        public void ClusterDisklessSyncParallelAttach([Values] bool disableObjects, [Values] bool performRMW)
+        {
+            var nodes_count = 4;
+            var primaryIndex = 0;
+            var replicaOneIndex = 1;
+            var replicaTwoIndex = 2;
+            var replicaThreeIndex = 3;
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true);
+            context.CreateConnection(useTLS: useTLS);
+
+            // Setup primary and introduce it to future replica
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaOneIndex, replicaOneIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaTwoIndex, replicaTwoIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaThreeIndex, replicaThreeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaOneIndex, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaTwoIndex, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaThreeIndex, logger: context.logger);
+
+            // Ensure node everybody knowns everybody
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaOneIndex, primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaTwoIndex, primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaThreeIndex, primaryIndex, logger: context.logger);
+
+            // Populate Primary
+            for (var i = 0; i < 5; i++)
+                PopulatePrimary(primaryIndex, disableObjects, performRMW);
+
+            // Attach all replicas
+            for (var replica = 1; replica < nodes_count; replica++)
+                _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replica, primaryNodeIndex: primaryIndex, logger: context.logger);
+
+            // Validate all replicas
+            for (var replica = 1; replica < nodes_count; replica++)
+                Validate(primaryIndex, replica, disableObjects);
+        }
+
+        [Test, Order(5)]
+        [Category("REPLICATION")]
+        public void ClusterDisklessSyncFailover([Values] bool disableObjects, [Values] bool performRMW)
+        {
+            var nodes_count = 3;
+            var primary = 0;
+            var replicaOne = 1;
+            var replicaTwo = 2;
+            var populateIter = 1;
+
+            int[] nOffsets = [primary, replicaOne, replicaTwo];
+
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true);
+            context.CreateConnection(useTLS: useTLS);
+
+            // Setup primary and introduce it to future replica
+            _ = context.clusterTestUtils.AddDelSlotsRange(nOffsets[primary], [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(nOffsets[primary], nOffsets[primary] + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(nOffsets[replicaOne], nOffsets[replicaOne] + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(nOffsets[replicaTwo], nOffsets[replicaTwo] + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(nOffsets[primary], nOffsets[replicaOne], logger: context.logger);
+            context.clusterTestUtils.Meet(nOffsets[primary], nOffsets[replicaTwo], logger: context.logger);
+
+            context.clusterTestUtils.WaitUntilNodeIsKnown(nOffsets[primary], nOffsets[replicaOne], logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(nOffsets[replicaOne], nOffsets[replicaTwo], logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(nOffsets[replicaTwo], nOffsets[primary], logger: context.logger);
+
+            // Populate Primary
+            for (var i = 0; i < populateIter; i++)
+                PopulatePrimary(nOffsets[primary], disableObjects, performRMW);
+
+            // Attach replicas
+            for (var replica = 1; replica < nodes_count; replica++)
+                _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replica, primaryNodeIndex: nOffsets[primary], logger: context.logger);
+
+            // Wait for replica to catch up
+            for (var replica = 1; replica < nodes_count; replica++)
+                context.clusterTestUtils.WaitForReplicaAofSync(nOffsets[primary], nOffsets[replica], logger: context.logger);
+
+            // Validate all replicas
+            for (var replica = 1; replica < nodes_count; replica++)
+                Validate(nOffsets[primary], nOffsets[replica], disableObjects);
+
+            // Perform failover and promote replica one
+            Failover(nOffsets[replicaOne]);
+            (nOffsets[replicaOne], nOffsets[primary]) = (nOffsets[primary], nOffsets[replicaOne]);
+
+            // Wait for replica to catch up
+            for (var replica = 1; replica < nodes_count; replica++)
+                context.clusterTestUtils.WaitForReplicaAofSync(nOffsets[primary], nOffsets[replica], logger: context.logger);
+
+            // Populate Primary
+            for (var i = 0; i < populateIter; i++)
+                PopulatePrimary(nOffsets[primary], disableObjects, performRMW);
+
+            // Wait for replica to catch up
+            for (var replica = 1; replica < nodes_count; replica++)
+                context.clusterTestUtils.WaitForReplicaAofSync(nOffsets[primary], nOffsets[replica], logger: context.logger);
+
+            // Validate all replicas
+            for (var replica = 1; replica < nodes_count; replica++)
+                Validate(nOffsets[primary], nOffsets[replica], disableObjects);
         }
     }
 }
