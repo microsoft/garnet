@@ -6415,6 +6415,52 @@
     ]
   },
   {
+    "Command": "SLOWLOG",
+    "Name": "SLOWLOG",
+    "Summary": "A container for slow log commands.",
+    "Group": "Server",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "SLOWLOG_GET",
+        "Name": "SLOWLOG|GET",
+        "Summary": "Returns the slow log\u0027s entries.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of entries returned",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "Command": "SLOWLOG_HELP",
+        "Name": "SLOWLOG|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "SLOWLOG_LEN",
+        "Name": "SLOWLOG|LEN",
+        "Summary": "Returns the number of entries in the slow log.",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "SLOWLOG_RESET",
+        "Name": "SLOWLOG|RESET",
+        "Summary": "Clears all entries from the slow log.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of entries in the slowlog"
+      }
+    ]
+  },
+  {
     "Command": "SMEMBERS",
     "Name": "SMEMBERS",
     "Summary": "Returns all members of a set.",

@@ -264,6 +264,13 @@ namespace CommandInfoUpdater
             new("SETRANGE", RespCommand.SETRANGE),
             new("SISMEMBER", RespCommand.SISMEMBER),
             new("SLAVEOF", RespCommand.SECONDARYOF),
+            new("SLOWLOG", RespCommand.SLOWLOG,
+            [
+                new("SLOWLOG|GET", RespCommand.SLOWLOG_GET),
+                new("SLOWLOG|LEN", RespCommand.SLOWLOG_LEN),
+                new("SLOWLOG|RESET", RespCommand.SLOWLOG_RESET),
+                new("SLOWLOG|HELP", RespCommand.SLOWLOG_HELP),
+            ]),
             new("SMEMBERS", RespCommand.SMEMBERS),
             new("SMISMEMBER", RespCommand.SMISMEMBER),
             new("SMOVE", RespCommand.SMOVE),

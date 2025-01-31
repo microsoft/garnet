@@ -305,6 +305,13 @@ namespace Garnet.server
         LATENCY_HISTOGRAM,
         LATENCY_RESET,
 
+        // SLOWLOG commands
+        SLOWLOG,
+        SLOWLOG_HELP,
+        SLOWLOG_LEN,
+        SLOWLOG_GET,
+        SLOWLOG_RESET,
+
         CLUSTER,
         CLUSTER_ADDSLOTS, // Note: Update IsClusterSubCommand if adding new cluster subcommands before this
         CLUSTER_ADDSLOTSRANGE,
@@ -414,6 +421,11 @@ namespace Garnet.server
             RespCommand.LATENCY_HELP,
             RespCommand.LATENCY_HISTOGRAM,
             RespCommand.LATENCY_RESET,
+            // Slowlog
+            RespCommand.SLOWLOG_HELP,
+            RespCommand.SLOWLOG_LEN,
+            RespCommand.SLOWLOG_GET,
+            RespCommand.SLOWLOG_RESET,
             // Transactions
             RespCommand.MULTI,
         ];
@@ -2036,7 +2048,12 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.LATENCY))
             {
-                if (count >= 1)
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.LATENCY)));
+                }
+                else if (count >= 1)
                 {
                     Span<byte> subCommand = GetCommand(out bool gotSubCommand);
                     if (!gotSubCommand)
@@ -2060,6 +2077,44 @@ namespace Garnet.server
                     else if (subCommand.SequenceEqual(CmdStrings.RESET))
                     {
                         return RespCommand.LATENCY_RESET;
+                    }
+                }
+            }
+            else if (command.SequenceEqual(CmdStrings.SLOWLOG))
+            {
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.SLOWLOG)));
+                }
+                else if (count >= 1)
+                {
+                    Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                    if (!gotSubCommand)
+                    {
+                        success = false;
+                        return RespCommand.NONE;
+                    }
+
+                    AsciiUtils.ToUpperInPlace(subCommand);
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.HELP))
+                    {
+                        return RespCommand.SLOWLOG_HELP;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.GET))
+                    {
+                        return RespCommand.SLOWLOG_GET;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.LEN))
+                    {
+                        return RespCommand.SLOWLOG_LEN;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.RESET))
+                    {
+                        return RespCommand.SLOWLOG_RESET;
                     }
                 }
             }

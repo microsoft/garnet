@@ -43,6 +43,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> GETKEYSANDFLAGS => "GETKEYSANDFLAGS"u8;
         public static ReadOnlySpan<byte> COMMAND => "COMMAND"u8;
         public static ReadOnlySpan<byte> LATENCY => "LATENCY"u8;
+        public static ReadOnlySpan<byte> SLOWLOG => "SLOWLOG"u8;
         public static ReadOnlySpan<byte> CLUSTER => "CLUSTER"u8;
         public static ReadOnlySpan<byte> MIGRATE => "MIGRATE"u8;
         public static ReadOnlySpan<byte> PURGEBP => "PURGEBP"u8;

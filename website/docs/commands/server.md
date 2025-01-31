@@ -231,6 +231,43 @@ Reset latency data of one or more ```<event>``` (default: reset all data for all
 Simple string reply: OK.
 
 ---
+### SLOWLOG GET
+#### Syntax
+
+```bash
+SLOWLOG GET [count]
+```
+
+Returns entries in the slow log. The default is to return the latest 10 entries. Use a negative count to return all entries.
+
+---
+### SLOWLOG LEN
+#### Syntax
+```bash
+SLOWLOG LEN
+```
+
+Returns the length of the slow queries log.
+
+---
+### SLOWLOG RESET
+#### Syntax
+```bash
+SLOWLOG RESET
+```
+
+Reset the slow log (discard all existing entries).
+
+---
+### SLOWLOG HELP
+#### Syntax
+```bash
+SLOWLOG HELP
+```
+
+Returns a list of supported SLOWLOG sub-commands.
+
+---
 ### MEMORY USAGE
 #### Syntax
 

@@ -1761,7 +1761,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Hash, Write, Admin, Garnet",
+    "AclCategories": "Admin, Hash, Write, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -4151,6 +4151,55 @@
     "Arity": 3,
     "Flags": "Admin, NoAsyncLoading, NoScript, Stale",
     "AclCategories": "Admin, Dangerous, Slow"
+  },
+  {
+    "Command": "SLOWLOG",
+    "Name": "SLOWLOG",
+    "Arity": -2,
+    "AclCategories": "Slow",
+    "SubCommands": [
+      {
+        "Command": "SLOWLOG_GET",
+        "Name": "SLOWLOG|GET",
+        "Arity": -2,
+        "Flags": "Admin, Loading, Stale",
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "nondeterministic_output"
+        ]
+      },
+      {
+        "Command": "SLOWLOG_HELP",
+        "Name": "SLOWLOG|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
+      },
+      {
+        "Command": "SLOWLOG_LEN",
+        "Name": "SLOWLOG|LEN",
+        "Arity": 2,
+        "Flags": "Admin, Loading, Stale",
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:agg_sum",
+          "nondeterministic_output"
+        ]
+      },
+      {
+        "Command": "SLOWLOG_RESET",
+        "Name": "SLOWLOG|RESET",
+        "Arity": 2,
+        "Flags": "Admin, Loading, Stale",
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ]
+      }
+    ]
   },
   {
     "Command": "SMEMBERS",

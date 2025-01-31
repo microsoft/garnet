@@ -202,6 +202,16 @@ namespace Garnet.server
         public bool LatencyMonitor = false;
 
         /// <summary>
+        /// Threshold (microseconds) for logging command in the slow log. 0 to disable
+        /// </summary>
+        public int SlowLogThreshold = 0;
+
+        /// <summary>
+        /// Maximum number of slow log entries to keep
+        /// </summary>
+        public int SlowLogMaxEntries = 128;
+
+        /// <summary>
         /// Metrics sampling frequency
         /// </summary>
         public int MetricsSamplingFrequency = 0;

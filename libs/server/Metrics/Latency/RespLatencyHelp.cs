@@ -18,12 +18,12 @@ namespace Garnet.server
         {
             return new List<string>()
             {
-                "LATENCY<subcommand>[< arg > [value][opt]...]. Subcommands are:",
+                "LATENCY <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
                 "HISTOGRAM [EVENT [EVENT...]]",
-                "\t Return latency histogram of or more <event> classes.",
+                "\tReturn latency histogram of one or more <event> classes.",
                 "\tIf no commands are specified then all histograms are replied",
-                "RESET [EVENT [EVENT...]]" +
-                "\tReset latency data of one or more <event> classes." +
+                "RESET [EVENT [EVENT...]]",
+                "\tReset latency data of one or more <event> classes.",
                 "\t(default: reset all data for all event classes).",
                 "HELP",
                 "\tPrints this help"
