@@ -14,7 +14,7 @@ namespace Garnet.server
         /// <summary>
         /// Create checkpoint manager
         /// </summary>
-        DeviceLogCommitCheckpointManager CreateCheckpointManager(INamedDeviceFactory deviceFactory, ICheckpointNamingScheme checkpointNamingScheme, bool isMainStore, ILogger logger = default);
+        DeviceLogCommitCheckpointManager CreateCheckpointManager(INamedDeviceFactoryCreator deviceFactoryCreator, ICheckpointNamingScheme checkpointNamingScheme, bool isMainStore, ILogger logger = default);
 
         /// <summary>
         /// Create cluster provider
