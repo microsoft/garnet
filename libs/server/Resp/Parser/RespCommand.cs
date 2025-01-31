@@ -1686,6 +1686,46 @@ namespace Garnet.server
             {
                 return RespCommand.RUNTXP;
             }
+            else if (command.SequenceEqual(CmdStrings.SCRIPT))
+            {
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.SCRIPT)));
+                    return RespCommand.INVALID;
+                }
+
+                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                if (!gotSubCommand)
+                {
+                    success = false;
+                    return RespCommand.NONE;
+                }
+
+                AsciiUtils.ToUpperInPlace(subCommand);
+
+                count--;
+
+                if (subCommand.SequenceEqual(CmdStrings.LOAD))
+                {
+                    return RespCommand.SCRIPT_LOAD;
+                }
+
+                if (subCommand.SequenceEqual(CmdStrings.FLUSH))
+                {
+                    return RespCommand.SCRIPT_FLUSH;
+                }
+
+                if (subCommand.SequenceEqual(CmdStrings.EXISTS))
+                {
+                    return RespCommand.SCRIPT_EXISTS;
+                }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.SCRIPT));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+            }
             else if (command.SequenceEqual(CmdStrings.ECHO))
             {
                 return RespCommand.ECHO;

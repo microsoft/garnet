@@ -55,6 +55,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> HELP => "HELP"u8;
         public static ReadOnlySpan<byte> help => "help"u8;
         public static ReadOnlySpan<byte> PING => "PING"u8;
+        public static ReadOnlySpan<byte> SCRIPT => "SCRIPT"u8;
         public static ReadOnlySpan<byte> HELLO => "HELLO"u8;
         public static ReadOnlySpan<byte> TIME => "TIME"u8;
         public static ReadOnlySpan<byte> RESET => "RESET"u8;
@@ -316,6 +317,8 @@ namespace Garnet.server
         // subcommand parsing strings
         public static ReadOnlySpan<byte> CAT => "CAT"u8;
         public static ReadOnlySpan<byte> DELUSER => "DELUSER"u8;
+        public static ReadOnlySpan<byte> EXISTS => "EXISTS"u8;
+        public static ReadOnlySpan<byte> FLUSH => "FLUSH"u8;
         public static ReadOnlySpan<byte> LOAD => "LOAD"u8;
         public static ReadOnlySpan<byte> LOADCS => "LOADCS"u8;
         public static ReadOnlySpan<byte> SETUSER => "SETUSER"u8;
