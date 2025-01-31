@@ -1180,9 +1180,14 @@ return count";
 
             // Start threads, and wait from them to complete
             _ = startStress.Release(ThreadCount);
+            var sw = Stopwatch.StartNew();
+
+            const int FinalTimeout = DurationMS + 60 * 1_000;
+            
             foreach (var thread in threads)
             {
-                thread.Join();
+                var timeout = thread.Join((int)(FinalTimeout - sw.ElapsedMilliseconds));
+                ClassicAssert.True(timeout, "Thread did not exit in expected time");
             }
         }
     }

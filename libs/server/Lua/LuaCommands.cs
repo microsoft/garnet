@@ -61,15 +61,10 @@ namespace Garnet.server
             }
             else
             {
+                // We assume here that ExecuteScript does not raise exceptions
                 sessionScriptCache.StartRunningScript(runner);
-                try
-                {
-                    ExecuteScript(count - 1, runner);
-                }
-                finally
-                {
-                    sessionScriptCache.StopRunningScript();
-                }
+                ExecuteScript(count - 1, runner);
+                sessionScriptCache.StopRunningScript();
             }
 
             return true;
@@ -112,15 +107,10 @@ namespace Garnet.server
             }
             else
             {
+                // We assume here that ExecuteScript does not raise exceptions
                 sessionScriptCache.StartRunningScript(runner);
-                try
-                {
-                    ExecuteScript(count - 1, runner);
-                }
-                finally
-                {
-                    sessionScriptCache.StopRunningScript();
-                }
+                ExecuteScript(count - 1, runner);
+                sessionScriptCache.StopRunningScript();
             }
 
             return true;

@@ -42,7 +42,7 @@ namespace Garnet.server
         readonly LuaTimeoutManager timeoutManager;
 
         LuaRunner timeoutRunningScript;
-        IDisposable timeoutRegistration;
+        LuaTimeoutManager.Registration timeoutRegistration;
         uint timeoutRunningCookie;
 
         public SessionScriptCache(StoreWrapper storeWrapper, IGarnetAuthenticator authenticator, LuaTimeoutManager timeoutManager, ILogger logger = null)
@@ -80,16 +80,10 @@ namespace Garnet.server
         /// </summary>
         public void StartRunningScript(LuaRunner script)
         {
-            if (timeoutManager != null)
+            if (timeoutRegistration != null)
             {
-                nextTimeoutCookie++;
-
-                _ = Interlocked.Exchange(ref timeoutRunningCookie, nextTimeoutCookie);
-
-                var oldScript = Interlocked.Exchange(ref timeoutRunningScript, script);
-                Debug.Assert(oldScript == null, "Shouldn't have two running scripts at once");
-
-                timeoutManager.StartTimeout(timeoutRegistration, timeoutRunningCookie);
+                timeoutRegistration.SetCookie(++timeoutRunningCookie);
+                timeoutRunningScript = script;
             }
         }
 
@@ -100,12 +94,10 @@ namespace Garnet.server
         /// </summary>
         public void StopRunningScript()
         {
-            if (timeoutManager != null)
+            if (timeoutRegistration != null)
             {
-                timeoutManager?.ClearTimeout(timeoutRegistration);
-
-                var oldScript = Interlocked.Exchange(ref timeoutRunningScript, null);
-                Debug.Assert(oldScript != null, "Shouldn't stop when no script is running");
+                timeoutRegistration.SetCookie(0);
+                timeoutRunningScript = null;
             }
         }
 
@@ -114,13 +106,11 @@ namespace Garnet.server
         /// </summary>
         public void RequestTimeout(uint cookie)
         {
-            if (cookie != Interlocked.CompareExchange(ref timeoutRunningCookie, 0, 0))
+            if (cookie == timeoutRunningCookie)
             {
-                // There was a race, ignore this timeout
-                return;
+                // No race, request the timeout
+                timeoutRunningScript.RequestTimeout();
             }
-
-            Interlocked.CompareExchange(ref timeoutRunningScript, null, null)?.RequestTimeout();
         }
 
         /// <summary>

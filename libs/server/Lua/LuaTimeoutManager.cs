@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -35,11 +36,11 @@ namespace Garnet.server.Lua
     /// </remarks>
     internal sealed class LuaTimeoutManager : IDisposable
     {
-        private sealed class Registration : IDisposable
+        internal sealed class Registration : IDisposable
         {
             private readonly LuaTimeoutManager owner;
 
-            // Bottom half is count, top half is cookie
+            // Bottom half is cookie, top half is count
             private ulong packedState;
 
             internal SessionScriptCache ScriptCache { get; }
@@ -55,10 +56,9 @@ namespace Garnet.server.Lua
             /// <summary>
             /// Update value of <see cref="Cookie"/> atomically.
             /// </summary>
-            internal void SetCookie(long cookie)
+            internal void SetCookie(uint cookie)
             {
-                var value = (ulong)cookie << 32;
-                _ = Interlocked.Exchange(ref packedState, value);
+                _ = Interlocked.Exchange(ref packedState, cookie);
             }
 
             /// <summary>
@@ -71,33 +71,37 @@ namespace Garnet.server.Lua
             /// </summary>
             internal bool AdvanceTimeout(out uint cookie)
             {
-                var oldValue = Volatile.Read(ref packedState);
-                if ((uint)(oldValue >> 32) == 0)
-                {
-                    // Current registration isn't active (cookie == 0)
-                    cookie = 0;
-                    return false;
-                }
-
-                var newValue = oldValue + 1;
-
-                if (Interlocked.CompareExchange(ref packedState, newValue, oldValue) != oldValue)
-                {
-                    // Cookie was set from some other thread, this registration cannot timeout yet
-                    cookie = 0;
-                    return false;
-                }
+                // Advances the top half of packedState by 1
+                const ulong IncrBy = 1UL << 32;
 
                 // +1 here because at the point of registration, the current tick is some % of the way
                 // complete.  So we need to wait an additional one to make sure we don't cancel early.
-                if ((uint)newValue == (TimeoutDivisions + 1))
+                const ulong TriggerAfter = (ulong)(TimeoutDivisions + 1) << 32;
+
+                var oldValue = Volatile.Read(ref packedState);
+                if ((uint)oldValue == 0)
+                {
+                    // Current registration isn't active (cookie == 0)
+                    Unsafe.SkipInit(out cookie);
+                    return false;
+                }
+
+                var newValue = oldValue + IncrBy;
+                if (Interlocked.CompareExchange(ref packedState, newValue, oldValue) != oldValue)
+                {
+                    // Cookie was set from some other thread, this registration cannot timeout yet
+                    Unsafe.SkipInit(out cookie);
+                    return false;
+                }
+
+                if (newValue >= TriggerAfter)
                 {
                     // It's been the requisit number of ticks since the registration, timeout
-                    cookie = (uint)(newValue >> 32);
+                    cookie = (uint)newValue;
                     return true;
                 }
 
-                cookie = 0;
+                Unsafe.SkipInit(out cookie);
                 return false;
             }
 
@@ -199,11 +203,11 @@ namespace Garnet.server.Lua
         /// 
         /// A runner can only be registered a single time, by a single thread.
         /// 
-        /// Returns a value that uniquely identifies identifies this registration.
+        /// Returns a <see cref="Registration"/> that uniquely identifies identifies this registration.
         /// 
-        /// Dispose the registration to remove the cache from timeout notifications.
+        /// Dispose the <see cref="Registration"/> to remove the cache from timeout notifications.
         /// </summary>
-        internal IDisposable RegisterForTimeout(SessionScriptCache cache)
+        internal Registration RegisterForTimeout(SessionScriptCache cache)
         {
             var ret = new Registration(this, cache);
 
@@ -270,24 +274,6 @@ namespace Garnet.server.Lua
 
             return ret;
         }
-
-        /// <summary>
-        /// Start a timeout for a cache previously registered with <see cref="RegisterForTimeout(SessionScriptCache)"/>.
-        /// 
-        /// <paramref name="cookie"/> must be greater than 0.
-        /// </summary>
-        internal void StartTimeout(IDisposable registration, uint cookie)
-        {
-            Debug.Assert(cookie > 0, "Cookie must be > 0");
-
-            ((Registration)registration).SetCookie(cookie);
-        }
-
-        /// <summary>
-        /// End a timeout for a cache previousy registered with <see cref="RegisterForTimeout(SessionScriptCache)"/>.
-        /// </summary>
-        internal void ClearTimeout(IDisposable registration)
-        => ((Registration)registration).SetCookie(0);
 
         /// <summary>
         /// Remove a previously created registration

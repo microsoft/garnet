@@ -623,10 +623,6 @@ end
 
                     _ = api.SET(key, value);
 
-                    // Repeated calls to Garnet could avoid the timeout for a while
-                    // So do a check before we return
-                    UnsafeCheckTimeout();
-
                     state.PushConstantString(okConstStringRegistryIndex);
                     return 1;
                 }
@@ -645,10 +641,6 @@ end
                     // Span is (implicitly) pinned since it's actually on the Lua stack
                     var key = ArgSlice.FromPinnedSpan(keySpan);
                     var status = api.GET(key, out var value);
-
-                    // Repeated calls to Garnet could avoid the timeout for a while
-                    // So do a check before we return
-                    UnsafeCheckTimeout();
 
                     if (status == GarnetStatus.OK)
                     {
@@ -706,10 +698,6 @@ end
                 var response = scratchBufferNetworkSender.GetResponse();
                 var result = ProcessResponse(response.ptr, response.length);
                 scratchBufferNetworkSender.Reset();
-
-                // Repeated calls to Garnet could avoid the timeout for a while
-                // So do a check before we return
-                UnsafeCheckTimeout();
 
                 return result;
             }
@@ -1178,19 +1166,6 @@ end
         /// </summary>
         internal void UnsafeForceTimeout()
         => state.RaiseError("ERR Lua script exceeded configured timeout");
-
-        /// <summary>
-        /// From the .NET side, check if a timeout has been requsted and raise a Lua error if so.
-        /// 
-        /// If you call this outside of PCALL context, the process will crash.
-        /// </summary>
-        private void UnsafeCheckTimeout()
-        {
-            if (timeoutRequested)
-            {
-                UnsafeForceTimeout();
-            }
-        }
 
         /// <summary>
         /// Remove extra keys and args from KEYS and ARGV globals.
