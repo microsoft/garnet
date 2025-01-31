@@ -580,7 +580,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task UnixSocketServer_Ping([Values] bool useTls)
+        public async Task UnixSocket_Ping([Values] bool useTls)
         {
             var unixSocketPath = "./unix-socket-ping-test.sock";
             var unixSocketEndpoint = new UnixDomainSocketEndPoint(unixSocketPath);

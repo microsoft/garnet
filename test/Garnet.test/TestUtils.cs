@@ -638,7 +638,6 @@ namespace Garnet.test
         /// </summary>
         public static ConfigurationOptions GetConfig(
             EndPointCollection endpoints = default,
-            int port = default,
             bool allowAdmin = false,
             bool disablePubSub = false,
             bool useTLS = false,
@@ -657,7 +656,7 @@ namespace Garnet.test
                 cmds.Remove("PUBLISH");
             }
 
-            EndPointCollection defaultEndPoints = endpoints == default ? [EndPoint] : endpoints;
+            var defaultEndPoints = endpoints == default ? [EndPoint] : endpoints;
             var configOptions = new ConfigurationOptions
             {
                 EndPoints = defaultEndPoints,
