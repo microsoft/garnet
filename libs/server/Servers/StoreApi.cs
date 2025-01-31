@@ -3,6 +3,7 @@
 
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -26,7 +27,7 @@ namespace Garnet.server
         /// Commit AOF
         /// </summary>
         /// <param name="spinWait"></param>
-        public void CommitAOF(bool spinWait = false) => storeWrapper.appendOnlyFile?.Commit(spinWait);
+        public void CommitAOF(bool spinWait = false) => storeWrapper.CommitAOF(spinWait);
 
         /// <summary>
         /// Wait for commit

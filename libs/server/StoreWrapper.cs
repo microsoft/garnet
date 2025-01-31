@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -331,19 +332,7 @@ namespace Garnet.server
                 else
                 {
                     if (allowMultiDb && checkpointDatabaseIdsPath != null)
-                    {
-                        using var stream = databaseIdsStreamProvider.Read(checkpointDatabaseIdsPath);
-                        using var streamReader = new BinaryReader(stream);
-                        var idsCount = streamReader.ReadInt32();
-                        while (streamReader.BaseStream.Position < streamReader.BaseStream.Length)
-                        {
-                            var dbId = streamReader.ReadInt32();
-                            if (dbId == 0) continue;
-
-                            var db = createDatabasesDelegate(dbId, out _, out _);
-                            databases.TrySetValue(dbId, ref db);
-                        }
-                    }
+                        RecoverDatabases(checkpointDatabaseIdsPath);
 
                     var databasesMapSize = databases.ActualSize;
                     var databasesMapSnapshot = databases.Map;
@@ -370,14 +359,55 @@ namespace Garnet.server
             }
         }
 
+        private void WriteDatabaseIdsSnapshot(IList<int> activeDbIds, string path)
+        {
+            var dbIdsWithLength = new int[activeDbIds.Count + 1];
+            dbIdsWithLength[0] = activeDbIds.Count;
+            activeDbIds.CopyTo(dbIdsWithLength, 1);
+
+            var dbIdData = new byte[sizeof(int) * dbIdsWithLength.Length];
+
+            Buffer.BlockCopy(dbIdsWithLength, 0, dbIdData, 0, dbIdData.Length);
+            databaseIdsStreamProvider.Write(path, dbIdData);
+        }
+
+        private void RecoverDatabases(string path)
+        {
+            using var stream = databaseIdsStreamProvider.Read(path);
+            using var streamReader = new BinaryReader(stream);
+
+            if (streamReader.BaseStream.Length > 0)
+            {
+                var idsCount = streamReader.ReadInt32();
+                var dbIds = new int[idsCount];
+                var dbIdData = streamReader.ReadBytes((int)streamReader.BaseStream.Length);
+                Buffer.BlockCopy(dbIdData, 0, dbIds, 0, dbIdData.Length);
+
+                foreach (var dbId in dbIds)
+                {
+                    var db = createDatabasesDelegate(dbId, out _, out _);
+                    databases.TrySetValue(dbId, ref db);
+                }
+            }
+        }
+
         /// <summary>
         /// Recover AOF
         /// </summary>
         public void RecoverAOF()
         {
-            if (appendOnlyFile == null) return;
-            appendOnlyFile.Recover();
-            logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", appendOnlyFile.BeginAddress, appendOnlyFile.TailAddress);
+            if (allowMultiDb && checkpointDatabaseIdsPath != null)
+                RecoverDatabases(checkpointDatabaseIdsPath);
+
+            var databasesMapSize = databases.ActualSize;
+            var databasesMapSnapshot = databases.Map;
+            for (var i = 0; i < databasesMapSize; i++)
+            {
+                var db = databasesMapSnapshot[i];
+                if (db.AppendOnlyFile == null) continue;
+                db.AppendOnlyFile.Recover();
+                logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", db.AppendOnlyFile.BeginAddress, db.AppendOnlyFile.TailAddress);
+            }
         }
 
         /// <summary>
@@ -501,16 +531,7 @@ namespace Garnet.server
                         await Task.Delay(commitFrequencyMs, token);
 
                         if (allowMultiDb && aofDatabaseIdsPath != null && activeDbIds!.Count > 0)
-                        {
-                            var dbIdsWithLength = new int[activeDbIds.Count + 1];
-                            dbIdsWithLength[0] = activeDbIds.Count;
-                            activeDbIds.CopyTo(dbIdsWithLength, 1);
-
-                            var dbIdData = new byte[sizeof(int) * dbIdsWithLength.Length];
-                            
-                            Buffer.BlockCopy(dbIdsWithLength, 0, dbIdData, 0, dbIdData.Length);
-                            databaseIdsStreamProvider.Write(aofDatabaseIdsPath, dbIdData);
-                        }
+                            WriteDatabaseIdsSnapshot(activeDbIds, aofDatabaseIdsPath);
                     }
                 }
             }
@@ -732,6 +753,29 @@ namespace Garnet.server
                     appendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
                 }
             }
+        }
+
+        internal void CommitAOF(bool spinWait)
+        {
+            var databasesMapSize = databases.ActualSize;
+            var databasesMapSnapshot = databases.Map;
+
+            var activeDbIds = allowMultiDb ? new List<int>() : null;
+
+            for (var dbId = 0; dbId < databasesMapSize; dbId++)
+            {
+                var db = databasesMapSnapshot[dbId];
+                if (db.Equals(default(GarnetDatabase))) continue;
+
+                if (db.AppendOnlyFile == null) continue;
+                db.AppendOnlyFile.Commit(spinWait);
+
+                if (allowMultiDb && dbId != 0)
+                    activeDbIds!.Add(dbId);
+            }
+
+            if (allowMultiDb && aofDatabaseIdsPath != null && activeDbIds!.Count > 0)
+                WriteDatabaseIdsSnapshot(activeDbIds, aofDatabaseIdsPath);
         }
 
         internal void Start()
@@ -983,11 +1027,7 @@ namespace Garnet.server
                 }
 
                 if (allowMultiDb && checkpointDatabaseIdsPath != null && activeDbIds!.Count > 0)
-                {
-                    var dbIdData = new byte[sizeof(int) * activeDbIds.Count];
-                    Buffer.BlockCopy(activeDbIds.ToArray(), 0, dbIdData, 0, dbIdData.Length);
-                    databaseIdsStreamProvider.Write(checkpointDatabaseIdsPath, dbIdData);
-                }
+                    WriteDatabaseIdsSnapshot(activeDbIds, checkpointDatabaseIdsPath);
 
                 lastSaveTime = DateTimeOffset.UtcNow;
             }
